@@ -1,0 +1,306 @@
+@import url('https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&display=swap');
+
+:root {
+  /* Brand Colors */
+  --color-primary: #3B82F6;
+  --color-primary-hover: #2563EB;
+  --color-primary-light: #EFF6FF;
+
+  /* Accent Colors */
+  --color-blue: #3B82F6;
+  --color-blue-light: #EFF6FF;
+  --color-green: #10B981;
+  --color-green-light: #ECFDF5;
+  --color-purple: #8B5CF6;
+  --color-purple-light: #F5F3FF;
+  --color-red: #EF4444;
+  --color-red-light: #FEF2F2;
+
+  /* Backgrounds */
+  --color-bg: #F3F4F6;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #F9FAFB;
+
+  /* Text */
+  --color-text-main: #111827;
+  --color-text-secondary: #4B5563;
+  --color-text-muted: #9CA3AF;
+
+  /* Borders & Shadows */
+  --color-border: #E5E7EB;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* Spacing & Layout */
+  --header-height: 60px;
+  --sidebar-width: 260px;
+  --border-radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Battambang', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1 {
+  font-size: 16px;
+  color: var(--color-primary);
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: inline-block;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+/* Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: var(--shadow-sm);
+  border-radius: var(--border-radius);
+  padding: 12px;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Spreadsheet Table Styles */
+/* Spreadsheet Table Styles - Visual Reference Match */
+.spreadsheet-table {
+  width: 100%;
+  border-collapse: separate;
+  /* Required for sticky headers/footers to work properly */
+  border-spacing: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  /* Slightly larger for readability */
+  background-color: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  /* border-radius: 8px; Removed to fix sticky */
+  /* overflow: hidden; Removed to fix sticky - breaks z-index context */
+}
+
+/* Cells */
+.spreadsheet-table th,
+.spreadsheet-table td {
+  border-bottom: 1px solid #E5E7EB;
+  border-right: 1px solid #F3F4F6;
+  /* Very subtle vertical divider */
+  padding: 10px 12px;
+  /* More breathable padding */
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+  height: 44px;
+  /* Taller rows like reference */
+  color: #374151;
+  /* Gray-700 for text */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Remove right border from last column */
+.spreadsheet-table th:last-child,
+.spreadsheet-table td:last-child {
+  border-right: none;
+}
+
+/* Header */
+.spreadsheet-table th {
+  background-color: #FFFFFF;
+  /* White header */
+  color: #111827;
+  /* Darker text for headers */
+  font-weight: 700;
+  /* Bold headers */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  user-select: none;
+  font-size: 12px;
+  box-shadow: 0 1px 0 #E5E7EB;
+  /* Distinct separator */
+  border-bottom: none;
+  /* Handled by box-shadow */
+}
+
+/* Row Hover & Selection */
+.spreadsheet-table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.spreadsheet-table tbody tr:hover {
+  background-color: var(--color-green-light) !important;
+  /* User requested lightgreen */
+}
+
+.spreadsheet-table tbody tr.selected {
+  background-color: #EFF6FF !important;
+  /* Light blue selection */
+}
+
+/* Footer */
+.spreadsheet-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background-color: #F9FAFB;
+  /* Light gray footer background */
+  font-weight: 700;
+  border-top: 1px solid #E5E7EB;
+  /* Reduced border width to match theme */
+  box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.05);
+  /* Add subtle shadow for depth */
+  color: #111827;
+}
+
+/* Sort Icon Container */
+.th-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Form Elements */
+.search-input {
+  width: 100%;
+  height: 40px;
+  padding: 8px 12px;
+  /* Default padding */
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-text-main);
+  background-color: var(--color-surface);
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Specific adjustment for search inputs that have an icon */
+div:has(> svg) .search-input {
+  padding-left: 36px;
+}
+
+/* Sticky Columns Configuration */
+.spreadsheet-table th.sticky-col-first,
+.spreadsheet-table td.sticky-col-first {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background-color: #FFFFFF;
+  width: 40px;
+  min-width: 40px;
+}
+
+.spreadsheet-table th.sticky-col-second,
+.spreadsheet-table td.sticky-col-second {
+  position: sticky;
+  left: 40px;
+  /* Must match width of first column */
+  z-index: 20;
+  background-color: #FFFFFF;
+  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.1);
+  /* Shadow to separate from scrolling content */
+}
+
+/* Ensure sticky columns match row hover/selection styles */
+.spreadsheet-table tbody tr:hover td.sticky-col-first,
+.spreadsheet-table tbody tr:hover td.sticky-col-second {
+  background-color: var(--color-green-light) !important;
+}
+
+.spreadsheet-table tbody tr.selected td.sticky-col-first,
+.spreadsheet-table tbody tr.selected td.sticky-col-second {
+  background-color: #EFF6FF !important;
+}
+
+/* Icon Button Style */
+.icon-button {
+  padding: 6px;
+  border-radius: 8px;
+  transition: all 0.2s;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button:hover {
+  background-color: white;
+  color: var(--color-primary);
+  border-color: var(--color-border);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Ensure Headers stay on top of everything */
+.spreadsheet-table thead th.sticky-col-first,
+.spreadsheet-table thead th.sticky-col-second {
+  z-index: 30;
+  /* Higher than body sticky cells (20) */
+  background-color: #F9FAFB;
+  /* Match header background */
+}
+
+.primary-button {
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary-button:hover {
+  background-color: var(--color-primary-hover);
+}
+
+.primary-button:disabled {
+  background-color: var(--color-text-muted);
+  cursor: not-allowed;
+}

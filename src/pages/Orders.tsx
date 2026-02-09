@@ -1,0 +1,1013 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer } from 'lucide-react';
+import { useStore } from '../context/StoreContext';
+import { useToast } from '../context/ToastContext';
+import { useHeader } from '../context/HeaderContext';
+import { POSInterface, StatusBadge, PaymentStatusBadge, ReceiptModal, DateRangePicker } from '../components';
+import * as XLSX from 'xlsx';
+import type { Sale } from '../types';
+
+const Orders: React.FC = () => {
+    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin } = useStore();
+
+    const { showToast } = useToast();
+    const { setHeaderContent } = useHeader();
+
+    // Tabs & View State
+    const [activeTab, setActiveTab] = useState<'list' | 'pos'>('list');
+
+    // Update Header Content
+    React.useEffect(() => {
+        setHeaderContent({
+            title: (
+                <div style={{ marginBottom: '8px' }}>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Orders Management</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage and track all customer orders</p>
+                </div>
+            ),
+            actions: (
+                <div style={{ display: 'flex', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                    <button
+                        onClick={() => setActiveTab('list')}
+                        style={{
+                            padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px',
+                            background: activeTab === 'list' ? 'var(--color-primary)' : 'transparent',
+                            color: activeTab === 'list' ? 'white' : 'var(--color-text-secondary)',
+                            fontWeight: 500, cursor: 'pointer', border: 'none'
+                        }}
+                    >
+                        <List size={18} /> Order List
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('pos')}
+                        style={{
+                            padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px',
+                            background: activeTab === 'pos' ? 'var(--color-primary)' : 'transparent',
+                            color: activeTab === 'pos' ? 'white' : 'var(--color-text-secondary)',
+                            fontWeight: 500, cursor: 'pointer', border: 'none'
+                        }}
+                    >
+                        <Store size={18} /> POS
+                    </button>
+                </div>
+            )
+        });
+
+        return () => setHeaderContent(null);
+    }, [setHeaderContent, activeTab]);
+
+    // Filters
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Shipped' | 'Delivered'>('All');
+    const [payStatusFilter, setPayStatusFilter] = useState<string[]>([]);
+    const [isPayStatusOpen, setIsPayStatusOpen] = useState(false);
+
+    const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Modals State
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+    const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
+    const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+
+    // Selection State
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+    const toggleSelection = (id: string) => {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedIds(newSet);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === filteredOrders.length && filteredOrders.length > 0) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredOrders.map(o => o.id)));
+        }
+    };
+
+    const handleBulkDelete = () => {
+        if (confirm(`Are you sure you want to delete ${selectedIds.size} orders?`)) {
+            deleteOrders(Array.from(selectedIds));
+            setSelectedIds(new Set());
+            showToast('Orders deleted successfully', 'success');
+        }
+    };
+
+    // Column Visibility and Pinning
+    const [showColumnMenu, setShowColumnMenu] = useState(false);
+    const allColumnsDef = [
+        { id: 'actions', label: 'Actions' },
+        { id: 'date', label: 'Date' },
+        { id: 'customer', label: 'Customer' },
+        { id: 'phone', label: 'Phone' },
+        { id: 'address', label: 'Address' },
+        { id: 'page', label: 'Page Name' },
+        { id: 'salesman', label: 'Salesman' },
+        { id: 'customerCare', label: 'Customer Care' },
+        { id: 'items', label: 'Products' },
+        { id: 'total', label: 'Total' },
+        { id: 'payBy', label: 'Pay By' },
+        { id: 'balance', label: 'Balance' },
+        { id: 'status', label: 'Ship Status' },
+        { id: 'received', label: 'Received' },
+        { id: 'payStatus', label: 'Pay Status' },
+        { id: 'shippingCo', label: 'Shipping Co' },
+        { id: 'tracking', label: 'Tracking ID' },
+        { id: 'remark', label: 'Remark' },
+        { id: 'settleDate', label: 'Settle/Paid Date' },
+    ];
+
+    // Default visible columns
+    const [visibleColumns, setVisibleColumns] = useState<string[]>([
+        'actions', 'date', 'customer', 'phone', 'address', 'page', 'salesman', 'customerCare', 'items', 'total', 'payBy',
+        'balance', 'status', 'received', 'payStatus', 'shippingCo', 'tracking', 'remark', 'settleDate'
+    ]);
+
+    // Derived Columns with Pinning Logic
+    const allColumns = useMemo(() => {
+        const pinned = pinnedOrderColumns || [];
+        // Sort so pinned columns come first, in the order they were pinned
+        return [...allColumnsDef].sort((a, b) => {
+            const indexA = pinned.indexOf(a.id);
+            const indexB = pinned.indexOf(b.id);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return 0; // Maintain original order for unpinned
+        });
+    }, [pinnedOrderColumns]);
+
+
+    // Resizing State
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+        const saved = localStorage.getItem('pos_column_widths');
+        return saved ? JSON.parse(saved) : {};
+    });
+
+    useEffect(() => {
+        localStorage.setItem('pos_column_widths', JSON.stringify(columnWidths));
+    }, [columnWidths]);
+    const [resizingCol, setResizingCol] = useState<string | null>(null);
+    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string } | null>(null);
+
+    const startResize = (e: React.MouseEvent, colId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentWidth = columnWidths[colId] || (e.currentTarget.parentElement?.getBoundingClientRect().width ?? 150);
+        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId };
+        setResizingCol(colId);
+        document.addEventListener('mousemove', handleGlobalMouseMove);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.cursor = 'col-resize';
+    };
+
+    const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const { startX, startWidth, colId } = resizeRef.current;
+        const diff = e.clientX - startX;
+        setColumnWidths(prev => ({ ...prev, [colId]: Math.max(50, startWidth + diff) }));
+    }, []);
+
+    const handleGlobalMouseUp = React.useCallback(() => {
+        resizeRef.current = null;
+        setResizingCol(null);
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.cursor = '';
+    }, [handleGlobalMouseMove]);
+
+    // Cleanup on unmount
+    React.useEffect(() => {
+        return () => {
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [handleGlobalMouseMove, handleGlobalMouseUp]);
+
+
+    // Derived State (filteredOrders, paginatedOrders, stats) -> kept same essentially
+    const filteredOrders = useMemo(() => {
+        return sales.filter(order => {
+            const matchesStatus = statusFilter === 'All' || (order.shipping && order.shipping.status === statusFilter);
+            const matchesPayStatus = payStatusFilter.length === 0 || payStatusFilter.includes(order.paymentStatus || 'Paid');
+            const lowerTerm = searchTerm.toLowerCase();
+            const matchesSearch =
+                order.customer?.name.toLowerCase().includes(lowerTerm) ||
+                order.id.toLowerCase().includes(lowerTerm) ||
+                (order.customer?.phone || '').includes(lowerTerm) ||
+                (order.customer?.address || '').toLowerCase().includes(lowerTerm) ||
+                (order.customer?.city || '').toLowerCase().includes(lowerTerm) ||
+                (order.customer?.page || '').toLowerCase().includes(lowerTerm) ||
+                order.items.some(item => item.name.toLowerCase().includes(lowerTerm) || (item.model && item.model.toLowerCase().includes(lowerTerm))) ||
+                order.paymentMethod.toLowerCase().includes(lowerTerm) ||
+                order.total.toString().includes(lowerTerm) ||
+                (order.remark || '').toLowerCase().includes(lowerTerm) ||
+                (order.shipping?.company || '').toLowerCase().includes(lowerTerm) ||
+                (order.shipping?.trackingNumber || '').toLowerCase().includes(lowerTerm) ||
+                (order.shipping?.staffName || '').toLowerCase().includes(lowerTerm) ||
+                (order.salesman || '').toLowerCase().includes(lowerTerm) ||
+                (order.customerCare || '').toLowerCase().includes(lowerTerm);
+
+            let matchesDate = true;
+            if (dateRange.start && dateRange.end) {
+                const orderDate = new Date(order.date);
+                const start = new Date(dateRange.start);
+                const end = new Date(dateRange.end);
+                end.setHours(23, 59, 59, 999);
+                matchesDate = orderDate >= start && orderDate <= end;
+            }
+
+            return matchesStatus && matchesPayStatus && matchesSearch && matchesDate;
+        });
+    }, [sales, statusFilter, payStatusFilter, searchTerm, dateRange]);
+
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(50);
+
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [statusFilter, payStatusFilter, searchTerm, dateRange, itemsPerPage]);
+
+    const paginatedOrders = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredOrders, currentPage, itemsPerPage]);
+
+    const stats = useMemo(() => {
+        const totalOrders = filteredOrders.length;
+        const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.total, 0);
+        const totalReceived = filteredOrders.reduce((sum, order) => sum + (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)), 0);
+        const totalOutstanding = totalRevenue - totalReceived;
+        return { totalOrders, totalRevenue, totalReceived, totalOutstanding };
+    }, [filteredOrders]);
+
+    const handleOpenAdd = () => {
+        setEditingOrder(null);
+        setActiveTab('pos');
+    };
+
+    const handleOpenEdit = (order: Sale) => {
+        setEditingOrder(order);
+        setActiveTab('pos');
+    };
+
+    // Helper to calculate sticky left offset
+    const getStickyLeft = (colId: string) => {
+        const pinned = pinnedOrderColumns || [];
+        const index = pinned.indexOf(colId);
+        if (index === -1) return undefined;
+
+        // Base offset for the first checkbox column
+        let left = 40;
+
+        // Add widths of preceding pinned columns
+        for (let i = 0; i < index; i++) {
+            const pid = pinned[i];
+            // If a pinned column is hidden, it shouldn't contribute to offset?
+            // Assuming pinned columns are visible for now, or check visibleColumns
+            if (visibleColumns.includes(pid)) {
+                left += (columnWidths[pid] || 150);
+            }
+        }
+        return left;
+    };
+
+    const handleExportExcel = () => {
+        const selectedOrders = filteredOrders.filter(order => selectedIds.has(order.id));
+
+        if (selectedOrders.length === 0) {
+            showToast('No orders selected to export', 'error');
+            return;
+        }
+
+        const data = selectedOrders.map(order => ({
+            'Order ID': order.id,
+            'Date': new Date(order.date).toLocaleDateString(),
+            'Customer': order.customer?.name || 'N/A',
+            'Phone': order.customer?.phone || 'N/A',
+            'Address': order.customer?.address || 'N/A',
+            'City': order.customer?.city || 'N/A',
+            'Items': order.items.map(i => `${i.name} (${i.quantity})`).join(', '),
+            'Total Amount': order.total,
+            'Payment Method': order.paymentMethod,
+            'Payment Status': order.paymentStatus || 'Paid',
+            'Shipping Status': order.shipping?.status || 'Pending',
+            'Tracking Number': order.shipping?.trackingNumber || 'N/A',
+            'Remarks': order.remark || ''
+        }));
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(data);
+
+        // Auto-width for columns
+        const colWidths = [
+            { wch: 20 }, // Order ID
+            { wch: 12 }, // Date
+            { wch: 20 }, // Customer
+            { wch: 15 }, // Phone
+            { wch: 30 }, // Address
+            { wch: 15 }, // City
+            { wch: 40 }, // Items
+            { wch: 12 }, // Total
+            { wch: 15 }, // Method
+            { wch: 15 }, // Pay Status
+            { wch: 15 }, // Ship Status
+            { wch: 20 }, // Tracking
+            { wch: 30 }  // Remarks
+        ];
+        ws['!cols'] = colWidths;
+
+        XLSX.utils.book_append_sheet(wb, ws, "Orders");
+
+        // Generate filename with current date
+        const dateStr = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(wb, `Selected_Orders_Export_${dateStr}.xlsx`);
+
+        showToast(`Exported ${selectedOrders.length} orders to Excel`, 'success');
+    };
+
+
+
+    // Render Helpers
+    // UI Helpers & Components
+
+    // Legacy helper for Modal (can eventually reuse above logic properly)
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'Pending': return <span style={{ background: '#FEF3C7', color: '#D97706', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> Pending</span>;
+            case 'Shipped': return <span style={{ background: '#DBEAFE', color: '#2563EB', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Truck size={12} /> Shipped</span>;
+            case 'Delivered': return <span style={{ background: '#D1FAE5', color: '#059669', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Delivered</span>;
+            case 'Cancelled': return <span style={{ background: '#FEE2E2', color: '#DC2626', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={12} /> Cancelled</span>;
+            default: return <span>{status}</span>;
+        }
+    };
+
+    const hasFilters = searchTerm !== '' || statusFilter !== 'All' || payStatusFilter.length > 0 || dateRange.start !== '' || dateRange.end !== '';
+
+    return (
+        <div>
+            {/* Header */}
+            {/* Header Moved to Global Header */}
+
+            {activeTab === 'list' ? (
+                <>
+
+
+                    {/* Filters Bar */}
+                    <div className="glass-panel" style={{ marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50 }}>
+                        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search order ID, customer, phone..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                className="search-input"
+                                style={{ paddingLeft: '36px' }} // Keep paddingLeft explicit for icon overlap
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <DateRangePicker
+                                value={dateRange}
+                                onChange={setDateRange}
+                            />
+                            <select
+                                value={statusFilter}
+                                onChange={e => setStatusFilter(e.target.value as any)}
+                                className="search-input"
+                                style={{ width: '130px' }}
+                            >
+                                <option value="All">All Status</option>
+                                <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
+                                <option value="Shipped" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>Shipped</option>
+                                <option value="Delivered" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Delivered</option>
+                            </select>
+
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => setIsPayStatusOpen(!isPayStatusOpen)}
+                                    className="search-input"
+                                    style={{
+                                        minWidth: '160px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        cursor: 'pointer',
+                                        paddingRight: '12px',
+                                        background: 'white',
+                                        height: '42px'
+                                    }}
+                                >
+                                    <span style={{ fontSize: '13px', color: payStatusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                        {payStatusFilter.length === 0 ? 'All Pay Status' : `${payStatusFilter.length} Selected`}
+                                    </span>
+                                    <ChevronDown size={16} color="var(--color-text-secondary)" />
+                                </button>
+
+                                {isPayStatusOpen && (
+                                    <>
+                                        <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setIsPayStatusOpen(false)} />
+                                        <div className="glass-panel" style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            marginTop: '4px',
+                                            width: '200px',
+                                            padding: '8px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '2px',
+                                            zIndex: 100,
+                                            background: 'white',
+                                            boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                                        }}>
+                                            {['Paid', 'Unpaid', 'Settle', 'Not Settle', 'Cancel'].map(status => (
+                                                <label key={status} style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    padding: '8px 12px',
+                                                    cursor: 'pointer',
+                                                    borderRadius: '6px',
+                                                    transition: 'background 0.2s',
+                                                    backgroundColor: payStatusFilter.includes(status) ? 'var(--color-bg)' : 'transparent'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={payStatusFilter.includes(status)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setPayStatusFilter([...payStatusFilter, status]);
+                                                            else setPayStatusFilter(payStatusFilter.filter(s => s !== status));
+                                                        }}
+                                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                    />
+                                                    <span style={{ fontSize: '13px' }}>{status}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+
+
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setStatusFilter('All');
+                                    setPayStatusFilter([]);
+
+
+                                    setDateRange({ start: '', end: '' });
+                                }}
+                                disabled={!hasFilters}
+                                style={{
+                                    padding: '10px 16px', borderRadius: '8px',
+                                    border: hasFilters ? '1px solid #FECACA' : '1px solid var(--color-border)',
+                                    background: hasFilters ? '#FEE2E2' : 'var(--color-surface)',
+                                    color: hasFilters ? '#DC2626' : 'var(--color-text-secondary)',
+                                    cursor: hasFilters ? 'pointer' : 'not-allowed',
+                                    opacity: hasFilters ? 1 : 0.5,
+                                    fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
+                                    transition: 'all 0.2s'
+                                }}
+                                title="Clear All Filters"
+                            >
+                                <X size={16} /> Clear
+                            </button>
+
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => setShowColumnMenu(!showColumnMenu)}
+                                    style={{
+                                        padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                        background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '8px'
+                                    }}
+                                >
+                                    <Settings size={18} />
+                                    Columns
+                                </button>
+                                {showColumnMenu && (
+                                    <div className="glass-panel" style={{
+                                        position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                                        padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
+                                        display: 'flex', flexDirection: 'column', gap: '8px'
+                                    }}>
+                                        <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                                        {allColumnsDef.map(col => (
+                                            <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={visibleColumns.includes(col.id)}
+                                                    onChange={() => {
+                                                        if (visibleColumns.includes(col.id)) {
+                                                            setVisibleColumns(visibleColumns.filter(c => c !== col.id));
+                                                        } else {
+                                                            setVisibleColumns([...visibleColumns, col.id]);
+                                                        }
+                                                    }}
+                                                />
+                                                {col.label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={handleExportExcel}
+                                disabled={selectedIds.size === 0}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    padding: '10px 16px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-border)',
+                                    background: 'white',
+                                    color: selectedIds.size > 0 ? '#10B981' : 'var(--color-text-secondary)',
+                                    cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                                    opacity: selectedIds.size > 0 ? 1 : 0.5,
+                                    fontWeight: 500,
+                                    transition: 'all 0.2s'
+                                }}
+                                title={selectedIds.size === 0 ? "Select orders to export" : "Export selected orders"}
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
+                                </svg>
+                                Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                            </button>
+
+                            <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}>
+                                <Plus size={18} /> New Order
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Table */}
+                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', paddingBottom: '0' }}>
+                        <table className="spreadsheet-table" style={{ minWidth: '100%', whiteSpace: 'nowrap', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, zIndex: 20, background: '#F9FAFB' }} className="sticky-col-first">
+                                        <input
+                                            type="checkbox"
+                                            checked={filteredOrders.length > 0 && selectedIds.size === filteredOrders.length}
+                                            onChange={toggleSelectAll}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                    </th>
+                                    {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
+                                        const colId = col.id;
+                                        const colDef = col;
+                                        const width = columnWidths[colId];
+                                        const isPinned = (pinnedOrderColumns || []).includes(colId);
+                                        const stickyLeft = getStickyLeft(colId);
+
+                                        return (
+                                            <th
+                                                key={colId}
+                                                style={{
+                                                    width: width ? `${width}px` : '150px',
+                                                    minWidth: width ? `${width}px` : '150px',
+                                                    overflow: 'visible',
+                                                    borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                    transition: 'border-color 0.1s',
+                                                    padding: 0,
+                                                    position: isPinned ? 'sticky' : 'relative',
+                                                    left: isPinned ? stickyLeft : undefined,
+                                                    zIndex: isPinned ? 20 : 10,
+                                                    background: '#F9FAFB',
+                                                    boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
+                                                }}
+                                            >
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    height: '100%',
+                                                    padding: '10px 12px',
+                                                    overflow: 'hidden',
+                                                    width: '100%'
+                                                }}>
+                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{colDef?.label || colId}</span>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleOrderColumnPin(colId);
+                                                        }}
+                                                        style={{
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            cursor: 'pointer',
+                                                            padding: '2px',
+                                                            marginLeft: '4px',
+                                                            opacity: isPinned ? 1 : 0.3,
+                                                            transition: 'opacity 0.2s',
+                                                            display: 'flex', alignItems: 'center'
+                                                        }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.opacity = isPinned ? '1' : '0.3'}
+                                                        title={isPinned ? "Unpin Column" : "Pin Column"}
+                                                    >
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned ? "var(--color-primary)" : "none"} stroke={isPinned ? "var(--color-primary)" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <line x1="12" y1="17" x2="12" y2="22"></line>
+                                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                <div
+                                                    onMouseDown={(e) => startResize(e, colId)}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        right: 0,
+                                                        top: 0,
+                                                        bottom: 0,
+                                                        width: '10px',
+                                                        cursor: 'col-resize',
+                                                        background: 'transparent',
+                                                        zIndex: 25,
+                                                        transform: 'translateX(50%)' // Center on the border line
+                                                    }}
+                                                    className="resize-handle"
+                                                />
+                                            </th>
+                                        );
+                                    })}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedOrders.map((order) => (
+                                    <tr key={order.id} className={selectedIds.has(order.id) ? 'selected' : ''} style={{ background: 'white' }}>
+                                        <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, background: selectedIds.has(order.id) ? 'var(--color-primary-light)' : 'white' }} className="sticky-col-first">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(order.id)}
+                                                onChange={() => toggleSelection(order.id)}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                        </td>
+                                        {allColumns.filter(col => visibleColumns.includes(col.id)).map(col => {
+                                            const colId = col.id;
+                                            const isPinned = (pinnedOrderColumns || []).includes(colId);
+                                            const stickyLeft = getStickyLeft(colId);
+
+                                            const cellStyle = {
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                maxWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                position: isPinned ? 'sticky' as const : undefined,
+                                                left: isPinned ? stickyLeft : undefined,
+                                                zIndex: isPinned ? 15 : 1,
+                                                background: selectedIds.has(order.id) ? 'var(--color-primary-light)' : 'white',
+                                                boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
+                                            };
+
+                                            switch (colId) {
+                                                case 'actions':
+                                                    return (
+                                                        <td key={colId} style={{ ...cellStyle, width: '100px', minWidth: '100px' }}>
+                                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                                <button onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }} className="icon-button" title="Print Receipt" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                    <Printer size={16} color="var(--color-text-secondary)" />
+                                                                </button>
+                                                                <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                    <Eye size={16} color="var(--color-text-secondary)" />
+                                                                </button>
+                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title="Edit Order" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                    <Edit size={16} color="var(--color-text-secondary)" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    );
+                                                case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
+                                                case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
+                                                case 'phone': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.phone}</td>;
+                                                case 'address': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.address || '-'}</td>;
+                                                case 'page': return <td key={colId} style={cellStyle}>{order.customer?.page || '-'}</td>;
+                                                case 'items':
+                                                    return (
+                                                        <td key={colId} style={cellStyle}>
+                                                            <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
+                                                            </div>
+                                                        </td>
+                                                    );
+                                                case 'total': return <td key={colId} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
+                                                case 'payBy': return <td key={colId} style={cellStyle}>{order.paymentMethod}</td>;
+                                                case 'received': return <td key={colId} style={{
+                                                    ...cellStyle,
+                                                    textAlign: 'right',
+                                                    color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settle') ? '#2563EB' : '#DC2626',
+                                                    fontWeight: 'bold'
+                                                }}>${(order.amountReceived ?? order.total).toFixed(2)}</td>;
+                                                case 'payStatus':
+                                                    return (
+                                                        <td key={colId} style={{
+                                                            width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                            minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                            overflow: 'visible',
+                                                            textOverflow: 'ellipsis',
+                                                            textAlign: 'left'
+                                                        }}>
+                                                            <PaymentStatusBadge
+                                                                status={order.paymentStatus || 'Paid'}
+                                                                disabledOptions={
+                                                                    order.shipping?.status !== 'Delivered'
+                                                                        ? (order.paymentMethod === 'COD' ? ['Paid', 'Settle', 'Unpaid'] : ['Paid', 'Settle'])
+                                                                        : (order.paymentMethod === 'COD' ? ['Paid', 'Unpaid', 'Cancel'] : ['Settle', 'Not Settle', 'Cancel'])
+                                                                }
+                                                                onChange={(newStatus) => {
+                                                                    const updates: any = { paymentStatus: newStatus };
+                                                                    if (newStatus === 'Paid' || newStatus === 'Settle') {
+                                                                        updates.amountReceived = order.total;
+                                                                        updates.settleDate = new Date().toISOString();
+                                                                    } else {
+                                                                        updates.amountReceived = 0;
+                                                                        updates.settleDate = null;
+                                                                    }
+                                                                    updateOrder(order.id, updates);
+                                                                }}
+                                                                readOnly={
+                                                                    (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settle') ||
+                                                                    (order.shipping?.status !== 'Delivered' && order.shipping?.status !== 'Pending')
+                                                                }
+                                                            />
+                                                        </td>
+                                                    );
+                                                case 'balance':
+                                                    return (
+                                                        <td key={colId} style={{ ...cellStyle, color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
+                                                            ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
+                                                        </td>
+                                                    );
+                                                case 'status':
+                                                    return (
+                                                        <td key={colId} style={{
+                                                            width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                            minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                            overflow: 'visible',
+                                                            textOverflow: 'ellipsis',
+                                                            textAlign: 'left'
+                                                        }}>
+                                                            <StatusBadge
+                                                                status={order.shipping?.status || 'Pending'}
+                                                                readOnly={order.shipping?.status === 'Delivered'}
+                                                                onChange={(newStatus: string) => {
+                                                                    updateOrderStatus(order.id, newStatus as any);
+                                                                    if (newStatus === 'Delivered') {
+                                                                        const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
+                                                                        updateOrder(order.id, { paymentStatus: newPaymentStatus });
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </td>
+                                                    );
+                                                case 'tracking':
+                                                    return (
+                                                        <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
+                                                            <input
+                                                                type="text"
+                                                                className="search-input"
+                                                                defaultValue={order.shipping?.trackingNumber || ''}
+                                                                placeholder="Add ID"
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '4px 8px',
+                                                                    fontSize: '13px',
+                                                                    fontFamily: 'monospace',
+                                                                    border: '1px solid transparent',
+                                                                    background: 'transparent'
+                                                                }}
+                                                                onFocus={(e) => {
+                                                                    e.target.style.background = 'white';
+                                                                    e.target.style.borderColor = 'var(--color-primary)';
+                                                                }}
+                                                                onBlur={(e) => {
+                                                                    e.target.style.background = 'transparent';
+                                                                    e.target.style.borderColor = 'transparent';
+                                                                    const val = e.target.value.trim();
+                                                                    const currentTracking = order.shipping?.trackingNumber || '';
+                                                                    if (val !== currentTracking) {
+                                                                        const updatedShipping = order.shipping
+                                                                            ? { ...order.shipping, trackingNumber: val }
+                                                                            : { company: '', trackingNumber: val, status: 'Pending' as const, cost: 0, staffName: '' };
+                                                                        updateOrder(order.id, { shipping: updatedShipping });
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') e.currentTarget.blur();
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            />
+                                                        </td>
+                                                    );
+                                                case 'shippingCo': return <td key={colId} style={cellStyle}>{order.shipping?.company || '-'}</td>;
+                                                case 'salesman': return <td key={colId} style={cellStyle}>{order.salesman || '-'}</td>;
+                                                case 'customerCare': return <td key={colId} style={cellStyle}>{order.customerCare || '-'}</td>;
+                                                case 'remark': return <td key={colId} style={cellStyle}>{order.remark || '-'}</td>;
+                                                case 'settleDate': return <td key={colId} style={cellStyle}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>;
+                                                default: return <td key={colId} style={cellStyle}>-</td>;
+                                            }
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td className="sticky-col-first" style={{ background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', position: 'sticky', left: 0, zIndex: 20 }}></td>
+                                    {visibleColumns.map((colId) => {
+                                        const isPinned = (pinnedOrderColumns || []).includes(colId);
+                                        const stickyLeft = getStickyLeft(colId);
+
+                                        const commonStyle = {
+                                            padding: '8px 12px',
+                                            fontSize: '12px',
+                                            fontWeight: 'bold',
+                                            borderTop: '2px solid var(--color-border)',
+                                            background: 'var(--color-bg)',
+                                            textAlign: 'left' as const,
+                                            position: isPinned ? 'sticky' as const : undefined,
+                                            left: isPinned ? stickyLeft : undefined,
+                                            zIndex: isPinned ? 20 : 1,
+                                            boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
+                                        };
+
+                                        if (colId === 'actions') {
+                                            return <td key={colId} style={{ ...commonStyle, minWidth: '100px' }}>Total: {stats.totalOrders}</td>;
+                                        }
+                                        if (colId === 'total') return <td key={colId} style={{ ...commonStyle, textAlign: 'right' }}>${stats.totalRevenue.toFixed(2)}</td>;
+                                        if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>${stats.totalReceived.toFixed(2)}</td>;
+                                        if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>${stats.totalOutstanding.toFixed(2)}</td>;
+
+                                        return <td key={colId} style={commonStyle}></td>;
+                                    })}
+                                </tr>
+                            </tfoot>
+                        </table>
+                        {filteredOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>}
+                    </div>
+
+                    {/* Bulk Actions Bar */}
+                    {selectedIds.size > 0 && (
+                        <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
+                            <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
+                            <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
+                            <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                <Trash2 size={18} /> Delete
+                            </button>
+                        </div>
+                    )}
+                </>
+            ) : (
+                <POSInterface
+                    orderToEdit={editingOrder}
+                    onCancelEdit={() => {
+                        setEditingOrder(null);
+                        setActiveTab('list');
+                    }}
+                />
+            )
+            }
+
+            {
+                activeTab === 'list' && filteredOrders.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length)} to {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} entries
+                        </div>
+
+
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                <span>Rows per page:</span>
+                                <select
+                                    value={itemsPerPage}
+                                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                                    style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--color-surface)',
+                                        color: 'var(--color-text-main)',
+                                        fontSize: '13px',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                    <option value={200}>200</option>
+                                    <option value={300}>300</option>
+                                    <option value={500}>500</option>
+                                    <option value={1000}>1000</option>
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                        background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredOrders.length / itemsPerPage)}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredOrders.length / itemsPerPage), p + 1))}
+                                    disabled={currentPage === Math.ceil(filteredOrders.length / itemsPerPage)}
+                                    style={{
+                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                        background: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* View Order Modal */}
+            {
+                isViewModalOpen && selectedOrder && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+                        <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Order Details</h2>
+                                <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
+                                <div>
+                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer</h4>
+                                    <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{selectedOrder.customer?.name}</div>
+                                    <div style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{selectedOrder.customer?.phone}</div>
+                                    <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>{selectedOrder.customer?.address}</div>
+                                </div>
+                                <div>
+                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Info</h4>
+                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Date: {new Date(selectedOrder.date).toLocaleString()}</div>
+                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Status: {getStatusBadge(selectedOrder.shipping?.status || 'Pending')}</div>
+                                    <div style={{ fontSize: '14px' }}>Platform: {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
+                                </div>
+                            </div>
+
+                            <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
+                                <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>Items</h4>
+                                {selectedOrder.items.map((item, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+                                        <span>{item.name} <span style={{ color: 'var(--color-text-secondary)' }}>x{item.quantity}</span></span>
+                                        <span>${(item.price * item.quantity).toFixed(2)}</span>
+                                    </div>
+                                ))}
+                                <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '12px', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}>
+                                    <span>Total</span>
+                                    <span>${selectedOrder.total.toFixed(2)}</span>
+                                </div>
+                            </div>
+
+                            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', display: 'grid', gap: '8px' }}>
+                                <div><strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}</div>
+                                <div><strong>Salesman:</strong> {selectedOrder.salesman}</div>
+                                <div><strong>Remark:</strong> {selectedOrder.remark || '-'}</div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Receipt Modal */}
+            {
+                receiptSale && (
+                    <ReceiptModal
+                        sale={receiptSale}
+                        onClose={() => setReceiptSale(null)}
+                    />
+                )
+            }
+        </div >
+    );
+};
+
+export default Orders;
