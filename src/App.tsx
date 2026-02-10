@@ -26,7 +26,11 @@ const LoadingFallback = () => (
 );
 
 const ProtectedApp = () => {
-  const { currentUser } = useStore();
+  const { currentUser, isLoading } = useStore();
+
+  if (isLoading) {
+    return <LoadingFallback />;
+  }
 
   if (!currentUser) {
     return <Login />;

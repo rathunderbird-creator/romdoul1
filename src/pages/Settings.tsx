@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { Save, Store, Globe, Bell, Shield, Plus, Trash2, Tag, X, User as UserIcon, Moon, Sun, Database } from 'lucide-react';
+import { Save, Store, Globe, Bell, Shield, Moon, Sun, Database } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useTheme } from '../context/ThemeContext';
-import type { Customer } from '../types';
+
 
 
 
 const Settings: React.FC = () => {
-    const { categories, addCategory, removeCategory, customers, addCustomer, deleteCustomer } = useStore();
+    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme, isDarkMode, toggleTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -44,17 +44,10 @@ const Settings: React.FC = () => {
     }, [setHeaderContent, isDarkMode]); // Add dependencies if needed, handleSave might need to be wrapped or stable.
 
     // Local state for settings form (mock implementation)
-    const [storeName, setStoreName] = useState('JBL Store Main');
     const [currency, setCurrency] = useState('USD ($)');
     const [taxRate, setTaxRate] = useState('8.5');
 
-    // Category Management
-    const [newCategory, setNewCategory] = useState('');
-    const [showAddCategory, setShowAddCategory] = useState(false);
 
-    // Customer Management
-    const [showAddCustomer, setShowAddCustomer] = useState(false);
-    const [newCustomer, setNewCustomer] = useState<Partial<Customer>>({ name: '', phone: '', platform: 'Walk-in' });
 
 
 
@@ -65,42 +58,7 @@ const Settings: React.FC = () => {
 
 
 
-    const handleAddCategory = () => {
-        if (!newCategory.trim()) return;
-        if (categories.includes(newCategory.trim())) {
-            showToast('Category already exists', 'error');
-            return;
-        }
-        addCategory(newCategory.trim());
-        setNewCategory('');
-        setShowAddCategory(false);
-        showToast('Category added', 'success');
-    };
 
-    const handleDeleteCategory = (category: string) => {
-        if (confirm(`Delete category "${category}"? Products in this category will need reassignment.`)) {
-            removeCategory(category);
-            showToast('Category removed', 'info');
-        }
-    };
-
-    const handleAddCustomer = () => {
-        if (!newCustomer.name || !newCustomer.phone) {
-            showToast('Name and Phone are required', 'error');
-            return;
-        }
-        addCustomer(newCustomer as Omit<Customer, 'id'>);
-        setNewCustomer({ name: '', phone: '', platform: 'Walk-in' });
-        setShowAddCustomer(false);
-        showToast('Customer added successfully', 'success');
-    };
-
-    const handleDeleteCustomer = (id: string) => {
-        if (confirm('Delete this customer?')) {
-            deleteCustomer(id);
-            showToast('Customer deleted', 'info');
-        }
-    };
 
     const handleMigration = async () => {
         if (!confirm('This will upload all local data to Supabase. Proceed?')) return;
@@ -227,7 +185,18 @@ const Settings: React.FC = () => {
                             <input
                                 type="text"
                                 value={storeName}
-                                onChange={(e) => setStoreName(e.target.value)}
+                                onChange={(e) => updateStoreProfile({ storeName: e.target.value })}
+                                className="search-input"
+                                style={{ width: '100%', padding: '12px' }}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Address</label>
+                            <input
+                                type="text"
+                                value={storeAddress}
+                                onChange={(e) => updateStoreAddress(e.target.value)}
+                                placeholder="e.g. 123 Speaker Ave, Audio City"
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             />
@@ -237,7 +206,8 @@ const Settings: React.FC = () => {
                                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Email Address</label>
                                 <input
                                     type="email"
-                                    defaultValue="contact@jblstore.com"
+                                    value={email}
+                                    onChange={(e) => updateStoreProfile({ email: e.target.value })}
                                     className="search-input"
                                     style={{ width: '100%', padding: '12px' }}
                                 />
@@ -246,7 +216,8 @@ const Settings: React.FC = () => {
                                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Phone Number</label>
                                 <input
                                     type="tel"
-                                    defaultValue="+1 (555) 123-4567"
+                                    value={phone}
+                                    onChange={(e) => updateStoreProfile({ phone: e.target.value })}
                                     className="search-input"
                                     style={{ width: '100%', padding: '12px' }}
                                 />
@@ -274,201 +245,7 @@ const Settings: React.FC = () => {
                     </button>
                 </div>
 
-                {/* Category Management Section */}
-                <div className="glass-panel" style={{ padding: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <Tag className="text-primary" size={24} />
-                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Product Categories</h2>
-                        </div>
-                        <button
-                            onClick={() => setShowAddCategory(!showAddCategory)}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                background: 'transparent', border: '1px solid var(--color-border)',
-                                padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', color: 'var(--color-text-main)'
-                            }}
-                        >
-                            <Plus size={16} />
-                            Add Category
-                        </button>
-                    </div>
 
-                    {showAddCategory && (
-                        <div style={{
-                            marginBottom: '12px', padding: '16px',
-                            background: 'var(--color-bg)', borderRadius: '8px',
-                            border: '1px solid var(--color-border)',
-                            display: 'flex', gap: '12px', alignItems: 'end'
-                        }}>
-                            <div style={{ flex: 1 }}>
-                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Category Name</label>
-                                <input
-                                    type="text"
-                                    value={newCategory}
-                                    onChange={(e) => setNewCategory(e.target.value)}
-                                    className="search-input"
-                                    style={{ width: '100%', padding: '8px' }}
-                                    placeholder="e.g. Headphones"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                                />
-                            </div>
-                            <button
-                                onClick={handleAddCategory}
-                                className="primary-button"
-                                style={{ padding: '8px 16px', height: '35px' }}
-                            >
-                                Add
-                            </button>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {categories.map(cat => (
-                            <div key={cat} style={{
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                padding: '8px 12px', background: 'var(--color-surface)',
-                                borderRadius: '20px', border: '1px solid var(--color-border)'
-                            }}>
-                                <span style={{ fontWeight: 500 }}>{cat}</span>
-                                <button
-                                    onClick={() => handleDeleteCategory(cat)}
-                                    style={{
-                                        background: 'transparent', border: 'none',
-                                        color: 'var(--color-text-muted)', cursor: 'pointer',
-                                        padding: '4px', display: 'flex'
-                                    }}
-                                    className="hover-danger"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Customer Management Section */}
-                <div className="glass-panel" style={{ padding: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <UserIcon className="text-primary" size={24} />
-                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Customers</h2>
-                        </div>
-                        <button
-                            onClick={() => setShowAddCustomer(!showAddCustomer)}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                background: 'transparent', border: '1px solid var(--color-border)',
-                                padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', color: 'var(--color-text-main)'
-                            }}
-                        >
-                            <Plus size={16} />
-                            Add Customer
-                        </button>
-                    </div>
-
-                    {showAddCustomer && (
-                        <div style={{
-                            marginBottom: '12px', padding: '16px',
-                            background: 'var(--color-bg)', borderRadius: '8px',
-                            border: '1px solid var(--color-border)',
-                            display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '12px', alignItems: 'end'
-                        }}>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Name</label>
-                                <input
-                                    type="text"
-                                    value={newCustomer.name}
-                                    onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
-                                    className="search-input"
-                                    style={{ width: '100%', padding: '8px' }}
-                                    placeholder="Customer Name"
-                                />
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Phone</label>
-                                <input
-                                    type="text"
-                                    value={newCustomer.phone}
-                                    onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
-                                    className="search-input"
-                                    style={{ width: '100%', padding: '8px' }}
-                                    placeholder="012 345 678"
-                                />
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Platform</label>
-                                <select
-                                    value={newCustomer.platform}
-                                    onChange={(e) => setNewCustomer({ ...newCustomer, platform: e.target.value as any })}
-                                    className="search-input"
-                                    style={{ width: '100%', padding: '8px' }}
-                                >
-                                    <option value="Walk-in">Walk-in</option>
-                                    <option value="Facebook">Facebook</option>
-                                    <option value="TikTok">TikTok</option>
-                                    <option value="Telegram">Telegram</option>
-                                </select>
-                            </div>
-                            <button
-                                onClick={handleAddCustomer}
-                                className="primary-button"
-                                style={{ padding: '8px 16px', height: '35px' }}
-                            >
-                                Add
-                            </button>
-                        </div>
-                    )}
-
-                    <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {customers.map(customer => (
-                            <div key={customer.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '12px',
-                                background: 'var(--color-bg)',
-                                borderRadius: '8px'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        background: '#E0F2FE',
-                                        color: '#0284C7',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontWeight: 'bold',
-                                        fontSize: '14px'
-                                    }}>
-                                        {customer.name.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <div style={{ fontWeight: '500' }}>{customer.name}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{customer.phone} • {customer.platform}</div>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => handleDeleteCustomer(customer.id)}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: 'var(--color-error, #EF4444)',
-                                        cursor: 'pointer',
-                                        padding: '8px'
-                                    }}
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        ))}
-                        {customers.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>No customers found.</div>
-                        )}
-                    </div>
-                </div>
 
 
 

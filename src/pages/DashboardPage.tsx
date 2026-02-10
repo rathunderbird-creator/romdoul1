@@ -180,8 +180,18 @@ const Dashboard: React.FC = () => {
     return (
         <div style={{ paddingBottom: '40px' }}>
             {/* Filters */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
-                <DateRangePicker value={dateRange} onChange={setDateRange} />
+            <div className="glass-panel" style={{
+                marginBottom: '20px',
+                padding: '16px',
+                display: 'flex',
+                justifyContent: isMobile ? 'center' : 'flex-end',
+                alignItems: 'center',
+                position: 'relative',
+                zIndex: 50
+            }}>
+                <div style={{ width: isMobile ? '100%' : 'auto' }}>
+                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+                </div>
             </div>
 
             {/* Stats Row */}

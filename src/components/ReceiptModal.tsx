@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Printer } from 'lucide-react';
 import type { Sale } from '../types';
+import { useStore } from '../context/StoreContext';
 
 interface ReceiptModalProps {
     sale: Sale;
@@ -8,6 +9,7 @@ interface ReceiptModalProps {
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
+    const { storeAddress, storeName, email, phone } = useStore();
     const handlePrint = () => {
         window.print();
     };
@@ -54,9 +56,11 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
 
                 <div id="receipt-content" style={{ padding: '32px', overflowY: 'auto' }}>
                     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0' }}>JBL STORE</h1>
+                        <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0' }}>{storeName || 'JBL STORE'}</h1>
                         <div style={{ fontSize: '12px', color: '#666' }}>Premium Audio Experience</div>
-                        <div style={{ fontSize: '12px', color: '#666' }}>123 Speaker Ave, Audio City</div>
+                        {storeAddress && <div style={{ fontSize: '12px', color: '#666' }}>{storeAddress}</div>}
+                        {phone && <div style={{ fontSize: '12px', color: '#666' }}>{phone}</div>}
+                        {email && <div style={{ fontSize: '12px', color: '#666' }}>{email}</div>}
                         <div style={{ marginTop: '16px', borderTop: '1px dashed #ccc', borderBottom: '1px dashed #ccc', padding: '8px 0' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                                 <span>Date:</span>
@@ -70,6 +74,26 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                                 <span>Order No:</span>
                                 <span>#{sale.id.slice(-6)}</span>
                             </div>
+                            {sale.customer && (
+                                <>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                        <span>Customer:</span>
+                                        <span>{sale.customer.name}</span>
+                                    </div>
+                                    {sale.customer.phone && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                            <span>Phone:</span>
+                                            <span>{sale.customer.phone}</span>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                            {sale.salesman && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                    <span>Salesman:</span>
+                                    <span>{sale.salesman}</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -158,7 +182,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
           }
         }
       `}</style>
-        </div>
+        </div >
     );
 };
 

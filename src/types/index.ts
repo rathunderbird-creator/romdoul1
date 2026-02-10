@@ -74,6 +74,8 @@ export interface StoreContextType {
     updateProduct: (id: string, product: Partial<Product>) => void;
     deleteProduct: (id: string) => void;
     deleteProducts: (ids: string[]) => void;
+    updateOrder: (id: string, updates: Partial<Sale>) => void;
+    deleteOrders: (ids: string[]) => void;
 
     // Customer Management
     addCustomer: (customer: Omit<Customer, 'id'>) => void;
@@ -103,42 +105,40 @@ export interface StoreContextType {
 
     // Payment Methods
     paymentMethods: string[];
-    addPaymentMethod: (method: string) => void;
-    removePaymentMethod: (method: string) => void;
+    addPaymentMethod: (name: string) => void;
+    removePaymentMethod: (name: string) => void;
 
-    updateOrder: (id: string, order: Partial<Sale>) => void;
-    deleteOrders: (ids: string[]) => void;
     editingOrder: Sale | null;
     setEditingOrder: (order: Sale | null) => void;
 
-    // Pinned Products
+    // Pinned
     pinnedProductIds: string[];
     toggleProductPin: (productId: string) => void;
-
-    // Pinned Order Columns
     pinnedOrderColumns: string[];
     toggleOrderColumnPin: (columnId: string) => void;
 
-    importProducts: (products: Omit<Product, 'id'>[]) => Promise<void>;
+    importProducts: (products: any[]) => Promise<void>;
     importOrders: (orders: any[]) => Promise<void>;
     restockOrder: (orderId: string) => Promise<void>;
-
-    // User & Role Management
-    users: User[];
-    roles: Role[];
-    addUser: (user: Omit<User, 'id'>) => Promise<void>;
-    updateUser: (id: string, user: Partial<User>) => Promise<void>;
-    deleteUser: (id: string) => Promise<void>;
-    addRole: (role: Omit<Role, 'id'>) => Promise<void>;
-    updateRole: (id: string, role: Partial<Role>) => Promise<void>;
-    deleteRole: (id: string) => Promise<void>;
 
     // Authentication
     currentUser: User | null;
     login: (pin: string, userId?: string) => Promise<boolean>;
     logout: () => void;
-    hasPermission: (permission: Permission) => boolean;
+    hasPermission: (permission: import('./index').Permission) => boolean;
+
+    // Loading State
+    isLoading: boolean;
+
+    // Store Config
+    storeAddress: string;
+    storeName: string;
+    email: string;
+    phone: string;
+    updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string }) => void;
 }
+
 
 export type Permission =
     | 'view_dashboard'

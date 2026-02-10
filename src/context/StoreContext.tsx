@@ -14,6 +14,10 @@ interface ConfigState {
     pinnedOrderColumns?: string[]; // Added pinned order columns
     users?: User[];
     roles?: Role[];
+    storeAddress?: string;
+    storeName?: string;
+    email?: string;
+    phone?: string;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -25,6 +29,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [products, setProducts] = useState<Product[]>([]);
     const [sales, setSales] = useState<Sale[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [config, setConfig] = useState<ConfigState>({
         shippingCompanies: ['J&T', 'VET', 'JS Express'],
         salesmen: ['Sokheng', 'Thida'],
@@ -62,7 +67,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         pinnedProducts: [],
         pinnedOrderColumns: [],
         users: [],
-        roles: []
+        roles: [],
+        storeAddress: '123 Speaker Ave, Audio City',
+        storeName: 'JBL Store Main',
+        email: 'contact@jblstore.com',
+        phone: '+1 (555) 123-4567'
     });
 
 
@@ -269,13 +278,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 description: 'Sales and order viewing',
                                 permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
                             }
-                        ]
+                        ],
+                        storeAddress: '123 Speaker Ave, Audio City',
+                        storeName: 'JBL Store Main',
+                        email: 'contact@jblstore.com',
+                        phone: '+1 (555) 123-4567'
                     };
                     setConfig(defaultConfig);
                     await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
                 }
             } catch (error) {
                 console.error("Error fetching data:", error);
+            } finally {
+                setIsLoading(false);
             }
         };
         fetchData();
@@ -877,6 +892,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, roles: newRoles });
     };
 
+    const updateStoreAddress = async (address: string) => {
+        updateConfig({ ...config, storeAddress: address });
+    };
+
+    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string }) => {
+        updateConfig({ ...config, ...data });
+    };
+
     // Authentication
     const [currentUser, setCurrentUser] = useState<User | null>(() => {
         const saved = localStorage.getItem('currentUser');
@@ -984,7 +1007,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             currentUser,
             login,
             logout,
-            hasPermission
+            hasPermission,
+            isLoading,
+            storeAddress: config.storeAddress || '',
+            storeName: config.storeName || '',
+            email: config.email || '',
+            phone: config.phone || '',
+            updateStoreAddress,
+            updateStoreProfile
         }}>
             {children}
         </StoreContext.Provider>

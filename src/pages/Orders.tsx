@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload, Copy } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -411,6 +411,27 @@ const Orders: React.FC = () => {
         }
     };
 
+    const handleCopyOrder = (order: Sale) => {
+        const lines = [
+            `Order ID: #${order.id.slice(-6)}`,
+            `Date: ${new Date(order.date).toLocaleDateString()}`,
+            `Customer: ${order.customer?.name || 'N/A'}`,
+            `Phone: ${order.customer?.phone || 'N/A'}`,
+            `Address: ${order.customer?.address || 'N/A'}`,
+            `Page: ${order.customer?.page || 'N/A'}`,
+            `Salesman: ${order.salesman || 'N/A'}`,
+            `Shipping: ${order.shipping?.company || 'N/A'}`,
+            `Items:`,
+            ...order.items.map(i => `- ${i.name} x${i.quantity} ($${i.price})`),
+            `Total: $${order.total.toFixed(2)}`,
+            `Remark: ${order.remark || ''}`
+        ];
+
+        navigator.clipboard.writeText(lines.join('\n'))
+            .then(() => showToast('Order details copied to clipboard', 'success'))
+            .catch(() => showToast('Failed to copy', 'error'));
+    };
+
     const hasFilters = searchTerm !== '' || statusFilter !== 'All' || salesmanFilter !== 'All' || payStatusFilter.length > 0 || dateRange.start !== '' || dateRange.end !== '';
 
     return (
@@ -810,6 +831,9 @@ const Orders: React.FC = () => {
                                                                 <div style={{ display: 'flex', gap: '8px' }}>
                                                                     <button onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }} className="icon-button" title="Print Receipt" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                         <Printer size={16} color="var(--color-text-secondary)" />
+                                                                    </button>
+                                                                    <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                        <Copy size={16} color="var(--color-text-secondary)" />
                                                                     </button>
                                                                     <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                         <Eye size={16} color="var(--color-text-secondary)" />

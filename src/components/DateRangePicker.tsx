@@ -40,7 +40,12 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         }
     }, [isOpen]);
 
-    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+    const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
     const presets: { label: Preset; getValue: () => { start: Date | null; end: Date | null } }[] = [
         { label: 'Lifetime', getValue: () => ({ start: null, end: null }) },
@@ -194,19 +199,66 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         );
     };
 
+    const [showTwoMonths, setShowTwoMonths] = useState(false);
+
+    useEffect(() => {
+        const checkWidth = () => {
+            setShowTwoMonths(window.innerWidth >= 1024);
+        };
+        checkWidth();
+        window.addEventListener('resize', checkWidth);
+        return () => window.removeEventListener('resize', checkWidth);
+    }, []);
+
+    const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+
+    const updatePosition = () => {
+        if (pickerRef.current) {
+            const rect = pickerRef.current.getBoundingClientRect();
+            // Estimate width based on screen size (matching showTwoMonths logic)
+            // Mobile (handled by CSS fixed) vs Desktop Single vs Desktop Double
+            const isDouble = window.innerWidth >= 1024 && !isMobile;
+            const estimatedWidth = isDouble ? 760 : 480;
+
+            // Check if it would go off-screen to the right
+            const wouldOverflow = rect.left + estimatedWidth > window.innerWidth;
+
+            setCoords({
+                top: rect.bottom + window.scrollY + 8,
+                left: wouldOverflow ? (rect.right - estimatedWidth) + window.scrollX : rect.left + window.scrollX,
+                width: rect.width
+            });
+        }
+    };
+
+    useEffect(() => {
+        if (isOpen) {
+            updatePosition();
+            window.addEventListener('resize', updatePosition);
+            window.addEventListener('scroll', updatePosition, true);
+        }
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [isOpen]);
+
     const pickerContent = (
         <div
             style={isMobile ? {
                 position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                backgroundColor: '#ffffff', zIndex: 9999, // High z-index & explicit background color
+                backgroundColor: '#ffffff', zIndex: 9999,
                 display: 'flex', flexDirection: 'column', padding: '16px'
             } : {
-                position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                position: 'fixed',
+                top: coords.top,
+                left: coords.left,
                 backgroundColor: '#ffffff', border: '1px solid var(--color-border)',
                 borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                zIndex: 100, display: 'flex', overflow: 'hidden'
+                zIndex: 9999, display: 'flex', overflow: 'hidden',
+                maxWidth: '90vw'
             }}
-            onMouseDown={(e) => e.stopPropagation()} // Prevent closing when clicking inside
+            onMouseDown={(e) => e.stopPropagation()}
         >
 
             {/* Mobile Header */}
@@ -264,7 +316,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                 <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', padding: '16px', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }}>
                         {renderMonth(0)}
-                        {!isMobile && (
+                        {!isMobile && showTwoMonths && (
                             <>
                                 <div style={{ width: '1px', background: 'var(--color-border)' }}></div>
                                 {renderMonth(1)}
@@ -322,7 +374,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                 ) : null}
             </button>
 
-            {isOpen && (isMobile ? createPortal(pickerContent, document.body) : pickerContent)}
+            {isOpen && createPortal(pickerContent, document.body)}
         </div>
     );
 };
