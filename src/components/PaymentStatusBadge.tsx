@@ -16,9 +16,10 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         switch (s) {
             case 'Paid': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
             case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
-            case 'Settle': return { bg: '#E0E7FF', color: '#4F46E5', border: '#A5B4FC' }; // Indigo
+            case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5', border: '#A5B4FC' }; // Indigo
             case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
             case 'Cancel': return { bg: '#FEF2F2', color: '#991B1B', border: '#FECACA' }; // Dark Red
+            case 'Pending': return { bg: '#FEF3C7', color: '#D97706', border: '#FCD34D' }; // Yellow/Orange
             default: return { bg: '#F3F4F6', color: '#4B5563', border: '#D1D5DB' };
         }
     };
@@ -44,7 +45,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         width: '100%'
     };
 
-    const options = ['Paid', 'Unpaid', 'Settle', 'Not Settle', 'Cancel'];
+    const options = ['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'];
 
     // Close dropdown when clicking outside
     useEffect(() => {

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useMobile } from '../hooks/useMobile';
 
 interface DateRangePickerProps {
     value: { start: string; end: string };
@@ -36,8 +38,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
             if (!value.start && !value.end) setActivePreset('Lifetime');
             else setActivePreset('Custom Range');
         }
-    }, [isOpen]); // Only sync on open to avoid clearing work in progress? Or should we sync always? 
-    // Actually, simple sync on open is safer.
+    }, [isOpen]);
 
     const formatDate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -139,6 +140,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         return days;
     };
 
+    const isMobile = useMobile();
+
     const renderMonth = (offset: number) => {
         const year = viewDate.getFullYear();
         const month = viewDate.getMonth() + offset;
@@ -149,21 +152,17 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         const blanks = Array(firstDayOfWeek).fill(null);
 
         return (
-            <div style={{ width: '280px', padding: '0 10px' }}>
+            <div style={{ width: isMobile ? '100%' : '280px', padding: '0 10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    {offset === 0 ? (
-                        <button onClick={() => setViewDate(new Date(year, month - 1, 1))} className="icon-button">
-                            <ChevronLeft size={16} />
-                        </button>
-                    ) : <div />}
+                    <button onClick={() => setViewDate(new Date(year, month - 1, 1))} className="icon-button">
+                        <ChevronLeft size={16} />
+                    </button>
                     <span style={{ fontWeight: 600 }}>
                         {currentMonthDate.toLocaleString('default', { month: 'short', year: 'numeric' })}
                     </span>
-                    {offset === 1 ? (
-                        <button onClick={() => setViewDate(new Date(year, month + 1, 1))} className="icon-button">
-                            <ChevronRight size={16} />
-                        </button>
-                    ) : <div />}
+                    <button onClick={() => setViewDate(new Date(year, month + 1, 1))} className="icon-button">
+                        <ChevronRight size={16} />
+                    </button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', fontSize: '12px', textAlign: 'center', marginBottom: '4px', color: 'var(--color-text-secondary)' }}>
                     {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
@@ -184,7 +183,6 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                                     background: isSelected ? '#10B981' : isInRange ? '#D1FAE5' : 'transparent',
                                     color: isSelected ? 'white' : 'var(--color-text-main)',
                                     fontWeight: isToday ? 600 : 400,
-                                    // border: isToday && !isSelected ? '1px solid #10B981' : 'none'
                                 }}
                             >
                                 {d.getDate()}
@@ -195,6 +193,114 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
             </div>
         );
     };
+
+    const pickerContent = (
+        <div
+            style={isMobile ? {
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: '#ffffff', zIndex: 9999, // High z-index & explicit background color
+                display: 'flex', flexDirection: 'column', padding: '16px'
+            } : {
+                position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                backgroundColor: '#ffffff', border: '1px solid var(--color-border)',
+                borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                zIndex: 100, display: 'flex', overflow: 'hidden'
+            }}
+            onMouseDown={(e) => e.stopPropagation()} // Prevent closing when clicking inside
+        >
+
+            {/* Mobile Header */}
+            {isMobile && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Select Dates</h3>
+                    <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
+                </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
+                {/* Sidebar / Presets */}
+                <div style={{
+                    width: isMobile ? '100%' : '140px',
+                    borderRight: isMobile ? 'none' : '1px solid var(--color-border)',
+                    padding: isMobile ? '0 0 16px 0' : '8px 0',
+                    background: isMobile ? 'transparent' : '#f9fafb',
+                    display: isMobile ? 'grid' : 'block',
+                    gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : '1fr',
+                    gap: isMobile ? '8px' : '0',
+                    borderBottom: isMobile ? '1px solid var(--color-border)' : 'none',
+                    marginBottom: isMobile ? '16px' : '0'
+                }}>
+                    {presets.map(preset => (
+                        <button
+                            key={preset.label}
+                            onClick={() => handlePresetClick(preset)}
+                            style={{
+                                display: 'block', width: '100%', textAlign: isMobile ? 'center' : 'left',
+                                padding: isMobile ? '8px' : '8px 16px',
+                                border: isMobile ? '1px solid var(--color-border)' : 'none',
+                                borderRadius: isMobile ? '8px' : '0',
+                                background: activePreset === preset.label ? '#10B981' : 'transparent',
+                                color: activePreset === preset.label ? 'white' : 'var(--color-text-main)',
+                                cursor: 'pointer', fontSize: '12px'
+                            }}
+                        >
+                            {preset.label}
+                        </button>
+                    ))}
+                    <button
+                        onClick={() => setActivePreset('Custom Range')}
+                        style={{
+                            display: 'block', width: '100%', textAlign: 'left', padding: '8px 16px',
+                            border: 'none', background: activePreset === 'Custom Range' ? '#10B981' : 'transparent',
+                            color: activePreset === 'Custom Range' ? 'white' : 'var(--color-text-main)',
+                            cursor: 'pointer', fontSize: '12px'
+                        }}
+                    >
+                        Custom Range
+                    </button>
+                </div>
+
+                {/* Main Content */}
+                <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', padding: '16px', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }}>
+                        {renderMonth(0)}
+                        {!isMobile && (
+                            <>
+                                <div style={{ width: '1px', background: 'var(--color-border)' }}></div>
+                                {renderMonth(1)}
+                            </>
+                        )}
+                    </div>
+
+                    <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                            {startDate ? startDate.toLocaleDateString() : 'Start'} - {endDate ? endDate.toLocaleDateString() : 'End'}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                onClick={() => setIsOpen(false)}
+                                style={{
+                                    padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                    background: 'transparent', cursor: 'pointer', fontSize: '13px'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleApply}
+                                style={{
+                                    padding: '8px 24px', borderRadius: '6px', border: 'none',
+                                    background: '#10B981', color: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: 500
+                                }}
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 
     return (
         <div style={{ position: 'relative' }} ref={pickerRef}>
@@ -216,78 +322,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                 ) : null}
             </button>
 
-            {isOpen && (
-                <div style={{
-                    position: 'absolute', top: '100%', right: 0, marginTop: '8px',
-                    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-                    borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    zIndex: 100, display: 'flex', overflow: 'hidden'
-                }}>
-                    {/* Sidebar */}
-                    <div style={{ width: '140px', borderRight: '1px solid var(--color-border)', padding: '8px 0', background: 'var(--color-bg-subtle)' }}>
-                        {presets.map(preset => (
-                            <button
-                                key={preset.label}
-                                onClick={() => handlePresetClick(preset)}
-                                style={{
-                                    display: 'block', width: '100%', textAlign: 'left', padding: '8px 16px',
-                                    border: 'none', background: activePreset === preset.label ? '#10B981' : 'transparent',
-                                    color: activePreset === preset.label ? 'white' : 'var(--color-text-main)',
-                                    cursor: 'pointer', fontSize: '13px'
-                                }}
-                            >
-                                {preset.label}
-                            </button>
-                        ))}
-                        <button
-                            onClick={() => setActivePreset('Custom Range')}
-                            style={{
-                                display: 'block', width: '100%', textAlign: 'left', padding: '8px 16px',
-                                border: 'none', background: activePreset === 'Custom Range' ? '#10B981' : 'transparent',
-                                color: activePreset === 'Custom Range' ? 'white' : 'var(--color-text-main)',
-                                cursor: 'pointer', fontSize: '13px'
-                            }}
-                        >
-                            Custom Range
-                        </button>
-                    </div>
-
-                    {/* Main Content */}
-                    <div>
-                        <div style={{ display: 'flex', padding: '16px' }}>
-                            {renderMonth(0)}
-                            <div style={{ width: '1px', background: 'var(--color-border)', margin: '0 10px' }}></div>
-                            {renderMonth(1)}
-                        </div>
-
-                        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                {startDate ? startDate.toLocaleDateString() : 'YYYY-MM-DD'} - {endDate ? endDate.toLocaleDateString() : 'YYYY-MM-DD'}
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
-                                    onClick={() => setIsOpen(false)}
-                                    style={{
-                                        padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                        background: 'transparent', cursor: 'pointer', fontSize: '13px'
-                                    }}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleApply}
-                                    style={{
-                                        padding: '6px 16px', borderRadius: '6px', border: 'none',
-                                        background: '#10B981', color: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: 500
-                                    }}
-                                >
-                                    Apply
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {isOpen && (isMobile ? createPortal(pickerContent, document.body) : pickerContent)}
         </div>
     );
 };

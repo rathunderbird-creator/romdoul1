@@ -1,19 +1,50 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import { StoreProvider } from './context/StoreContext';
+import { StoreProvider, useStore } from './context/StoreContext';
 import Dashboard from './pages/DashboardPage';
-import POS from './pages/POS';
+
 import Inventory from './pages/Inventory';
 import Settings from './pages/Settings';
 import Orders from './pages/Orders';
 import PaymentTracking from './pages/PaymentTracking';
 import DeliveryTracking from './pages/DeliveryTracking';
-import Report from './pages/Report';
+import UserManagement from './pages/UserManagement';
+import Login from './pages/Login';
 
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
-
 import { ThemeProvider } from './context/ThemeContext';
+
+import ProtectedRoute from './components/ProtectedRoute';
+
+const ProtectedApp = () => {
+  const { currentUser } = useStore();
+
+  if (!currentUser) {
+    return <Login />;
+  }
+
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
+        {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
+        <Route path="/inventory" element={<ProtectedRoute requiredPermission="manage_inventory"><Inventory /></ProtectedRoute>} />
+        <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
+
+        {/* These pages seem to be work in progress or not fully guarded in Sidebar yet, 
+            but better protect them or hide them if not used. 
+            For now, I'll protect them with 'manage_orders' as they relate to order tracking. */}
+        <Route path="/payment-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><PaymentTracking /></ProtectedRoute>} />
+        <Route path="/delivery-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
+
+        <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><Settings /></ProtectedRoute>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  );
+};
 
 function App() {
   return (
@@ -22,18 +53,7 @@ function App() {
         <ToastProvider>
           <HeaderProvider>
             <Router>
-              <Layout>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/pos" element={<POS />} />
-                  <Route path="/inventory" element={<Inventory />} />
-                  <Route path="/orders" element={<Orders />} />
-                  <Route path="/payment-tracking" element={<PaymentTracking />} />
-                  <Route path="/delivery-tracking" element={<DeliveryTracking />} />
-                  <Route path="/report" element={<Report />} />
-                  <Route path="/settings" element={<Settings />} />
-                </Routes>
-              </Layout>
+              <ProtectedApp />
             </Router>
           </HeaderProvider>
         </ToastProvider>

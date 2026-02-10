@@ -143,7 +143,7 @@ button {
   /* Bold headers */
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
   user-select: none;
   font-size: 12px;
   box-shadow: 0 1px 0 #E5E7EB;
@@ -165,6 +165,25 @@ button {
 .spreadsheet-table tbody tr.selected {
   background-color: #EFF6FF !important;
   /* Light blue selection */
+}
+
+.spreadsheet-table tbody tr.paid-settled-row {
+  background-color: #EFF6FF;
+}
+
+/* Ensure sticky columns in paid/settled rows also get the color */
+.spreadsheet-table tbody tr.paid-settled-row td.sticky-col-first,
+.spreadsheet-table tbody tr.paid-settled-row td.sticky-col-second {
+  background-color: #EFF6FF;
+}
+
+.spreadsheet-table tbody tr.delivered-row {
+  background-color: #FEFCE8;
+}
+
+.spreadsheet-table tbody tr.delivered-row td.sticky-col-first,
+.spreadsheet-table tbody tr.delivered-row td.sticky-col-second {
+  background-color: #FEFCE8;
 }
 
 /* Footer */
@@ -276,7 +295,7 @@ div:has(> svg) .search-input {
 /* Ensure Headers stay on top of everything */
 .spreadsheet-table thead th.sticky-col-first,
 .spreadsheet-table thead th.sticky-col-second {
-  z-index: 30;
+  z-index: 40;
   /* Higher than body sticky cells (20) */
   background-color: #F9FAFB;
   /* Match header background */

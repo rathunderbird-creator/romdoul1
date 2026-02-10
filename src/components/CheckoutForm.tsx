@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, X, Plus } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
+import { useMobile } from '../hooks/useMobile';
 import ConfigModal from './ConfigModal';
 import type { Sale, CartItem } from '../types';
 
@@ -16,6 +17,8 @@ interface CheckoutFormProps {
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
     const { products, salesmen, pages, customerCare, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder } = useStore();
     const { showToast } = useToast();
+
+    const isMobile = useMobile();
 
     // Config Modal State
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -35,7 +38,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         amountReceived: 0,
         settleDate: '',
         paymentMethod: 'COD' as Sale['paymentMethod'],
-        paymentAfterDelivery: true
+        paymentAfterDelivery: true,
+        discount: 0,
+        enableDiscount: false
     };
 
     const [formData, setFormData] = useState(initialFormState);
@@ -67,7 +72,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 amountReceived: orderToEdit.amountReceived || 0,
                 settleDate: orderToEdit.settleDate || '',
                 paymentMethod: orderToEdit.paymentMethod || 'Cash',
-                paymentAfterDelivery: isCOD // Infer from payment method
+                paymentAfterDelivery: isCOD,
+                discount: orderToEdit.discount || 0,
+                enableDiscount: (orderToEdit.discount || 0) > 0
             });
         } else {
             // Reset to defaults when not editing
@@ -84,11 +91,6 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 paymentMethod: 'COD'
             }));
         } else {
-            // When unchecking, maybe revert to Cash if it was COD? 
-            // Or just leave it as user sets.
-            // But if it was auto-set to COD, user might want to select something else.
-            // Let's just leave it, they can change it. 
-            // Actually, if they uncheck, they probably want to select a method.
             if (formData.paymentMethod === 'COD') {
                 setFormData(prev => ({ ...prev, paymentMethod: 'Cash' }));
             }
@@ -128,11 +130,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             return;
         }
 
-        const total = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const discount = formData.enableDiscount ? formData.discount : 0;
+        const total = Math.max(0, subtotal - discount);
 
         const orderData = {
             items: cartItems,
             total,
+            discount,
             paymentMethod: formData.paymentMethod,
             type: 'Online' as const,
             salesman: formData.salesman,
@@ -140,8 +145,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             remark: formData.remark,
             amountReceived: formData.paymentAfterDelivery ? 0 : formData.amountReceived,
             settleDate: formData.settleDate,
-            paymentStatus: formData.paymentAfterDelivery ? 'Unpaid' as const : (formData.amountReceived >= total ? 'Paid' as const : 'Settle' as const),
-            orderStatus: 'Open' as const,
+            paymentStatus: orderToEdit ? (formData.paymentAfterDelivery ? 'Unpaid' as const : (formData.amountReceived >= total ? 'Paid' as const : 'Settled' as const)) : 'Pending' as const,
             customer: {
                 name: formData.customerName,
                 phone: formData.customerPhone,
@@ -171,26 +175,37 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     };
 
     return (
-        <div style={{ padding: '8px', height: '100%', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center' }}>
+        <div style={{ padding: isMobile ? '12px' : '8px', height: '100%', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: isMobile ? '12px' : '20px', alignItems: 'center' }}>
                 <div>
-                    <h2 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--color-text-main)' }}>{orderToEdit ? 'Edit Order' : 'Checkout Details'}</h2>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Complete the order information below</p>
+                    <h2 style={{ fontSize: isMobile ? '18px' : '24px', fontWeight: '700', color: 'var(--color-text-main)' }}>{orderToEdit ? 'Edit Order' : 'Checkout'}</h2>
+                    {!isMobile && <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Complete the order information below</p>}
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <button onClick={onCancel} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s' }}>Cancel</button>
-                    <button onClick={handleSubmit} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    {!isMobile && (
+                        <>
+                            <button onClick={onCancel} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px' }}>Cancel</button>
+                            <button onClick={handleSubmit} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                        </>
+                    )}
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '24px', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', flex: 1, overflow: 'hidden' }}>
                 {/* Left Column: Form Fields */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div className="glass-panel" style={{ padding: '24px', border: '1px solid var(--color-border)' }}>
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: isMobile ? '12px' : '20px',
+                    overflowY: 'auto',
+                    paddingRight: '4px',
+                    flex: isMobile ? 1 : 1.4
+                }}>
+                    <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             Customer Information
                         </h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Name</label>
                                 <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Enter name" />
@@ -200,8 +215,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value })} placeholder="012..." />
                             </div>
                         </div>
-                        <div style={{ marginBottom: '20px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr 1fr', gap: '20px' }}>
+                        <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.5fr 1fr', gap: isMobile ? '12px' : '20px' }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>City / Province</label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -226,18 +241,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                     </div>
                                 </div>
-
-
                             </div>
                         </div>
                     </div>
 
-                    <div className="glass-panel" style={{ padding: '24px', border: '1px solid var(--color-border)' }}>
+                    <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)' }}>Order & Payment</h3>
 
-                        {/* Shipping Details */}
                         {/* Shipping & Staff Details */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Company</label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -258,6 +270,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     <button onClick={() => { setConfigType('salesman'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                 </div>
                             </div>
+                            {/* Customer Care */}
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Care</label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -271,7 +284,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
 
                         {/* Payment Details */}
-                        <div style={{ marginBottom: '20px' }}>
+                        <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer' }}>
                                 <input
                                     type="checkbox"
@@ -287,7 +300,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </label>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Method</label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -327,7 +340,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 </div>
 
                 {/* Right Column: Order Items */}
-                <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '100%', border: '1px solid var(--color-border)' }}>
+                <div className="glass-panel" style={{
+                    padding: isMobile ? '16px' : '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: isMobile ? 'auto' : '100%',
+                    border: '1px solid var(--color-border)',
+                    flex: 1,
+                    minHeight: isMobile ? '400px' : '0'
+                }}>
                     <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '16px', color: 'var(--color-primary)' }}>Order Items</h3>
 
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
@@ -339,7 +360,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         <button onClick={handleAddItem} className="primary-button" style={{ padding: '0 14px', borderRadius: '8px' }}><Plus size={20} /></button>
                     </div>
 
-                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', maxHeight: isMobile ? '300px' : 'none' }}>
                         {cartItems.map((item) => (
                             <div key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '12px', padding: '8px', borderRadius: '8px', background: 'var(--color-bg)', border: '1px solid transparent' }}>
                                 <div style={{ width: '48px', height: '48px', background: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.05)' }}>
@@ -356,24 +377,68 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                         ))}
                         {cartItems.length === 0 && (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', flexDirection: 'column', border: '2px dashed var(--color-border)', borderRadius: '12px' }}>
+                            <div style={{ height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', flexDirection: 'column', border: '2px dashed var(--color-border)', borderRadius: '12px' }}>
                                 <p style={{ fontSize: '14px' }}>No items in cart</p>
                             </div>
                         )}
                     </div>
 
                     <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
+                        {/* Discount Section - Same as before */}
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={formData.enableDiscount}
+                                    onChange={e => setFormData({
+                                        ...formData,
+                                        enableDiscount: e.target.checked,
+                                        discount: e.target.checked ? formData.discount : 0
+                                    })}
+                                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                                Add Discount
+                            </label>
+                            {formData.enableDiscount && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', width: '80px' }}>Amount ($):</span>
+                                    <input
+                                        type="number"
+                                        className="search-input"
+                                        style={{ flex: 1, padding: '8px 12px' }}
+                                        value={formData.discount}
+                                        onChange={e => setFormData({ ...formData, discount: Number(e.target.value) })}
+                                        placeholder="0.00"
+                                        min="0"
+                                    />
+                                </div>
+                            )}
+                        </div>
+
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
                             <span>Subtotal</span>
                             <span>${cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
                         </div>
+                        {formData.enableDiscount && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: '#EF4444' }}>
+                                <span>Discount</span>
+                                <span>-${formData.discount.toFixed(2)}</span>
+                            </div>
+                        )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: '800', color: 'var(--color-primary)' }}>
                             <span>Total Due</span>
-                            <span>${cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
+                            <span>${Math.max(0, cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) - (formData.enableDiscount ? formData.discount : 0)).toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
             </div >
+
+            {isMobile && (
+                <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 10 }}>
+                    <button onClick={onCancel} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Cancel</button>
+                    <button onClick={handleSubmit} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                </div>
+            )}
 
             <ConfigModal
                 isOpen={isConfigModalOpen}

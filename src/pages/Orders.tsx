@@ -1,20 +1,30 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { POSInterface, StatusBadge, PaymentStatusBadge, ReceiptModal, DateRangePicker } from '../components';
+import { useMobile } from '../hooks/useMobile';
+import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker } from '../components';
+import PaymentStatusBadge from '../components/PaymentStatusBadge';
+import DataImportModal from '../components/DataImportModal';
 import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 
 const Orders: React.FC = () => {
-    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin } = useStore();
+    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission } = useStore();
+
+    const canEdit = hasPermission('manage_orders');
+    const canManage = hasPermission('manage_orders');
 
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
+    const isMobile = useMobile();
 
     // Tabs & View State
-    const [activeTab, setActiveTab] = useState<'list' | 'pos'>('list');
+    const [activeTab, setActiveTab] = useState<'list' | 'pos'>(() => {
+        return hasPermission('view_orders') ? 'list' : 'pos';
+    });
 
     // Update Header Content
     React.useEffect(() => {
@@ -26,35 +36,39 @@ const Orders: React.FC = () => {
                 </div>
             ),
             actions: (
-                <div style={{ display: 'flex', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-                    <button
-                        onClick={() => setActiveTab('list')}
-                        style={{
-                            padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px',
-                            background: activeTab === 'list' ? 'var(--color-primary)' : 'transparent',
-                            color: activeTab === 'list' ? 'white' : 'var(--color-text-secondary)',
-                            fontWeight: 500, cursor: 'pointer', border: 'none'
-                        }}
-                    >
-                        <List size={18} /> Order List
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('pos')}
-                        style={{
-                            padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px',
-                            background: activeTab === 'pos' ? 'var(--color-primary)' : 'transparent',
-                            color: activeTab === 'pos' ? 'white' : 'var(--color-text-secondary)',
-                            fontWeight: 500, cursor: 'pointer', border: 'none'
-                        }}
-                    >
-                        <Store size={18} /> POS
-                    </button>
+                <div style={{ display: 'flex', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', border: '1px solid var(--color-border)', width: isMobile ? '100%' : 'auto' }}>
+                    {hasPermission('view_orders') && (
+                        <button
+                            onClick={() => setActiveTab('list')}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: activeTab === 'list' ? 'var(--color-primary)' : 'transparent',
+                                color: activeTab === 'list' ? 'white' : 'var(--color-text-secondary)',
+                                fontWeight: 500, cursor: 'pointer', border: 'none'
+                            }}
+                        >
+                            <List size={18} /> Order List
+                        </button>
+                    )}
+                    {hasPermission('create_orders') && (
+                        <button
+                            onClick={() => setActiveTab('pos')}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: activeTab === 'pos' ? 'var(--color-primary)' : 'transparent',
+                                color: activeTab === 'pos' ? 'white' : 'var(--color-text-secondary)',
+                                fontWeight: 500, cursor: 'pointer', border: 'none'
+                            }}
+                        >
+                            <Store size={18} /> POS
+                        </button>
+                    )}
                 </div>
             )
         });
 
         return () => setHeaderContent(null);
-    }, [setHeaderContent, activeTab]);
+    }, [setHeaderContent, activeTab, hasPermission, isMobile]); // Added hasPermission dependency
 
     // Filters
     const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Shipped' | 'Delivered'>('All');
@@ -65,18 +79,53 @@ const Orders: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
 
     // Modals State
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    // editingOrder is from store
+
+    const handleImportOrders = async (data: any[]) => {
+        try {
+            await importOrders(data);
+            setIsImportModalOpen(false);
+            showToast('Orders imported successfully', 'success');
+        } catch (error: any) {
+            console.error("Import failed:", error);
+            showToast(`Failed to import orders: ${error.message || error}`, 'error');
+        }
+    };
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
 
-    const toggleSelection = (id: string) => {
-        const newSet = new Set(selectedIds);
-        if (newSet.has(id)) newSet.delete(id);
-        else newSet.add(id);
-        setSelectedIds(newSet);
+    const toggleSelection = (id: string, event?: React.MouseEvent) => {
+        const newSelected = new Set(selectedIds);
+
+        if (event?.shiftKey && lastSelectedId) {
+            const lastIndex = paginatedOrders.findIndex(o => o.id === lastSelectedId);
+            const currentIndex = paginatedOrders.findIndex(o => o.id === id);
+
+            if (lastIndex !== -1 && currentIndex !== -1) {
+                const start = Math.min(lastIndex, currentIndex);
+                const end = Math.max(lastIndex, currentIndex);
+
+                const rangeOrders = paginatedOrders.slice(start, end + 1);
+
+                // Add the range to the existing selection
+                rangeOrders.forEach(o => newSelected.add(o.id));
+            }
+        } else {
+            if (newSelected.has(id)) {
+                newSelected.delete(id);
+            } else {
+                newSelected.add(id);
+            }
+            setLastSelectedId(id);
+        }
+
+        setSelectedIds(newSelected);
     };
 
     const toggleSelectAll = () => {
@@ -88,7 +137,7 @@ const Orders: React.FC = () => {
     };
 
     const handleBulkDelete = () => {
-        if (confirm(`Are you sure you want to delete ${selectedIds.size} orders?`)) {
+        if (confirm(`Are you sure you want to delete ${selectedIds.size} orders ? `)) {
             deleteOrders(Array.from(selectedIds));
             setSelectedIds(new Set());
             showToast('Orders deleted successfully', 'success');
@@ -116,7 +165,7 @@ const Orders: React.FC = () => {
         { id: 'shippingCo', label: 'Shipping Co' },
         { id: 'tracking', label: 'Tracking ID' },
         { id: 'remark', label: 'Remark' },
-        { id: 'settleDate', label: 'Settle/Paid Date' },
+        { id: 'settleDate', label: 'Settled/Paid Date' },
     ];
 
     // Default visible columns
@@ -208,7 +257,11 @@ const Orders: React.FC = () => {
                 (order.shipping?.trackingNumber || '').toLowerCase().includes(lowerTerm) ||
                 (order.shipping?.staffName || '').toLowerCase().includes(lowerTerm) ||
                 (order.salesman || '').toLowerCase().includes(lowerTerm) ||
-                (order.customerCare || '').toLowerCase().includes(lowerTerm);
+                (order.customerCare || '').toLowerCase().includes(lowerTerm) ||
+                (order.paymentStatus || 'Paid').toLowerCase().includes(lowerTerm) ||
+                (order.shipping?.status || 'Pending').toLowerCase().includes(lowerTerm) ||
+                new Date(order.date).toLocaleDateString().toLowerCase().includes(lowerTerm) ||
+                (order.settleDate ? new Date(order.settleDate).toLocaleDateString().toLowerCase().includes(lowerTerm) : false);
 
             let matchesDate = true;
             if (dateRange.start && dateRange.end) {
@@ -289,10 +342,16 @@ const Orders: React.FC = () => {
             'Phone': order.customer?.phone || 'N/A',
             'Address': order.customer?.address || 'N/A',
             'City': order.customer?.city || 'N/A',
+            'Page': order.customer?.page || 'N/A',
+            'Platform': order.customer?.platform || 'N/A',
+            'Salesman': order.salesman || 'N/A',
+            'Customer Care': order.customerCare || 'N/A',
             'Items': order.items.map(i => `${i.name} (${i.quantity})`).join(', '),
             'Total Amount': order.total,
             'Payment Method': order.paymentMethod,
             'Payment Status': order.paymentStatus || 'Paid',
+            'Settle Date': order.settleDate ? new Date(order.settleDate).toLocaleDateString() : 'N/A',
+            'Shipping Company': order.shipping?.company || 'N/A',
             'Shipping Status': order.shipping?.status || 'Pending',
             'Tracking Number': order.shipping?.trackingNumber || 'N/A',
             'Remarks': order.remark || ''
@@ -309,10 +368,16 @@ const Orders: React.FC = () => {
             { wch: 15 }, // Phone
             { wch: 30 }, // Address
             { wch: 15 }, // City
+            { wch: 15 }, // Page
+            { wch: 15 }, // Platform
+            { wch: 15 }, // Salesman
+            { wch: 15 }, // Customer Care
             { wch: 40 }, // Items
             { wch: 12 }, // Total
             { wch: 15 }, // Method
             { wch: 15 }, // Pay Status
+            { wch: 15 }, // Settle Date
+            { wch: 20 }, // Ship Company
             { wch: 15 }, // Ship Status
             { wch: 20 }, // Tracking
             { wch: 30 }  // Remarks
@@ -357,27 +422,44 @@ const Orders: React.FC = () => {
 
                     {/* Filters Bar */}
                     <div className="glass-panel" style={{ marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50 }}>
-                        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                            <input
-                                type="text"
-                                placeholder="Search order ID, customer, phone..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                className="search-input"
-                                style={{ paddingLeft: '36px' }} // Keep paddingLeft explicit for icon overlap
-                            />
+
+
+                        {/* Search and DatePicker Row */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '12px',
+                            alignItems: 'center',
+                            width: isMobile ? '100%' : 'auto',
+                            flex: isMobile ? 'none' : 1,
+                            minWidth: isMobile ? 'auto' : '200px'
+                        }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    className="search-input"
+                                    style={{ paddingLeft: '36px', width: '100%' }}
+                                />
+                            </div>
+                            <div style={{ width: isMobile ? 'auto' : 'auto' }}>
+                                <DateRangePicker
+                                    value={dateRange}
+                                    onChange={setDateRange}
+                                />
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                            <DateRangePicker
-                                value={dateRange}
-                                onChange={setDateRange}
-                            />
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+                            <div style={{ width: isMobile ? 'auto' : 'auto' }}>
+                                {/* DateRangePicker removed from old location */}
+                            </div>
                             <select
                                 value={statusFilter}
                                 onChange={e => setStatusFilter(e.target.value as any)}
                                 className="search-input"
-                                style={{ width: '130px' }}
+                                style={{ width: isMobile ? '100%' : '130px' }}
                             >
                                 <option value="All">All Status</option>
                                 <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
@@ -385,12 +467,13 @@ const Orders: React.FC = () => {
                                 <option value="Delivered" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Delivered</option>
                             </select>
 
-                            <div style={{ position: 'relative' }}>
+                            <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                 <button
                                     onClick={() => setIsPayStatusOpen(!isPayStatusOpen)}
                                     className="search-input"
                                     style={{
                                         minWidth: '160px',
+                                        width: isMobile ? '100%' : 'auto',
                                         display: 'flex',
                                         justifyContent: 'space-between',
                                         alignItems: 'center',
@@ -423,7 +506,7 @@ const Orders: React.FC = () => {
                                             background: 'white',
                                             boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                         }}>
-                                            {['Paid', 'Unpaid', 'Settle', 'Not Settle', 'Cancel'].map(status => (
+                                            {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(status => (
                                                 <label key={status} style={{
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -471,91 +554,111 @@ const Orders: React.FC = () => {
                                     cursor: hasFilters ? 'pointer' : 'not-allowed',
                                     opacity: hasFilters ? 1 : 0.5,
                                     fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
-                                    transition: 'all 0.2s'
+                                    transition: 'all 0.2s',
+                                    width: isMobile ? '100%' : 'auto',
+                                    justifyContent: 'center'
                                 }}
                                 title="Clear All Filters"
                             >
                                 <X size={16} /> Clear
                             </button>
 
-                            <div style={{ position: 'relative' }}>
+                            {!isMobile && (
+                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <button
+                                        onClick={() => setShowColumnMenu(!showColumnMenu)}
+                                        style={{
+                                            padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                            background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            width: '100%', justifyContent: 'center'
+                                        }}
+                                    >
+                                        <Settings size={18} />
+                                        Columns
+                                    </button>
+                                    {showColumnMenu && (
+                                        <div className="glass-panel" style={{
+                                            position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                                            padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
+                                            display: 'flex', flexDirection: 'column', gap: '8px'
+                                        }}>
+                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                                            {allColumnsDef.map(col => (
+                                                <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={visibleColumns.includes(col.id)}
+                                                        onChange={() => {
+                                                            if (visibleColumns.includes(col.id)) {
+                                                                setVisibleColumns(visibleColumns.filter(c => c !== col.id));
+                                                            } else {
+                                                                setVisibleColumns([...visibleColumns, col.id]);
+                                                            }
+                                                        }}
+                                                    />
+                                                    {col.label}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {!isMobile && (
                                 <button
-                                    onClick={() => setShowColumnMenu(!showColumnMenu)}
+                                    onClick={handleExportExcel}
+                                    disabled={selectedIds.size === 0}
                                     style={{
-                                        padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                        background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
-                                        display: 'flex', alignItems: 'center', gap: '8px'
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        padding: '10px 16px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'white',
+                                        color: selectedIds.size > 0 ? '#10B981' : 'var(--color-text-secondary)',
+                                        cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                                        opacity: selectedIds.size > 0 ? 1 : 0.5,
+                                        fontWeight: 500,
+                                        transition: 'all 0.2s',
+                                        width: isMobile ? '100%' : 'auto',
+                                        justifyContent: 'center'
                                     }}
+                                    title={selectedIds.size === 0 ? "Select orders to export" : "Export selected orders"}
                                 >
-                                    <Settings size={18} />
-                                    Columns
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polyline points="10 9 9 9 8 9"></polyline>
+                                    </svg>
+                                    Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
                                 </button>
-                                {showColumnMenu && (
-                                    <div className="glass-panel" style={{
-                                        position: 'absolute', top: '100%', right: 0, marginTop: '8px',
-                                        padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
-                                        display: 'flex', flexDirection: 'column', gap: '8px'
-                                    }}>
-                                        <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
-                                        {allColumnsDef.map(col => (
-                                            <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={visibleColumns.includes(col.id)}
-                                                    onChange={() => {
-                                                        if (visibleColumns.includes(col.id)) {
-                                                            setVisibleColumns(visibleColumns.filter(c => c !== col.id));
-                                                        } else {
-                                                            setVisibleColumns([...visibleColumns, col.id]);
-                                                        }
-                                                    }}
-                                                />
-                                                {col.label}
-                                            </label>
-                                        ))}
-                                    </div>
+                            )}
+                            {/* Restoring Import button context */}
+                            <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto' }}>
+                                {canEdit && !isMobile && (
+                                    <button onClick={() => setIsImportModalOpen(true)} className="icon-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }} title="Import Orders">
+                                        <Upload size={18} /> Import
+                                    </button>
                                 )}
+                                {
+                                    hasPermission('create_orders') && (
+                                        <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
+                                            <Plus size={18} /> New Order
+                                        </button>
+                                    )
+                                }
                             </div>
-
-                            <button
-                                onClick={handleExportExcel}
-                                disabled={selectedIds.size === 0}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '10px 16px',
-                                    borderRadius: '8px',
-                                    border: '1px solid var(--color-border)',
-                                    background: 'white',
-                                    color: selectedIds.size > 0 ? '#10B981' : 'var(--color-text-secondary)',
-                                    cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                                    opacity: selectedIds.size > 0 ? 1 : 0.5,
-                                    fontWeight: 500,
-                                    transition: 'all 0.2s'
-                                }}
-                                title={selectedIds.size === 0 ? "Select orders to export" : "Export selected orders"}
-                            >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                                    <polyline points="10 9 9 9 8 9"></polyline>
-                                </svg>
-                                Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
-                            </button>
-
-                            <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}>
-                                <Plus size={18} /> New Order
-                            </button>
-                        </div>
-                    </div>
+                        </div >
+                    </div >
 
                     {/* Table */}
-                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', paddingBottom: '0' }}>
+                    < div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', paddingBottom: '0' }}>
                         <table className="spreadsheet-table" style={{ minWidth: '100%', whiteSpace: 'nowrap', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
                             <thead>
                                 <tr>
-                                    <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, zIndex: 20, background: '#F9FAFB' }} className="sticky-col-first">
+                                    <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: '#F9FAFB' }} className="sticky-col-first">
                                         <input
                                             type="checkbox"
                                             checked={filteredOrders.length > 0 && selectedIds.size === filteredOrders.length}
@@ -580,11 +683,12 @@ const Orders: React.FC = () => {
                                                     borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
                                                     transition: 'border-color 0.1s',
                                                     padding: 0,
-                                                    position: isPinned ? 'sticky' : 'relative',
+                                                    position: 'sticky',
                                                     left: isPinned ? stickyLeft : undefined,
-                                                    zIndex: isPinned ? 20 : 10,
+                                                    zIndex: isPinned ? 40 : 30,
                                                     background: '#F9FAFB',
-                                                    boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
+                                                    boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none',
+                                                    top: 0
                                                 }}
                                             >
                                                 <div style={{
@@ -643,181 +747,242 @@ const Orders: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {paginatedOrders.map((order) => (
-                                    <tr key={order.id} className={selectedIds.has(order.id) ? 'selected' : ''} style={{ background: 'white' }}>
-                                        <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, background: selectedIds.has(order.id) ? 'var(--color-primary-light)' : 'white' }} className="sticky-col-first">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.has(order.id)}
-                                                onChange={() => toggleSelection(order.id)}
-                                                style={{ cursor: 'pointer' }}
-                                            />
-                                        </td>
-                                        {allColumns.filter(col => visibleColumns.includes(col.id)).map(col => {
-                                            const colId = col.id;
-                                            const isPinned = (pinnedOrderColumns || []).includes(colId);
-                                            const stickyLeft = getStickyLeft(colId);
+                                {paginatedOrders.map((order) => {
+                                    const isPaidOrSettle = order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled';
+                                    const isDelivered = order.shipping?.status === 'Delivered';
+                                    const isSelected = selectedIds.has(order.id);
 
-                                            const cellStyle = {
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                maxWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                position: isPinned ? 'sticky' as const : undefined,
-                                                left: isPinned ? stickyLeft : undefined,
-                                                zIndex: isPinned ? 15 : 1,
-                                                background: selectedIds.has(order.id) ? 'var(--color-primary-light)' : 'white',
-                                                boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
-                                            };
+                                    // Determine row class
+                                    let rowClass = '';
+                                    if (isSelected) rowClass = 'selected';
+                                    else if (isPaidOrSettle) rowClass = 'paid-settled-row';
+                                    else if (isDelivered) rowClass = 'delivered-row';
 
-                                            switch (colId) {
-                                                case 'actions':
-                                                    return (
-                                                        <td key={colId} style={{ ...cellStyle, width: '100px', minWidth: '100px' }}>
-                                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                                <button onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }} className="icon-button" title="Print Receipt" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                    <Printer size={16} color="var(--color-text-secondary)" />
-                                                                </button>
-                                                                <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                    <Eye size={16} color="var(--color-text-secondary)" />
-                                                                </button>
-                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title="Edit Order" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                    <Edit size={16} color="var(--color-text-secondary)" />
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    );
-                                                case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
-                                                case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
-                                                case 'phone': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.phone}</td>;
-                                                case 'address': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.address || '-'}</td>;
-                                                case 'page': return <td key={colId} style={cellStyle}>{order.customer?.page || '-'}</td>;
-                                                case 'items':
-                                                    return (
-                                                        <td key={colId} style={cellStyle}>
-                                                            <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
-                                                            </div>
-                                                        </td>
-                                                    );
-                                                case 'total': return <td key={colId} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
-                                                case 'payBy': return <td key={colId} style={cellStyle}>{order.paymentMethod}</td>;
-                                                case 'received': return <td key={colId} style={{
-                                                    ...cellStyle,
-                                                    textAlign: 'right',
-                                                    color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settle') ? '#2563EB' : '#DC2626',
-                                                    fontWeight: 'bold'
-                                                }}>${(order.amountReceived ?? order.total).toFixed(2)}</td>;
-                                                case 'payStatus':
-                                                    return (
-                                                        <td key={colId} style={{
-                                                            width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                            minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                            overflow: 'visible',
-                                                            textOverflow: 'ellipsis',
-                                                            textAlign: 'left'
-                                                        }}>
-                                                            <PaymentStatusBadge
-                                                                status={order.paymentStatus || 'Paid'}
-                                                                disabledOptions={
-                                                                    order.shipping?.status !== 'Delivered'
-                                                                        ? (order.paymentMethod === 'COD' ? ['Paid', 'Settle', 'Unpaid'] : ['Paid', 'Settle'])
-                                                                        : (order.paymentMethod === 'COD' ? ['Paid', 'Unpaid', 'Cancel'] : ['Settle', 'Not Settle', 'Cancel'])
-                                                                }
-                                                                onChange={(newStatus) => {
-                                                                    const updates: any = { paymentStatus: newStatus };
-                                                                    if (newStatus === 'Paid' || newStatus === 'Settle') {
-                                                                        updates.amountReceived = order.total;
-                                                                        updates.settleDate = new Date().toISOString();
-                                                                    } else {
-                                                                        updates.amountReceived = 0;
-                                                                        updates.settleDate = null;
+                                    return (
+                                        <tr key={order.id} className={rowClass}>
+                                            <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15 }} className="sticky-col-first">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.has(order.id)}
+                                                    onChange={(e) => toggleSelection(order.id, e.nativeEvent as unknown as React.MouseEvent)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                            </td>
+                                            {allColumns.filter(col => visibleColumns.includes(col.id)).map(col => {
+                                                const colId = col.id;
+                                                const isPinned = (pinnedOrderColumns || []).includes(colId);
+                                                const stickyLeft = getStickyLeft(colId);
+
+                                                const cellStyle: React.CSSProperties = {
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    maxWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                    position: isPinned ? 'sticky' : undefined,
+                                                    left: isPinned ? stickyLeft : undefined,
+                                                    zIndex: isPinned ? 15 : 1,
+                                                    // background: handled by CSS class on row, but for sticky columns we might need specificity
+                                                    // In index.css, we added rules for sticky cols inside .paid-settled-row
+                                                    // However, for general rows (white), sticky columns need a background to cover scrolled content.
+                                                    backgroundColor: isPinned ? (rowClass === 'selected' ? 'var(--color-primary-light)' : (rowClass === 'paid-settled-row' ? '#EFF6FF' : (rowClass === 'delivered-row' ? '#FEFCE8' : '#FFFFFF'))) : undefined,
+                                                    boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
+                                                };
+
+                                                switch (colId) {
+                                                    case 'actions':
+                                                        return (
+                                                            <td key={colId} style={{ ...cellStyle, width: '100px', minWidth: '100px' }}>
+                                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                                    <button onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }} className="icon-button" title="Print Receipt" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                        <Printer size={16} color="var(--color-text-secondary)" />
+                                                                    </button>
+                                                                    <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                        <Eye size={16} color="var(--color-text-secondary)" />
+                                                                    </button>
+                                                                    {hasPermission('manage_orders') && (
+                                                                        <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title="Edit Order" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                            <Edit size={16} color="var(--color-text-secondary)" />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                    case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
+                                                    case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
+                                                    case 'phone': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.phone}</td>;
+                                                    case 'address': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.address || '-'}</td>;
+                                                    case 'page': return <td key={colId} style={cellStyle}>{order.customer?.page || '-'}</td>;
+                                                    case 'items':
+                                                        return (
+                                                            <td key={colId} style={cellStyle}>
+                                                                <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {order.items.map(i => `${i.name} x${i.quantity} `).join(', ')}
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                    case 'total': return <td key={colId} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
+                                                    case 'payBy': return <td key={colId} style={cellStyle}>{order.paymentMethod}</td>;
+                                                    case 'received': return <td key={colId} style={{
+                                                        ...cellStyle,
+                                                        textAlign: 'right',
+                                                        color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') ? '#2563EB' : '#DC2626',
+                                                        fontWeight: 'bold'
+                                                    }}>${(order.amountReceived ?? order.total).toFixed(2)}</td>;
+                                                    case 'payStatus':
+                                                        return (
+                                                            <td key={colId} style={{
+                                                                width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                                minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                                overflow: 'visible',
+                                                                textOverflow: 'ellipsis',
+                                                                textAlign: 'left'
+                                                            }}>
+                                                                <PaymentStatusBadge
+                                                                    status={order.paymentStatus || 'Paid'}
+                                                                    disabledOptions={
+                                                                        order.shipping?.status === 'Returned' || order.shipping?.status === 'ReStock'
+                                                                            ? []
+                                                                            : order.shipping?.status !== 'Delivered'
+                                                                                ? (order.paymentMethod === 'COD' ? ['Paid', 'Settled', 'Unpaid'] : ['Paid', 'Settled'])
+                                                                                : (order.paymentMethod === 'COD' ? ['Paid', 'Unpaid', 'Cancel'] : ['Settled', 'Not Settle', 'Cancel'])
                                                                     }
-                                                                    updateOrder(order.id, updates);
-                                                                }}
-                                                                readOnly={
-                                                                    (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settle') ||
-                                                                    (order.shipping?.status !== 'Delivered' && order.shipping?.status !== 'Pending')
-                                                                }
-                                                            />
-                                                        </td>
-                                                    );
-                                                case 'balance':
-                                                    return (
-                                                        <td key={colId} style={{ ...cellStyle, color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
-                                                            ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
-                                                        </td>
-                                                    );
-                                                case 'status':
-                                                    return (
-                                                        <td key={colId} style={{
-                                                            width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                            minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                            overflow: 'visible',
-                                                            textOverflow: 'ellipsis',
-                                                            textAlign: 'left'
-                                                        }}>
-                                                            <StatusBadge
-                                                                status={order.shipping?.status || 'Pending'}
-                                                                readOnly={order.shipping?.status === 'Delivered'}
-                                                                onChange={(newStatus: string) => {
-                                                                    updateOrderStatus(order.id, newStatus as any);
-                                                                    if (newStatus === 'Delivered') {
-                                                                        const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
-                                                                        updateOrder(order.id, { paymentStatus: newPaymentStatus });
+                                                                    onChange={(newStatus) => {
+                                                                        const updates: any = { paymentStatus: newStatus };
+                                                                        if (newStatus === 'Paid' || newStatus === 'Settled') {
+                                                                            updates.amountReceived = order.total;
+                                                                            updates.settleDate = new Date().toISOString();
+                                                                        } else {
+                                                                            updates.amountReceived = 0;
+                                                                            updates.settleDate = null;
+                                                                        }
+                                                                        updateOrder(order.id, updates);
+                                                                    }}
+                                                                    readOnly={
+                                                                        !canEdit ||
+                                                                        (order.shipping?.status === 'Returned' || order.shipping?.status === 'ReStock'
+                                                                            ? true
+                                                                            : (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') ||
+                                                                            (order.shipping?.status !== 'Delivered' && order.shipping?.status !== 'Pending'))
                                                                     }
-                                                                }}
-                                                            />
-                                                        </td>
-                                                    );
-                                                case 'tracking':
-                                                    return (
-                                                        <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
-                                                            <input
-                                                                type="text"
-                                                                className="search-input"
-                                                                defaultValue={order.shipping?.trackingNumber || ''}
-                                                                placeholder="Add ID"
-                                                                style={{
-                                                                    width: '100%',
-                                                                    padding: '4px 8px',
-                                                                    fontSize: '13px',
-                                                                    fontFamily: 'monospace',
-                                                                    border: '1px solid transparent',
-                                                                    background: 'transparent'
-                                                                }}
-                                                                onFocus={(e) => {
-                                                                    e.target.style.background = 'white';
-                                                                    e.target.style.borderColor = 'var(--color-primary)';
-                                                                }}
-                                                                onBlur={(e) => {
-                                                                    e.target.style.background = 'transparent';
-                                                                    e.target.style.borderColor = 'transparent';
-                                                                    const val = e.target.value.trim();
-                                                                    const currentTracking = order.shipping?.trackingNumber || '';
-                                                                    if (val !== currentTracking) {
-                                                                        const updatedShipping = order.shipping
-                                                                            ? { ...order.shipping, trackingNumber: val }
-                                                                            : { company: '', trackingNumber: val, status: 'Pending' as const, cost: 0, staffName: '' };
-                                                                        updateOrder(order.id, { shipping: updatedShipping });
-                                                                    }
-                                                                }}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') e.currentTarget.blur();
-                                                                }}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            />
-                                                        </td>
-                                                    );
-                                                case 'shippingCo': return <td key={colId} style={cellStyle}>{order.shipping?.company || '-'}</td>;
-                                                case 'salesman': return <td key={colId} style={cellStyle}>{order.salesman || '-'}</td>;
-                                                case 'customerCare': return <td key={colId} style={cellStyle}>{order.customerCare || '-'}</td>;
-                                                case 'remark': return <td key={colId} style={cellStyle}>{order.remark || '-'}</td>;
-                                                case 'settleDate': return <td key={colId} style={cellStyle}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>;
-                                                default: return <td key={colId} style={cellStyle}>-</td>;
-                                            }
-                                        })}
-                                    </tr>
-                                ))}
+                                                                />
+                                                            </td>
+                                                        );
+                                                    case 'balance':
+                                                        return (
+                                                            <td key={colId} style={{ ...cellStyle, color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
+                                                                ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
+                                                            </td>
+                                                        );
+                                                    case 'status':
+                                                        return (
+                                                            <td key={colId} style={{
+                                                                width: columnWidths[colId] ? `${columnWidths[colId]} px` : '150px',
+                                                                minWidth: columnWidths[colId] ? `${columnWidths[colId]} px` : '150px',
+                                                                overflow: 'visible',
+                                                                textOverflow: 'ellipsis',
+                                                                textAlign: 'left'
+                                                            }}>
+                                                                <StatusBadge
+                                                                    status={order.shipping?.status || 'Pending'}
+                                                                    readOnly={!canEdit || order.shipping?.status === 'Delivered' || order.shipping?.status === 'ReStock'}
+                                                                    onChange={(newStatus: string) => {
+                                                                        updateOrderStatus(order.id, newStatus as any);
+                                                                        if (newStatus === 'Delivered') {
+                                                                            const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
+                                                                            updateOrder(order.id, { paymentStatus: newPaymentStatus });
+                                                                        } else if (newStatus === 'ReStock') {
+                                                                            updateOrder(order.id, { paymentStatus: 'Cancel' });
+                                                                            restockOrder(order.id);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            </td>
+                                                        );
+                                                    case 'tracking':
+                                                        return (
+                                                            <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
+                                                                <input
+                                                                    type="text"
+                                                                    readOnly={!canEdit}
+                                                                    className="search-input"
+                                                                    defaultValue={order.shipping?.trackingNumber || ''}
+                                                                    placeholder="Add ID"
+                                                                    style={{
+                                                                        width: '100%',
+                                                                        padding: '4px 8px',
+                                                                        fontSize: '13px',
+                                                                        fontFamily: 'monospace',
+                                                                        border: '1px solid transparent',
+                                                                        background: 'transparent'
+                                                                    }}
+                                                                    onFocus={(e) => {
+                                                                        e.target.style.background = 'white';
+                                                                        e.target.style.borderColor = 'var(--color-primary)';
+                                                                    }}
+                                                                    onBlur={(e) => {
+                                                                        e.target.style.background = 'transparent';
+                                                                        e.target.style.borderColor = 'transparent';
+                                                                        const val = e.target.value.trim();
+                                                                        const currentTracking = order.shipping?.trackingNumber || '';
+                                                                        if (val !== currentTracking) {
+                                                                            const updatedShipping = order.shipping
+                                                                                ? { ...order.shipping, trackingNumber: val }
+                                                                                : { company: '', trackingNumber: val, status: 'Pending' as const, cost: 0, staffName: '' };
+                                                                            updateOrder(order.id, { shipping: updatedShipping });
+                                                                        }
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') e.currentTarget.blur();
+                                                                    }}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                />
+                                                            </td>
+                                                        );
+                                                    case 'shippingCo': return <td key={colId} style={cellStyle}>{order.shipping?.company || '-'}</td>;
+                                                    case 'salesman': return <td key={colId} style={cellStyle}>{order.salesman || '-'}</td>;
+                                                    case 'customerCare': return <td key={colId} style={cellStyle}>{order.customerCare || '-'}</td>;
+                                                    case 'remark':
+                                                        return (
+                                                            <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
+                                                                <input
+                                                                    type="text"
+                                                                    readOnly={!canEdit}
+                                                                    className="search-input"
+                                                                    defaultValue={order.remark || ''}
+                                                                    placeholder="Add Remark"
+                                                                    style={{
+                                                                        width: '100%',
+                                                                        padding: '4px 8px',
+                                                                        fontSize: '13px',
+                                                                        border: '1px solid transparent',
+                                                                        background: 'transparent'
+                                                                    }}
+                                                                    onFocus={(e) => {
+                                                                        e.target.style.background = 'white';
+                                                                        e.target.style.borderColor = 'var(--color-primary)';
+                                                                    }}
+                                                                    onBlur={(e) => {
+                                                                        e.target.style.background = 'transparent';
+                                                                        e.target.style.borderColor = 'transparent';
+                                                                        const val = e.target.value.trim();
+                                                                        if (val !== (order.remark || '')) {
+                                                                            updateOrder(order.id, { remark: val });
+                                                                        }
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') e.currentTarget.blur();
+                                                                    }}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                />
+                                                            </td>
+                                                        );
+                                                    case 'settleDate': return <td key={colId} style={cellStyle}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>;
+                                                    default: return <td key={colId} style={cellStyle}>-</td>;
+                                                }
+                                            })}
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                             <tfoot>
                                 <tr>
@@ -852,18 +1017,20 @@ const Orders: React.FC = () => {
                             </tfoot>
                         </table>
                         {filteredOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>}
-                    </div>
+                    </div >
 
                     {/* Bulk Actions Bar */}
-                    {selectedIds.size > 0 && (
-                        <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
-                            <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
-                            <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
-                            <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                <Trash2 size={18} /> Delete
-                            </button>
-                        </div>
-                    )}
+                    {
+                        selectedIds.size > 0 && canManage && (
+                            <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
+                                <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
+                                <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
+                                <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                    <Trash2 size={18} /> Delete
+                                </button>
+                            </div>
+                        )
+                    }
                 </>
             ) : (
                 <POSInterface
@@ -1006,6 +1173,12 @@ const Orders: React.FC = () => {
                     />
                 )
             }
+            <DataImportModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                type="order"
+                onImport={handleImportOrders}
+            />
         </div >
     );
 };

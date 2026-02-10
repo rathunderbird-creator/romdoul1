@@ -58,7 +58,7 @@ const DeliveryTracking: React.FC = () => {
         trackingNumber: '',
         cost: 0,
         staffName: '',
-        status: 'Pending' as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned'
+        status: 'Pending' as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
     });
 
 
@@ -403,7 +403,7 @@ const DeliveryTracking: React.FC = () => {
                                     {visibleColumns.includes('status') && <td>
                                         <StatusBadge
                                             status={order.shipping?.status || 'Pending'}
-                                            onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned')}
+                                            onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock')}
                                         />
                                     </td>}
                                     {visibleColumns.includes('cost') && <td style={{ textAlign: 'right' }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}
@@ -525,11 +525,13 @@ const DeliveryTracking: React.FC = () => {
 
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' })}>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
                                         <option value="Pending">Pending</option>
                                         <option value="Shipped">Shipped</option>
                                         <option value="Delivered">Delivered</option>
                                         <option value="Cancelled">Cancelled</option>
+                                        <option value="Returned">Returned</option>
+                                        <option value="ReStock">ReStock</option>
                                     </select>
                                 </div>
 

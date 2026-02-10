@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Product, CartItem, Sale, StoreContextType, Customer } from '../types';
+import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission } from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -12,6 +12,8 @@ interface ConfigState {
     cities: string[];
     pinnedProducts?: string[];
     pinnedOrderColumns?: string[]; // Added pinned order columns
+    users?: User[];
+    roles?: Role[];
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -58,7 +60,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             'ខេត្តត្បូងឃ្មុំ'
         ],
         pinnedProducts: [],
-        pinnedOrderColumns: []
+        pinnedOrderColumns: [],
+        users: [],
+        roles: []
     });
 
 
@@ -70,7 +74,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Products
             const { data: productsData } = await supabase.from('products').select('*');
-            if (productsData) setProducts(productsData);
+            if (productsData) {
+                setProducts(productsData.map((p: any) => ({
+                    ...p,
+                    lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
+                    stock: Number(p.stock),
+                    price: Number(p.price)
+                })));
+            }
 
             // Customers
             const { data: customersData } = await supabase.from('customers').select('*');
@@ -129,7 +140,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     loadedConfig.cities.length === 0 ||
                     loadedConfig.cities.includes('Phnom Penh') ||
                     !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
-                    !loadedConfig.pinnedProducts; // Check for new field
+                    !loadedConfig.pinnedProducts ||
+                    !loadedConfig.users ||
+                    !loadedConfig.users.length ||
+                    !loadedConfig.roles ||
+                    // Force update if Admin role is missing permissions (Repair)
+                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders'));
 
                 if (needsMigration) {
                     const updatedConfig = {
@@ -162,7 +178,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             'ខេត្តត្បូងឃ្មុំ'
                         ],
                         pinnedProducts: loadedConfig.pinnedProducts || [],
-                        pinnedOrderColumns: loadedConfig.pinnedOrderColumns || []
+                        pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
+                        users: (loadedConfig.users && loadedConfig.users.length > 0) ? loadedConfig.users : [
+                            { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
+                        ],
+                        roles: [
+                            // Ensure Admin always has full permissions
+                            {
+                                id: 'admin',
+                                name: 'Administrator',
+                                description: 'Full system access',
+                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
+                            },
+                            // Merge other roles, preventing duplicates
+                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin')
+                        ]
                     };
                     setConfig(updatedConfig);
                     await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
@@ -206,7 +236,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         'ខេត្តត្បូងឃ្មុំ'
                     ],
                     pinnedProducts: [],
-                    pinnedOrderColumns: []
+                    pinnedOrderColumns: [],
+                    users: [
+                        { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
+                    ],
+                    roles: [
+                        {
+                            id: 'admin',
+                            name: 'Administrator',
+                            description: 'Full system access',
+                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'store_manager',
+                            name: 'Store Manager',
+                            description: 'Manage store operations',
+                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'cashier',
+                            name: 'Cashier',
+                            description: 'Process sales and payments',
+                            permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'customer_care',
+                            name: 'Customer Care',
+                            description: 'Manage support and orders',
+                            permissions: ['view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'salesman',
+                            name: 'Salesman',
+                            description: 'Sales and order viewing',
+                            permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                        }
+                    ]
                 };
                 setConfig(defaultConfig);
                 await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
@@ -459,12 +524,35 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             id: Date.now().toString()
         };
         setProducts(prev => [...prev, newProduct]);
-        await supabase.from('products').insert(newProduct);
+
+        // Map to DB structure
+        const dbProduct = {
+            id: newProduct.id,
+            name: newProduct.name,
+            price: newProduct.price,
+            stock: newProduct.stock,
+            low_stock_threshold: newProduct.lowStockThreshold,
+            image: newProduct.image,
+            category: newProduct.category,
+            model: newProduct.model
+        };
+        await supabase.from('products').insert(dbProduct);
     };
 
     const updateProduct = async (id: string, updates: Partial<Product>) => {
         setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
-        await supabase.from('products').update(updates).eq('id', id);
+
+        // Map updates to DB structure
+        const dbUpdates: any = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.price !== undefined) dbUpdates.price = updates.price;
+        if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
+        if (updates.lowStockThreshold !== undefined) dbUpdates.low_stock_threshold = updates.lowStockThreshold;
+        if (updates.image !== undefined) dbUpdates.image = updates.image;
+        if (updates.category !== undefined) dbUpdates.category = updates.category;
+        if (updates.model !== undefined) dbUpdates.model = updates.model;
+
+        await supabase.from('products').update(dbUpdates).eq('id', id);
     };
 
     const deleteProduct = async (id: string) => {
@@ -645,12 +733,207 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await supabase.from('sales').delete().in('id', ids);
     };
 
+    const importProducts = async (newProducts: Omit<Product, 'id'>[]) => {
+        // 1. Insert into Supabase
+        const { data, error } = await supabase.from('products').insert(newProducts).select();
+
+        if (error) {
+            console.error('Error importing products:', error);
+            throw new Error('Failed to import products: ' + error.message);
+        }
+
+        if (data) {
+            // 2. Update Local State
+            setProducts(prev => [...prev, ...data]);
+        }
+    };
+
+    const convertExcelDate = (serial: any) => {
+        if (!serial) return null;
+        // If it's a number (Excel serial date), convert it
+        if (typeof serial === 'number') {
+            const utc_days = Math.floor(serial - 25569);
+            const utc_value = utc_days * 86400;
+            const date_info = new Date(utc_value * 1000);
+            return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate()).toISOString();
+        }
+        // If it's already a string, try to use it
+        return new Date(serial).toISOString();
+    };
+
+    const importOrders = async (importedOrders: any[]) => {
+        // Map Excel/JSON rows to DB Sale structure
+        const salesToInsert = importedOrders.map(order => ({
+            id: order['Order ID'] || crypto.randomUUID(),
+            date: convertExcelDate(order.Date) || new Date().toISOString(),
+            customer_snapshot: {
+                name: order.Customer || 'Unknown',
+                phone: order.Phone || '',
+                address: order.Address || '',
+                city: order.City || '',
+                page: order.Page || '',
+                platform: order.Platform || 'Facebook'
+            },
+            total: order['Total Amount'] || order.Total || 0,
+            payment_method: order['Payment Method'] || order.PaymentMethod || 'Cash',
+            payment_status: (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Paid' ? 'Paid' : ((order['Payment Status'] || order.PaymentStatus || order.Status) === 'Settled' ? 'Settled' : 'Unpaid'),
+            order_status: 'Closed',
+            salesman: order.Salesman || '',
+            customer_care: order['Customer Care'] || order.CustomerCare || '',
+            amount_received: (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Paid' || (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Settled' ? (order['Total Amount'] || order.Total || 0) : 0,
+            settle_date: convertExcelDate(order['Settle Date'] || order.SettleDate) || ((order['Payment Status'] || order.PaymentStatus || order.Status) === 'Paid' || (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Settled' ? new Date().toISOString() : null),
+            remark: order.Remarks || order.Remark || (order.Items ? `Imported: ${order.Items}` : 'Imported Order'),
+            type: 'POS',
+            shipping_company: order['Shipping Company'] || order.ShippingCompany || '',
+            tracking_number: order['Tracking Number'] || order.TrackingID || '',
+            shipping_status: order['Shipping Status'] || order.ShippingStatus || 'Pending',
+        }));
+
+        const { data: insertedSales, error } = await supabase.from('sales').insert(salesToInsert).select();
+
+        if (error) {
+            console.error('Error importing orders:', error);
+            throw new Error('Failed to import orders: ' + error.message);
+        }
+
+        if (insertedSales) {
+            // Map back to local state interface
+            const newSales: Sale[] = insertedSales.map(s => ({
+                id: s.id,
+                total: Number(s.total),
+                discount: 0,
+                date: s.date,
+                paymentMethod: s.payment_method as any,
+                type: s.type as any,
+                salesman: s.salesman,
+                customerCare: s.customer_care,
+                remark: s.remark,
+                amountReceived: Number(s.amount_received),
+                settleDate: s.settle_date,
+                paymentStatus: s.payment_status as any,
+                orderStatus: s.order_status as any,
+                customer: s.customer_snapshot,
+                items: [], // Importing items into separate table is complex; leaving empty for summary view
+                shipping: {
+                    company: s.shipping_company || '',
+                    trackingNumber: s.tracking_number || '',
+                    status: s.shipping_status as any || 'Pending',
+                    cost: s.shipping_cost || 0
+                }
+            }));
+            setSales(prev => [...newSales, ...prev]);
+        }
+    };
+
+    const restockOrder = async (orderId: string) => {
+        const order = sales.find(s => s.id === orderId);
+        if (!order) return;
+
+        // Sync Stock: Increment for each item
+        order.items.forEach(async (item) => {
+            // Local Update
+            setProducts(prev => prev.map(p => {
+                if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
+                return p;
+            }));
+
+            // DB Update (Increment)
+            const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
+            if (current) {
+                await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+            }
+        });
+    };
+
+    // User & Role Management
+    const addUser = async (userData: Omit<User, 'id'>) => {
+        const newUser: User = { ...userData, id: Date.now().toString() };
+        const newUsers = [...(config.users || []), newUser];
+        updateConfig({ ...config, users: newUsers });
+    };
+
+    const updateUser = async (id: string, updates: Partial<User>) => {
+        const newUsers = (config.users || []).map(u => u.id === id ? { ...u, ...updates } : u);
+        updateConfig({ ...config, users: newUsers });
+    };
+
+    const deleteUser = async (id: string) => {
+        const newUsers = (config.users || []).filter(u => u.id !== id);
+        updateConfig({ ...config, users: newUsers });
+    };
+
+    const addRole = async (roleData: Omit<Role, 'id'>) => {
+        const newRole: Role = { ...roleData, id: Date.now().toString() };
+        const newRoles = [...(config.roles || []), newRole];
+        updateConfig({ ...config, roles: newRoles });
+    };
+
+    const updateRole = async (id: string, updates: Partial<Role>) => {
+        const newRoles = (config.roles || []).map(r => r.id === id ? { ...r, ...updates } : r);
+        updateConfig({ ...config, roles: newRoles });
+    };
+
+    const deleteRole = async (id: string) => {
+        const newRoles = (config.roles || []).filter(r => r.id !== id);
+        updateConfig({ ...config, roles: newRoles });
+    };
+
+    // Authentication
+    const [currentUser, setCurrentUser] = useState<User | null>(() => {
+        const saved = localStorage.getItem('currentUser');
+        return saved ? JSON.parse(saved) : null;
+    });
+
+    const login = async (pin: string, userId?: string): Promise<boolean> => {
+        // Find user
+        console.log('Attempting login with PIN:', pin, 'UserID:', userId);
+
+        let user: User | undefined;
+
+        if (userId) {
+            user = (config.users || []).find(u => u.id === userId && u.pin === pin);
+        } else {
+            user = (config.users || []).find(u => u.pin === pin);
+        }
+
+        if (user) {
+            console.log('User found:', user);
+            setCurrentUser(user);
+            localStorage.setItem('currentUser', JSON.stringify(user));
+            return true;
+        }
+        console.log('User not found or PIN incorrect');
+        return false;
+    };
+
+    const logout = () => {
+        setCurrentUser(null);
+        localStorage.removeItem('currentUser');
+    };
+
+    const hasPermission = (permission: Permission): boolean => {
+        if (!currentUser) return false;
+        const userRole = (config.roles || []).find(r => r.id === currentUser.roleId);
+        if (!userRole) return false;
+        // Admin has all permissions implicitly or explicitly
+        if (userRole.id === 'admin') return true;
+        return userRole.permissions.includes(permission);
+    };
+
     return (
         <StoreContext.Provider value={{
             products,
             cart,
             sales,
             customers,
+            users: config.users || [],
+            roles: config.roles || [],
+            addUser,
+            updateUser,
+            deleteUser,
+            addRole,
+            updateRole,
+            deleteRole,
             addToCart,
             removeFromCart,
             updateCartQuantity,
@@ -676,30 +959,33 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             removeSalesman,
             addCategory,
             removeCategory,
-            pages: config.pages,
-            customerCare: config.customerCare,
             addPage,
             removePage,
+            pages: config.pages,
+            customerCare: config.customerCare,
             addCustomerCare,
             removeCustomerCare,
-
-            paymentMethods: config.paymentMethods,
-            addPaymentMethod,
-            removePaymentMethod,
-
             cities: config.cities,
             addCity,
             removeCity,
-
+            paymentMethods: config.paymentMethods,
+            addPaymentMethod,
+            removePaymentMethod,
+            editingOrder,
+            setEditingOrder,
             pinnedProductIds: config.pinnedProducts || [],
             toggleProductPin,
-
             pinnedOrderColumns: config.pinnedOrderColumns || [],
             toggleOrderColumnPin,
-
             updateCart,
-            editingOrder,
-            setEditingOrder
+            importProducts,
+            importOrders,
+            restockOrder,
+            // Authentication
+            currentUser,
+            login,
+            logout,
+            hasPermission
         }}>
             {children}
         </StoreContext.Provider>

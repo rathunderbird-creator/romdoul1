@@ -4,6 +4,7 @@ export interface Product {
     model: string;
     price: number;
     stock: number;
+    lowStockThreshold?: number;
     image: string;
     category: string;
 }
@@ -36,7 +37,7 @@ export interface Sale {
     remark?: string;
     amountReceived?: number;
     settleDate?: string;
-    paymentStatus?: 'Paid' | 'Unpaid' | 'Settle' | 'Not Settle' | 'Cancel';
+    paymentStatus?: 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending';
     orderStatus?: 'Open' | 'Closed';
     customer?: {
         id?: string; // Added optional ID to link to Customer entity
@@ -50,7 +51,7 @@ export interface Sale {
     shipping?: {
         company: string;
         trackingNumber: string;
-        status: 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned';
+        status: 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock';
         cost: number;
         staffName?: string;
     };
@@ -117,4 +118,50 @@ export interface StoreContextType {
     // Pinned Order Columns
     pinnedOrderColumns: string[];
     toggleOrderColumnPin: (columnId: string) => void;
+
+    importProducts: (products: Omit<Product, 'id'>[]) => Promise<void>;
+    importOrders: (orders: any[]) => Promise<void>;
+    restockOrder: (orderId: string) => Promise<void>;
+
+    // User & Role Management
+    users: User[];
+    roles: Role[];
+    addUser: (user: Omit<User, 'id'>) => Promise<void>;
+    updateUser: (id: string, user: Partial<User>) => Promise<void>;
+    deleteUser: (id: string) => Promise<void>;
+    addRole: (role: Omit<Role, 'id'>) => Promise<void>;
+    updateRole: (id: string, role: Partial<Role>) => Promise<void>;
+    deleteRole: (id: string) => Promise<void>;
+
+    // Authentication
+    currentUser: User | null;
+    login: (pin: string, userId?: string) => Promise<boolean>;
+    logout: () => void;
+    hasPermission: (permission: Permission) => boolean;
+}
+
+export type Permission =
+    | 'view_dashboard'
+    | 'manage_inventory'
+    | 'view_reports'
+    | 'manage_settings'
+    | 'manage_users'
+    | 'manage_orders'
+    | 'create_orders'
+    | 'view_orders';
+
+export interface Role {
+    id: string;
+    name: string;
+    description: string;
+    permissions: Permission[];
+}
+
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+    roleId: string;
+    pin?: string; // Optional numeric PIN for quick login
+    avatar?: string;
 }

@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on tcp:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "tsc -b && vite build --base ./ && electron-builder"
   },
   "build": {
     "appId": "com.antigravity.pos",

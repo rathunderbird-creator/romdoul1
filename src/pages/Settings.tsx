@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, Store, Globe, Bell, Shield, Users, Plus, Trash2, Tag, X, User as UserIcon, Moon, Sun, Database } from 'lucide-react';
+import { Save, Store, Globe, Bell, Shield, Plus, Trash2, Tag, X, User as UserIcon, Moon, Sun, Database } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -7,12 +7,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useTheme } from '../context/ThemeContext';
 import type { Customer } from '../types';
 
-interface User {
-    id: string;
-    name: string;
-    email: string;
-    role: 'Admin' | 'Manager' | 'Cashier';
-}
+
 
 const Settings: React.FC = () => {
     const { categories, addCategory, removeCategory, customers, addCustomer, deleteCustomer } = useStore();
@@ -61,40 +56,14 @@ const Settings: React.FC = () => {
     const [showAddCustomer, setShowAddCustomer] = useState(false);
     const [newCustomer, setNewCustomer] = useState<Partial<Customer>>({ name: '', phone: '', platform: 'Walk-in' });
 
-    // User Management State
-    const [users, setUsers] = useState<User[]>([
-        { id: '1', name: 'Admin User', email: 'admin@jblstore.com', role: 'Admin' },
-        { id: '2', name: 'John Doe', email: 'john@jblstore.com', role: 'Manager' },
-        { id: '3', name: 'Jane Smith', email: 'jane@jblstore.com', role: 'Cashier' },
-    ]);
-    const [showAddUser, setShowAddUser] = useState(false);
-    const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Cashier' as User['role'] });
+
 
     const handleSave = () => {
         // Placeholder for save functionality
         showToast('Settings saved successfully!', 'success');
     };
 
-    const handleAddUser = () => {
-        if (!newUser.name || !newUser.email) return;
-        const user: User = {
-            id: Date.now().toString(),
-            name: newUser.name,
-            email: newUser.email,
-            role: newUser.role
-        };
-        setUsers([...users, user]);
-        setNewUser({ name: '', email: '', role: 'Cashier' });
-        setShowAddUser(false);
-        showToast('User added', 'success');
-    };
 
-    const handleDeleteUser = (id: string) => {
-        if (confirm('Are you sure you want to remove this user?')) {
-            setUsers(users.filter(u => u.id !== id));
-            showToast('User removed', 'info');
-        }
-    };
 
     const handleAddCategory = () => {
         if (!newCategory.trim()) return;
@@ -501,134 +470,7 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Users Section */}
-                <div className="glass-panel" style={{ padding: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <Users className="text-primary" size={24} />
-                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Team Members</h2>
-                        </div>
-                        <button
-                            onClick={() => setShowAddUser(!showAddUser)}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'transparent',
-                                border: '1px solid var(--color-border)',
-                                padding: '8px 16px',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                color: 'var(--color-text-main)'
-                            }}
-                        >
-                            <Plus size={16} />
-                            Add Member
-                        </button>
-                    </div>
 
-                    {showAddUser && (
-                        <div style={{
-                            marginBottom: '12px',
-                            padding: '16px',
-                            background: 'var(--color-bg)',
-                            borderRadius: '8px',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <h3 style={{ marginBottom: '16px', fontSize: '16px', fontWeight: '600' }}>New User</h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Name</label>
-                                    <input
-                                        type="text"
-                                        value={newUser.name}
-                                        onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                                        className="search-input"
-                                        style={{ width: '100%', padding: '8px' }}
-                                        placeholder="John Doe"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Email</label>
-                                    <input
-                                        type="email"
-                                        value={newUser.email}
-                                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                                        className="search-input"
-                                        style={{ width: '100%', padding: '8px' }}
-                                        placeholder="john@example.com"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Role</label>
-                                    <select
-                                        value={newUser.role}
-                                        onChange={(e) => setNewUser({ ...newUser, role: e.target.value as User['role'] })}
-                                        className="search-input"
-                                        style={{ width: '100%', padding: '8px' }}
-                                    >
-                                        <option value="Cashier">Cashier</option>
-                                        <option value="Manager">Manager</option>
-                                        <option value="Admin">Admin</option>
-                                    </select>
-                                </div>
-                                <button
-                                    onClick={handleAddUser}
-                                    className="primary-button"
-                                    style={{ padding: '8px 16px', height: '35px' }}
-                                >
-                                    Add
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {users.map(user => (
-                            <div key={user.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '12px',
-                                background: 'var(--color-bg)',
-                                borderRadius: '8px'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        background: 'var(--color-primary)',
-                                        color: 'white',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontWeight: 'bold',
-                                        fontSize: '14px'
-                                    }}>
-                                        {user.name.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <div style={{ fontWeight: '500' }}>{user.name}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{user.email} • {user.role}</div>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => handleDeleteUser(user.id)}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: 'var(--color-error, #EF4444)',
-                                        cursor: 'pointer',
-                                        padding: '8px'
-                                    }}
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
 
                 {/* General Settings Section */}
                 <div className="glass-panel" style={{ padding: '24px' }}>

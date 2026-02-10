@@ -23,14 +23,12 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const id = Date.now().toString();
         setToasts((prev) => [...prev, { id, message, type }]);
 
-        setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 3000);
+
     }, []);
 
-    const removeToast = (id: string) => {
+    const removeToast = useCallback((id: string) => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
+    }, []);
 
     return (
         <ToastContext.Provider value={{ showToast }}>
@@ -45,35 +43,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 zIndex: 2000
             }}>
                 {toasts.map((toast) => (
-                    <div
-                        key={toast.id}
-                        style={{
-                            minWidth: '300px',
-                            padding: '16px',
-                            borderRadius: '8px',
-                            backgroundColor: 'var(--color-surface)',
-                            border: `1px solid ${toast.type === 'success' ? '#10B981' :
-                                toast.type === 'error' ? '#EF4444' :
-                                    'var(--color-primary)'
-                                }`,
-                            color: 'var(--color-text-main)',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            animation: 'slideIn 0.3s ease-out'
-                        }}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            {toast.type === 'success' && <CheckCircle size={20} color="#10B981" />}
-                            {toast.type === 'error' && <AlertCircle size={20} color="#EF4444" />}
-                            {toast.type === 'info' && <Info size={20} color="var(--color-primary)" />}
-                            <span style={{ fontSize: '14px' }}>{toast.message}</span>
-                        </div>
-                        <button onClick={() => removeToast(toast.id)} style={{ background: 'none', color: '#6B7280' }}>
-                            <X size={16} />
-                        </button>
-                    </div>
+                    <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
                 ))}
             </div>
             <style>{`
@@ -85,6 +55,55 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         </ToastContext.Provider>
     );
 };
+
+const ToastItem: React.FC<{ toast: Toast; onRemove: (id: string) => void }> = ({ toast, onRemove }) => {
+    const [isPaused, setIsPaused] = useState(false);
+
+    React.useEffect(() => {
+        if (isPaused) return;
+
+        const timer = setTimeout(() => {
+            onRemove(toast.id);
+        }, 3000);
+
+        return () => clearTimeout(timer);
+    }, [isPaused, toast.id, onRemove]);
+
+    return (
+        <div
+            onMouseEnter={() => setIsPaused(true)}
+            onMouseLeave={() => setIsPaused(false)}
+            style={{
+                minWidth: '300px',
+                padding: '16px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--color-surface)',
+                border: `1px solid ${toast.type === 'success' ? '#10B981' :
+                    toast.type === 'error' ? '#EF4444' :
+                        'var(--color-primary)'
+                    }`,
+                color: 'var(--color-text-main)',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                animation: 'slideIn 0.3s ease-out',
+                cursor: 'pointer'
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {toast.type === 'success' ? <CheckCircle size={20} color="#10B981" /> :
+                    toast.type === 'error' ? <AlertCircle size={20} color="#EF4444" /> :
+                        <Info size={20} color="var(--color-primary)" />}
+                <span style={{ fontSize: '14px' }}>{toast.message}</span>
+            </div>
+            <button onClick={() => onRemove(toast.id)} style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                <X size={16} />
+            </button>
+        </div>
+    );
+};
+
 
 export const useToast = () => {
     const context = useContext(ToastContext);

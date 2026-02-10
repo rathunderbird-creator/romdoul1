@@ -8,7 +8,6 @@ export { default as POSPaymentModal } from './POSPaymentModal';
 export { default as PaymentStatusBadge } from './PaymentStatusBadge';
 export { default as ProductCard } from './ProductCard';
 export { default as ReceiptModal } from './ReceiptModal';
-export { default as SalesChart } from './SalesChart';
 export { default as Sidebar } from './Sidebar';
 export { default as StatsCard } from './StatsCard';
 export { default as StatusBadge } from './StatusBadge';

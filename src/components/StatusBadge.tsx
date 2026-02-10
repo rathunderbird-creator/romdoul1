@@ -18,7 +18,8 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
             case 'Shipped': return { bg: '#DBEAFE', color: '#2563EB', border: '#93C5FD' }; // Blue
             case 'Delivered': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
             case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
-            case 'Returned': return { bg: '#F3F4F6', color: '#4B5563', border: '#D1D5DB' }; // Gray
+            case 'Returned': return { bg: '#F3F4F6', color: '#DC2626', border: '#D1D5DB' }; // Red text, Gray bg
+            case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE', border: '#C084FC' }; // Purple
             default: return { bg: '#F3F4F6', color: '#4B5563', border: '#D1D5DB' };
         }
     };
@@ -44,7 +45,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         width: '100%'
     };
 
-    const options = ['Pending', 'Shipped', 'Delivered', 'Returned'];
+    const options = ['Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
 
     // Close dropdown when clicking outside
     useEffect(() => {

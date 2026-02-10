@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Upload, Boxes } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import StatsCard from '../components/StatsCard';
+import DataImportModal from '../components/DataImportModal';
 import type { Product } from '../types';
 
 type SortConfig = {
@@ -13,7 +14,7 @@ type SortConfig = {
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, importProducts } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
 
@@ -31,7 +32,31 @@ const Inventory: React.FC = () => {
 
     // State
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+    const handleImportProducts = async (data: any[]) => {
+        // Basic validation/mapping if needed, or pass directly if keys match
+        // The modal returns objects with keys from the CSV/Excel header
+        // We expect: Name, Model, Price, Stock, Category
+
+        try {
+            const mappedProducts = data.map(item => ({
+                name: item.Name || item.name || 'Unknown Product',
+                model: item.Model || item.model || '',
+                price: Number(item.Price || item.price || 0),
+                stock: Number(item.Stock || item.stock || 0),
+                category: item.Category || item.category || 'Portable',
+                image: item.Image || 'https://via.placeholder.com/300'
+            }));
+
+            await importProducts(mappedProducts);
+            setIsImportModalOpen(false);
+        } catch (error) {
+            console.error("Import failed in component:", error);
+            throw error; // Re-throw to let modal handle it or show toast
+        }
+    };
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -74,6 +99,7 @@ const Inventory: React.FC = () => {
         model: '',
         price: 0,
         stock: 0,
+        lowStockThreshold: 5,
         category: categories[0] || 'Portable',
         image: 'https://via.placeholder.com/300'
     };
@@ -117,15 +143,17 @@ const Inventory: React.FC = () => {
     // Calculate Totals
     const stats = useMemo(() => {
         const totalProducts = products.length;
-        const lowStock = products.filter(p => p.stock < 5).length;
+        const lowStock = products.filter(p => p.stock < (p.lowStockThreshold || 5)).length;
         const totalValue = products.reduce((sum, p) => sum + (p.price * p.stock), 0);
         const categoryCount = categories.length;
+        const totalAllStock = products.reduce((sum, p) => sum + p.stock, 0);
 
         return {
             totalProducts,
             lowStock,
             totalValue,
-            categoryCount
+            categoryCount,
+            totalAllStock
         };
     }, [products, categories]);
 
@@ -200,19 +228,33 @@ const Inventory: React.FC = () => {
         <div>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <button
-                    onClick={openAddModal}
-                    className="primary-button"
-                    style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                    <Plus size={20} />
-                    Add Product
-                </button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                        onClick={() => setIsImportModalOpen(true)}
+                        style={{
+                            padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px',
+                            background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px',
+                            cursor: 'pointer', fontWeight: 500, color: 'var(--color-text-main)'
+                        }}
+                    >
+                        <Upload size={20} />
+                        Import
+                    </button>
+                    <button
+                        onClick={openAddModal}
+                        className="primary-button"
+                        style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                        <Plus size={20} />
+                        Add Product
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '12px' }}>
                 <StatsCard title="Total Products" value={stats.totalProducts} icon={Package} color="var(--color-primary)" />
+                <StatsCard title="Products in Stock" value={stats.totalAllStock} icon={Boxes} color="#3B82F6" />
                 <StatsCard title="Low Stock" value={stats.lowStock} icon={AlertTriangle} color="var(--color-red)" />
                 <StatsCard title="Total Value" value={`$${stats.totalValue.toLocaleString()} `} icon={DollarSign} color="var(--color-green)" />
                 <StatsCard title="Categories" value={stats.categoryCount} icon={Layers} color="var(--color-purple)" />
@@ -292,7 +334,7 @@ const Inventory: React.FC = () => {
                                 </td>
                                 <td style={{ fontWeight: 600 }}>${product.price}</td>
                                 <td>
-                                    {product.stock < 5 ? (
+                                    {product.stock < (product.lowStockThreshold || 5) ? (
                                         <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
                                             <AlertTriangle size={14} /> {product.stock}
                                         </span>
@@ -326,6 +368,19 @@ const Inventory: React.FC = () => {
                             </tr>
                         ))}
                     </tbody>
+                    <tfoot>
+                        <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
+                            <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
+                            <td style={{ padding: '12px 16px' }}>—</td>
+                            <td style={{ padding: '12px 16px', color: '#10B981' }}>
+                                {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
+                            </td>
+                            <td style={{ padding: '12px 16px' }}>
+                                ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
+                            </td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
                 </table>
                 {filteredAndSortedProducts.length === 0 && (
                     <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
@@ -445,7 +500,7 @@ const Inventory: React.FC = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Price ($)</label>
                                         <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: Number(e.target.value) })} />
@@ -453,6 +508,17 @@ const Inventory: React.FC = () => {
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Stock</label>
                                         <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: Number(e.target.value) })} />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
+                                        <input
+                                            className="search-input"
+                                            type="number"
+                                            style={{ width: '100%' }}
+                                            placeholder="5"
+                                            value={formData.lowStockThreshold}
+                                            onChange={e => setFormData({ ...formData, lowStockThreshold: Number(e.target.value) })}
+                                        />
                                     </div>
                                 </div>
                                 <div>
@@ -520,6 +586,12 @@ const Inventory: React.FC = () => {
                     </div>
                 )
             }
+            <DataImportModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                type="product"
+                onImport={handleImportProducts}
+            />
         </div >
     );
 };
