@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 
 const Orders: React.FC = () => {
-    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission } = useStore();
+    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen } = useStore();
 
     const canEdit = hasPermission('manage_orders');
     const canManage = hasPermission('manage_orders');
@@ -72,6 +72,7 @@ const Orders: React.FC = () => {
 
     // Filters
     const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Shipped' | 'Delivered'>('All');
+    const [salesmanFilter, setSalesmanFilter] = useState<string>('All');
     const [payStatusFilter, setPayStatusFilter] = useState<string[]>([]);
     const [isPayStatusOpen, setIsPayStatusOpen] = useState(false);
 
@@ -240,6 +241,7 @@ const Orders: React.FC = () => {
     const filteredOrders = useMemo(() => {
         return sales.filter(order => {
             const matchesStatus = statusFilter === 'All' || (order.shipping && order.shipping.status === statusFilter);
+            const matchesSalesman = salesmanFilter === 'All' || order.salesman === salesmanFilter;
             const matchesPayStatus = payStatusFilter.length === 0 || payStatusFilter.includes(order.paymentStatus || 'Paid');
             const lowerTerm = searchTerm.toLowerCase();
             const matchesSearch =
@@ -272,9 +274,9 @@ const Orders: React.FC = () => {
                 matchesDate = orderDate >= start && orderDate <= end;
             }
 
-            return matchesStatus && matchesPayStatus && matchesSearch && matchesDate;
+            return matchesStatus && matchesSalesman && matchesPayStatus && matchesSearch && matchesDate;
         });
-    }, [sales, statusFilter, payStatusFilter, searchTerm, dateRange]);
+    }, [sales, statusFilter, salesmanFilter, payStatusFilter, searchTerm, dateRange]);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -409,7 +411,7 @@ const Orders: React.FC = () => {
         }
     };
 
-    const hasFilters = searchTerm !== '' || statusFilter !== 'All' || payStatusFilter.length > 0 || dateRange.start !== '' || dateRange.end !== '';
+    const hasFilters = searchTerm !== '' || statusFilter !== 'All' || salesmanFilter !== 'All' || payStatusFilter.length > 0 || dateRange.start !== '' || dateRange.end !== '';
 
     return (
         <div>
@@ -465,6 +467,18 @@ const Orders: React.FC = () => {
                                 <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
                                 <option value="Shipped" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>Shipped</option>
                                 <option value="Delivered" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Delivered</option>
+                            </select>
+
+                            <select
+                                value={salesmanFilter}
+                                onChange={e => setSalesmanFilter(e.target.value)}
+                                className="search-input"
+                                style={{ width: isMobile ? '100%' : '130px' }}
+                            >
+                                <option value="All">All Salesmen</option>
+                                {salesmen.map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                ))}
                             </select>
 
                             <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
@@ -540,6 +554,7 @@ const Orders: React.FC = () => {
                                 onClick={() => {
                                     setSearchTerm('');
                                     setStatusFilter('All');
+                                    setSalesmanFilter('All');
                                     setPayStatusFilter([]);
 
 

@@ -35,12 +35,14 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             {children}
             <div style={{
                 position: 'fixed',
-                top: '24px',
-                right: '24px',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
-                zIndex: 2000
+                zIndex: 2000,
+                alignItems: 'center'
             }}>
                 {toasts.map((toast) => (
                     <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
@@ -48,8 +50,8 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             </div>
             <style>{`
         @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
         </ToastContext.Provider>

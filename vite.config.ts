@@ -7,4 +7,15 @@ export default defineConfig({
   server: {
     host: true, // Exposes the server to the network
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          supabase: ['@supabase/supabase-js'],
+          ui: ['lucide-react', 'recharts']
+        }
+      }
+    }
+  }
 })

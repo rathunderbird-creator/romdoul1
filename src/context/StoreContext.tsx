@@ -68,89 +68,145 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
 
     // Initial Fetch
+    // Initial Fetch
     useEffect(() => {
         const fetchData = async () => {
+            try {
+                const [productsResult, customersResult, salesResult, configResult] = await Promise.all([
+                    supabase.from('products').select('*'),
+                    supabase.from('customers').select('*'),
+                    supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').order('date', { ascending: false }).limit(3000),
+                    supabase.from('app_config').select('data').eq('id', 1).single()
+                ]);
 
+                // Products
+                if (productsResult.data) {
+                    setProducts(productsResult.data.map((p: any) => ({
+                        ...p,
+                        lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
+                        stock: Number(p.stock),
+                        price: Number(p.price)
+                    })));
+                }
 
-            // Products
-            const { data: productsData } = await supabase.from('products').select('*');
-            if (productsData) {
-                setProducts(productsData.map((p: any) => ({
-                    ...p,
-                    lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
-                    stock: Number(p.stock),
-                    price: Number(p.price)
-                })));
-            }
+                // Customers
+                if (customersResult.data) setCustomers(customersResult.data);
 
-            // Customers
-            const { data: customersData } = await supabase.from('customers').select('*');
-            if (customersData) setCustomers(customersData);
+                // Sales
+                if (salesResult.data) {
+                    // Map DB structure to App structure
+                    const mappedSales: Sale[] = salesResult.data.map((s: any) => ({
+                        id: s.id,
+                        total: Number(s.total),
+                        discount: Number(s.discount),
+                        date: s.date,
+                        paymentMethod: s.payment_method as any,
+                        type: s.type as any,
+                        salesman: s.salesman,
+                        customerCare: s.customer_care,
+                        remark: s.remark,
+                        amountReceived: Number(s.amount_received),
+                        settleDate: s.settle_date,
+                        paymentStatus: s.payment_status as any,
+                        orderStatus: s.order_status as any,
+                        shipping: s.shipping_status ? {
+                            company: s.shipping_company,
+                            trackingNumber: s.tracking_number || '',
+                            status: s.shipping_status as any,
+                            cost: Number(s.shipping_cost || 0),
+                            staffName: ''
+                        } : undefined,
+                        customer: s.customer_snapshot,
+                        items: s.items.map((i: any) => ({
+                            id: i.product_id,
+                            name: i.name,
+                            price: Number(i.price),
+                            quantity: i.quantity,
+                            image: i.image,
+                            model: '', // Optional in CartItem
+                            stock: 0, // Not needed in history
+                            category: ''
+                        }))
+                    }));
+                    setSales(mappedSales);
+                }
 
-            // Sales (Fetch last 500 or so? For now all)
-            // We need to fetch sale_items too or join?
-            // Simple approach: fetch sales, then items on demand? No, dashboard needs totals.
-            // Let's fetch sales with items.
-            const { data: salesData } = await supabase.from('sales').select(`*, items:sale_items(*)`);
-            if (salesData) {
-                // Map DB structure to App structure
-                const mappedSales: Sale[] = salesData.map(s => ({
-                    id: s.id,
-                    total: Number(s.total),
-                    discount: Number(s.discount),
-                    date: s.date,
-                    paymentMethod: s.payment_method as any,
-                    type: s.type as any,
-                    salesman: s.salesman,
-                    customerCare: s.customer_care,
-                    remark: s.remark,
-                    amountReceived: Number(s.amount_received),
-                    settleDate: s.settle_date,
-                    paymentStatus: s.payment_status as any,
-                    orderStatus: s.order_status as any,
-                    shipping: s.shipping_status ? {
-                        company: s.shipping_company,
-                        trackingNumber: s.tracking_number || '',
-                        status: s.shipping_status as any,
-                        cost: Number(s.shipping_cost || 0),
-                        staffName: ''
-                    } : undefined,
-                    customer: s.customer_snapshot,
-                    items: s.items.map((i: any) => ({
-                        id: i.product_id,
-                        name: i.name,
-                        price: Number(i.price),
-                        quantity: i.quantity,
-                        image: i.image,
-                        model: '', // Optional in CartItem
-                        stock: 0, // Not needed in history
-                        category: ''
-                    }))
-                }));
-                // Sort by date desc
-                setSales(mappedSales.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            }
+                // Config
+                if (configResult.data) {
+                    const loadedConfig = configResult.data.data;
+                    const needsMigration = !loadedConfig.cities ||
+                        loadedConfig.cities.length === 0 ||
+                        loadedConfig.cities.includes('Phnom Penh') ||
+                        !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
+                        !loadedConfig.pinnedProducts ||
+                        !loadedConfig.users ||
+                        !loadedConfig.users.length ||
+                        !loadedConfig.roles ||
+                        // Force update if Admin role is missing permissions (Repair)
+                        !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders'));
 
-            // Config
-            const { data: configData } = await supabase.from('app_config').select('data').eq('id', 1).single();
-
-            if (configData) {
-                const loadedConfig = configData.data;
-                const needsMigration = !loadedConfig.cities ||
-                    loadedConfig.cities.length === 0 ||
-                    loadedConfig.cities.includes('Phnom Penh') ||
-                    !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
-                    !loadedConfig.pinnedProducts ||
-                    !loadedConfig.users ||
-                    !loadedConfig.users.length ||
-                    !loadedConfig.roles ||
-                    // Force update if Admin role is missing permissions (Repair)
-                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders'));
-
-                if (needsMigration) {
-                    const updatedConfig = {
-                        ...loadedConfig,
-                        cities: loadedConfig.cities && loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ? loadedConfig.cities : [
+                    if (needsMigration) {
+                        const updatedConfig = {
+                            ...loadedConfig,
+                            cities: loadedConfig.cities && loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ? loadedConfig.cities : [
+                                'រាជធានីភ្នំពេញ',
+                                'ខេត្តបន្ទាយមានជ័យ',
+                                'ខេត្តបាត់ដំបង',
+                                'ខេត្តកំពង់ចាម',
+                                'ខេត្តកំពង់ឆ្នាំង',
+                                'ខេត្តកំពង់ស្ពឺ',
+                                'ខេត្តកំពង់ធំ',
+                                'ខេត្តកំពត',
+                                'ខេត្តកណ្តាល',
+                                'ខេត្តកោះកុង',
+                                'ខេត្តក្រចេះ',
+                                'ខេត្តមណ្ឌលគិរី',
+                                'ខេត្តព្រះវិហារ',
+                                'ខេត្តព្រៃវែង',
+                                'ខេត្តពោធិ៍សាត់',
+                                'ខេត្តរតនគិរី',
+                                'ខេត្តសៀមរាប',
+                                'ខេត្តព្រះសីហនុ',
+                                'ខេត្តស្ទឹងត្រែង',
+                                'ខេត្តស្វាយរៀង',
+                                'ខេត្តតាកែវ',
+                                'ខេត្តឧត្តរមានជ័យ',
+                                'ខេត្តកែប',
+                                'ខេត្តប៉ៃលិន',
+                                'ខេត្តត្បូងឃ្មុំ'
+                            ],
+                            pinnedProducts: loadedConfig.pinnedProducts || [],
+                            pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
+                            users: (loadedConfig.users && loadedConfig.users.length > 0) ? loadedConfig.users : [
+                                { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
+                            ],
+                            roles: [
+                                // Ensure Admin always has full permissions
+                                {
+                                    id: 'admin',
+                                    name: 'Administrator',
+                                    description: 'Full system access',
+                                    permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
+                                },
+                                // Merge other roles, preventing duplicates
+                                ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin')
+                            ]
+                        };
+                        setConfig(updatedConfig);
+                        await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
+                    } else {
+                        setConfig(loadedConfig);
+                    }
+                } else {
+                    // Initial if no config found
+                    const defaultConfig = {
+                        shippingCompanies: ['J&T', 'VET', 'JS Express'],
+                        salesmen: ['Sokheng', 'Thida'],
+                        categories: ['Portable', 'PartyBox'],
+                        pages: ['Chantha Sound'],
+                        customerCare: ['Chantha'],
+                        paymentMethods: ['Cash', 'QR'],
+                        cities: [
                             'រាជធានីភ្នំពេញ',
                             'ខេត្តបន្ទាយមានជ័យ',
                             'ខេត្តបាត់ដំបង',
@@ -177,107 +233,50 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             'ខេត្តប៉ៃលិន',
                             'ខេត្តត្បូងឃ្មុំ'
                         ],
-                        pinnedProducts: loadedConfig.pinnedProducts || [],
-                        pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
-                        users: (loadedConfig.users && loadedConfig.users.length > 0) ? loadedConfig.users : [
+                        pinnedProducts: [],
+                        pinnedOrderColumns: [],
+                        users: [
                             { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
                         ],
                         roles: [
-                            // Ensure Admin always has full permissions
                             {
                                 id: 'admin',
                                 name: 'Administrator',
                                 description: 'Full system access',
                                 permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
                             },
-                            // Merge other roles, preventing duplicates
-                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin')
+                            {
+                                id: 'store_manager',
+                                name: 'Store Manager',
+                                description: 'Manage store operations',
+                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'cashier',
+                                name: 'Cashier',
+                                description: 'Process sales and payments',
+                                permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'customer_care',
+                                name: 'Customer Care',
+                                description: 'Manage support and orders',
+                                permissions: ['view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'salesman',
+                                name: 'Salesman',
+                                description: 'Sales and order viewing',
+                                permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                            }
                         ]
                     };
-                    setConfig(updatedConfig);
-                    await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
-                } else {
-                    setConfig(loadedConfig);
+                    setConfig(defaultConfig);
+                    await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
                 }
-            } else {
-                // Initial if no config found
-                const defaultConfig = {
-                    shippingCompanies: ['J&T', 'VET', 'JS Express'],
-                    salesmen: ['Sokheng', 'Thida'],
-                    categories: ['Portable', 'PartyBox'],
-                    pages: ['Chantha Sound'],
-                    customerCare: ['Chantha'],
-                    paymentMethods: ['Cash', 'QR'],
-                    cities: [
-                        'រាជធានីភ្នំពេញ',
-                        'ខេត្តបន្ទាយមានជ័យ',
-                        'ខេត្តបាត់ដំបង',
-                        'ខេត្តកំពង់ចាម',
-                        'ខេត្តកំពង់ឆ្នាំង',
-                        'ខេត្តកំពង់ស្ពឺ',
-                        'ខេត្តកំពង់ធំ',
-                        'ខេត្តកំពត',
-                        'ខេត្តកណ្តាល',
-                        'ខេត្តកោះកុង',
-                        'ខេត្តក្រចេះ',
-                        'ខេត្តមណ្ឌលគិរី',
-                        'ខេត្តព្រះវិហារ',
-                        'ខេត្តព្រៃវែង',
-                        'ខេត្តពោធិ៍សាត់',
-                        'ខេត្តរតនគិរី',
-                        'ខេត្តសៀមរាប',
-                        'ខេត្តព្រះសីហនុ',
-                        'ខេត្តស្ទឹងត្រែង',
-                        'ខេត្តស្វាយរៀង',
-                        'ខេត្តតាកែវ',
-                        'ខេត្តឧត្តរមានជ័យ',
-                        'ខេត្តកែប',
-                        'ខេត្តប៉ៃលិន',
-                        'ខេត្តត្បូងឃ្មុំ'
-                    ],
-                    pinnedProducts: [],
-                    pinnedOrderColumns: [],
-                    users: [
-                        { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
-                    ],
-                    roles: [
-                        {
-                            id: 'admin',
-                            name: 'Administrator',
-                            description: 'Full system access',
-                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'store_manager',
-                            name: 'Store Manager',
-                            description: 'Manage store operations',
-                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'cashier',
-                            name: 'Cashier',
-                            description: 'Process sales and payments',
-                            permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'customer_care',
-                            name: 'Customer Care',
-                            description: 'Manage support and orders',
-                            permissions: ['view_dashboard', 'manage_orders', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'salesman',
-                            name: 'Salesman',
-                            description: 'Sales and order viewing',
-                            permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
-                        }
-                    ]
-                };
-                setConfig(defaultConfig);
-                await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
+            } catch (error) {
+                console.error("Error fetching data:", error);
             }
-
-
         };
         fetchData();
     }, []);
@@ -495,8 +494,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             product_id: item.id,
             name: item.name,
             price: item.price,
-            quantity: item.quantity,
-            image: item.image
+            quantity: item.quantity
+            // image: item.image - Removed to save DB space
         }));
         await supabase.from('sale_items').insert(itemsPayload);
 
@@ -616,8 +615,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             product_id: item.id,
             name: item.name,
             price: item.price,
-            quantity: item.quantity,
-            image: item.image
+            quantity: item.quantity
+            // image: item.image - Removed to save DB space
         }));
         await supabase.from('sale_items').insert(itemsPayload);
 
