@@ -184,10 +184,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     {!isMobile && <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Complete the order information below</p>}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <>
-                        <button onClick={onCancel} style={{ padding: isMobile ? '8px 12px' : '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: isMobile ? '13px' : '14px' }}>Cancel</button>
-                        <button onClick={handleSubmit} className="primary-button" style={{ padding: isMobile ? '8px 16px' : '10px 32px', borderRadius: '10px', fontSize: isMobile ? '13px' : '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update' : 'Confirm'}</button>
-                    </>
+                    {!isMobile && (
+                        <>
+                            <button onClick={onCancel} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px' }}>Cancel</button>
+                            <button onClick={handleSubmit} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -202,36 +204,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     flex: isMobile ? 1 : 1.4
                 }}>
                     <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)' }}>Shipping Details</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px' }}>
-                            {orderToEdit && (
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
-                                    <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
-                                        {['Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                            )}
-                            <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Company</label>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
-                                        <option value="">Select...</option>
-                                        {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    {!isMobile && (
-                                        <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             Customer Information
                         </h3>
-
+                        <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
+                            <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
+                                {['Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Name</label>
@@ -276,8 +257,6 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
                     </div>
 
-
-
                     <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)' }}>Order & Payment</h3>
 
@@ -306,6 +285,18 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     </select>
                                     {!isMobile && (
                                         <button onClick={() => { setConfigType('customerCare'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    )}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Company</label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
+                                        <option value="">Select...</option>
+                                        {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    {!isMobile && (
+                                        <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                     )}
                                 </div>
                             </div>
@@ -463,7 +454,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 </div>
             </div >
 
-
+            {isMobile && (
+                <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 10 }}>
+                    <button onClick={onCancel} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Cancel</button>
+                    <button onClick={handleSubmit} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                </div>
+            )}
 
             <ConfigModal
                 isOpen={isConfigModalOpen}
