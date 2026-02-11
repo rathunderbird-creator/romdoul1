@@ -84,9 +84,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const [productsResult, customersResult, salesResult, configResult] = await Promise.all([
                     supabase.from('products').select('*'),
                     supabase.from('customers').select('*'),
-                    supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').order('date', { ascending: false }).limit(3000),
+                    supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').order('date', { ascending: false }).range(0, 9999),
                     supabase.from('app_config').select('data').eq('id', 1).single()
                 ]);
+
+                console.log('Fetched Sales Count:', salesResult.data?.length);
+                if (salesResult.error) console.error('Sales Fetch Error:', salesResult.error);
 
                 // Products
                 if (productsResult.data) {
@@ -743,8 +746,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const deleteOrders = async (ids: string[]) => {
+        // Optimistic UI update
         setSales(prev => prev.filter(sale => !ids.includes(sale.id)));
-        await supabase.from('sales').delete().in('id', ids);
+
+        // Batch deletion to avoid API limits (e.g. URL length or max row count)
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            const batch = ids.slice(i, i + BATCH_SIZE);
+            const { error } = await supabase.from('sales').delete().in('id', batch);
+            if (error) {
+                console.error(`Error deleting batch ${i}-${i + BATCH_SIZE}:`, error);
+                // Optionally alert user, but since we already updated UI, it might be confusing.
+                // Best to log and maybe show a toast if possible (but toast is not in context here).
+            }
+        }
     };
 
     const importProducts = async (newProducts: Omit<Product, 'id'>[]) => {
@@ -775,43 +790,114 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return new Date(serial).toISOString();
     };
 
+    const parseProductsString = (productsStr: string): any[] => {
+        if (!productsStr) return [];
+        // Split by comma
+        return productsStr.split(',').map(itemStr => {
+            const trimmed = itemStr.trim();
+            // Try to match "Item Name xQuantity" or "Item Name (xQuantity)"
+            // Regex explanations:
+            // (.*?) - Capture name (lazy)
+            // [\s\(]* - Optional space or opening parenthesis
+            // [xX*] - The multiplier char
+            // (\d+) - Capture quantity digits
+            // [\)]* - Optional closing parenthesis
+            // $ - End of string
+            const match = trimmed.match(/^(.*?)[\s\(]*[xX*](\d+)[\)]*$/);
+
+            if (match) {
+                return {
+                    name: match[1].trim(),
+                    quantity: parseInt(match[2], 10),
+                    price: 0 // Price is unknown from simple string import
+                };
+            } else {
+                return {
+                    name: trimmed,
+                    quantity: 1,
+                    price: 0
+                };
+            }
+        }).filter(item => item.name);
+    };
+
     const importOrders = async (importedOrders: any[]) => {
-        // Map Excel/JSON rows to DB Sale structure
-        const salesToInsert = importedOrders.map(order => ({
-            id: order['Order ID'] || crypto.randomUUID(),
-            date: convertExcelDate(order['Date']) || new Date().toISOString(),
-            customer_snapshot: {
-                name: order['Customer'] || 'Unknown',
-                phone: order['Phone'] || '',
-                address: order['Address'] || '',
-                city: order['City / Province'] || '',
-                page: order['Page Name'] || '',
-                platform: order['Platform'] || 'Facebook'
-            },
-            total: order['Total'] || order['Total Amount'] || 0,
-            payment_method: order['Pay By'] || order['Payment Method'] || 'Cash',
-            payment_status: order['Pay Status'] || order['Payment Status'] || 'Unpaid',
-            order_status: 'Closed',
-            salesman: order['Salesman'] || '',
-            customer_care: order['Customer Care'] || '',
-            amount_received: order['Received'] !== undefined ? order['Received'] : ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? (order['Total'] || 0) : 0),
-            settle_date: convertExcelDate(order['Settled/Paid Date']) || ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? new Date().toISOString() : null),
-            remark: order['Remark'] || order['Remarks'] || (order['Products'] ? `Imported: ${order['Products']}` : 'Imported Order'),
-            type: 'POS',
-            shipping_company: order['Shipping Co'] || order['Shipping Company'] || '',
-            tracking_number: order['Tracking ID'] || order['Tracking Number'] || '',
-            shipping_status: order['Ship Status'] || order['Shipping Status'] || 'Pending',
-        }));
+        // Prepare arrays for bulk insert
+        const salesToInsert: any[] = [];
+        const saleItemsToInsert: any[] = [];
+        const localSalesMap: Record<string, any[]> = {}; // Map saleId -> items
 
-        const { data: insertedSales, error } = await supabase.from('sales').insert(salesToInsert).select();
+        importedOrders.forEach(order => {
+            const id = order['Order ID'] || crypto.randomUUID();
+            const productsStr = order['Products'] || order['Items'] || '';
+            const items = parseProductsString(productsStr);
 
-        if (error) {
-            console.error('Error importing orders:', error);
-            throw new Error('Failed to import orders: ' + error.message);
+            // Prepare Sale Record
+            salesToInsert.push({
+                id: id,
+                date: convertExcelDate(order['Date']) || new Date().toISOString(),
+                customer_snapshot: {
+                    name: order['Customer'] || 'Unknown',
+                    phone: order['Phone'] || '',
+                    address: order['Address'] || '',
+                    city: order['City / Province'] || '',
+                    page: order['Page Name'] || '',
+                    platform: order['Platform'] || 'Facebook'
+                },
+                total: order['Total'] || order['Total Amount'] || 0,
+                payment_method: order['Pay By'] || order['Payment Method'] || 'Cash',
+                payment_status: order['Pay Status'] || order['Payment Status'] || 'Unpaid',
+                order_status: 'Closed',
+                salesman: order['Salesman'] || '',
+                customer_care: order['Customer Care'] || '',
+                amount_received: order['Received'] !== undefined ? order['Received'] : ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? (order['Total'] || 0) : 0),
+                settle_date: convertExcelDate(order['Settled/Paid Date']) || ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? new Date().toISOString() : null),
+                remark: order['Remark'] || order['Remarks'] || (items.length === 0 ? 'Imported Order' : ''),
+                type: 'POS',
+                shipping_company: order['Shipping Co'] || order['Shipping Company'] || '',
+                tracking_number: order['Tracking ID'] || order['Tracking Number'] || '',
+                shipping_status: order['Ship Status'] || order['Shipping Status'] || 'Pending',
+            });
+
+            // Prepare Sale Items Records
+            items.forEach(item => {
+                const itemId = crypto.randomUUID();
+                saleItemsToInsert.push({
+                    id: itemId,
+                    sale_id: id,
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    // Product ID is unknown, maybe link if name matches? For now leave null or dummy
+                    product_id: null
+                });
+
+                // For local state
+                if (!localSalesMap[id]) localSalesMap[id] = [];
+                localSalesMap[id].push({ ...item, id: itemId });
+            });
+        });
+
+        // 1. Insert Sales
+        const { data: insertedSales, error: salesError } = await supabase.from('sales').insert(salesToInsert).select();
+
+        if (salesError) {
+            console.error('Error importing orders:', salesError);
+            throw new Error('Failed to import orders: ' + salesError.message);
         }
 
+        // 2. Insert Sale Items (if any)
+        if (saleItemsToInsert.length > 0) {
+            const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
+            if (itemsError) {
+                console.error('Error importing sale items:', itemsError);
+                // Note: Sales were already inserted. We might want to warn user but simpler to throw
+                throw new Error('Failed to import order items: ' + itemsError.message);
+            }
+        }
+
+        // 3. Update Local State
         if (insertedSales) {
-            // Map back to local state interface
             const newSales: Sale[] = insertedSales.map(s => ({
                 id: s.id,
                 total: Number(s.total),
@@ -827,7 +913,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 paymentStatus: s.payment_status as any,
                 orderStatus: s.order_status as any,
                 customer: s.customer_snapshot,
-                items: [], // Importing items into separate table is complex; leaving empty for summary view
+                items: localSalesMap[s.id] || [],
                 shipping: {
                     company: s.shipping_company || '',
                     trackingNumber: s.tracking_number || '',

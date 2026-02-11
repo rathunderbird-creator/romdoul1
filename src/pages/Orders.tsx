@@ -1169,6 +1169,8 @@ const Orders: React.FC = () => {
                                     <option value={300}>300</option>
                                     <option value={500}>500</option>
                                     <option value={1000}>1000</option>
+                                    <option value={3000}>3000</option>
+                                    <option value={5000}>5000</option>
                                 </select>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
