@@ -224,7 +224,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             <option value="">Select...</option>
                                             {cities.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
-                                        <button onClick={() => { setConfigType('city'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                        {!isMobile && (
+                                            <button onClick={() => { setConfigType('city'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                        )}
                                     </div>
                                 </div>
                                 <div>
@@ -238,7 +240,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             <option value="">Select Page...</option>
                                             {pages.map(p => <option key={p} value={p}>{p}</option>)}
                                         </select>
-                                        <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                        {!isMobile && (
+                                            <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -257,7 +261,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <option value="">Select...</option>
                                         {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
-                                    <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    {!isMobile && (
+                                        <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    )}
                                 </div>
                             </div>
                             <div>
@@ -267,7 +273,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <option value="">Select...</option>
                                         {salesmen.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
-                                    <button onClick={() => { setConfigType('salesman'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    {!isMobile && (
+                                        <button onClick={() => { setConfigType('salesman'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    )}
                                 </div>
                             </div>
                             {/* Customer Care */}
@@ -278,7 +286,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <option value="">Select...</option>
                                         {customerCare.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
-                                    <button onClick={() => { setConfigType('customerCare'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    {!isMobile && (
+                                        <button onClick={() => { setConfigType('customerCare'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -314,7 +324,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <option value="">Select...</option>
                                         {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                                     </select>
-                                    <button onClick={() => { setConfigType('paymentMethod'); setIsConfigModalOpen(true); }} disabled={formData.paymentAfterDelivery} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: formData.paymentAfterDelivery ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }}><Settings size={18} /></button>
+                                    {!isMobile && (
+                                        <button onClick={() => { setConfigType('paymentMethod'); setIsConfigModalOpen(true); }} disabled={formData.paymentAfterDelivery} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: formData.paymentAfterDelivery ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }}><Settings size={18} /></button>
+                                    )}
                                 </div>
                             </div>
                             <div>
