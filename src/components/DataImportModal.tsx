@@ -68,18 +68,20 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                     'Customer': 'John Doe',
                     'Phone': '012345678',
                     'Address': '#123, St 456, Phnom Penh',
-                    'Page': 'JBL Cambodia',
+                    'Page Name': 'JBL Cambodia',
                     'Salesman': 'Sopheak',
                     'Customer Care': 'Dara',
-                    'Items': 'Item A x1, Item B x2',
-                    'Total Amount': 150,
-                    'Payment Method': 'Cash',
-                    'Payment Status': 'Paid',
-                    'Settle Date': '2023-10-28',
-                    'Shipping Company': 'J&T',
-                    'Shipping Status': 'Delivered',
-                    'Tracking Number': 'TRACK-123',
-                    'Remarks': 'Test order'
+                    'Products': 'Item A x1, Item B x2',
+                    'Total': 150,
+                    'Pay By': 'Cash',
+                    'Balance': 0,
+                    'Ship Status': 'Delivered',
+                    'Received': 150,
+                    'Pay Status': 'Paid',
+                    'Shipping Co': 'J&T',
+                    'Tracking ID': 'TRACK-123',
+                    'Remark': 'Test order',
+                    'Settled/Paid Date': '2023-10-28'
                 }
             ];
         }

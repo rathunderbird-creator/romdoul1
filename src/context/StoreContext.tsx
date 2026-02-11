@@ -779,28 +779,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Map Excel/JSON rows to DB Sale structure
         const salesToInsert = importedOrders.map(order => ({
             id: order['Order ID'] || crypto.randomUUID(),
-            date: convertExcelDate(order.Date) || new Date().toISOString(),
+            date: convertExcelDate(order['Date']) || new Date().toISOString(),
             customer_snapshot: {
-                name: order.Customer || 'Unknown',
-                phone: order.Phone || '',
-                address: order.Address || '',
-                city: order.City || '',
-                page: order.Page || '',
-                platform: order.Platform || 'Facebook'
+                name: order['Customer'] || 'Unknown',
+                phone: order['Phone'] || '',
+                address: order['Address'] || '',
+                city: order['City / Province'] || '',
+                page: order['Page Name'] || '',
+                platform: order['Platform'] || 'Facebook'
             },
-            total: order['Total Amount'] || order.Total || 0,
-            payment_method: order['Payment Method'] || order.PaymentMethod || 'Cash',
-            payment_status: (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Paid' ? 'Paid' : ((order['Payment Status'] || order.PaymentStatus || order.Status) === 'Settled' ? 'Settled' : 'Unpaid'),
+            total: order['Total'] || order['Total Amount'] || 0,
+            payment_method: order['Pay By'] || order['Payment Method'] || 'Cash',
+            payment_status: order['Pay Status'] || order['Payment Status'] || 'Unpaid',
             order_status: 'Closed',
-            salesman: order.Salesman || '',
-            customer_care: order['Customer Care'] || order.CustomerCare || '',
-            amount_received: (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Paid' || (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Settled' ? (order['Total Amount'] || order.Total || 0) : 0,
-            settle_date: convertExcelDate(order['Settle Date'] || order.SettleDate) || ((order['Payment Status'] || order.PaymentStatus || order.Status) === 'Paid' || (order['Payment Status'] || order.PaymentStatus || order.Status) === 'Settled' ? new Date().toISOString() : null),
-            remark: order.Remarks || order.Remark || (order.Items ? `Imported: ${order.Items}` : 'Imported Order'),
+            salesman: order['Salesman'] || '',
+            customer_care: order['Customer Care'] || '',
+            amount_received: order['Received'] !== undefined ? order['Received'] : ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? (order['Total'] || 0) : 0),
+            settle_date: convertExcelDate(order['Settled/Paid Date']) || ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? new Date().toISOString() : null),
+            remark: order['Remark'] || order['Remarks'] || (order['Products'] ? `Imported: ${order['Products']}` : 'Imported Order'),
             type: 'POS',
-            shipping_company: order['Shipping Company'] || order.ShippingCompany || '',
-            tracking_number: order['Tracking Number'] || order.TrackingID || '',
-            shipping_status: order['Shipping Status'] || order.ShippingStatus || 'Pending',
+            shipping_company: order['Shipping Co'] || order['Shipping Company'] || '',
+            tracking_number: order['Tracking ID'] || order['Tracking Number'] || '',
+            shipping_status: order['Ship Status'] || order['Shipping Status'] || 'Pending',
         }));
 
         const { data: insertedSales, error } = await supabase.from('sales').insert(salesToInsert).select();
