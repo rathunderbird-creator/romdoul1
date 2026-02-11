@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { NavLink } from 'react-router-dom';
 
@@ -27,7 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         navItems.push({ icon: Truck, label: 'Orders & Sales', path: '/orders' });
     }
 
-    if (hasPermission('manage_inventory')) {
+    if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
         navItems.push({ icon: Package, label: 'Inventory', path: '/inventory' });
     }
 
@@ -91,6 +91,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         JBL
                     </div>
                     {!isCollapsed && <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, background: 'none', WebkitTextFillColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>POS</h1>}
+
+                    {isMobile && !isCollapsed && (
+                        <button
+                            onClick={toggleSidebar}
+                            style={{
+                                marginLeft: 'auto',
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--color-text-muted)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '4px'
+                            }}
+                        >
+                            <X size={20} />
+                        </button>
+                    )}
                 </div>
 
                 <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>

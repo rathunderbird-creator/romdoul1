@@ -11,3 +11,4 @@ export { default as ReceiptModal } from './ReceiptModal';
 export { default as Sidebar } from './Sidebar';
 export { default as StatsCard } from './StatsCard';
 export { default as StatusBadge } from './StatusBadge';
+export { default as MobileOrderCard } from './MobileOrderCard';

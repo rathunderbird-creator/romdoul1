@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, Store, Globe, Bell, Shield, Moon, Sun, Database } from 'lucide-react';
+import { Save, Store, Globe, Bell, Shield, Database } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -12,7 +12,7 @@ import { useTheme } from '../context/ThemeContext';
 const Settings: React.FC = () => {
     const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile } = useStore();
     const { showToast } = useToast();
-    const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme, isDarkMode, toggleTheme } = useTheme();
+    const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
 
     // Header Content
@@ -41,7 +41,7 @@ const Settings: React.FC = () => {
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, isDarkMode]); // Add dependencies if needed, handleSave might need to be wrapped or stable.
+    }, [setHeaderContent]); // Add dependencies if needed, handleSave might need to be wrapped or stable.
 
     // Local state for settings form (mock implementation)
     const [currency, setCurrency] = useState('USD ($)');
@@ -82,23 +82,7 @@ const Settings: React.FC = () => {
                             <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'linear-gradient(135deg, #FF6600 0%, #FF8533 100%)' }}></div>
                             <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Appearance</h2>
                         </div>
-                        <button
-                            onClick={toggleTheme}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'var(--color-bg)',
-                                border: '1px solid var(--color-border)',
-                                padding: '8px 16px',
-                                borderRadius: '20px',
-                                cursor: 'pointer',
-                                color: 'var(--color-text-main)'
-                            }}
-                        >
-                            {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
-                            <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
-                        </button>
+
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>

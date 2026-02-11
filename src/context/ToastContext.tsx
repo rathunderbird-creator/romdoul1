@@ -20,7 +20,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [toasts, setToasts] = useState<Toast[]>([]);
 
     const showToast = useCallback((message: string, type: ToastType) => {
-        const id = Date.now().toString();
+        const id = crypto.randomUUID();
         setToasts((prev) => [...prev, { id, message, type }]);
 
 
@@ -42,7 +42,8 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 flexDirection: 'column',
                 gap: '12px',
                 zIndex: 2000,
-                alignItems: 'center'
+                alignItems: 'center',
+                pointerEvents: 'none' // allow clicking through empty space
             }}>
                 {toasts.map((toast) => (
                     <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
@@ -90,7 +91,8 @@ const ToastItem: React.FC<{ toast: Toast; onRemove: (id: string) => void }> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 animation: 'slideIn 0.3s ease-out',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                pointerEvents: 'auto'
             }}
         >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

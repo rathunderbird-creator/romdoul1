@@ -155,7 +155,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         !loadedConfig.users.length ||
                         !loadedConfig.roles ||
                         // Force update if Admin role is missing permissions (Repair)
-                        !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders'));
+                        !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders')) ||
+                        !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_inventory_stock'));
 
                     if (needsMigration) {
                         const updatedConfig = {
@@ -198,10 +199,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                     id: 'admin',
                                     name: 'Administrator',
                                     description: 'Full system access',
-                                    permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
+                                    permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
                                 },
-                                // Merge other roles, preventing duplicates
-                                ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin')
+                                // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
+                                ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager')
                             ]
                         };
                         setConfig(updatedConfig);
@@ -255,13 +256,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 id: 'admin',
                                 name: 'Administrator',
                                 description: 'Full system access',
-                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders'] as any[]
+                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
                             },
                             {
                                 id: 'store_manager',
                                 name: 'Store Manager',
                                 description: 'Manage store operations',
-                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
                             },
                             {
                                 id: 'cashier',
@@ -779,15 +780,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const convertExcelDate = (serial: any) => {
         if (!serial) return null;
-        // If it's a number (Excel serial date), convert it
-        if (typeof serial === 'number') {
-            const utc_days = Math.floor(serial - 25569);
-            const utc_value = utc_days * 86400;
-            const date_info = new Date(utc_value * 1000);
-            return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate()).toISOString();
+        try {
+            // If it's a number (Excel serial date), convert it
+            if (typeof serial === 'number') {
+                const utc_days = Math.floor(serial - 25569);
+                const utc_value = utc_days * 86400;
+                const date_info = new Date(utc_value * 1000);
+                return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate()).toISOString();
+            }
+            // If it's already a string, try to use it
+            const parsed = new Date(serial);
+            if (isNaN(parsed.getTime())) return null; // Invalid date
+            return parsed.toISOString();
+        } catch (e) {
+            console.warn("Date parse error for value:", serial, e);
+            return null;
         }
-        // If it's already a string, try to use it
-        return new Date(serial).toISOString();
     };
 
     const parseProductsString = (productsStr: string): any[] => {
@@ -821,6 +829,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }).filter(item => item.name);
     };
 
+    const parseNumber = (value: any): number => {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+            // Remove currency symbols, commas, spaces
+            const cleaned = value.replace(/[^0-9.-]/g, '');
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? 0 : parsed;
+        }
+        return 0;
+    };
+
     const importOrders = async (importedOrders: any[]) => {
         // Prepare arrays for bulk insert
         const salesToInsert: any[] = [];
@@ -828,9 +847,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const localSalesMap: Record<string, any[]> = {}; // Map saleId -> items
 
         importedOrders.forEach(order => {
+            // Skip header row if it somehow got included (check if 'Total' is 'Total' string)
+            if (order['Total'] === 'Total' || order['Received'] === 'Received') return;
+
             const id = order['Order ID'] || crypto.randomUUID();
             const productsStr = order['Products'] || order['Items'] || '';
             const items = parseProductsString(productsStr);
+
+            const total = parseNumber(order['Total'] || order['Total Amount']);
+            // Determine amount received
+            let amountReceived = 0;
+            if (order['Received'] !== undefined) {
+                amountReceived = parseNumber(order['Received']);
+            } else if (order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled' || order['Payment Status'] === 'Paid') {
+                amountReceived = total;
+            }
 
             // Prepare Sale Record
             salesToInsert.push({
@@ -844,13 +875,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     page: order['Page Name'] || '',
                     platform: order['Platform'] || 'Facebook'
                 },
-                total: order['Total'] || order['Total Amount'] || 0,
+                total: total,
                 payment_method: order['Pay By'] || order['Payment Method'] || 'Cash',
                 payment_status: order['Pay Status'] || order['Payment Status'] || 'Unpaid',
                 order_status: 'Closed',
                 salesman: order['Salesman'] || '',
                 customer_care: order['Customer Care'] || '',
-                amount_received: order['Received'] !== undefined ? order['Received'] : ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? (order['Total'] || 0) : 0),
+                amount_received: amountReceived,
                 settle_date: convertExcelDate(order['Settled/Paid Date']) || ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? new Date().toISOString() : null),
                 remark: order['Remark'] || order['Remarks'] || (items.length === 0 ? 'Imported Order' : ''),
                 type: 'POS',

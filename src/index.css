@@ -14,7 +14,12 @@
   --color-purple: #8B5CF6;
   --color-purple-light: #F5F3FF;
   --color-red: #EF4444;
+  --color-red: #EF4444;
   --color-red-light: #FEF2F2;
+
+  /* Dynamic Table Colors (Default Light) */
+  --color-primary-light: #EFF6FF;
+  --color-highlight-bg: #FEFCE8;
 
   /* Backgrounds */
   --color-bg: #F3F4F6;
@@ -103,8 +108,8 @@ button {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   /* Slightly larger for readability */
-  background-color: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
   /* border-radius: 8px; Removed to fix sticky */
   /* overflow: hidden; Removed to fix sticky - breaks z-index context */
 }
@@ -112,8 +117,8 @@ button {
 /* Cells */
 .spreadsheet-table th,
 .spreadsheet-table td {
-  border-bottom: 1px solid #E5E7EB;
-  border-right: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-bg);
   /* Very subtle vertical divider */
   padding: 10px 12px;
   /* More breathable padding */
@@ -122,7 +127,7 @@ button {
   vertical-align: middle;
   height: 44px;
   /* Taller rows like reference */
-  color: #374151;
+  color: var(--color-text-secondary);
   /* Gray-700 for text */
   font-variant-numeric: tabular-nums;
 }
@@ -135,9 +140,9 @@ button {
 
 /* Header */
 .spreadsheet-table th {
-  background-color: #FFFFFF;
+  background-color: var(--color-surface);
   /* White header */
-  color: #111827;
+  color: var(--color-text-main);
   /* Darker text for headers */
   font-weight: 700;
   /* Bold headers */
@@ -146,7 +151,7 @@ button {
   z-index: 30;
   user-select: none;
   font-size: 12px;
-  box-shadow: 0 1px 0 #E5E7EB;
+  box-shadow: 0 1px 0 var(--color-border);
   /* Distinct separator */
   border-bottom: none;
   /* Handled by box-shadow */
@@ -158,32 +163,38 @@ button {
 }
 
 .spreadsheet-table tbody tr:hover {
-  background-color: var(--color-green-light) !important;
-  /* User requested lightgreen */
+  background-color: var(--color-primary-light) !important;
+  /* User requested lightgreen - updated to primary light for consistency or keep if variable exists */
+  /* If we want to keep the green/blue distinction but make it theme aware, we need variables for these states */
 }
 
+/* Dark mode overrides for these specific row states will be needed or we use variables that change */
+/* For now, let's stick to using variables that we can control in ThemeContext */
+
 .spreadsheet-table tbody tr.selected {
-  background-color: #EFF6FF !important;
+  background-color: var(--color-primary-light) !important;
   /* Light blue selection */
 }
 
 .spreadsheet-table tbody tr.paid-settled-row {
-  background-color: #EFF6FF;
+  background-color: var(--color-primary-light);
+  /* Using a variable so we can dim it in dark mode */
 }
 
 /* Ensure sticky columns in paid/settled rows also get the color */
 .spreadsheet-table tbody tr.paid-settled-row td.sticky-col-first,
 .spreadsheet-table tbody tr.paid-settled-row td.sticky-col-second {
-  background-color: #EFF6FF;
+  background-color: var(--color-primary-light);
 }
 
 .spreadsheet-table tbody tr.delivered-row {
-  background-color: #FEFCE8;
+  background-color: var(--color-highlight-bg, #FEFCE8);
+  /* Fallback or new var */
 }
 
 .spreadsheet-table tbody tr.delivered-row td.sticky-col-first,
 .spreadsheet-table tbody tr.delivered-row td.sticky-col-second {
-  background-color: #FEFCE8;
+  background-color: var(--color-highlight-bg, #FEFCE8);
 }
 
 /* Footer */
@@ -191,14 +202,14 @@ button {
   position: sticky;
   bottom: 0;
   z-index: 20;
-  background-color: #F9FAFB;
+  background-color: var(--color-surface-hover);
   /* Light gray footer background */
   font-weight: 700;
-  border-top: 1px solid #E5E7EB;
+  border-top: 1px solid var(--color-border);
   /* Reduced border width to match theme */
   box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.05);
   /* Add subtle shadow for depth */
-  color: #111827;
+  color: var(--color-text-main);
 }
 
 /* Sort Icon Container */
@@ -244,7 +255,7 @@ div:has(> svg) .search-input {
   position: sticky;
   left: 0;
   z-index: 20;
-  background-color: #FFFFFF;
+  background-color: var(--color-surface);
   width: 40px;
   min-width: 40px;
 }
@@ -255,7 +266,7 @@ div:has(> svg) .search-input {
   left: 40px;
   /* Must match width of first column */
   z-index: 20;
-  background-color: #FFFFFF;
+  background-color: var(--color-surface);
   box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.1);
   /* Shadow to separate from scrolling content */
 }
@@ -263,12 +274,12 @@ div:has(> svg) .search-input {
 /* Ensure sticky columns match row hover/selection styles */
 .spreadsheet-table tbody tr:hover td.sticky-col-first,
 .spreadsheet-table tbody tr:hover td.sticky-col-second {
-  background-color: var(--color-green-light) !important;
+  background-color: var(--color-primary-light) !important;
 }
 
 .spreadsheet-table tbody tr.selected td.sticky-col-first,
 .spreadsheet-table tbody tr.selected td.sticky-col-second {
-  background-color: #EFF6FF !important;
+  background-color: var(--color-primary-light) !important;
 }
 
 /* Icon Button Style */
@@ -286,7 +297,7 @@ div:has(> svg) .search-input {
 }
 
 .icon-button:hover {
-  background-color: white;
+  background-color: var(--color-surface);
   color: var(--color-primary);
   border-color: var(--color-border);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -297,7 +308,7 @@ div:has(> svg) .search-input {
 .spreadsheet-table thead th.sticky-col-second {
   z-index: 40;
   /* Higher than body sticky cells (20) */
-  background-color: #F9FAFB;
+  background-color: var(--color-surface);
   /* Match header background */
 }
 
