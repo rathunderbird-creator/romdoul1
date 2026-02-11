@@ -267,10 +267,15 @@ const Orders: React.FC = () => {
 
             let matchesDate = true;
             if (dateRange.start && dateRange.end) {
-                const orderDate = new Date(order.date);
-                const start = new Date(dateRange.start);
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
+                const orderDate = new Date(order.date); // Converts UTC to Local
+
+                // Parse start/end strings explicitly as local time elements to avoid UTC shifting
+                const [sy, sm, sd] = dateRange.start.split('-').map(Number);
+                const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+
+                const [ey, em, ed] = dateRange.end.split('-').map(Number);
+                const end = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+
                 matchesDate = orderDate >= start && orderDate <= end;
             }
 
