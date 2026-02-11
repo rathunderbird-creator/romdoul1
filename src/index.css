@@ -176,25 +176,77 @@ button {
   /* Light blue selection */
 }
 
-.spreadsheet-table tbody tr.paid-settled-row {
-  background-color: var(--color-primary-light);
-  /* Using a variable so we can dim it in dark mode */
+/* Row Status Colors */
+.spreadsheet-table tbody tr.pending-row {
+  background-color: #FFFBEB;
 }
 
-/* Ensure sticky columns in paid/settled rows also get the color */
-.spreadsheet-table tbody tr.paid-settled-row td.sticky-col-first,
-.spreadsheet-table tbody tr.paid-settled-row td.sticky-col-second {
-  background-color: var(--color-primary-light);
+/* Amber 50 */
+.spreadsheet-table tbody tr.shipped-row {
+  background-color: #EFF6FF;
 }
 
+/* Blue 50 */
 .spreadsheet-table tbody tr.delivered-row {
-  background-color: var(--color-highlight-bg, #FEFCE8);
-  /* Fallback or new var */
+  background-color: #ECFDF5;
+}
+
+/* Green 50 */
+.spreadsheet-table tbody tr.cancelled-row {
+  background-color: #FEF2F2;
+}
+
+/* Red 50 */
+.spreadsheet-table tbody tr.returned-row {
+  background-color: #F9FAFB;
+}
+
+/* Gray 50 */
+.spreadsheet-table tbody tr.restock-row {
+  background-color: #F5F3FF;
+}
+
+/* Purple 50 */
+.spreadsheet-table tbody tr.paid-settled-row {
+  background-color: #EFF6FF;
+}
+
+/* Fallback/Legacy if needed */
+
+/* Ensure sticky columns match row background */
+.spreadsheet-table tbody tr.pending-row td.sticky-col-first,
+.spreadsheet-table tbody tr.pending-row td.sticky-col-second {
+  background-color: #FFFBEB;
+}
+
+.spreadsheet-table tbody tr.shipped-row td.sticky-col-first,
+.spreadsheet-table tbody tr.shipped-row td.sticky-col-second {
+  background-color: #EFF6FF;
 }
 
 .spreadsheet-table tbody tr.delivered-row td.sticky-col-first,
 .spreadsheet-table tbody tr.delivered-row td.sticky-col-second {
-  background-color: var(--color-highlight-bg, #FEFCE8);
+  background-color: #ECFDF5;
+}
+
+.spreadsheet-table tbody tr.cancelled-row td.sticky-col-first,
+.spreadsheet-table tbody tr.cancelled-row td.sticky-col-second {
+  background-color: #FEF2F2;
+}
+
+.spreadsheet-table tbody tr.returned-row td.sticky-col-first,
+.spreadsheet-table tbody tr.returned-row td.sticky-col-second {
+  background-color: #F9FAFB;
+}
+
+.spreadsheet-table tbody tr.restock-row td.sticky-col-first,
+.spreadsheet-table tbody tr.restock-row td.sticky-col-second {
+  background-color: #F5F3FF;
+}
+
+.spreadsheet-table tbody tr.paid-settled-row td.sticky-col-first,
+.spreadsheet-table tbody tr.paid-settled-row td.sticky-col-second {
+  background-color: #EFF6FF;
 }
 
 /* Footer */

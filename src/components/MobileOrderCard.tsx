@@ -44,6 +44,18 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
             .slice(0, 2);
     };
 
+    const getShippingColor = (status: string = '') => {
+        switch (status) {
+            case 'Pending': return '#D97706'; // Amber
+            case 'Shipped': return '#2563EB'; // Blue
+            case 'Delivered': return '#059669'; // Green
+            case 'Cancelled': return '#DC2626'; // Red
+            case 'Returned': return '#DC2626'; // Red
+            case 'ReStock': return '#7E22CE'; // Purple
+            default: return '#4B5563'; // Gray
+        }
+    };
+
     const isPaidOrSettle = order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled';
     const isDelivered = order.shipping?.status === 'Delivered';
 
@@ -96,7 +108,10 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
 
                 {/* Status Indicator (Mini) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
-                    <div className={`moc-status-dot ${order.paymentStatus === 'Paid' ? 'paid' : (order.shipping?.status === 'Delivered' ? 'delivered' : 'pending')}`} />
+                    <div
+                        className="moc-status-dot"
+                        style={{ backgroundColor: getShippingColor(order.shipping?.status) }}
+                    />
                 </div>
             </div>
 

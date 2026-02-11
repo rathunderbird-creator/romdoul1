@@ -946,8 +946,33 @@ const Orders: React.FC = () => {
                                             // Determine row class
                                             let rowClass = '';
                                             if (isSelected) rowClass = 'selected';
-                                            else if (isPaidOrSettle) rowClass = 'paid-settled-row';
-                                            else if (isDelivered) rowClass = 'delivered-row';
+                                            else {
+                                                switch (order.shipping?.status) {
+                                                    case 'Pending': rowClass = 'pending-row'; break;
+                                                    case 'Shipped': rowClass = 'shipped-row'; break;
+                                                    case 'Delivered': rowClass = 'delivered-row'; break;
+                                                    case 'Cancelled': rowClass = 'cancelled-row'; break;
+                                                    case 'Returned': rowClass = 'returned-row'; break;
+                                                    case 'ReStock': rowClass = 'restock-row'; break;
+                                                    default:
+                                                        // Fallback for no shipping status, maybe check payment?
+                                                        if (isPaidOrSettle) rowClass = 'paid-settled-row';
+                                                        break;
+                                                }
+                                            }
+
+                                            // Helper to get background color for sticky columns based on row class
+                                            const getRowBackgroundColor = (rClass: string) => {
+                                                if (rClass === 'selected') return 'var(--color-primary-light)';
+                                                if (rClass === 'pending-row') return '#FFFBEB';
+                                                if (rClass === 'shipped-row') return '#EFF6FF';
+                                                if (rClass === 'delivered-row') return '#ECFDF5';
+                                                if (rClass === 'cancelled-row') return '#FEF2F2';
+                                                if (rClass === 'returned-row') return '#F9FAFB';
+                                                if (rClass === 'restock-row') return '#F5F3FF';
+                                                if (rClass === 'paid-settled-row') return '#EFF6FF';
+                                                return '#FFFFFF';
+                                            };
 
                                             return (
                                                 <tr key={order.id} className={rowClass}>
@@ -972,10 +997,8 @@ const Orders: React.FC = () => {
                                                             position: isPinned ? 'sticky' : undefined,
                                                             left: isPinned ? stickyLeft : undefined,
                                                             zIndex: isPinned ? 15 : 1,
-                                                            // background: handled by CSS class on row, but for sticky columns we might need specificity
-                                                            // In index.css, we added rules for sticky cols inside .paid-settled-row
-                                                            // However, for general rows (white), sticky columns need a background to cover scrolled content.
-                                                            backgroundColor: isPinned ? (rowClass === 'selected' ? 'var(--color-primary-light)' : (rowClass === 'paid-settled-row' ? '#EFF6FF' : (rowClass === 'delivered-row' ? '#FEFCE8' : '#FFFFFF'))) : undefined,
+                                                            // Sticky columns need explicit background to cover scrolled content
+                                                            backgroundColor: isPinned ? getRowBackgroundColor(rowClass) : undefined,
                                                             boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
                                                         };
 
