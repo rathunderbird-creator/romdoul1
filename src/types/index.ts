@@ -137,6 +137,16 @@ export interface StoreContextType {
     phone: string;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
     updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string }) => void;
+
+    // User & Role Management
+    users: User[];
+    roles: Role[];
+    addUser: (user: Omit<User, 'id'>) => Promise<void>;
+    updateUser: (id: string, user: Partial<User>) => Promise<void>;
+    deleteUser: (id: string) => Promise<void>;
+    addRole: (role: Omit<Role, 'id'>) => Promise<void>;
+    updateRole: (id: string, role: Partial<Role>) => Promise<void>;
+    deleteRole: (id: string) => Promise<void>;
 }
 
 

@@ -412,7 +412,22 @@ const Orders: React.FC = () => {
     };
 
     const handleCopyOrder = (order: Sale) => {
+        // Calculate daily sequence number based on actual data, not clicks
+        // Filter sales for the same day
+        const orderDate = new Date(order.date);
+        const orderDateStr = orderDate.toDateString();
+
+        // Get all sales for this date
+        const dailyOrders = sales
+            .filter(s => new Date(s.date).toDateString() === orderDateStr)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        // Find index (1-based)
+        const dailyIndex = dailyOrders.findIndex(s => s.id === order.id) + 1;
+        const sequenceNumber = dailyIndex > 0 ? dailyIndex : '?';
+
         const lines = [
+            `No: ${sequenceNumber}`,
             `Order ID: #${order.id.slice(-6)}`,
             `Date: ${new Date(order.date).toLocaleDateString()}`,
             `Customer: ${order.customer?.name || 'N/A'}`,
@@ -427,9 +442,46 @@ const Orders: React.FC = () => {
             `Remark: ${order.remark || ''}`
         ];
 
-        navigator.clipboard.writeText(lines.join('\n'))
-            .then(() => showToast('Order details copied to clipboard', 'success'))
-            .catch(() => showToast('Failed to copy', 'error'));
+        const text = lines.join('\n');
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text)
+                .then(() => showToast('Order details copied to clipboard', 'success'))
+                .catch((err) => {
+                    console.error('Clipboard write failed:', err);
+                    fallbackCopyTextToClipboard(text);
+                });
+        } else {
+            fallbackCopyTextToClipboard(text);
+        }
+    };
+
+    const fallbackCopyTextToClipboard = (text: string) => {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+
+        // Ensure it's not visible but part of the DOM to get focus
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "0";
+        document.body.appendChild(textArea);
+
+        textArea.focus();
+        textArea.select();
+
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                showToast('Order details copied to clipboard', 'success');
+            } else {
+                showToast('Failed to copy', 'error');
+            }
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+            showToast('Failed to copy', 'error');
+        }
+
+        document.body.removeChild(textArea);
     };
 
     const hasFilters = searchTerm !== '' || statusFilter !== 'All' || salesmanFilter !== 'All' || payStatusFilter.length > 0 || dateRange.start !== '' || dateRange.end !== '';
