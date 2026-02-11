@@ -41,7 +41,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         paymentAfterDelivery: true,
         discount: 0,
         enableDiscount: false,
-        shippingStatus: 'Pending' as NonNullable<Sale['shipping']>['status']
+        shippingStatus: 'Pending' as NonNullable<Sale['shipping']>['status'],
+        paymentStatus: 'Pending' as Sale['paymentStatus']
     };
 
     const [formData, setFormData] = useState(initialFormState);
@@ -76,7 +77,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 paymentAfterDelivery: isCOD,
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
-                shippingStatus: orderToEdit.shipping?.status || 'Pending'
+                shippingStatus: orderToEdit.shipping?.status || 'Pending',
+                paymentStatus: orderToEdit.paymentStatus || 'Pending'
             });
         } else {
             // Reset to defaults when not editing
@@ -90,11 +92,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setFormData(prev => ({
                 ...prev,
                 amountReceived: 0,
-                paymentMethod: 'COD'
+                paymentMethod: 'COD',
+                paymentStatus: 'Unpaid'
             }));
         } else {
             if (formData.paymentMethod === 'COD') {
-                setFormData(prev => ({ ...prev, paymentMethod: 'Cash' }));
+                setFormData(prev => ({ ...prev, paymentMethod: 'Cash', paymentStatus: 'Paid' }));
             }
         }
     }, [formData.paymentAfterDelivery]);
@@ -147,7 +150,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             remark: formData.remark,
             amountReceived: formData.paymentAfterDelivery ? 0 : formData.amountReceived,
             settleDate: formData.settleDate,
-            paymentStatus: orderToEdit ? (formData.paymentAfterDelivery ? 'Unpaid' as const : (formData.amountReceived >= total ? 'Paid' as const : 'Settled' as const)) : 'Pending' as const,
+            paymentStatus: formData.paymentStatus,
             customer: {
                 name: formData.customerName,
                 phone: formData.customerPhone,
@@ -207,11 +210,19 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             Customer Information
                         </h3>
-                        <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
-                            <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
-                                {['Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
+                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
+                                    {['Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Status</label>
+                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}>
+                                    {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>

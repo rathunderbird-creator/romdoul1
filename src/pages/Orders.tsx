@@ -259,23 +259,23 @@ const Orders: React.FC = () => {
             const matchesPayStatus = payStatusFilter.length === 0 || payStatusFilter.includes(order.paymentStatus || 'Paid');
             const lowerTerm = searchTerm.toLowerCase();
             const matchesSearch =
-                order.customer?.name.toLowerCase().includes(lowerTerm) ||
-                order.id.toLowerCase().includes(lowerTerm) ||
-                (order.customer?.phone || '').includes(lowerTerm) ||
-                (order.customer?.address || '').toLowerCase().includes(lowerTerm) ||
-                (order.customer?.city || '').toLowerCase().includes(lowerTerm) ||
-                (order.customer?.page || '').toLowerCase().includes(lowerTerm) ||
-                order.items.some(item => item.name.toLowerCase().includes(lowerTerm) || (item.model && item.model.toLowerCase().includes(lowerTerm))) ||
-                order.paymentMethod.toLowerCase().includes(lowerTerm) ||
-                order.total.toString().includes(lowerTerm) ||
-                (order.remark || '').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.company || '').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.trackingNumber || '').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.staffName || '').toLowerCase().includes(lowerTerm) ||
-                (order.salesman || '').toLowerCase().includes(lowerTerm) ||
-                (order.customerCare || '').toLowerCase().includes(lowerTerm) ||
-                (order.paymentStatus || 'Paid').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.status || 'Pending').toLowerCase().includes(lowerTerm) ||
+                String(order.customer?.name || '').toLowerCase().includes(lowerTerm) ||
+                String(order.id || '').toLowerCase().includes(lowerTerm) ||
+                String(order.customer?.phone || '').toLowerCase().includes(lowerTerm) ||
+                String(order.customer?.address || '').toLowerCase().includes(lowerTerm) ||
+                String(order.customer?.city || '').toLowerCase().includes(lowerTerm) ||
+                String(order.customer?.page || '').toLowerCase().includes(lowerTerm) ||
+                order.items.some(item => String(item.name || '').toLowerCase().includes(lowerTerm) || String(item.model || '').toLowerCase().includes(lowerTerm)) ||
+                String(order.paymentMethod || '').toLowerCase().includes(lowerTerm) ||
+                String(order.total || '').includes(lowerTerm) ||
+                String(order.remark || '').toLowerCase().includes(lowerTerm) ||
+                String(order.shipping?.company || '').toLowerCase().includes(lowerTerm) ||
+                String(order.shipping?.trackingNumber || '').toLowerCase().includes(lowerTerm) ||
+                String(order.shipping?.staffName || '').toLowerCase().includes(lowerTerm) ||
+                String(order.salesman || '').toLowerCase().includes(lowerTerm) ||
+                String(order.customerCare || '').toLowerCase().includes(lowerTerm) ||
+                String(order.paymentStatus || 'Paid').toLowerCase().includes(lowerTerm) ||
+                String(order.shipping?.status || 'Pending').toLowerCase().includes(lowerTerm) ||
                 new Date(order.date).toLocaleDateString().toLowerCase().includes(lowerTerm) ||
                 (order.settleDate ? new Date(order.settleDate).toLocaleDateString().toLowerCase().includes(lowerTerm) : false);
 
@@ -940,7 +940,6 @@ const Orders: React.FC = () => {
                                     <tbody>
                                         {paginatedOrders.map((order) => {
                                             const isPaidOrSettle = order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled';
-                                            const isDelivered = order.shipping?.status === 'Delivered';
                                             const isSelected = selectedIds.has(order.id);
 
                                             // Determine row class
