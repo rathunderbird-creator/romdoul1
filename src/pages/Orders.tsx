@@ -70,15 +70,32 @@ const Orders: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent, activeTab, hasPermission, isMobile]); // Added hasPermission dependency
 
-    // Filters
-    const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Shipped' | 'Delivered'>('All');
-    const [salesmanFilter, setSalesmanFilter] = useState<string>('All');
-    const [payStatusFilter, setPayStatusFilter] = useState<string[]>([]);
+    // Filters with Persistence
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Ordered' | 'Pending' | 'Shipped' | 'Delivered'>(() =>
+        (localStorage.getItem('orders_statusFilter') as any) || 'All'
+    );
+    const [salesmanFilter, setSalesmanFilter] = useState<string>(() =>
+        localStorage.getItem('orders_salesmanFilter') || 'All'
+    );
+    const [payStatusFilter, setPayStatusFilter] = useState<string[]>(() =>
+        JSON.parse(localStorage.getItem('orders_payStatusFilter') || '[]')
+    );
     const [isPayStatusOpen, setIsPayStatusOpen] = useState(false);
 
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
-    const [searchTerm, setSearchTerm] = useState('');
+    const [dateRange, setDateRange] = useState(() =>
+        JSON.parse(localStorage.getItem('orders_dateRange') || '{"start": "", "end": ""}')
+    );
+    const [searchTerm, setSearchTerm] = useState(() =>
+        localStorage.getItem('orders_searchTerm') || ''
+    );
     const [showFilters, setShowFilters] = useState(false);
+
+    // Persist Filters
+    useEffect(() => { localStorage.setItem('orders_statusFilter', statusFilter); }, [statusFilter]);
+    useEffect(() => { localStorage.setItem('orders_salesmanFilter', salesmanFilter); }, [salesmanFilter]);
+    useEffect(() => { localStorage.setItem('orders_payStatusFilter', JSON.stringify(payStatusFilter)); }, [payStatusFilter]);
+    useEffect(() => { localStorage.setItem('orders_dateRange', JSON.stringify(dateRange)); }, [dateRange]);
+    useEffect(() => { localStorage.setItem('orders_searchTerm', searchTerm); }, [searchTerm]);
 
     // Modals State
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -283,22 +300,52 @@ const Orders: React.FC = () => {
             if (dateRange.start && dateRange.end) {
                 const orderDate = new Date(order.date); // Converts UTC to Local
 
-                // Parse start/end strings explicitly as local time elements to avoid UTC shifting
-                const [sy, sm, sd] = dateRange.start.split('-').map(Number);
-                const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-
-                const [ey, em, ed] = dateRange.end.split('-').map(Number);
-                const end = new Date(ey, em - 1, ed, 23, 59, 59, 999);
-
-                matchesDate = orderDate >= start && orderDate <= end;
+                // ... keep existing date logic ...
+                const startDate = new Date(dateRange.start);
+                startDate.setHours(0, 0, 0, 0);
+                const endDate = new Date(dateRange.end);
+                endDate.setHours(23, 59, 59, 999);
+                matchesDate = orderDate >= startDate && orderDate <= endDate;
             }
 
             return matchesStatus && matchesSalesman && matchesPayStatus && matchesSearch && matchesDate;
         });
     }, [sales, statusFilter, salesmanFilter, payStatusFilter, searchTerm, dateRange]);
 
+    const getRowClass = (order: Sale) => {
+        if (selectedIds.has(order.id)) return 'selected';
+
+        // Priority: Shipping Status
+        const shippingStatus = order.shipping?.status;
+        if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Pending') return 'pending-row';
+        if (shippingStatus === 'Shipped') return 'shipped-row';
+        if (shippingStatus === 'Delivered') return 'delivered-row';
+        if (shippingStatus === 'Returned') return 'returned-row';
+        if (shippingStatus === 'ReStock') return 'restock-row';
+
+        // Secondary: Payment Status
+        if (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') return 'paid-settled-row';
+
+        return '';
+    };
+
+    const getRowBackgroundColor = (shippingStatus: string | undefined, isSelected: boolean) => {
+        if (isSelected) return 'var(--color-primary-light)';
+        if (shippingStatus === 'Ordered') return 'white';
+        if (shippingStatus === 'Pending') return '#FFFBEB';
+        if (shippingStatus === 'Shipped') return '#EFF6FF';
+        if (shippingStatus === 'Delivered') return '#ECFDF5';
+        if (shippingStatus === 'Returned') return '#FEF2F2';
+        if (shippingStatus === 'ReStock') return '#F5F3FF';
+        if (shippingStatus === 'Cancelled') return '#FEF2F2';
+        return 'white';
+    };
+
+
+
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(50);
+    const [itemsPerPage, setItemsPerPage] = useState(100);
 
     React.useEffect(() => {
         setCurrentPage(1);
@@ -616,6 +663,7 @@ const Orders: React.FC = () => {
                                     style={{ width: isMobile ? '100%' : '130px' }}
                                 >
                                     <option value="All">All Status</option>
+                                    <option value="Ordered">Ordered</option>
                                     <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
                                     <option value="Shipped" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>Shipped</option>
                                     <option value="Delivered" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Delivered</option>
@@ -991,39 +1039,13 @@ const Orders: React.FC = () => {
                                     </thead>
                                     <tbody>
                                         {paginatedOrders.map((order) => {
-                                            const isPaidOrSettle = order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled';
-                                            const isSelected = selectedIds.has(order.id);
 
-                                            // Determine row class
-                                            let rowClass = '';
-                                            if (isSelected) rowClass = 'selected';
-                                            else {
-                                                switch (order.shipping?.status) {
-                                                    case 'Pending': rowClass = 'pending-row'; break;
-                                                    case 'Shipped': rowClass = 'shipped-row'; break;
-                                                    case 'Delivered': rowClass = 'delivered-row'; break;
-                                                    case 'Cancelled': rowClass = 'cancelled-row'; break;
-                                                    case 'Returned': rowClass = 'returned-row'; break;
-                                                    case 'ReStock': rowClass = 'restock-row'; break;
-                                                    default:
-                                                        // Fallback for no shipping status, maybe check payment?
-                                                        if (isPaidOrSettle) rowClass = 'paid-settled-row';
-                                                        break;
-                                                }
-                                            }
+                                            const isSelected = selectedIds.has(order.id);
+                                            const rowClass = getRowClass(order);
 
                                             // Helper to get background color for sticky columns based on row class
-                                            const getRowBackgroundColor = (rClass: string) => {
-                                                if (rClass === 'selected') return 'var(--color-primary-light)';
-                                                if (rClass === 'pending-row') return '#FFFBEB';
-                                                if (rClass === 'shipped-row') return '#EFF6FF';
-                                                if (rClass === 'delivered-row') return '#ECFDF5';
-                                                if (rClass === 'cancelled-row') return '#FEF2F2';
-                                                if (rClass === 'returned-row') return '#F9FAFB';
-                                                if (rClass === 'restock-row') return '#F5F3FF';
-                                                if (rClass === 'paid-settled-row') return '#EFF6FF';
-                                                return '#FFFFFF';
-                                            };
+                                            // We use the helper defined outside
+
 
                                             return (
                                                 <tr key={order.id} className={rowClass}>
@@ -1049,7 +1071,7 @@ const Orders: React.FC = () => {
                                                             left: isPinned ? stickyLeft : undefined,
                                                             zIndex: isPinned ? 15 : 1,
                                                             // Sticky columns need explicit background to cover scrolled content
-                                                            backgroundColor: isPinned ? getRowBackgroundColor(rowClass) : undefined,
+                                                            backgroundColor: isPinned ? getRowBackgroundColor(order.shipping?.status, isSelected) : undefined,
                                                             boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
                                                         };
 
@@ -1340,9 +1362,6 @@ const Orders: React.FC = () => {
                                         cursor: 'pointer'
                                     }}
                                 >
-                                    <option value={10}>10</option>
-                                    <option value={20}>20</option>
-                                    <option value={50}>50</option>
                                     <option value={100}>100</option>
                                     <option value={200}>200</option>
                                     <option value={300}>300</option>

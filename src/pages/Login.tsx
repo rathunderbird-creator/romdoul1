@@ -5,7 +5,7 @@ import { Lock, Delete, LogIn } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 const Login: React.FC = () => {
-    const { users, login } = useStore();
+    const { users, roles, login } = useStore();
     const navigate = useNavigate();
     const { showToast } = useToast();
 
@@ -114,41 +114,32 @@ const Login: React.FC = () => {
                 </div>
 
                 {/* User Selection */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                    {users.map(user => (
-                        <button
-                            key={user.id}
-                            onClick={() => { setSelectedUserId(user.id); setPin(''); }}
-                            style={{
-                                padding: '12px',
-                                borderRadius: '8px',
-                                border: selectedUserId === user.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                                background: selectedUserId === user.id ? 'var(--color-surface)' : 'transparent',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '8px',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            <div style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '50%',
-                                background: selectedUserId === user.id ? 'var(--color-primary)' : '#E0F2FE',
-                                color: selectedUserId === user.id ? 'white' : '#0284C7',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 'bold',
-                                fontSize: '14px'
-                            }}>
-                                {user.name.charAt(0)}
-                            </div>
-                            <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--color-text-main)' }}>{user.name.split(' ')[0]}</span>
-                        </button>
-                    ))}
+                <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>Select User</label>
+                    <select
+                        value={selectedUserId}
+                        onChange={(e) => { setSelectedUserId(e.target.value); setPin(''); }}
+                        style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)',
+                            color: 'var(--color-text-main)',
+                            fontSize: '16px',
+                            outline: 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {users.map(user => {
+                            const userRole = roles.find(r => r.id === user.roleId);
+                            return (
+                                <option key={user.id} value={user.id}>
+                                    {user.name} ({userRole?.name || 'Unknown'})
+                                </option>
+                            );
+                        })}
+                    </select>
                 </div>
 
                 {/* PIN Display */}

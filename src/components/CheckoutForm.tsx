@@ -15,7 +15,7 @@ interface CheckoutFormProps {
 }
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, salesmen, pages, customerCare, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder } = useStore();
+    const { products, salesmen, pages, customerCare, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -41,8 +41,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         paymentAfterDelivery: true,
         discount: 0,
         enableDiscount: false,
-        shippingStatus: 'Pending' as NonNullable<Sale['shipping']>['status'],
-        paymentStatus: 'Pending' as Sale['paymentStatus']
+        shippingStatus: 'Ordered' as NonNullable<Sale['shipping']>['status'],
+        paymentStatus: 'Pending' as Sale['paymentStatus'],
+        date: ''
     };
 
     const [formData, setFormData] = useState(initialFormState);
@@ -78,7 +79,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
                 shippingStatus: orderToEdit.shipping?.status || 'Pending',
-                paymentStatus: orderToEdit.paymentStatus || 'Pending'
+                paymentStatus: orderToEdit.paymentStatus || 'Pending',
+                date: orderToEdit.date || ''
             });
         } else {
             // Reset to defaults when not editing
@@ -93,7 +95,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 ...prev,
                 amountReceived: 0,
                 paymentMethod: 'COD',
-                paymentStatus: 'Unpaid'
+                paymentStatus: 'Pending'
             }));
         } else {
             if (formData.paymentMethod === 'COD') {
@@ -169,7 +171,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         };
 
         if (orderToEdit) {
-            updateOrder(orderToEdit.id, orderData);
+            updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
             showToast('Order updated', 'success');
         } else {
             addOnlineOrder(orderData);
@@ -212,9 +214,25 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </h3>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>
+                                {currentUser?.roleId === 'admin' && orderToEdit && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date (Admin)</label>
+                                        <input
+                                            type="datetime-local"
+                                            className="search-input"
+                                            style={{ width: '100%', padding: '10px 12px' }}
+                                            value={formData.date ? new Date(new Date(formData.date).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
+                                            onChange={e => {
+                                                const localDate = new Date(e.target.value);
+                                                const utcDate = new Date(localDate.getTime());
+                                                setFormData({ ...formData, date: utcDate.toISOString() });
+                                            }}
+                                        />
+                                    </div>
+                                )}
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
                                 <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
-                                    {['Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
                             <div>

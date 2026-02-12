@@ -20,6 +20,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
             case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
             case 'Returned': return { bg: '#F3F4F6', color: '#DC2626', border: '#D1D5DB' }; // Red text, Gray bg
             case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE', border: '#C084FC' }; // Purple
+            case 'Ordered': return { bg: '#F3F4F6', color: '#111827', border: '#E5E7EB' }; // Gray/Neutral
             default: return { bg: '#F3F4F6', color: '#4B5563', border: '#D1D5DB' };
         }
     };
@@ -45,7 +46,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         width: '100%'
     };
 
-    const options = ['Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
+    const options = ['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
 
     // Close dropdown when clicking outside
     useEffect(() => {

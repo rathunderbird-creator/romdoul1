@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye } from 'lucide-react';
+import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList } from 'lucide-react';
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker } from '../components';
 
@@ -58,7 +58,7 @@ const DeliveryTracking: React.FC = () => {
         trackingNumber: '',
         cost: 0,
         staffName: '',
-        status: 'Pending' as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
+        status: 'Pending' as 'Ordered' | 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
     });
 
 
@@ -174,7 +174,7 @@ const DeliveryTracking: React.FC = () => {
             trackingNumber: order.shipping?.trackingNumber || '',
             cost: order.shipping?.cost || 0,
             staffName: order.shipping?.staffName || '',
-            status: order.shipping?.status || 'Pending'
+            status: (order.shipping?.status || 'Pending') as 'Ordered' | 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
         });
         setIsEditModalOpen(true);
     };
@@ -182,7 +182,7 @@ const DeliveryTracking: React.FC = () => {
 
 
     const StatusStepper = ({ currentStatus }: { currentStatus: string }) => {
-        const steps = ['Pending', 'Shipped', 'Delivered'];
+        const steps = ['Ordered', 'Pending', 'Shipped', 'Delivered'];
         const currentIdx = steps.indexOf(currentStatus);
         const isCancelled = currentStatus === 'Cancelled';
 
@@ -224,9 +224,10 @@ const DeliveryTracking: React.FC = () => {
                                 transition: 'all 0.3s ease',
                                 boxShadow: isCurrent ? '0 0 0 2px var(--color-primary)' : 'none'
                             }}>
-                                {idx === 0 && <Clock size={16} />}
-                                {idx === 1 && <Truck size={16} />}
-                                {idx === 2 && <Package size={16} />}
+                                {idx === 0 && <ClipboardList size={16} />}
+                                {idx === 1 && <Clock size={16} />}
+                                {idx === 2 && <Truck size={16} />}
+                                {idx === 3 && <Package size={16} />}
                             </div>
                             <span style={{
                                 fontSize: '13px',
@@ -268,6 +269,7 @@ const DeliveryTracking: React.FC = () => {
                         style={{ width: '130px' }}
                     >
                         <option value="All">All Status</option>
+                        <option value="Ordered">Ordered</option>
                         <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
                         <option value="Shipped" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>Shipped</option>
                     </select>
@@ -525,7 +527,8 @@ const DeliveryTracking: React.FC = () => {
 
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Ordered' | 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
+                                        <option value="Ordered">Ordered</option>
                                         <option value="Pending">Pending</option>
                                         <option value="Shipped">Shipped</option>
                                         <option value="Delivered">Delivered</option>

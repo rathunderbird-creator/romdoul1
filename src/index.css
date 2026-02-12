@@ -214,6 +214,11 @@ button {
 /* Fallback/Legacy if needed */
 
 /* Ensure sticky columns match row background */
+.spreadsheet-table tr.ordered-row td.sticky-col-first,
+.spreadsheet-table tr.ordered-row td.sticky-col-last {
+  background-color: white !important;
+}
+
 .spreadsheet-table tbody tr.pending-row td.sticky-col-first,
 .spreadsheet-table tbody tr.pending-row td.sticky-col-second {
   background-color: #FFFBEB;

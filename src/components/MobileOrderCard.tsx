@@ -52,6 +52,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
             case 'Cancelled': return '#DC2626'; // Red
             case 'Returned': return '#DC2626'; // Red
             case 'ReStock': return '#7E22CE'; // Purple
+            case 'Ordered': return '#9CA3AF'; // Gray
             default: return '#4B5563'; // Gray
         }
     };

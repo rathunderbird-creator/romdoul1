@@ -26,7 +26,12 @@ const Dashboard: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent]);
 
-    const [dateRange, setDateRange] = React.useState({ start: '', end: '' });
+    const [dateRange, setDateRange] = React.useState(() => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        return { start, end };
+    });
 
     const filteredSales = useMemo(() => {
         if (!dateRange.start || !dateRange.end) return sales;

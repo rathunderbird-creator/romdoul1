@@ -694,6 +694,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const dbUpdates: any = {};
         if (updates.total !== undefined) dbUpdates.total = updates.total;
         if (updates.discount !== undefined) dbUpdates.discount = updates.discount;
+        if (updates.date !== undefined) dbUpdates.date = updates.date;
         if (updates.paymentMethod !== undefined) dbUpdates.payment_method = updates.paymentMethod;
         if (updates.salesman !== undefined) dbUpdates.salesman = updates.salesman;
         if (updates.customerCare !== undefined) dbUpdates.customer_care = updates.customerCare;
