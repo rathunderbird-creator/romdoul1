@@ -82,11 +82,14 @@ export interface StoreContextType {
     updateCustomer: (id: string, customer: Partial<Customer>) => void;
     deleteCustomer: (id: string) => void;
 
+    refreshData: () => Promise<void>;
+
     shippingCompanies: string[];
     salesmen: string[];
     categories: string[];
     pages: string[];
     customerCare: string[];
+
     addShippingCompany: (name: string) => void;
     removeShippingCompany: (name: string) => void;
     addSalesman: (name: string) => void;

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload, Copy, Filter } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload, Copy, Filter, RefreshCw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 
 const Orders: React.FC = () => {
-    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen } = useStore();
+    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, refreshData } = useStore();
 
     const canEdit = hasPermission('manage_orders');
     const canManage = hasPermission('manage_orders');
@@ -565,22 +565,43 @@ const Orders: React.FC = () => {
                                 />
                             </div>
                             {isMobile && (
-                                <button
-                                    onClick={() => setShowFilters(!showFilters)}
-                                    style={{
-                                        padding: '10px',
-                                        borderRadius: '8px',
-                                        border: '1px solid var(--color-border)',
-                                        background: showFilters ? 'var(--color-primary)' : 'var(--color-surface)',
-                                        color: showFilters ? 'white' : 'var(--color-text-secondary)',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}
-                                >
-                                    <Filter size={18} />
-                                </button>
+                                <>
+                                    <button
+                                        onClick={() => setShowFilters(!showFilters)}
+                                        style={{
+                                            padding: '10px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            background: showFilters ? 'var(--color-primary)' : 'var(--color-surface)',
+                                            color: showFilters ? 'white' : 'var(--color-text-secondary)',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}
+                                    >
+                                        <Filter size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            refreshData();
+                                            showToast('Refreshing data...', 'success');
+                                        }}
+                                        style={{
+                                            padding: '10px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            background: 'var(--color-surface)',
+                                            color: 'var(--color-text-secondary)',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}
+                                    >
+                                        <RefreshCw size={18} />
+                                    </button>
+                                </>
                             )}
                         </div>
                         {(!isMobile || showFilters) && (
@@ -600,6 +621,8 @@ const Orders: React.FC = () => {
                                     <option value="Delivered" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Delivered</option>
                                 </select>
 
+
+
                                 <select
                                     value={salesmanFilter}
                                     onChange={e => setSalesmanFilter(e.target.value)}
@@ -611,6 +634,8 @@ const Orders: React.FC = () => {
                                         <option key={s} value={s}>{s}</option>
                                     ))}
                                 </select>
+
+
 
                                 <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
@@ -803,7 +828,7 @@ const Orders: React.FC = () => {
                     {/* Table or Mobile List */}
                     <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', paddingBottom: '0' }}>
                         {isMobile ? (
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '80px' }}>
                                 {paginatedOrders.map(order => (
                                     <MobileOrderCard
                                         key={order.id}
@@ -843,6 +868,33 @@ const Orders: React.FC = () => {
                                 {paginatedOrders.length === 0 && (
                                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>
                                 )}
+
+                                {/* Mobile Summary Footer */}
+                                <div style={{
+                                    position: 'fixed',
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    background: 'white',
+                                    borderTop: '1px solid var(--color-border)',
+                                    padding: '16px',
+                                    zIndex: 100,
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    boxShadow: '0 -4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                }}>
+                                    <div>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total Orders</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{filteredOrders.length}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total Amount</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                                            ${filteredOrders.reduce((sum, order) => sum + order.total, 0).toFixed(2)}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <>

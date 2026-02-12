@@ -78,148 +78,91 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // Initial Fetch
     // Initial Fetch
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const [productsResult, customersResult, salesResult, configResult] = await Promise.all([
-                    supabase.from('products').select('*'),
-                    supabase.from('customers').select('*'),
-                    supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').order('date', { ascending: false }).range(0, 9999),
-                    supabase.from('app_config').select('data').eq('id', 1).single()
-                ]);
+    // Initial Fetch
+    const refreshData = async () => {
+        setIsLoading(true);
+        try {
+            const [productsResult, customersResult, salesResult, configResult] = await Promise.all([
+                supabase.from('products').select('*'),
+                supabase.from('customers').select('*'),
+                supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').order('date', { ascending: false }).range(0, 9999),
+                supabase.from('app_config').select('data').eq('id', 1).single()
+            ]);
 
-                console.log('Fetched Sales Count:', salesResult.data?.length);
-                if (salesResult.error) console.error('Sales Fetch Error:', salesResult.error);
+            console.log('Fetched Sales Count:', salesResult.data?.length);
+            if (salesResult.error) console.error('Sales Fetch Error:', salesResult.error);
 
-                // Products
-                if (productsResult.data) {
-                    setProducts(productsResult.data.map((p: any) => ({
-                        ...p,
-                        lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
-                        stock: Number(p.stock),
-                        price: Number(p.price)
-                    })));
-                }
+            // Products
+            if (productsResult.data) {
+                setProducts(productsResult.data.map((p: any) => ({
+                    ...p,
+                    lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
+                    stock: Number(p.stock),
+                    price: Number(p.price)
+                })));
+            }
 
-                // Customers
-                if (customersResult.data) setCustomers(customersResult.data);
+            // Customers
+            if (customersResult.data) setCustomers(customersResult.data);
 
-                // Sales
-                if (salesResult.data) {
-                    // Map DB structure to App structure
-                    const mappedSales: Sale[] = salesResult.data.map((s: any) => ({
-                        id: s.id,
-                        total: Number(s.total),
-                        discount: Number(s.discount),
-                        date: s.date,
-                        paymentMethod: s.payment_method as any,
-                        type: s.type as any,
-                        salesman: s.salesman,
-                        customerCare: s.customer_care,
-                        remark: s.remark,
-                        amountReceived: Number(s.amount_received),
-                        settleDate: s.settle_date,
-                        paymentStatus: s.payment_status as any,
-                        orderStatus: s.order_status as any,
-                        shipping: s.shipping_status ? {
-                            company: s.shipping_company,
-                            trackingNumber: s.tracking_number || '',
-                            status: s.shipping_status as any,
-                            cost: Number(s.shipping_cost || 0),
-                            staffName: ''
-                        } : undefined,
-                        customer: s.customer_snapshot,
-                        items: s.items.map((i: any) => ({
-                            id: i.product_id,
-                            name: i.name,
-                            price: Number(i.price),
-                            quantity: i.quantity,
-                            image: i.image,
-                            model: '', // Optional in CartItem
-                            stock: 0, // Not needed in history
-                            category: ''
-                        }))
-                    }));
-                    setSales(mappedSales);
-                }
+            // Sales
+            if (salesResult.data) {
+                // Map DB structure to App structure
+                const mappedSales: Sale[] = salesResult.data.map((s: any) => ({
+                    id: s.id,
+                    total: Number(s.total),
+                    discount: Number(s.discount),
+                    date: s.date,
+                    paymentMethod: s.payment_method as any,
+                    type: s.type as any,
+                    salesman: s.salesman,
+                    customerCare: s.customer_care,
+                    remark: s.remark,
+                    amountReceived: Number(s.amount_received),
+                    settleDate: s.settle_date,
+                    paymentStatus: s.payment_status as any,
+                    orderStatus: s.order_status as any,
+                    shipping: s.shipping_status ? {
+                        company: s.shipping_company,
+                        trackingNumber: s.tracking_number || '',
+                        status: s.shipping_status as any,
+                        cost: Number(s.shipping_cost || 0),
+                        staffName: ''
+                    } : undefined,
+                    customer: s.customer_snapshot,
+                    items: s.items.map((i: any) => ({
+                        id: i.product_id,
+                        name: i.name,
+                        price: Number(i.price),
+                        quantity: i.quantity,
+                        image: i.image,
+                        model: '', // Optional in CartItem
+                        stock: 0, // Not needed in history
+                        category: ''
+                    }))
+                }));
+                setSales(mappedSales);
+            }
 
-                // Config
-                if (configResult.data) {
-                    const loadedConfig = configResult.data.data;
-                    const needsMigration = !loadedConfig.cities ||
-                        loadedConfig.cities.length === 0 ||
-                        loadedConfig.cities.includes('Phnom Penh') ||
-                        !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
-                        !loadedConfig.pinnedProducts ||
-                        !loadedConfig.users ||
-                        !loadedConfig.users.length ||
-                        !loadedConfig.roles ||
-                        // Force update if Admin role is missing permissions (Repair)
-                        !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders')) ||
-                        !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_inventory_stock'));
+            // Config
+            if (configResult.data) {
+                const loadedConfig = configResult.data.data;
+                const needsMigration = !loadedConfig.cities ||
+                    loadedConfig.cities.length === 0 ||
+                    loadedConfig.cities.includes('Phnom Penh') ||
+                    !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
+                    !loadedConfig.pinnedProducts ||
+                    !loadedConfig.users ||
+                    !loadedConfig.users.length ||
+                    !loadedConfig.roles ||
+                    // Force update if Admin role is missing permissions (Repair)
+                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders')) ||
+                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_inventory_stock'));
 
-                    if (needsMigration) {
-                        const updatedConfig = {
-                            ...loadedConfig,
-                            cities: loadedConfig.cities && loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ? loadedConfig.cities : [
-                                'រាជធានីភ្នំពេញ',
-                                'ខេត្តបន្ទាយមានជ័យ',
-                                'ខេត្តបាត់ដំបង',
-                                'ខេត្តកំពង់ចាម',
-                                'ខេត្តកំពង់ឆ្នាំង',
-                                'ខេត្តកំពង់ស្ពឺ',
-                                'ខេត្តកំពង់ធំ',
-                                'ខេត្តកំពត',
-                                'ខេត្តកណ្តាល',
-                                'ខេត្តកោះកុង',
-                                'ខេត្តក្រចេះ',
-                                'ខេត្តមណ្ឌលគិរី',
-                                'ខេត្តព្រះវិហារ',
-                                'ខេត្តព្រៃវែង',
-                                'ខេត្តពោធិ៍សាត់',
-                                'ខេត្តរតនគិរី',
-                                'ខេត្តសៀមរាប',
-                                'ខេត្តព្រះសីហនុ',
-                                'ខេត្តស្ទឹងត្រែង',
-                                'ខេត្តស្វាយរៀង',
-                                'ខេត្តតាកែវ',
-                                'ខេត្តឧត្តរមានជ័យ',
-                                'ខេត្តកែប',
-                                'ខេត្តប៉ៃលិន',
-                                'ខេត្តត្បូងឃ្មុំ'
-                            ],
-                            pinnedProducts: loadedConfig.pinnedProducts || [],
-                            pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
-                            users: (loadedConfig.users && loadedConfig.users.length > 0) ? loadedConfig.users : [
-                                { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
-                            ],
-                            roles: [
-                                // Ensure Admin always has full permissions
-                                {
-                                    id: 'admin',
-                                    name: 'Administrator',
-                                    description: 'Full system access',
-                                    permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
-                                },
-                                // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
-                                ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager')
-                            ]
-                        };
-                        setConfig(updatedConfig);
-                        await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
-                    } else {
-                        setConfig(loadedConfig);
-                    }
-                } else {
-                    // Initial if no config found
-                    const defaultConfig = {
-                        shippingCompanies: ['J&T', 'VET', 'JS Express'],
-                        salesmen: ['Sokheng', 'Thida'],
-                        categories: ['Portable', 'PartyBox'],
-                        pages: ['Chantha Sound'],
-                        customerCare: ['Chantha'],
-                        paymentMethods: ['Cash', 'QR'],
-                        cities: [
+                if (needsMigration) {
+                    const updatedConfig = {
+                        ...loadedConfig,
+                        cities: loadedConfig.cities && loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ? loadedConfig.cities : [
                             'រាជធានីភ្នំពេញ',
                             'ខេត្តបន្ទាយមានជ័យ',
                             'ខេត្តបាត់ដំបង',
@@ -246,58 +189,118 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             'ខេត្តប៉ៃលិន',
                             'ខេត្តត្បូងឃ្មុំ'
                         ],
-                        pinnedProducts: [],
-                        pinnedOrderColumns: [],
-                        users: [
+                        pinnedProducts: loadedConfig.pinnedProducts || [],
+                        pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
+                        users: (loadedConfig.users && loadedConfig.users.length > 0) ? loadedConfig.users : [
                             { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
                         ],
                         roles: [
+                            // Ensure Admin always has full permissions
                             {
                                 id: 'admin',
                                 name: 'Administrator',
                                 description: 'Full system access',
                                 permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
                             },
-                            {
-                                id: 'store_manager',
-                                name: 'Store Manager',
-                                description: 'Manage store operations',
-                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
-                            },
-                            {
-                                id: 'cashier',
-                                name: 'Cashier',
-                                description: 'Process sales and payments',
-                                permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
-                            },
-                            {
-                                id: 'customer_care',
-                                name: 'Customer Care',
-                                description: 'Manage support and orders',
-                                permissions: ['view_dashboard', 'manage_orders', 'view_orders'] as any[]
-                            },
-                            {
-                                id: 'salesman',
-                                name: 'Salesman',
-                                description: 'Sales and order viewing',
-                                permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
-                            }
-                        ],
-                        storeAddress: '123 Speaker Ave, Audio City',
-                        storeName: 'JBL Store Main',
-                        email: 'contact@jblstore.com',
-                        phone: '+1 (555) 123-4567'
+                            // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
+                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager')
+                        ]
                     };
-                    setConfig(defaultConfig);
-                    await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
+                    setConfig(updatedConfig);
+                    await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
+                } else {
+                    setConfig(loadedConfig);
                 }
-            } catch (error) {
-                console.error("Error fetching data:", error);
-            } finally {
-                setIsLoading(false);
+            } else {
+                // Initial if no config found
+                const defaultConfig = {
+                    shippingCompanies: ['J&T', 'VET', 'JS Express'],
+                    salesmen: ['Sokheng', 'Thida'],
+                    categories: ['Portable', 'PartyBox'],
+                    pages: ['Chantha Sound'],
+                    customerCare: ['Chantha'],
+                    paymentMethods: ['Cash', 'QR'],
+                    cities: [
+                        'រាជធានីភ្នំពេញ',
+                        'ខេត្តបន្ទាយមានជ័យ',
+                        'ខេត្តបាត់ដំបង',
+                        'ខេត្តកំពង់ចាម',
+                        'ខេត្តកំពង់ឆ្នាំង',
+                        'ខេត្តកំពង់ស្ពឺ',
+                        'ខេត្តកំពង់ធំ',
+                        'ខេត្តកំពត',
+                        'ខេត្តកណ្តាល',
+                        'ខេត្តកោះកុង',
+                        'ខេត្តក្រចេះ',
+                        'ខេត្តមណ្ឌលគិរី',
+                        'ខេត្តព្រះវិហារ',
+                        'ខេត្តព្រៃវែង',
+                        'ខេត្តពោធិ៍សាត់',
+                        'ខេត្តរតនគិរី',
+                        'ខេត្តសៀមរាប',
+                        'ខេត្តព្រះសីហនុ',
+                        'ខេត្តស្ទឹងត្រែង',
+                        'ខេត្តស្វាយរៀង',
+                        'ខេត្តតាកែវ',
+                        'ខេត្តឧត្តរមានជ័យ',
+                        'ខេត្តកែប',
+                        'ខេត្តប៉ៃលិន',
+                        'ខេត្តត្បូងឃ្មុំ'
+                    ],
+                    pinnedProducts: [],
+                    pinnedOrderColumns: [],
+                    users: [
+                        { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
+                    ],
+                    roles: [
+                        {
+                            id: 'admin',
+                            name: 'Administrator',
+                            description: 'Full system access',
+                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
+                        },
+                        {
+                            id: 'store_manager',
+                            name: 'Store Manager',
+                            description: 'Manage store operations',
+                            permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'cashier',
+                            name: 'Cashier',
+                            description: 'Process sales and payments',
+                            permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'customer_care',
+                            name: 'Customer Care',
+                            description: 'Manage support and orders',
+                            permissions: ['view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                        },
+                        {
+                            id: 'salesman',
+                            name: 'Salesman',
+                            description: 'Sales and order viewing',
+                            permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                        }
+                    ],
+                    storeAddress: '123 Speaker Ave, Audio City',
+                    storeName: 'JBL Store Main',
+                    email: 'contact@jblstore.com',
+                    phone: '+1 (555) 123-4567'
+                };
+                setConfig(defaultConfig);
+                await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
             }
-        };
-        fetchData();
+        } catch (error) {
+            console.error("Error fetching data:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        refreshData();
     }, []);
 
     // Sync Config to DB
@@ -1131,7 +1134,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             email: config.email || '',
             phone: config.phone || '',
             updateStoreAddress,
-            updateStoreProfile
+            updateStoreProfile,
+            refreshData
         }}>
             {children}
         </StoreContext.Provider>
