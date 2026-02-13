@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, X, Plus } from 'lucide-react';
+import { Settings, X, Plus, Calendar } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
@@ -213,10 +213,49 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             Customer Information
                         </h3>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
-                            <div style={{ minWidth: 0 }}>
-                                {currentUser?.roleId === 'admin' && (
-                                    <div style={{ marginBottom: '12px' }}>
-                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date (Admin)</label>
+                            {currentUser?.roleId === 'admin' && (
+                                <div style={{ marginBottom: '0' }}>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date (Admin)</label>
+                                    {isMobile ? (
+                                        <div style={{ position: 'relative', width: '100%' }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '12px',
+                                                background: 'white',
+                                                border: '1px solid var(--color-border)',
+                                                borderRadius: '10px',
+                                                fontSize: '14px',
+                                                color: formData.date ? 'var(--color-text-main)' : 'var(--color-text-muted)',
+                                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                            }}>
+                                                <span style={{ fontWeight: 500 }}>
+                                                    {formData.date
+                                                        ? new Date(formData.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                                                        : 'Select Date & Time...'}
+                                                </span>
+                                                <Calendar size={18} color="var(--color-primary)" />
+                                            </div>
+                                            <input
+                                                type="datetime-local"
+                                                style={{
+                                                    position: 'absolute',
+                                                    inset: 0,
+                                                    opacity: 0,
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    zIndex: 10
+                                                }}
+                                                value={formData.date ? new Date(new Date(formData.date).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
+                                                onChange={e => {
+                                                    const localDate = new Date(e.target.value);
+                                                    const utcDate = new Date(localDate.getTime());
+                                                    setFormData({ ...formData, date: utcDate.toISOString() });
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
                                         <input
                                             type="datetime-local"
                                             className="search-input"
@@ -228,21 +267,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                                 setFormData({ ...formData, date: utcDate.toISOString() });
                                             }}
                                         />
-                                    </div>
-                                )}
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
-                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
-                                    {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Status</label>
-                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}>
-                                    {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
+                                    )}
+                                </div>
+                            )}
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Name</label>
                                 <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Enter name" />
@@ -328,6 +355,19 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                     )}
                                 </div>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
+                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
+                                    {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Status</label>
+                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}>
+                                    {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
                             </div>
                         </div>
 
