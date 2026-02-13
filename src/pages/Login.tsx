@@ -5,7 +5,7 @@ import { Lock, Delete, LogIn, RefreshCw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 const Login: React.FC = () => {
-    const { users, roles, login, refreshData } = useStore();
+    const { users, login, refreshData } = useStore();
     const navigate = useNavigate();
     const { showToast } = useToast();
 
@@ -162,7 +162,6 @@ const Login: React.FC = () => {
                         >
                             {validUsers.length === 0 && <option value="">No users found</option>}
                             {validUsers.map(user => {
-                                const userRole = roles.find(r => r.id === user.roleId);
                                 return (
                                     <option key={user.id} value={user.id}>
                                         {user.name}
