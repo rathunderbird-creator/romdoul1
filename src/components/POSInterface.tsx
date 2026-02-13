@@ -190,7 +190,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 boxShadow: '0 4px 20px rgba(59, 130, 246, 0.5)',
-                                zIndex: 100,
+                                zIndex: 1000,
                                 border: 'none'
                             }}
                         >
@@ -218,15 +218,29 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                         </button>
                     )}
 
+                    {/* Mobile Cart Overlay - Rendered OUTSIDE the sidebar transformation */}
+                    {isMobile && isCartOpen && (
+                        <div
+                            onClick={() => setIsCartOpen(false)}
+                            style={{
+                                position: 'fixed',
+                                inset: 0,
+                                background: 'rgba(0,0,0,0.5)',
+                                zIndex: 1001, // Below sidebar (1002), above FAB (1000)
+                                backdropFilter: 'blur(2px)'
+                            }}
+                        />
+                    )}
+
                     {/* Cart Sidebar / Modal */}
                     {(isCartOpen || !isMobile) && (
                         <div className={isMobile ? "" : "glass-panel"} style={{
                             width: isMobile ? '100%' : '400px',
-                            height: isMobile ? '80vh' : 'auto', // Mobile: 80% height sheet
+                            height: isMobile ? '85vh' : 'auto', // Mobile: 80% height sheet
                             position: isMobile ? 'fixed' : 'relative',
                             bottom: isMobile ? 0 : 'auto',
                             left: isMobile ? 0 : 'auto',
-                            zIndex: isMobile ? 101 : 1,
+                            zIndex: isMobile ? 1002 : 1, // Above overlay
                             background: isMobile ? 'white' : 'rgba(255, 255, 255, 0.8)',
                             borderTopLeftRadius: '24px',
                             borderTopRightRadius: '24px',
@@ -235,13 +249,10 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                             backdropFilter: 'blur(20px)',
                             display: 'flex',
                             flexDirection: 'column',
-                            transition: 'transform 0.3s ease-out',
+                            transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)', // Better spring
                             transform: (isMobile && !isCartOpen) ? 'translateY(100%)' : 'translateY(0)',
                             border: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.4)'
                         }}>
-                            {isMobile && (
-                                <div onClick={() => setIsCartOpen(false)} style={{ position: 'fixed', inset: 0, top: '-100vh', background: 'rgba(0,0,0,0.5)', zIndex: -1 }} />
-                            )}
 
                             {isMobile && (
                                 <div style={{ display: 'flex', justifyContent: 'center', padding: '12px' }} onClick={() => setIsCartOpen(false)}>

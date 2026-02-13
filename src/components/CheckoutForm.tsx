@@ -174,7 +174,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
             showToast('Order updated', 'success');
         } else {
-            addOnlineOrder(orderData);
+            addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
             showToast('Order created', 'success');
         }
 
@@ -213,14 +213,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             Customer Information
                         </h3>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
-                            <div>
-                                {currentUser?.roleId === 'admin' && orderToEdit && (
+                            <div style={{ minWidth: 0 }}>
+                                {currentUser?.roleId === 'admin' && (
                                     <div style={{ marginBottom: '12px' }}>
                                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date (Admin)</label>
                                         <input
                                             type="datetime-local"
                                             className="search-input"
-                                            style={{ width: '100%', padding: '10px 12px' }}
+                                            style={{ width: '100%', padding: '10px 12px', maxWidth: '100%', minWidth: '0' }}
                                             value={formData.date ? new Date(new Date(formData.date).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
                                             onChange={e => {
                                                 const localDate = new Date(e.target.value);

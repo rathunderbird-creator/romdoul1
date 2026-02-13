@@ -12,8 +12,9 @@ import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 
 const Orders: React.FC = () => {
-    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, refreshData } = useStore();
+    const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, refreshData, currentUser } = useStore();
 
+    const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
     const canManage = hasPermission('manage_orders');
 
@@ -258,6 +259,17 @@ const Orders: React.FC = () => {
         document.removeEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = '';
     }, [handleGlobalMouseMove]);
+
+    // Appearance State
+    const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+    const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
+        const saved = localStorage.getItem('pos_table_settings');
+        return saved ? JSON.parse(saved) : { fontSize: 12, padding: 8, height: 'auto' };
+    });
+
+    useEffect(() => {
+        localStorage.setItem('pos_table_settings', JSON.stringify(tableSettings));
+    }, [tableSettings]);
 
     // Cleanup on unmount
     React.useEffect(() => {
@@ -785,6 +797,80 @@ const Orders: React.FC = () => {
                                 {!isMobile && (
                                     <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                         <button
+                                            onClick={() => setShowAppearanceMenu(!showAppearanceMenu)}
+                                            style={{
+                                                padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                                background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                width: '100%', justifyContent: 'center'
+                                            }}
+                                        >
+                                            <Settings size={18} />
+                                            Appearance
+                                        </button>
+                                        {showAppearanceMenu && (
+                                            <div className="glass-panel" style={{
+                                                position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                                                padding: '16px', width: '250px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
+                                                display: 'flex', flexDirection: 'column', gap: '12px'
+                                            }}>
+                                                <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
+                                                <div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                        <label style={{ fontSize: '13px' }}>Font Size</label>
+                                                        <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.fontSize}px</span>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="9" max="16" value={tableSettings.fontSize}
+                                                        onChange={(e) => setTableSettings({ ...tableSettings, fontSize: parseInt(e.target.value) })}
+                                                        style={{ width: '100%' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                        <label style={{ fontSize: '13px' }}>Row Padding</label>
+                                                        <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.padding}px</span>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="0" max="20" step="1" value={tableSettings.padding}
+                                                        onChange={(e) => setTableSettings({ ...tableSettings, padding: parseInt(e.target.value) })}
+                                                        style={{ width: '100%' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>Row Height</label>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <button
+                                                            onClick={() => setTableSettings({ ...tableSettings, height: 'auto' })}
+                                                            style={{
+                                                                flex: 1, padding: '6px', fontSize: '12px',
+                                                                background: tableSettings.height === 'auto' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                color: tableSettings.height === 'auto' ? 'white' : 'var(--color-text-main)',
+                                                                borderRadius: '4px', border: 'none'
+                                                            }}
+                                                        >
+                                                            Auto
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setTableSettings({ ...tableSettings, height: '44px' })}
+                                                            style={{
+                                                                flex: 1, padding: '6px', fontSize: '12px',
+                                                                background: tableSettings.height === '44px' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                color: tableSettings.height === '44px' ? 'white' : 'var(--color-text-main)',
+                                                                borderRadius: '4px', border: 'none'
+                                                            }}
+                                                        >
+                                                            Fixed
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {!isMobile && (
+                                    <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                        <button
                                             onClick={() => setShowColumnMenu(!showColumnMenu)}
                                             style={{
                                                 padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
@@ -946,16 +1032,30 @@ const Orders: React.FC = () => {
                             </div>
                         ) : (
                             <>
-                                <table className="spreadsheet-table" style={{ minWidth: '100%', whiteSpace: 'nowrap', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
+                                <table
+                                    className="spreadsheet-table"
+                                    style={{
+                                        minWidth: '100%',
+                                        whiteSpace: 'nowrap',
+                                        tableLayout: 'fixed',
+                                        borderCollapse: 'separate',
+                                        borderSpacing: 0,
+                                        // Apply CSS Variables
+                                        ['--table-font-size' as any]: `${tableSettings.fontSize}px`,
+                                        ['--table-padding' as any]: `${tableSettings.padding}px 8px`, // Reduced side padding too
+                                        ['--table-row-height' as any]: tableSettings.height === 'auto' ? 'auto' : tableSettings.height
+                                    }}>
                                     <thead>
                                         <tr>
                                             <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: '#F9FAFB' }} className="sticky-col-first">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={filteredOrders.length > 0 && selectedIds.size === filteredOrders.length}
-                                                    onChange={toggleSelectAll}
-                                                    style={{ cursor: 'pointer' }}
-                                                />
+                                                {isAdmin && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={filteredOrders.length > 0 && selectedIds.size === filteredOrders.length}
+                                                        onChange={toggleSelectAll}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                )}
                                             </th>
                                             {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
                                                 const colId = col.id;
@@ -987,7 +1087,7 @@ const Orders: React.FC = () => {
                                                             alignItems: 'center',
                                                             justifyContent: 'space-between',
                                                             height: '100%',
-                                                            padding: '10px 12px',
+                                                            padding: 'var(--table-padding, 8px 12px)',
                                                             overflow: 'hidden',
                                                             width: '100%'
                                                         }}>
@@ -1050,13 +1150,15 @@ const Orders: React.FC = () => {
                                             return (
                                                 <tr key={order.id} className={rowClass}>
                                                     <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15 }} className="sticky-col-first">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedIds.has(order.id)}
-                                                            onChange={(e) => toggleSelection(order.id, e.nativeEvent as unknown as React.MouseEvent)}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            style={{ cursor: 'pointer' }}
-                                                        />
+                                                        {isAdmin && (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedIds.has(order.id)}
+                                                                onChange={(e) => toggleSelection(order.id, e.nativeEvent as unknown as React.MouseEvent)}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                style={{ cursor: 'pointer' }}
+                                                            />
+                                                        )}
                                                     </td>
                                                     {allColumns.filter(col => visibleColumns.includes(col.id)).map(col => {
                                                         const colId = col.id;
@@ -1105,7 +1207,7 @@ const Orders: React.FC = () => {
                                                             case 'items':
                                                                 return (
                                                                     <td key={colId} style={cellStyle}>
-                                                                        <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                        <div style={{ fontSize: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                             {order.items.map(i => `${i.name} x${i.quantity} `).join(', ')}
                                                                         </div>
                                                                     </td>
@@ -1129,13 +1231,7 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <PaymentStatusBadge
                                                                             status={order.paymentStatus || 'Paid'}
-                                                                            disabledOptions={
-                                                                                order.shipping?.status === 'Returned' || order.shipping?.status === 'ReStock'
-                                                                                    ? []
-                                                                                    : order.shipping?.status !== 'Delivered'
-                                                                                        ? (order.paymentMethod === 'COD' ? ['Paid', 'Settled', 'Unpaid'] : ['Paid', 'Settled'])
-                                                                                        : (order.paymentMethod === 'COD' ? ['Paid', 'Unpaid', 'Cancel'] : ['Settled', 'Not Settle', 'Cancel'])
-                                                                            }
+                                                                            disabledOptions={[]}
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid' || newStatus === 'Settled') {
@@ -1147,13 +1243,7 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 updateOrder(order.id, updates);
                                                                             }}
-                                                                            readOnly={
-                                                                                !canEdit ||
-                                                                                (order.shipping?.status === 'Returned' || order.shipping?.status === 'ReStock'
-                                                                                    ? true
-                                                                                    : (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') ||
-                                                                                    (order.shipping?.status !== 'Delivered' && order.shipping?.status !== 'Pending'))
-                                                                            }
+                                                                            readOnly={!canEdit}
                                                                         />
                                                                     </td>
                                                                 );
@@ -1166,15 +1256,15 @@ const Orders: React.FC = () => {
                                                             case 'status':
                                                                 return (
                                                                     <td key={colId} style={{
-                                                                        width: columnWidths[colId] ? `${columnWidths[colId]} px` : '150px',
-                                                                        minWidth: columnWidths[colId] ? `${columnWidths[colId]} px` : '150px',
+                                                                        width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                                        minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
                                                                         overflow: 'visible',
                                                                         textOverflow: 'ellipsis',
                                                                         textAlign: 'left'
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'Delivered' || order.shipping?.status === 'ReStock'}
+                                                                            readOnly={!canEdit}
                                                                             onChange={(newStatus: string) => {
                                                                                 updateOrderStatus(order.id, newStatus as any);
                                                                                 if (newStatus === 'Delivered') {
@@ -1200,7 +1290,7 @@ const Orders: React.FC = () => {
                                                                             style={{
                                                                                 width: '100%',
                                                                                 padding: '4px 8px',
-                                                                                fontSize: '13px',
+                                                                                fontSize: 'inherit',
                                                                                 fontFamily: 'monospace',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
@@ -1243,7 +1333,7 @@ const Orders: React.FC = () => {
                                                                             style={{
                                                                                 width: '100%',
                                                                                 padding: '4px 8px',
-                                                                                fontSize: '13px',
+                                                                                fontSize: 'inherit',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
                                                                             }}

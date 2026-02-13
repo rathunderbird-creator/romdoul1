@@ -159,7 +159,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             <div className="moc-status-control">
                                 <StatusBadge
                                     status={order.shipping?.status || 'Pending'}
-                                    readOnly={!canEdit || order.shipping?.status === 'Delivered' || order.shipping?.status === 'ReStock'}
+                                    readOnly={!canEdit}
                                     onChange={(newStatus) => onUpdateStatus(order.id, newStatus)}
                                 />
                             </div>
@@ -171,13 +171,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     status={order.paymentStatus || 'Paid'}
                                     onChange={(newStatus) => onUpdatePaymentStatus(order.id, newStatus)}
                                     // simplified readOnly logic for mobile
-                                    readOnly={
-                                        !canEdit ||
-                                        (order.shipping?.status === 'Returned' || order.shipping?.status === 'ReStock'
-                                            ? true
-                                            : (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') ||
-                                            (order.shipping?.status !== 'Delivered' && order.shipping?.status !== 'Pending'))
-                                    }
+                                    readOnly={!canEdit}
                                     disabledOptions={[]}
                                 />
                             </div>

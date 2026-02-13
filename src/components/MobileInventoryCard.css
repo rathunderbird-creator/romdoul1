@@ -1,0 +1,192 @@
+/* MobileInventoryCard.css */
+
+.mobile-inventory-card {
+    border-bottom: 1px solid var(--color-border);
+    transition: background-color 0.2s ease;
+    background-color: white;
+}
+
+.mobile-inventory-card.selected {
+    background-color: var(--color-primary-light);
+}
+
+.mobile-inventory-card.low-stock {
+    background-color: #FEF2F2;
+    /* Red 50 */
+}
+
+/* Header Row */
+.mic-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.mic-chevron {
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s ease;
+}
+
+/* Image & Info */
+.mic-image {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.mic-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mic-name {
+    font-weight: 600;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text-main);
+}
+
+.mic-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+/* Mini Status Dot (Stock) */
+.mic-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.mic-status-dot.ok {
+    background-color: #10B981;
+}
+
+.mic-status-dot.low {
+    background-color: #EF4444;
+}
+
+/* Expanded Content */
+.mic-expanded {
+    padding: 0 16px 16px 16px;
+    border-top: 1px dashed var(--color-border);
+    animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Details Grid */
+.mic-details-grid {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.mic-detail-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+/* Items List / Stats */
+.mic-stats-container {
+    margin-top: 16px;
+    background-color: var(--color-bg);
+    padding: 12px;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.mic-stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mic-stat-label {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.mic-stat-value {
+    font-size: 14px;
+    color: var(--color-text-main);
+    font-weight: 500;
+}
+
+/* Action Bar */
+.mic-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.mic-action-btn {
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background-color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    transition: all 0.2s;
+}
+
+.mic-action-btn:hover {
+    background-color: var(--color-bg);
+    border-color: var(--color-text-muted);
+}
+
+.mic-action-btn.delete {
+    color: #EF4444;
+}
+
+.mic-action-btn.delete:hover {
+    background-color: #FEF2F2;
+    border-color: #FECACA;
+}
+
+.mic-action-btn.primary {
+    border-color: var(--color-primary);
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.mic-action-btn.primary:hover {
+    background-color: var(--color-primary-hover);
+}

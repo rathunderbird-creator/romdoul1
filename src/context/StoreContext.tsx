@@ -600,11 +600,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
-    const addOnlineOrder = async (order: Omit<Sale, 'id' | 'date'>) => {
+    const addOnlineOrder = async (order: Omit<Sale, 'id'>) => {
         const newSale: Sale = {
             ...order,
             id: Date.now().toString(),
-            date: new Date().toISOString()
+            date: order.date || new Date().toISOString()
         };
         setSales(prev => [newSale, ...prev]);
 
@@ -980,6 +980,152 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     };
 
+    const backupData = async () => {
+        const data = {
+            timestamp: new Date().toISOString(),
+            products,
+            sales,
+            customers,
+            users: config.users || [],
+            roles: config.roles || [],
+            config: {
+                shippingCompanies: config.shippingCompanies,
+                salesmen: config.salesmen,
+                categories: config.categories,
+                pages: config.pages,
+                customerCare: config.customerCare,
+                paymentMethods: config.paymentMethods,
+                cities: config.cities,
+                storeName: config.storeName,
+                storeAddress: config.storeAddress,
+                email: config.email,
+                phone: config.phone
+            }
+        };
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backup-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const restoreData = async (jsonData: any) => {
+        setIsLoading(true);
+        try {
+            // 1. Validate (Simple check)
+            if (!jsonData.products || !jsonData.sales || !jsonData.customers) {
+                throw new Error("Invalid backup file format");
+            }
+
+            // 2. Restore Products
+            if (jsonData.products.length > 0) {
+                const { error } = await supabase.from('products').upsert(jsonData.products);
+                if (error) throw new Error("Failed to restore products: " + error.message);
+            }
+
+            // 3. Restore Customers
+            if (jsonData.customers.length > 0) {
+                const { error } = await supabase.from('customers').upsert(jsonData.customers);
+                if (error) throw new Error("Failed to restore customers: " + error.message);
+            }
+
+            // 4. Restore Sales
+            if (jsonData.sales.length > 0) {
+                // We need to map back to DB structure for sales
+                const dbSales = jsonData.sales.map((s: Sale) => ({
+                    id: s.id,
+                    total: s.total,
+                    discount: s.discount,
+                    date: s.date,
+                    payment_method: s.paymentMethod,
+                    type: s.type,
+                    salesman: s.salesman,
+                    customer_care: s.customerCare,
+                    remark: s.remark,
+                    amount_received: s.amountReceived,
+                    settle_date: s.settleDate,
+                    payment_status: s.paymentStatus,
+                    order_status: s.orderStatus,
+                    shipping_company: s.shipping?.company,
+                    tracking_number: s.shipping?.trackingNumber,
+                    shipping_status: s.shipping?.status,
+                    shipping_cost: s.shipping?.cost,
+                    customer_snapshot: s.customer
+                }));
+                const { error: salesError } = await supabase.from('sales').upsert(dbSales);
+                if (salesError) throw new Error("Failed to restore sales: " + salesError.message);
+
+                // Restore Sale Items
+                // We need to flatten all items from all sales
+                const allItems: any[] = [];
+                jsonData.sales.forEach((s: Sale) => {
+                    if (s.items) {
+                        s.items.forEach(item => {
+                            allItems.push({
+                                id: crypto.randomUUID(), // Generate new ID or use item.id if available (CartItem might not have unique ID in backup if not from DB)
+                                sale_id: s.id,
+                                product_id: item.id, // This is product ID
+                                name: item.name,
+                                price: item.price,
+                                quantity: item.quantity,
+                                image: item.image
+                            });
+                        });
+                    }
+                });
+
+                if (allItems.length > 0) {
+                    // Delete existing items for these sales to avoid duplicates?
+                    // Actually upsert might be tricky without ID.
+                    // For safety, let's delete items for these sales first
+                    const saleIds = jsonData.sales.map((s: Sale) => s.id);
+                    await supabase.from('sale_items').delete().in('sale_id', saleIds);
+
+                    const { error: itemsError } = await supabase.from('sale_items').insert(allItems);
+                    if (itemsError) throw new Error("Failed to restore sale items: " + itemsError.message);
+                }
+            }
+
+            // 5. Restore Config
+            if (jsonData.config) {
+                // Upsert config to ID 1
+                const { error } = await supabase.from('app_config').upsert({
+                    id: 1,
+                    data: {
+                        shippingCompanies: jsonData.config.shippingCompanies,
+                        salesmen: jsonData.config.salesmen,
+                        categories: jsonData.config.categories,
+                        pages: jsonData.config.pages,
+                        customerCare: jsonData.config.customerCare,
+                        paymentMethods: jsonData.config.paymentMethods,
+                        cities: jsonData.config.cities,
+                        users: jsonData.users,
+                        roles: jsonData.roles,
+                        storeName: jsonData.config.storeName,
+                        storeAddress: jsonData.config.storeAddress,
+                        email: jsonData.config.email,
+                        phone: jsonData.config.phone
+                    }
+                });
+                if (error) throw new Error("Failed to restore config: " + error.message);
+            }
+
+            alert("Restore completed successfully! Page will reload.");
+            window.location.reload();
+
+        } catch (e: any) {
+            console.error("Restore failed:", e);
+            alert("Restore failed: " + e.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // User & Role Management
     const addUser = async (userData: Omit<User, 'id'>) => {
         const newUser: User = { ...userData, id: Date.now().toString() };
@@ -1124,6 +1270,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             importProducts,
             importOrders,
             restockOrder,
+            backupData,
+            restoreData,
             // Authentication
             currentUser,
             login,

@@ -68,7 +68,7 @@ export interface StoreContextType {
     updateCart: (items: CartItem[]) => void;
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => void; // Updated signature
-    addOnlineOrder: (order: Omit<Sale, 'id' | 'date'>) => void;
+    addOnlineOrder: (order: Omit<Sale, 'id'>) => void;
     updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string) => void;
     addProduct: (product: Omit<Product, 'id'>) => void;
     updateProduct: (id: string, product: Partial<Product>) => void;
@@ -123,6 +123,8 @@ export interface StoreContextType {
     importProducts: (products: any[]) => Promise<void>;
     importOrders: (orders: any[]) => Promise<void>;
     restockOrder: (orderId: string) => Promise<void>;
+    backupData: () => Promise<void>;
+    restoreData: (jsonData: any) => Promise<void>;
 
     // Authentication
     currentUser: User | null;

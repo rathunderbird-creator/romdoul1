@@ -33,7 +33,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         justifyContent: 'space-between',
         padding: '4px 8px 4px 12px',
         borderRadius: '9999px',
-        fontSize: '12px',
+        fontSize: 'inherit',
         fontWeight: 600,
         backgroundColor: style.bg,
         color: style.color,
@@ -79,7 +79,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
 
     return (
         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} ref={dropdownRef}>
-            <div style={badgeStyle} onClick={handleToggle}>
+            <div className="status-badge" style={badgeStyle} onClick={handleToggle}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{status}</span>
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>
@@ -107,7 +107,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                                 style={{
                                     padding: '8px 12px',
                                     cursor: 'pointer',
-                                    fontSize: '12px',
+                                    fontSize: 'inherit',
                                     fontWeight: 500,
                                     color: optStyle.color,
                                     backgroundColor: opt === status ? '#F3F4F6' : 'white',

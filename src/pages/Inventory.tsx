@@ -1,11 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Upload, Boxes } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
+import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
-import DataImportModal from '../components/DataImportModal';
+import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product } from '../types';
 
 type SortConfig = {
@@ -14,9 +15,10 @@ type SortConfig = {
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, importProducts } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
+    const isMobile = useMobile();
 
     React.useEffect(() => {
         setHeaderContent({
@@ -32,31 +34,7 @@ const Inventory: React.FC = () => {
 
     // State
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-
-    const handleImportProducts = async (data: any[]) => {
-        // Basic validation/mapping if needed, or pass directly if keys match
-        // The modal returns objects with keys from the CSV/Excel header
-        // We expect: Name, Model, Price, Stock, Category
-
-        try {
-            const mappedProducts = data.map(item => ({
-                name: item.Name || item.name || 'Unknown Product',
-                model: item.Model || item.model || '',
-                price: Number(item.Price || item.price || 0),
-                stock: Number(item.Stock || item.stock || 0),
-                category: item.Category || item.category || 'Portable',
-                image: item.Image || 'https://via.placeholder.com/300'
-            }));
-
-            await importProducts(mappedProducts);
-            setIsImportModalOpen(false);
-        } catch (error) {
-            console.error("Import failed in component:", error);
-            throw error; // Re-throw to let modal handle it or show toast
-        }
-    };
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -106,6 +84,19 @@ const Inventory: React.FC = () => {
     const [formData, setFormData] = useState<Partial<Product>>(initialFormState);
 
     const allCategories = ['All', ...categories];
+
+    // Mobile Expansion State
+    const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set());
+
+    const toggleProductExpansion = (id: string) => {
+        const newExpanded = new Set(expandedProductIds);
+        if (newExpanded.has(id)) {
+            newExpanded.delete(id);
+        } else {
+            newExpanded.add(id);
+        }
+        setExpandedProductIds(newExpanded);
+    };
 
     // Derived State
     const filteredAndSortedProducts = useMemo(() => {
@@ -230,17 +221,6 @@ const Inventory: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', gap: '12px' }}>
                     <button
-                        onClick={() => setIsImportModalOpen(true)}
-                        style={{
-                            padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px',
-                            background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px',
-                            cursor: 'pointer', fontWeight: 500, color: 'var(--color-text-main)'
-                        }}
-                    >
-                        <Upload size={20} />
-                        Import
-                    </button>
-                    <button
                         onClick={openAddModal}
                         className="primary-button"
                         style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -283,105 +263,125 @@ const Inventory: React.FC = () => {
                 </select>
             </div>
 
-            {/* Table */}
-            <div className="glass-panel" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 200px)' }}>
-                <table className="spreadsheet-table">
-                    <thead>
-                        <tr>
-                            <th style={{ width: '40px', textAlign: 'center' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={filteredAndSortedProducts.length > 0 && selectedIds.size === filteredAndSortedProducts.length}
-                                    onChange={toggleSelectAll}
-                                    style={{ cursor: 'pointer' }}
-                                />
-                            </th>
-                            {renderHeader('Product', 'name')}
-                            {renderHeader('Category', 'category')}
-                            {renderHeader('Price', 'price')}
-                            {renderHeader('Stock', 'stock')}
-                            {renderHeader('Total Value', 'totalValue')}
-                            <th style={{ textAlign: 'right' }}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            {/* Content: List or Table */}
+            <div className={!isMobile ? "glass-panel" : ""} style={{ overflow: 'auto', maxHeight: isMobile ? 'calc(100vh - 280px)' : 'calc(100vh - 200px)' }}>
+                {isMobile ? (
+                    // Mobile View
+                    <div style={{ paddingBottom: '80px' }}>
                         {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
-                            <tr
+                            <MobileInventoryCard
                                 key={product.id}
-                                className={selectedIds.has(product.id) ? 'selected' : ''}
-                            >
-                                <td style={{ textAlign: 'center' }}>
+                                product={product}
+                                isSelected={selectedIds.has(product.id)}
+                                onToggleSelect={() => toggleSelection(product.id)}
+                                isExpanded={expandedProductIds.has(product.id)}
+                                onToggleExpand={() => toggleProductExpansion(product.id)}
+                                onEdit={openEditModal}
+                                onDelete={promptDelete}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    // Desktop View
+                    <table className="spreadsheet-table">
+                        <thead>
+                            <tr>
+                                <th style={{ width: '40px', textAlign: 'center' }}>
                                     <input
                                         type="checkbox"
-                                        checked={selectedIds.has(product.id)}
-                                        onChange={() => toggleSelection(product.id)}
+                                        checked={filteredAndSortedProducts.length > 0 && selectedIds.size === filteredAndSortedProducts.length}
+                                        onChange={toggleSelectAll}
                                         style={{ cursor: 'pointer' }}
                                     />
-                                </td>
-                                <td>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <img src={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'contain', background: 'white', padding: '2px', border: '1px solid var(--color-border)' }} />
-                                        <div>
-                                            <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
-                                        {product.category}
-                                    </span>
-                                </td>
-                                <td style={{ fontWeight: 600 }}>${product.price}</td>
-                                <td>
-                                    {product.stock < (product.lowStockThreshold || 5) ? (
-                                        <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
-                                            <AlertTriangle size={14} /> {product.stock}
-                                        </span>
-                                    ) : (
-                                        <span style={{ color: '#10B981', fontWeight: 500 }}>{product.stock}</span>
-                                    )}
-                                </td>
-                                <td style={{ color: 'var(--color-text-secondary)' }}>
-                                    ${(product.price * product.stock).toLocaleString()}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                        <button
-                                            onClick={() => openEditModal(product)}
-                                            style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                            className="hover-primary"
-                                            title="Edit"
-                                        >
-                                            <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => promptDelete(product.id)}
-                                            style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                            className="hover-danger"
-                                            title="Delete"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                </td>
+                                </th>
+                                {renderHeader('Product', 'name')}
+                                {renderHeader('Category', 'category')}
+                                {renderHeader('Price', 'price')}
+                                {renderHeader('Stock', 'stock')}
+                                {renderHeader('Total Value', 'totalValue')}
+                                <th style={{ textAlign: 'right' }}>Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                    <tfoot>
-                        <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
-                            <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
-                            <td style={{ padding: '12px 16px' }}>—</td>
-                            <td style={{ padding: '12px 16px', color: '#10B981' }}>
-                                {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
-                            </td>
-                            <td style={{ padding: '12px 16px' }}>
-                                ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
-                            </td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
+                        </thead>
+                        <tbody>
+                            {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
+                                <tr
+                                    key={product.id}
+                                    className={selectedIds.has(product.id) ? 'selected' : ''}
+                                >
+                                    <td style={{ textAlign: 'center' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.has(product.id)}
+                                            onChange={() => toggleSelection(product.id)}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <img src={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'contain', background: 'white', padding: '2px', border: '1px solid var(--color-border)' }} />
+                                            <div>
+                                                <div style={{ fontWeight: 600 }}>{product.name}</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
+                                            {product.category}
+                                        </span>
+                                    </td>
+                                    <td style={{ fontWeight: 600 }}>${product.price}</td>
+                                    <td>
+                                        {product.stock < (product.lowStockThreshold || 5) ? (
+                                            <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
+                                                <AlertTriangle size={14} /> {product.stock}
+                                            </span>
+                                        ) : (
+                                            <span style={{ color: '#10B981', fontWeight: 500 }}>{product.stock}</span>
+                                        )}
+                                    </td>
+                                    <td style={{ color: 'var(--color-text-secondary)' }}>
+                                        ${(product.price * product.stock).toLocaleString()}
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                            <button
+                                                onClick={() => openEditModal(product)}
+                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                className="hover-primary"
+                                                title="Edit"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => promptDelete(product.id)}
+                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                className="hover-danger"
+                                                title="Delete"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot>
+                            <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
+                                <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
+                                <td style={{ padding: '12px 16px' }}>—</td>
+                                <td style={{ padding: '12px 16px', color: '#10B981' }}>
+                                    {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
+                                </td>
+                                <td style={{ padding: '12px 16px' }}>
+                                    ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                )}
+
                 {filteredAndSortedProducts.length === 0 && (
                     <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                         <div style={{ marginBottom: '16px', opacity: 0.5 }}><Search size={48} /></div>
@@ -389,6 +389,37 @@ const Inventory: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Mobile Summary Footer */}
+            {isMobile && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'white',
+                    borderTop: '1px solid var(--color-border)',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    zIndex: 90,
+                    boxShadow: '0 -2px 10px rgba(0,0,0,0.05)'
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Stock</span>
+                        <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--color-text-main)' }}>
+                            {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0).toLocaleString()}
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Value</span>
+                        <span style={{ fontWeight: 600, fontSize: '15px', color: '#10B981' }}>
+                            ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {/* Pagination */}
             {filteredAndSortedProducts.length > 0 && (
@@ -586,12 +617,7 @@ const Inventory: React.FC = () => {
                     </div>
                 )
             }
-            <DataImportModal
-                isOpen={isImportModalOpen}
-                onClose={() => setIsImportModalOpen(false)}
-                type="product"
-                onImport={handleImportProducts}
-            />
+
         </div >
     );
 };

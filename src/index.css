@@ -106,7 +106,7 @@ button {
   /* Required for sticky headers/footers to work properly */
   border-spacing: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  font-size: 13px;
+  font-size: var(--table-font-size, 12px);
   /* Slightly larger for readability */
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -120,12 +120,12 @@ button {
   border-bottom: 1px solid var(--color-border);
   border-right: 1px solid var(--color-bg);
   /* Very subtle vertical divider */
-  padding: 10px 12px;
+  padding: var(--table-padding, 8px 12px);
   /* More breathable padding */
   text-align: left;
   white-space: nowrap;
   vertical-align: middle;
-  height: 44px;
+  height: var(--table-row-height, auto);
   /* Taller rows like reference */
   color: var(--color-text-secondary);
   /* Gray-700 for text */
@@ -248,6 +248,33 @@ button {
 .spreadsheet-table tbody tr.restock-row td.sticky-col-second {
   background-color: #F5F3FF;
 }
+
+/* Compact Mode Overrides */
+.spreadsheet-table select,
+.spreadsheet-table input {
+  font-size: inherit;
+  /* Inherit table font size */
+  padding-top: 0px;
+  padding-bottom: 0px;
+  height: auto;
+  min-height: 16px;
+  line-height: 1;
+}
+
+/* Specific class for badge selects if they exist, or using data attributes */
+.spreadsheet-table .status-badge {
+  padding: 0 4px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  font-size: inherit;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
 
 .spreadsheet-table tbody tr.paid-settled-row td.sticky-col-first,
 .spreadsheet-table tbody tr.paid-settled-row td.sticky-col-second {

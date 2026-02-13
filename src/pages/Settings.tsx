@@ -10,7 +10,7 @@ import { useTheme } from '../context/ThemeContext';
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile } = useStore();
+    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -214,19 +214,70 @@ const Settings: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '24px', borderColor: 'var(--color-primary)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                         <Database size={24} className="text-primary" />
-                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Data Migration</h3>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Data Management</h3>
                     </div>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
-                        Upload your local data to the cloud database (Supabase). This ensures your data is backed up and accessible across devices.
+                        Manage your application data. You can back up your current data to a JSON file or migrate local data to the cloud.
                     </p>
-                    <button
-                        onClick={handleMigration}
-                        className="primary-button"
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
-                    >
-                        <Database size={18} />
-                        Migrate to Supabase
-                    </button>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                            onClick={async () => {
+                                await backupData();
+                                showToast('Backup download started', 'success');
+                            }}
+                            className="primary-button"
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
+                        >
+                            <Save size={18} />
+                            Backup Database
+                        </button>
+                        <div style={{ position: 'relative' }}>
+                            <input
+                                type="file"
+                                id="restore-file"
+                                style={{ display: 'none' }}
+                                accept=".json"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+
+                                    if (!confirm(`Are you sure you want to restore from ${file.name}? This will OVERWRITE existing data with the same IDs.`)) {
+                                        e.target.value = ''; // Reset
+                                        return;
+                                    }
+
+                                    const reader = new FileReader();
+                                    reader.onload = async (event) => {
+                                        try {
+                                            const json = JSON.parse(event.target?.result as string);
+                                            await restoreData(json);
+                                        } catch (err) {
+                                            console.error(err);
+                                            showToast('Failed to parse backup file', 'error');
+                                        }
+                                    };
+                                    reader.readAsText(file);
+                                    e.target.value = ''; // Reset
+                                }}
+                            />
+                            <button
+                                onClick={() => document.getElementById('restore-file')?.click()}
+                                className="primary-button"
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
+                            >
+                                <Database size={18} />
+                                Restore Database
+                            </button>
+                        </div>
+                        <button
+                            onClick={handleMigration}
+                            className="primary-button"
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
+                        >
+                            <Database size={18} />
+                            Migrate to Supabase
+                        </button>
+                    </div>
                 </div>
 
 
