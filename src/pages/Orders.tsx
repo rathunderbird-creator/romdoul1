@@ -1278,8 +1278,8 @@ const Orders: React.FC = () => {
                                                                 );
                                                             case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
                                                             case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
-                                                            case 'phone': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.phone}</td>;
-                                                            case 'address': return <td key={colId} style={{ ...cellStyle, color: 'var(--color-text-secondary)' }}>{order.customer?.address || '-'}</td>;
+                                                            case 'phone': return <td key={colId} style={cellStyle}>{order.customer?.phone}</td>;
+                                                            case 'address': return <td key={colId} style={cellStyle}>{order.customer?.address || '-'}</td>;
                                                             case 'page': return <td key={colId} style={cellStyle}>{order.customer?.page || '-'}</td>;
                                                             case 'items':
                                                                 return (
@@ -1368,6 +1368,7 @@ const Orders: React.FC = () => {
                                                                                 width: '100%',
                                                                                 padding: '4px 8px',
                                                                                 fontSize: 'inherit',
+                                                                                color: 'inherit',
                                                                                 fontFamily: 'monospace',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
@@ -1411,6 +1412,8 @@ const Orders: React.FC = () => {
                                                                                 width: '100%',
                                                                                 padding: '4px 8px',
                                                                                 fontSize: 'inherit',
+                                                                                color: 'inherit',
+                                                                                fontFamily: 'Battambang',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
                                                                             }}

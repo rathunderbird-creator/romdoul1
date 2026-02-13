@@ -633,7 +633,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             order_status: 'Open',
             shipping_company: newSale.shipping?.company,
             shipping_status: newSale.shipping?.status,
-            tracking_number: newSale.shipping?.trackingNumber
+            tracking_number: newSale.shipping?.trackingNumber,
+            remark: newSale.remark
         });
 
         if (saleError) {

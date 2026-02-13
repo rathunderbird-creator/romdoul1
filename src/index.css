@@ -127,8 +127,8 @@ button {
   vertical-align: middle;
   height: var(--table-row-height, auto);
   /* Taller rows like reference */
-  color: var(--color-text-secondary);
-  /* Gray-700 for text */
+  color: #000000;
+  /* Black text */
   font-variant-numeric: tabular-nums;
 }
 
