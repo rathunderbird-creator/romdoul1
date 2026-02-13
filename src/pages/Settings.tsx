@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Save, Store, Globe, Bell, Shield, Database } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
@@ -10,7 +10,7 @@ import { useTheme } from '../context/ThemeContext';
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData, timezone, updateTimezone } = useStore();
+    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData, timezone, updateTimezone, taxRate, updateTaxRate, currency, updateCurrency } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -44,8 +44,6 @@ const Settings: React.FC = () => {
     }, [setHeaderContent]); // Add dependencies if needed, handleSave might need to be wrapped or stable.
 
     // Local state for settings form (mock implementation)
-    const [currency, setCurrency] = useState('USD ($)');
-    const [taxRate, setTaxRate] = useState('8.5');
 
 
 
@@ -296,7 +294,7 @@ const Settings: React.FC = () => {
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Currency</label>
                             <select
                                 value={currency}
-                                onChange={(e) => setCurrency(e.target.value)}
+                                onChange={(e) => updateCurrency(e.target.value)}
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             >
@@ -310,7 +308,7 @@ const Settings: React.FC = () => {
                             <input
                                 type="number"
                                 value={taxRate}
-                                onChange={(e) => setTaxRate(e.target.value)}
+                                onChange={(e) => updateTaxRate(Number(e.target.value))}
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             />

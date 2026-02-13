@@ -19,6 +19,8 @@ interface ConfigState {
     email?: string;
     phone?: string;
     timezone?: string;
+    taxRate?: number;
+    currency?: string;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -73,7 +75,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         storeName: 'JBL Store Main',
         email: 'contact@jblstore.com',
         phone: '+1 (555) 123-4567',
-        timezone: 'Asia/Phnom_Penh'
+        timezone: 'Asia/Phnom_Penh',
+        taxRate: 0,
+        currency: 'USD ($)'
     });
 
 
@@ -290,7 +294,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     storeName: 'JBL Store Main',
                     email: 'contact@jblstore.com',
                     phone: '+1 (555) 123-4567',
-                    timezone: 'Asia/Phnom_Penh'
+                    timezone: 'Asia/Phnom_Penh',
+                    taxRate: 0,
+                    currency: 'USD ($)'
                 };
                 setConfig(defaultConfig);
                 await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
@@ -1175,6 +1181,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, timezone });
     };
 
+    const updateTaxRate = async (taxRate: number) => {
+        updateConfig({ ...config, taxRate });
+    };
+
+    const updateCurrency = async (currency: string) => {
+        updateConfig({ ...config, currency });
+    };
+
     // Authentication
     const [currentUser, setCurrentUser] = useState<User | null>(() => {
         const saved = localStorage.getItem('currentUser');
@@ -1294,6 +1308,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateStoreProfile,
             timezone: config.timezone || 'Asia/Phnom_Penh',
             updateTimezone,
+            taxRate: config.taxRate || 0,
+            updateTaxRate,
+            currency: config.currency || 'USD ($)',
+            updateCurrency,
             refreshData
         }}>
             {children}
