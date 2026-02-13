@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload, Copy, Filter, RefreshCw } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload, Copy, Filter, RefreshCw, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -10,6 +10,11 @@ import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
+
+type SortConfig = {
+    key: string;
+    direction: 'asc' | 'desc';
+} | null;
 
 const Orders: React.FC = () => {
     const { sales, updateOrderStatus, updateOrder, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, refreshData, currentUser } = useStore();
@@ -97,6 +102,8 @@ const Orders: React.FC = () => {
     useEffect(() => { localStorage.setItem('orders_payStatusFilter', JSON.stringify(payStatusFilter)); }, [payStatusFilter]);
     useEffect(() => { localStorage.setItem('orders_dateRange', JSON.stringify(dateRange)); }, [dateRange]);
     useEffect(() => { localStorage.setItem('orders_searchTerm', searchTerm); }, [searchTerm]);
+
+    const [sortConfig, setSortConfig] = useState<SortConfig>(null);
 
     // Modals State
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -324,6 +331,56 @@ const Orders: React.FC = () => {
         });
     }, [sales, statusFilter, salesmanFilter, payStatusFilter, searchTerm, dateRange]);
 
+    const sortedOrders = useMemo(() => {
+        let sortableOrders = [...filteredOrders];
+        if (sortConfig !== null) {
+            sortableOrders.sort((a, b) => {
+                const getSortValue = (order: Sale, key: string) => {
+                    switch (key) {
+                        case 'customer': return order.customer?.name || '';
+                        case 'phone': return order.customer?.phone || '';
+                        case 'address': return order.customer?.address || '';
+                        case 'page': return order.customer?.page || '';
+                        case 'payBy': return order.paymentMethod || '';
+                        case 'shippingCo': return order.shipping?.company || '';
+                        case 'tracking': return order.shipping?.trackingNumber || '';
+                        case 'status': return order.shipping?.status || '';
+                        case 'payStatus': return order.paymentStatus || 'Paid';
+                        case 'received': return order.amountReceived ?? (order.paymentStatus === 'Paid' ? order.total : 0);
+                        case 'balance':
+                            const received = order.amountReceived ?? (order.paymentStatus === 'Paid' ? order.total : 0);
+                            return order.total - received;
+                        case 'items':
+                            return order.items.map(i => i.name).join(', ');
+                        default:
+                            // Handle simple properties and fallback
+                            const val = order[key as keyof Sale];
+                            return val === null || val === undefined ? '' : val;
+                    }
+                };
+
+                let aValue = getSortValue(a, sortConfig.key);
+                let bValue = getSortValue(b, sortConfig.key);
+
+                if (typeof aValue === 'number' && typeof bValue === 'number') {
+                    return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+                }
+
+                aValue = String(aValue).toLowerCase();
+                bValue = String(bValue).toLowerCase();
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableOrders;
+    }, [filteredOrders, sortConfig]);
+
     const getRowClass = (order: Sale) => {
         if (selectedIds.has(order.id)) return 'selected';
 
@@ -365,8 +422,8 @@ const Orders: React.FC = () => {
 
     const paginatedOrders = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredOrders, currentPage, itemsPerPage]);
+        return sortedOrders.slice(startIndex, startIndex + itemsPerPage);
+    }, [sortedOrders, currentPage, itemsPerPage]);
 
     const stats = useMemo(() => {
         const totalOrders = filteredOrders.length;
@@ -476,6 +533,19 @@ const Orders: React.FC = () => {
 
 
     // Render Helpers
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const SortIcon = ({ columnKey }: { columnKey: string }) => {
+        if (sortConfig?.key !== columnKey) return <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />;
+        return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
+    };
+
     // UI Helpers & Components
 
     // Legacy helper for Modal (can eventually reuse above logic properly)
@@ -1082,16 +1152,23 @@ const Orders: React.FC = () => {
                                                             top: 0
                                                         }}
                                                     >
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            height: '100%',
-                                                            padding: 'var(--table-padding, 8px 12px)',
-                                                            overflow: 'hidden',
-                                                            width: '100%'
-                                                        }}>
-                                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{colDef?.label || colId}</span>
+                                                        <div
+                                                            onClick={() => handleSort(colId)}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'space-between',
+                                                                height: '100%',
+                                                                padding: 'var(--table-padding, 8px 12px)',
+                                                                overflow: 'hidden',
+                                                                width: '100%',
+                                                                cursor: 'pointer',
+                                                                userSelect: 'none'
+                                                            }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{colDef?.label || colId}</span>
+                                                                <SortIcon columnKey={colId} />
+                                                            </div>
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
