@@ -140,6 +140,8 @@ export interface StoreContextType {
     storeName: string;
     email: string;
     phone: string;
+    timezone: string;
+    updateTimezone: (timezone: string) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
     updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string }) => void;
 

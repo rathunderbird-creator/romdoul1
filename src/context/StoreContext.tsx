@@ -18,6 +18,7 @@ interface ConfigState {
     storeName?: string;
     email?: string;
     phone?: string;
+    timezone?: string;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -71,7 +72,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         storeAddress: '123 Speaker Ave, Audio City',
         storeName: 'JBL Store Main',
         email: 'contact@jblstore.com',
-        phone: '+1 (555) 123-4567'
+        phone: '+1 (555) 123-4567',
+        timezone: 'Asia/Phnom_Penh'
     });
 
 
@@ -287,7 +289,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     storeAddress: '123 Speaker Ave, Audio City',
                     storeName: 'JBL Store Main',
                     email: 'contact@jblstore.com',
-                    phone: '+1 (555) 123-4567'
+                    phone: '+1 (555) 123-4567',
+                    timezone: 'Asia/Phnom_Penh'
                 };
                 setConfig(defaultConfig);
                 await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
@@ -1167,6 +1170,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, ...data });
     };
 
+    // Timezone
+    const updateTimezone = async (timezone: string) => {
+        updateConfig({ ...config, timezone });
+    };
+
     // Authentication
     const [currentUser, setCurrentUser] = useState<User | null>(() => {
         const saved = localStorage.getItem('currentUser');
@@ -1284,6 +1292,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             phone: config.phone || '',
             updateStoreAddress,
             updateStoreProfile,
+            timezone: config.timezone || 'Asia/Phnom_Penh',
+            updateTimezone,
             refreshData
         }}>
             {children}

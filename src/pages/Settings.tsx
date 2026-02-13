@@ -10,7 +10,7 @@ import { useTheme } from '../context/ThemeContext';
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData } = useStore();
+    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData, timezone, updateTimezone } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -315,6 +315,25 @@ const Settings: React.FC = () => {
                                 style={{ width: '100%', padding: '12px' }}
                             />
                         </div>
+                    </div>
+                    <div style={{ marginTop: '20px' }}>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Timezone</label>
+                        <select
+                            value={timezone}
+                            onChange={(e) => updateTimezone(e.target.value)}
+                            className="search-input"
+                            style={{ width: '100%', padding: '12px' }}
+                        >
+                            <option value="Asia/Phnom_Penh">Phnom Penh (GMT+7)</option>
+                            <option value="Asia/Bangkok">Bangkok (GMT+7)</option>
+                            <option value="Asia/Ho_Chi_Minh">Ho Chi Minh (GMT+7)</option>
+                            <option value="America/New_York">New York (GMT-5)</option>
+                            <option value="Europe/London">London (GMT+0)</option>
+                            <option value="UTC">UTC (GMT+0)</option>
+                        </select>
+                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                            Affects date display across the application.
+                        </p>
                     </div>
                 </div>
 
