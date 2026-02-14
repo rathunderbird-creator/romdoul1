@@ -12,9 +12,17 @@ type Preset = 'Lifetime' | 'Today' | 'Yesterday' | 'Last 7 days' | 'Last 30 days
 
 const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) => {
     const [isOpen, setIsOpen] = useState(false);
+
+    // Helper to parse "YYYY-MM-DD" as local midnight date
+    const parseLocalDate = (dateStr: string) => {
+        if (!dateStr) return null;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    };
+
     // Internal state for the selection while open
-    const [startDate, setStartDate] = useState<Date | null>(value.start ? new Date(value.start) : null);
-    const [endDate, setEndDate] = useState<Date | null>(value.end ? new Date(value.end) : null);
+    const [startDate, setStartDate] = useState<Date | null>(parseLocalDate(value.start));
+    const [endDate, setEndDate] = useState<Date | null>(parseLocalDate(value.end));
     const [activePreset, setActivePreset] = useState<Preset>('Custom Range');
     const [viewDate, setViewDate] = useState(new Date()); // Date to control which month is shown
     const pickerRef = useRef<HTMLDivElement>(null);
@@ -32,8 +40,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
     // Reset internal state when value changes externally (or when opening)
     useEffect(() => {
         if (isOpen) {
-            setStartDate(value.start ? new Date(value.start) : null);
-            setEndDate(value.end ? new Date(value.end) : null);
+            setStartDate(parseLocalDate(value.start));
+            setEndDate(parseLocalDate(value.end));
             // Try to infer preset (simple inference)
             if (!value.start && !value.end) setActivePreset('Lifetime');
             else setActivePreset('Custom Range');
@@ -47,19 +55,25 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         return `${year}-${month}-${day}`;
     };
 
+    const getToday = () => {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        return d;
+    };
+
     const presets: { label: Preset; getValue: () => { start: Date | null; end: Date | null } }[] = [
         { label: 'Lifetime', getValue: () => ({ start: null, end: null }) },
         {
             label: 'Today',
             getValue: () => {
-                const now = new Date();
+                const now = getToday();
                 return { start: now, end: now };
             }
         },
         {
             label: 'Yesterday',
             getValue: () => {
-                const d = new Date();
+                const d = getToday();
                 d.setDate(d.getDate() - 1);
                 return { start: d, end: d };
             }
@@ -67,8 +81,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         {
             label: 'Last 7 days',
             getValue: () => {
-                const end = new Date();
-                const start = new Date();
+                const end = getToday();
+                const start = getToday();
                 start.setDate(start.getDate() - 6);
                 return { start, end };
             }
@@ -76,8 +90,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         {
             label: 'Last 30 days',
             getValue: () => {
-                const end = new Date();
-                const start = new Date();
+                const end = getToday();
+                const start = getToday();
                 start.setDate(start.getDate() - 29);
                 return { start, end };
             }
@@ -85,7 +99,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         {
             label: 'This month',
             getValue: () => {
-                const now = new Date();
+                const now = getToday();
                 const start = new Date(now.getFullYear(), now.getMonth(), 1);
                 const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
                 return { start, end };
@@ -94,7 +108,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         {
             label: 'Last month',
             getValue: () => {
-                const now = new Date();
+                const now = getToday();
                 const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                 const end = new Date(now.getFullYear(), now.getMonth(), 0);
                 return { start, end };
@@ -248,7 +262,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
             style={isMobile ? {
                 position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
                 backgroundColor: '#ffffff', zIndex: 9999,
-                display: 'flex', flexDirection: 'column', padding: '16px'
+                display: 'flex', flexDirection: 'column', padding: '16px',
+                overflowY: 'auto'
             } : {
                 position: 'fixed',
                 top: coords.top,
@@ -263,13 +278,13 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
 
             {/* Mobile Header */}
             {isMobile && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Select Dates</h3>
                     <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
                 </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flex: isMobile ? '1 0 auto' : 'auto' }}>
                 {/* Sidebar / Presets */}
                 <div style={{
                     width: isMobile ? '100%' : '140px',
@@ -280,7 +295,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                     gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : '1fr',
                     gap: isMobile ? '8px' : '0',
                     borderBottom: isMobile ? '1px solid var(--color-border)' : 'none',
-                    marginBottom: isMobile ? '16px' : '0'
+                    marginBottom: isMobile ? '16px' : '0',
+                    flexShrink: 0
                 }}>
                     {presets.map(preset => (
                         <button
@@ -313,8 +329,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                 </div>
 
                 {/* Main Content */}
-                <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', padding: '16px', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', padding: '16px', flexDirection: isMobile ? 'column' : 'row', gap: '16px', flex: 1 }}>
                         {renderMonth(0)}
                         {!isMobile && showTwoMonths && (
                             <>
@@ -324,7 +340,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                         )}
                     </div>
 
-                    <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                    <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', flexShrink: 0 }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                             {startDate ? startDate.toLocaleDateString() : 'Start'} - {endDate ? endDate.toLocaleDateString() : 'End'}
                         </div>
@@ -354,6 +370,12 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
         </div>
     );
 
+    const getFormattedDate = (dateStr: string) => {
+        const date = parseLocalDate(dateStr);
+        if (!date) return '';
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
     return (
         <div style={{ position: 'relative' }} ref={pickerRef}>
             <button
@@ -369,7 +391,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
                 <CalendarIcon size={16} />
                 {value.start ? (
                     <span style={{ fontSize: '13px' }}>
-                        {value.start === value.end ? value.start : `${value.start} - ${value.end}`}
+                        {getFormattedDate(value.start)}
+                        {value.start !== value.end && ` - ${getFormattedDate(value.end)}`}
                     </span>
                 ) : null}
             </button>
