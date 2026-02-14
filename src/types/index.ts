@@ -39,6 +39,7 @@ export interface Sale {
     settleDate?: string;
     paymentStatus?: 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending';
     orderStatus?: 'Open' | 'Closed';
+    orderIndex?: number;
     customer?: {
         id?: string; // Added optional ID to link to Customer entity
         name: string;
@@ -76,6 +77,7 @@ export interface StoreContextType {
     deleteProducts: (ids: string[]) => void;
     updateOrder: (id: string, updates: Partial<Sale>) => void;
     deleteOrders: (ids: string[]) => void;
+    reorderRows: (activeIds: string[], overId: string, leadId: string) => void;
 
     // Customer Management
     addCustomer: (customer: Omit<Customer, 'id'>) => void;

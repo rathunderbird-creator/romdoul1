@@ -12,6 +12,7 @@ interface ConfigState {
     cities: string[];
     pinnedProducts?: string[];
     pinnedOrderColumns?: string[]; // Added pinned order columns
+    salesOrder?: string[]; // Added sales custom order
     users?: User[];
     roles?: Role[];
     storeAddress?: string;
@@ -148,6 +149,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }))
                 }));
                 setSales(mappedSales);
+
+                // Apply sort if config is ready (But config is fetched in parallel, so we might need useEffect or dependency)
+                // Actually, we can just sort here if accessing configResult directly
+                if (configResult.data?.data?.salesOrder) {
+                    const orderMap = new Map(configResult.data.data.salesOrder.map((id: string, index: number) => [id, index]));
+                    mappedSales.sort((a, b) => {
+                        const indexA = orderMap.has(a.id) ? orderMap.get(a.id)! : -1;
+                        const indexB = orderMap.has(b.id) ? orderMap.get(b.id)! : -1;
+
+                        // If both have index, sort by index
+                        if (indexA !== -1 && indexB !== -1) return (indexA as number) - (indexB as number);
+
+                        // If one has index (it's manually ordered), it goes ? 
+                        // Actually, un-ordered items (new ones?) should probably go to top or bottom.
+                        // Let's say -1 (not found) means "new" -> Top.
+
+                        if (indexA === -1 && indexB !== -1) return -1; // A is new, A comes first
+                        if (indexA !== -1 && indexB === -1) return 1; // B is new, B comes first
+
+                        // If neither has index, sort by date desc (default)
+                        return ((new Date(b.date).getTime() || 0) as any) - ((new Date(a.date).getTime() || 0) as any);
+                    });
+                    setSales(mappedSales);
+                }
             }
 
             // Config
@@ -197,6 +222,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         ],
                         pinnedProducts: loadedConfig.pinnedProducts || [],
                         pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
+                        salesOrder: loadedConfig.salesOrder || [],
                         users: (loadedConfig.users && loadedConfig.users.length > 0) ? loadedConfig.users : [
                             { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
                         ],
@@ -255,6 +281,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     ],
                     pinnedProducts: [],
                     pinnedOrderColumns: [],
+                    salesOrder: [],
                     users: [
                         { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
                     ],
@@ -545,6 +572,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
             }
         });
+
+        // Update salesOrder config
+        const currentSalesOrder = config.salesOrder || [];
+        updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
     };
 
     // Inventory Actions
@@ -665,6 +696,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
             }
         });
+
+        // Update salesOrder config
+        const currentSalesOrder = config.salesOrder || [];
+        updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
     };
 
     const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string) => {
@@ -775,6 +810,50 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // Best to log and maybe show a toast if possible (but toast is not in context here).
             }
         }
+    };
+
+    const reorderRows = (activeIds: string[], overId: string, leadId: string) => {
+        setSales((prev) => {
+            const moveSet = new Set(activeIds);
+
+            // If target is part of selection, do nothing
+            if (moveSet.has(overId)) return prev;
+
+            const itemsToMove: Sale[] = [];
+            const remainingItems: Sale[] = [];
+
+            // Get indices from original list to determine direction
+            const oldIndex = prev.findIndex(s => s.id === leadId);
+            const newIndex = prev.findIndex(s => s.id === overId);
+
+            // Separate items (maintaining relative order)
+            prev.forEach(item => {
+                if (moveSet.has(item.id)) {
+                    itemsToMove.push(item);
+                } else {
+                    remainingItems.push(item);
+                }
+            });
+
+            // Find insert position
+            let insertIndex = remainingItems.findIndex(s => s.id === overId);
+
+            if (insertIndex === -1) return prev;
+
+            // If dragging down, insert after the target
+            if (oldIndex !== -1 && newIndex !== -1 && oldIndex < newIndex) {
+                insertIndex++;
+            }
+
+            // Insert items
+            remainingItems.splice(insertIndex, 0, ...itemsToMove);
+
+            // Update Config
+            const newOrderIds = remainingItems.map(s => s.id);
+            updateConfig({ ...config, salesOrder: newOrderIds });
+
+            return remainingItems;
+        });
     };
 
     const importProducts = async (newProducts: Omit<Product, 'id'>[]) => {
@@ -1259,6 +1338,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateOrderStatus,
             updateOrder,
             deleteOrders,
+            reorderRows,
             addCustomer,
             updateCustomer,
             deleteCustomer,

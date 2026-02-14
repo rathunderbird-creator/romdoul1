@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-
+import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 
 interface StatusBadgeProps {
@@ -11,6 +11,7 @@ interface StatusBadgeProps {
 const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
     const getStatusStyle = (s: string) => {
         switch (s) {
@@ -48,10 +49,42 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
 
     const options = ['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
 
+    // Update position when opening
+    useEffect(() => {
+        if (isOpen && dropdownRef.current) {
+            const updatePosition = () => {
+                const rect = dropdownRef.current?.getBoundingClientRect();
+                if (rect) {
+                    setPosition({
+                        top: rect.bottom + window.scrollY + 4,
+                        left: rect.left + window.scrollX,
+                        width: rect.width
+                    });
+                }
+            };
+
+            updatePosition();
+            window.addEventListener('scroll', updatePosition, true);
+            window.addEventListener('resize', updatePosition);
+
+            return () => {
+                window.removeEventListener('scroll', updatePosition, true);
+                window.removeEventListener('resize', updatePosition);
+            };
+        }
+    }, [isOpen]);
+
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                // Check if click is inside the portal content? 
+                // Since portal is in body, contains won't work if target is in portal.
+                // We need a ref for the portal content too.
+                const portalElement = document.getElementById(`status-dropdown-${status}-${position.top}`);
+                if (portalElement && portalElement.contains(event.target as Node)) {
+                    return;
+                }
                 setIsOpen(false);
             }
         };
@@ -62,7 +95,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen]);
+    }, [isOpen, status, position.top]);
 
     const handleToggle = () => {
         if (!readOnly && onChange) {
@@ -84,21 +117,23 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>
 
-            {isOpen && !readOnly && (
-                <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    marginTop: '4px',
-                    backgroundColor: 'white',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                    border: '1px solid #E5E7EB',
-                    zIndex: 1000,
-                    minWidth: '100%',
-                    overflow: 'hidden'
-                }}>
-                    {options.map((opt) => {
+            {isOpen && !readOnly && createPortal(
+                <div
+                    id={`status-dropdown-${status}-${position.top}`}
+                    style={{
+                        position: 'absolute',
+                        top: position.top,
+                        left: position.left,
+                        width: position.width,
+                        backgroundColor: 'white',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                        border: '1px solid #E5E7EB',
+                        zIndex: 9999,
+                        overflow: 'hidden'
+                    }}
+                >
+                    {options.filter(opt => opt !== 'ReStock' || status === 'ReStock').map((opt) => {
                         const optStyle = getStatusStyle(opt);
                         return (
                             <div
@@ -107,7 +142,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                                 style={{
                                     padding: '8px 12px',
                                     cursor: 'pointer',
-                                    fontSize: 'inherit',
+                                    fontSize: '12px', // Hardcoded or inherit? Inherit might be risky in body
                                     fontWeight: 500,
                                     color: optStyle.color,
                                     backgroundColor: opt === status ? '#F3F4F6' : 'white',
@@ -128,7 +163,8 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                             </div>
                         );
                     })}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
