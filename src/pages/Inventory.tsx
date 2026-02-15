@@ -72,7 +72,13 @@ const Inventory: React.FC = () => {
     const [itemsPerPage, setItemsPerPage] = useState(20);
 
     // Form State
-    const initialFormState: Partial<Product> = {
+    type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold'> & {
+        price: number | string;
+        stock: number | string;
+        lowStockThreshold: number | string;
+    };
+
+    const initialFormState: ProductFormState = {
         name: '',
         model: '',
         price: 0,
@@ -81,7 +87,7 @@ const Inventory: React.FC = () => {
         category: categories[0] || 'Portable',
         image: 'https://via.placeholder.com/300'
     };
-    const [formData, setFormData] = useState<Partial<Product>>(initialFormState);
+    const [formData, setFormData] = useState<ProductFormState>(initialFormState);
 
     const allCategories = ['All', ...categories];
 
@@ -165,7 +171,10 @@ const Inventory: React.FC = () => {
 
     const openEditModal = (product: Product) => {
         setEditingProduct(product);
-        setFormData(product);
+        setFormData({
+            ...product,
+            lowStockThreshold: product.lowStockThreshold ?? 5
+        });
         setIsModalOpen(true);
     };
 
@@ -175,11 +184,18 @@ const Inventory: React.FC = () => {
             return;
         }
 
+        const productData = {
+            ...formData,
+            price: Number(formData.price),
+            stock: Number(formData.stock),
+            lowStockThreshold: Number(formData.lowStockThreshold)
+        };
+
         if (editingProduct) {
-            updateProduct(editingProduct.id, formData);
+            updateProduct(editingProduct.id, productData);
             showToast('Product updated successfully', 'success');
         } else {
-            addProduct(formData as Omit<Product, 'id'>);
+            addProduct(productData as Omit<Product, 'id'>);
             showToast('Product added successfully', 'success');
         }
         setIsModalOpen(false);
@@ -595,11 +611,11 @@ const Inventory: React.FC = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Price ($)</label>
-                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: Number(e.target.value) })} />
+                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value === '' ? '' : Number(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Stock</label>
-                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: Number(e.target.value) })} />
+                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value === '' ? '' : Number(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
@@ -609,7 +625,7 @@ const Inventory: React.FC = () => {
                                             style={{ width: '100%' }}
                                             placeholder="5"
                                             value={formData.lowStockThreshold}
-                                            onChange={e => setFormData({ ...formData, lowStockThreshold: Number(e.target.value) })}
+                                            onChange={e => setFormData({ ...formData, lowStockThreshold: e.target.value === '' ? '' : Number(e.target.value) })}
                                         />
                                     </div>
                                 </div>

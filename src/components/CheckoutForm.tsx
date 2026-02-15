@@ -24,7 +24,27 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [configType, setConfigType] = useState<'shipping' | 'salesman' | 'page' | 'customerCare' | 'paymentMethod' | 'city'>('shipping');
 
-    const initialFormState = {
+    const initialFormState: {
+        customerName: string;
+        customerPhone: string;
+        pageName: string;
+        shippingCompany: string;
+        staffName: string;
+        customerCare: string;
+        salesman: string;
+        remark: string;
+        city: string;
+        address: string;
+        amountReceived: number | string;
+        settleDate: string;
+        paymentMethod: Sale['paymentMethod'];
+        paymentAfterDelivery: boolean;
+        discount: number | string;
+        enableDiscount: boolean;
+        shippingStatus: NonNullable<Sale['shipping']>['status'];
+        paymentStatus: Sale['paymentStatus'];
+        date: string;
+    } = {
         customerName: '',
         customerPhone: '',
         pageName: pages[0] || '',
@@ -37,12 +57,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         address: '',
         amountReceived: 0,
         settleDate: '',
-        paymentMethod: 'COD' as Sale['paymentMethod'],
+        paymentMethod: 'COD',
         paymentAfterDelivery: true,
         discount: 0,
         enableDiscount: false,
-        shippingStatus: 'Ordered' as NonNullable<Sale['shipping']>['status'],
-        paymentStatus: 'Pending' as Sale['paymentStatus'],
+        shippingStatus: 'Ordered',
+        paymentStatus: 'Pending',
         date: ''
     };
 
@@ -137,9 +157,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             return;
         }
 
+        const discountVal = formData.discount === '' ? 0 : Number(formData.discount);
         const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const discount = formData.enableDiscount ? formData.discount : 0;
+        const discount = formData.enableDiscount ? discountVal : 0;
         const total = Math.max(0, subtotal - discount);
+
+        const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
 
         const orderData = {
             items: cartItems,
@@ -150,7 +173,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             salesman: formData.salesman,
             customerCare: formData.customerCare,
             remark: formData.remark,
-            amountReceived: formData.paymentAfterDelivery ? 0 : formData.amountReceived,
+            amountReceived: formData.paymentAfterDelivery ? 0 : amountReceivedVal,
             settleDate: formData.settleDate,
             paymentStatus: formData.paymentStatus,
             customer: {
@@ -417,7 +440,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     className="search-input"
                                     style={{ width: '100%', padding: '10px 12px', background: formData.paymentAfterDelivery ? 'var(--color-bg)' : 'white' }}
                                     value={formData.amountReceived}
-                                    onChange={e => setFormData({ ...formData, amountReceived: Number(e.target.value) })}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setFormData({ ...formData, amountReceived: val === '' ? '' : Number(val) });
+                                    }}
                                     disabled={formData.paymentAfterDelivery}
                                 />
                             </div>
@@ -497,7 +523,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         className="search-input"
                                         style={{ flex: 1, padding: '8px 12px' }}
                                         value={formData.discount}
-                                        onChange={e => setFormData({ ...formData, discount: Number(e.target.value) })}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            setFormData({ ...formData, discount: val === '' ? '' : Number(val) });
+                                        }}
                                         placeholder="0.00"
                                         min="0"
                                     />
@@ -512,12 +541,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         {formData.enableDiscount && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: '#EF4444' }}>
                                 <span>Discount</span>
-                                <span>-${formData.discount.toFixed(2)}</span>
+                                <span>-${(formData.discount === '' ? 0 : Number(formData.discount)).toFixed(2)}</span>
                             </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: '800', color: 'var(--color-primary)' }}>
                             <span>Total Due</span>
-                            <span>${Math.max(0, cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) - (formData.enableDiscount ? formData.discount : 0)).toFixed(2)}</span>
+                            <span>${Math.max(0, cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) - (formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0)).toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
