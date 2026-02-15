@@ -1565,9 +1565,12 @@ const Orders: React.FC = () => {
                                                                                         }
                                                                                     }}
                                                                                     onKeyDown={(e) => {
-                                                                                        if (e.key === 'Enter') e.currentTarget.blur();
+                                                                                        if (e.key === ' ') e.stopPropagation();
+                                                                                        if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
                                                                                     }}
                                                                                     onClick={(e) => e.stopPropagation()}
+                                                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                                                    onPointerDown={(e) => e.stopPropagation()}
                                                                                 />
                                                                             </td>
                                                                         );
@@ -1605,9 +1608,12 @@ const Orders: React.FC = () => {
                                                                                         }
                                                                                     }}
                                                                                     onKeyDown={(e) => {
-                                                                                        if (e.key === 'Enter') e.currentTarget.blur();
+                                                                                        if (e.key === ' ') e.stopPropagation();
+                                                                                        if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
                                                                                     }}
                                                                                     onClick={(e) => e.stopPropagation()}
+                                                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                                                    onPointerDown={(e) => e.stopPropagation()}
                                                                                 />
                                                                             </td>
                                                                         );
