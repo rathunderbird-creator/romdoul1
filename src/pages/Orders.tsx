@@ -448,7 +448,10 @@ const Orders: React.FC = () => {
     const getRowClass = (order: Sale) => {
         if (selectedIds.has(order.id)) return 'selected';
 
-        // Priority: Shipping Status
+        // Priority 1: Payment Status = Cancel
+        if (order.paymentStatus === 'Cancel') return 'returned-row';
+
+        // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
         if (shippingStatus === 'Ordered') return 'ordered-row';
         if (shippingStatus === 'Pending') return 'pending-row';
@@ -463,15 +466,21 @@ const Orders: React.FC = () => {
         return '';
     };
 
-    const getRowBackgroundColor = (shippingStatus: string | undefined, isSelected: boolean) => {
+    const getRowBackgroundColor = (order: Sale, isSelected: boolean) => {
         if (isSelected) return 'var(--color-primary-light)';
+
+        // Priority 1: Payment Status = Cancel
+        if (order.paymentStatus === 'Cancel') return '#FCA5A5'; // Red 300
+
+        // Priority 2: Shipping Status
+        const shippingStatus = order.shipping?.status;
         if (shippingStatus === 'Ordered') return 'white';
         if (shippingStatus === 'Pending') return '#FFFBEB';
         if (shippingStatus === 'Shipped') return '#EFF6FF';
         if (shippingStatus === 'Delivered') return '#ECFDF5';
-        if (shippingStatus === 'Returned') return '#FEF2F2';
+        if (shippingStatus === 'Returned') return '#FCA5A5';
         if (shippingStatus === 'ReStock') return '#F5F3FF';
-        if (shippingStatus === 'Cancelled') return '#FEF2F2';
+        if (shippingStatus === 'Cancelled') return '#FCA5A5';
         return 'white';
     };
 
@@ -1210,6 +1219,13 @@ const Orders: React.FC = () => {
                                             if (status === 'Paid' || status === 'Settled') {
                                                 updates.amountReceived = order.total;
                                                 updates.settleDate = new Date().toISOString();
+                                            } else if (status === 'Cancel') {
+                                                updates.amountReceived = 0;
+                                                updates.settleDate = null;
+                                                // Auto-set Order Status to Returned
+                                                if (order.shipping) {
+                                                    updates.shipping = { ...order.shipping, status: 'Returned' };
+                                                }
                                             } else {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
@@ -1402,7 +1418,7 @@ const Orders: React.FC = () => {
                                                                     left: isPinned ? stickyLeft : undefined,
                                                                     zIndex: isPinned ? 15 : 1,
                                                                     // Sticky columns need explicit background to cover scrolled content
-                                                                    backgroundColor: isPinned ? getRowBackgroundColor(order.shipping?.status, isSelected) : undefined,
+                                                                    backgroundColor: isPinned ? getRowBackgroundColor(order, isSelected) : undefined,
                                                                     boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
                                                                 };
 
@@ -1466,6 +1482,13 @@ const Orders: React.FC = () => {
                                                                                         if (newStatus === 'Paid' || newStatus === 'Settled') {
                                                                                             updates.amountReceived = order.total;
                                                                                             updates.settleDate = new Date().toISOString();
+                                                                                        } else if (newStatus === 'Cancel') {
+                                                                                            updates.amountReceived = 0;
+                                                                                            updates.settleDate = null;
+                                                                                            // Auto-set Order Status to Returned
+                                                                                            if (order.shipping) {
+                                                                                                updates.shipping = { ...order.shipping, status: 'Returned' };
+                                                                                            }
                                                                                         } else {
                                                                                             updates.amountReceived = 0;
                                                                                             updates.settleDate = null;

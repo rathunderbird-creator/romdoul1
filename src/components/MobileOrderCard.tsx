@@ -99,8 +99,13 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                         <span className="moc-customer-name">
                             {order.customer?.name}
                         </span>
+                        <div className="moc-products-summary" style={{ fontSize: '12px', color: '#4B5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                            {order.items.map(i => i.name).join(', ')}
+                        </div>
                         <div className="moc-meta-row">
                             <span>${order.total.toFixed(2)}</span>
+                            <span>•</span>
+                            <span>{order.salesman || 'Unknown'}</span>
                             <span>•</span>
                             <span>{new Date(order.date).toLocaleDateString()}</span>
                         </div>

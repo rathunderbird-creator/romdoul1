@@ -193,12 +193,12 @@ button {
 
 /* Green 50 */
 .spreadsheet-table tbody tr.cancelled-row {
-  background-color: #FEF2F2;
+  background-color: #FCA5A5 !important;
 }
 
 /* Red 50 */
 .spreadsheet-table tbody tr.returned-row {
-  background-color: #F9FAFB;
+  background-color: #FCA5A5 !important;
 }
 
 /* Gray 50 */
@@ -236,12 +236,12 @@ button {
 
 .spreadsheet-table tbody tr.cancelled-row td.sticky-col-first,
 .spreadsheet-table tbody tr.cancelled-row td.sticky-col-second {
-  background-color: #FEF2F2;
+  background-color: #FCA5A5 !important;
 }
 
 .spreadsheet-table tbody tr.returned-row td.sticky-col-first,
 .spreadsheet-table tbody tr.returned-row td.sticky-col-second {
-  background-color: #F9FAFB;
+  background-color: #FCA5A5 !important;
 }
 
 .spreadsheet-table tbody tr.restock-row td.sticky-col-first,
