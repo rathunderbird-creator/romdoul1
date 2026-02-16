@@ -236,9 +236,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             Customer Information
                         </h3>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
-                            {currentUser?.roleId === 'admin' && (
+                            {(currentUser?.roleId === 'admin' || currentUser?.roleId === 'customer_care') && (
                                 <div style={{ marginBottom: '0' }}>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date (Admin)</label>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date</label>
                                     {isMobile ? (
                                         <div style={{ position: 'relative', width: '100%' }}>
                                             <div style={{
