@@ -69,14 +69,18 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd }) => {
                 <Pin size={isMobile ? 12 : 14} fill={isPinned ? 'currentColor' : 'none'} />
             </button>
 
-            {isLowStock && (
+            {/* Stock Badge */}
+            {!isOutOfStock && (
                 <div style={{
                     position: 'absolute', top: isMobile ? '6px' : '10px', right: isMobile ? '6px' : '10px',
-                    background: 'rgba(245, 158, 11, 0.95)', color: 'white', fontSize: isMobile ? '9px' : '10px', fontWeight: '700',
-                    padding: '2px 6px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(4px)',
-                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)'
+                    background: isLowStock ? 'rgba(245, 158, 11, 0.95)' : 'rgba(255, 255, 255, 0.9)',
+                    color: isLowStock ? 'white' : 'var(--color-text-secondary)',
+                    border: isLowStock ? 'none' : '1px solid var(--color-border)',
+                    fontSize: isMobile ? '9px' : '10px', fontWeight: '700',
+                    padding: '2px 8px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(4px)',
+                    boxShadow: isLowStock ? '0 2px 8px rgba(245, 158, 11, 0.4)' : '0 2px 4px rgba(0,0,0,0.05)'
                 }}>
-                    Low Stock
+                    Stock: {product.stock}
                 </div>
             )}
 

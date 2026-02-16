@@ -15,10 +15,15 @@ type SortConfig = {
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, currentUser } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+
+    // Permission Logic
+    const restrictedRoles = ['store_manager', 'salesman', 'customer_care'];
+    const canViewFinancials = !restrictedRoles.includes(currentUser?.roleId || '');
+    const canManageInventory = !restrictedRoles.includes(currentUser?.roleId || '');
 
     React.useEffect(() => {
         setHeaderContent({
@@ -236,14 +241,16 @@ const Inventory: React.FC = () => {
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', gap: '12px' }}>
-                    <button
-                        onClick={openAddModal}
-                        className="primary-button"
-                        style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                    >
-                        <Plus size={20} />
-                        Add Product
-                    </button>
+                    {canManageInventory && (
+                        <button
+                            onClick={openAddModal}
+                            className="primary-button"
+                            style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                            <Plus size={20} />
+                            Add Product
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -252,7 +259,9 @@ const Inventory: React.FC = () => {
                 <StatsCard title="Total Products" value={stats.totalProducts} icon={Package} color="var(--color-primary)" />
                 <StatsCard title="Products in Stock" value={stats.totalAllStock} icon={Boxes} color="#3B82F6" />
                 <StatsCard title="Low Stock" value={stats.lowStock} icon={AlertTriangle} color="var(--color-red)" />
-                <StatsCard title="Total Value" value={`$${stats.totalValue.toLocaleString()} `} icon={DollarSign} color="var(--color-green)" />
+                {canViewFinancials && (
+                    <StatsCard title="Total Value" value={`$${stats.totalValue.toLocaleString()} `} icon={DollarSign} color="var(--color-green)" />
+                )}
                 <StatsCard title="Categories" value={stats.categoryCount} icon={Layers} color="var(--color-purple)" />
             </div>
 
@@ -292,13 +301,15 @@ const Inventory: React.FC = () => {
                             onToggleExpand={() => toggleProductExpansion(product.id)}
                             onEdit={openEditModal}
                             onDelete={promptDelete}
+                        // Pass permissions to Mobile Card if needed, or handle inside component
+                        // For now assuming mobile card might show price/actions, need to check MobileInventoryCard later if requested
                         />
                     ))}
                 </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', height: 'calc(100vh - 200px)' }}>
                     {/* Main Stock Table */}
-                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10 }}>
                             All Stock ({filteredAndSortedProducts.length})
                         </h3>
@@ -317,8 +328,8 @@ const Inventory: React.FC = () => {
                                     {renderHeader('Category', 'category')}
                                     {renderHeader('Price', 'price')}
                                     {renderHeader('Stock', 'stock')}
-                                    {renderHeader('Total Value', 'totalValue')}
-                                    <th style={{ textAlign: 'right' }}>Actions</th>
+                                    {canViewFinancials && renderHeader('Total Value', 'totalValue')}
+                                    {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -359,29 +370,33 @@ const Inventory: React.FC = () => {
                                                 <span style={{ color: '#10B981', fontWeight: 500 }}>{product.stock}</span>
                                             )}
                                         </td>
-                                        <td style={{ color: 'var(--color-text-secondary)' }}>
-                                            ${(product.price * product.stock).toLocaleString()}
-                                        </td>
-                                        <td style={{ textAlign: 'right' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                <button
-                                                    onClick={() => openEditModal(product)}
-                                                    style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                    className="hover-primary"
-                                                    title="Edit"
-                                                >
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => promptDelete(product.id)}
-                                                    style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                    className="hover-danger"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </td>
+                                        {canViewFinancials && (
+                                            <td style={{ color: 'var(--color-text-secondary)' }}>
+                                                ${(product.price * product.stock).toLocaleString()}
+                                            </td>
+                                        )}
+                                        {canManageInventory && (
+                                            <td style={{ textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                                    <button
+                                                        onClick={() => openEditModal(product)}
+                                                        style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                        className="hover-primary"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => promptDelete(product.id)}
+                                                        style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                        className="hover-danger"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
@@ -392,77 +407,129 @@ const Inventory: React.FC = () => {
                                     <td style={{ padding: '12px 16px', color: '#10B981' }}>
                                         {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
                                     </td>
-                                    <td style={{ padding: '12px 16px' }}>
-                                        ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
-                                    </td>
-                                    <td></td>
+                                    {canViewFinancials && (
+                                        <td style={{ padding: '12px 16px' }}>
+                                            ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
+                                        </td>
+                                    )}
+                                    {canManageInventory && <td></td>}
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
 
-                    {/* ReStock Table (Returned Orders) */}
-                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5' }}>
-                        <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '14px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
-                            <AlertTriangle size={16} /> Returned Orders
-                        </h3>
-                        {sales.filter(s => s.shipping?.status === 'Returned').length === 0 ? (
-                            <div style={{ padding: '32px', textAlign: 'center', color: '#059669', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Boxes size={20} />
+                    {/* Right Column: Returned & Restocked */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', overflow: 'hidden' }}>
+                        {/* ReStock Table (Returned Orders) */}
+                        <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', flex: 1 }}>
+                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '14px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
+                                <AlertTriangle size={16} /> Returned Orders
+                            </h3>
+                            {sales.filter(s => s.shipping?.status === 'Returned').length === 0 ? (
+                                <div style={{ padding: '32px', textAlign: 'center', color: '#059669', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Boxes size={20} />
+                                    </div>
+                                    <p style={{ fontSize: '13px', fontWeight: 500 }}>No returned orders pending restock.</p>
                                 </div>
-                                <p style={{ fontSize: '13px', fontWeight: 500 }}>No returned orders pending restock.</p>
-                            </div>
-                        ) : (
-                            <table className="spreadsheet-table">
-                                <thead style={{ background: '#FEF2F2' }}>
-                                    <tr>
-                                        <th>Order / Customer</th>
-                                        <th>Items</th>
-                                        <th style={{ textAlign: 'right', width: '50px' }}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {sales.filter(s => s.shipping?.status === 'Returned').map(order => (
-                                        <tr key={order.id} style={{ background: '#FEF2F2' }}>
-                                            <td style={{ whiteSpace: 'normal' }}>
-                                                <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
-                                                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
-                                            </td>
-                                            <td style={{ fontSize: '12px' }}>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                    {order.items.map((item, idx) => (
-                                                        <span key={idx}>
-                                                            {item.name} <span style={{ color: '#DC2626', fontWeight: 600 }}>(x{item.quantity})</span>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </td>
-                                            <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
-                                                <button
-                                                    onClick={async () => {
-                                                        if (confirm('Restock items from this order?')) {
-                                                            await restockOrder(order.id);
-                                                            // Update status to ReStock AND cancel payment
-                                                            updateOrder(order.id, {
-                                                                paymentStatus: 'Cancel',
-                                                                shipping: { ...order.shipping, status: 'ReStock' } as any
-                                                            });
-                                                            showToast('Items restocked & order updated', 'success');
-                                                        }
-                                                    }}
-                                                    className="primary-button"
-                                                    title="Restock Items"
-                                                    style={{ padding: '6px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
-                                                >
-                                                    <ArrowDown size={14} /> Restock
-                                                </button>
-                                            </td>
+                            ) : (
+                                <table className="spreadsheet-table">
+                                    <thead style={{ background: '#FEF2F2' }}>
+                                        <tr>
+                                            <th>Order / Customer</th>
+                                            <th>Items</th>
+                                            <th style={{ textAlign: 'right', width: '50px' }}></th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
+                                    </thead>
+                                    <tbody>
+                                        {sales.filter(s => s.shipping?.status === 'Returned').map(order => (
+                                            <tr key={order.id} style={{ background: '#FEF2F2' }}>
+                                                <td style={{ whiteSpace: 'normal' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
+                                                </td>
+                                                <td style={{ fontSize: '12px' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                        {order.items.map((item, idx) => (
+                                                            <span key={idx}>
+                                                                {item.name} <span style={{ color: '#DC2626', fontWeight: 600 }}>(x{item.quantity})</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                                <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (confirm('Restock items from this order?')) {
+                                                                // 1. Update status to ReStock (Optimistic Remove from List)
+                                                                updateOrder(order.id, {
+                                                                    paymentStatus: 'Cancel',
+                                                                    shipping: { ...order.shipping, status: 'ReStock' } as any
+                                                                });
+
+                                                                // 2. Restock Items (Updates Stock)
+                                                                await restockOrder(order.id);
+
+                                                                showToast('Items restocked & order updated', 'success');
+                                                            }
+                                                        }}
+                                                        className="primary-button"
+                                                        title="Restock Items"
+                                                        style={{ padding: '6px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                                                    >
+                                                        <ArrowDown size={14} /> Restock
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+
+                        {/* Restocked History Table */}
+                        <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #3B82F6', flex: 1 }}>
+                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #3B82F6', margin: 0, fontSize: '14px', fontWeight: 600, color: '#2563EB', background: '#EFF6FF', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
+                                <Layers size={16} /> Restocked History
+                            </h3>
+                            {sales.filter(s => s.shipping?.status === 'ReStock').length === 0 ? (
+                                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                    <p style={{ fontSize: '13px', fontWeight: 500 }}>No restocked orders found.</p>
+                                </div>
+                            ) : (
+                                <table className="spreadsheet-table">
+                                    <thead style={{ background: '#EFF6FF' }}>
+                                        <tr>
+                                            <th>Order / Customer</th>
+                                            <th>Items Restocked</th>
+                                            <th style={{ textAlign: 'right' }}>Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sales.filter(s => s.shipping?.status === 'ReStock').map(order => (
+                                            <tr key={order.id} style={{ background: '#EFF6FF' }}>
+                                                <td style={{ whiteSpace: 'normal' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
+                                                </td>
+                                                <td style={{ fontSize: '12px' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                        {order.items.map((item, idx) => (
+                                                            <span key={idx}>
+                                                                {item.name} <span style={{ color: '#2563EB', fontWeight: 600 }}>(x{item.quantity})</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                                <td style={{ textAlign: 'right', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                    {new Date(order.date).toLocaleDateString()}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

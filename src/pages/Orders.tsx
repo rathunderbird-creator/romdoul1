@@ -355,7 +355,11 @@ const Orders: React.FC = () => {
     // Derived State (filteredOrders, paginatedOrders, stats) -> kept same essentially
     const filteredOrders = useMemo(() => {
         return sales.filter(order => {
-            const matchesStatus = statusFilter.length === 0 || statusFilter.includes(order.shipping?.status || 'Pending');
+            // Hide 'ReStock' by default unless explicitly filtered for
+            const matchesStatus = statusFilter.length === 0
+                ? (order.shipping?.status !== 'ReStock')
+                : statusFilter.includes(order.shipping?.status || 'Pending');
+
             const matchesSalesman = salesmanFilter === 'All' || order.salesman === salesmanFilter;
             const matchesPayStatus = payStatusFilter.length === 0 || payStatusFilter.includes(order.paymentStatus || 'Paid');
             const lowerTerm = searchTerm.toLowerCase();
@@ -1221,6 +1225,8 @@ const Orders: React.FC = () => {
                                             } else if (status === 'ReStock') {
                                                 updateOrder(id, { paymentStatus: 'Cancel' });
                                                 restockOrder(id);
+                                            } else if (status === 'Returned') {
+                                                updateOrder(id, { paymentStatus: 'Cancel' });
                                             }
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
@@ -1534,6 +1540,8 @@ const Orders: React.FC = () => {
                                                                                         } else if (newStatus === 'ReStock') {
                                                                                             updateOrder(order.id, { paymentStatus: 'Cancel' });
                                                                                             restockOrder(order.id);
+                                                                                        } else if (newStatus === 'Returned') {
+                                                                                            updateOrder(order.id, { paymentStatus: 'Cancel' });
                                                                                         }
                                                                                     }}
                                                                                 />
