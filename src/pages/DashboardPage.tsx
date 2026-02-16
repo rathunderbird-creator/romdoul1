@@ -89,14 +89,7 @@ const Dashboard: React.FC = () => {
         }));
     }, [filteredSales, dateRange]);
 
-    const salesByPlatform = useMemo(() => {
-        const data: Record<string, number> = {};
-        filteredSales.forEach(sale => {
-            const platform = sale.customer?.platform || 'Unknown';
-            data[platform] = (data[platform] || 0) + sale.total;
-        });
-        return Object.entries(data).map(([name, value]) => ({ name, value }));
-    }, [filteredSales]);
+
 
     const salesBySalesman = useMemo(() => {
         const data: Record<string, number> = {};
@@ -120,14 +113,16 @@ const Dashboard: React.FC = () => {
         const productStats: Record<string, { name: string; quantity: number; revenue: number }> = {};
 
         filteredSales.forEach(sale => {
-            sale.items.forEach(item => {
-                const id = item.id;
-                if (!productStats[id]) {
-                    productStats[id] = { name: item.name, quantity: 0, revenue: 0 };
-                }
-                productStats[id].quantity += item.quantity;
-                productStats[id].revenue += item.price * item.quantity; // item.price * quantity gives revenue for that item line
-            });
+            if (sale.shipping?.status === 'Shipped' || sale.shipping?.status === 'Delivered') {
+                sale.items.forEach(item => {
+                    const id = item.id;
+                    if (!productStats[id]) {
+                        productStats[id] = { name: item.name, quantity: 0, revenue: 0 };
+                    }
+                    productStats[id].quantity += item.quantity;
+                    productStats[id].revenue += item.price * item.quantity;
+                });
+            }
         });
 
         return Object.values(productStats)
@@ -236,7 +231,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Charts Row 1 */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '16px' }}>
                 <div className="glass-panel" style={{ padding: '20px', height: '300px' }}>
                     <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Revenue Trend (Last 7 Days)</h3>
                     <ResponsiveContainer width="100%" height="100%">
@@ -257,32 +252,6 @@ const Dashboard: React.FC = () => {
                             />
                             <Area type="monotone" dataKey="total" stroke="var(--color-primary)" fillOpacity={1} fill="url(#colorTotal)" />
                         </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-                <div className="glass-panel" style={{ padding: '20px', height: '300px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Sales by Platform</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={salesByPlatform}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {salesByPlatform.map((_entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                contentStyle={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-main)', borderRadius: '8px', boxShadow: 'var(--shadow-md)' }}
-                                formatter={(value: any) => [`$${value}`, 'Revenue']}
-                            />
-                            <Legend />
-                        </PieChart>
                     </ResponsiveContainer>
                 </div>
             </div>
@@ -340,7 +309,12 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* 3. Top Selling Products */}
-                <div className="glass-panel" style={{ padding: '20px', height: '300px', overflowY: 'auto' }}>
+                <div className="glass-panel" style={{
+                    padding: '20px',
+                    height: isMobile ? '300px' : '616px',
+                    overflowY: 'auto',
+                    gridRow: isMobile ? 'auto' : 'span 2'
+                }}>
                     <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Top Selling Products</h3>
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
@@ -366,6 +340,19 @@ const Dashboard: React.FC = () => {
                                     ))
                                 )}
                             </tbody>
+                            {topProducts.length > 0 && (
+                                <tfoot>
+                                    <tr style={{ borderTop: '2px solid var(--color-border)' }}>
+                                        <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>Total Summary</td>
+                                        <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>
+                                            {topProducts.reduce((sum, p) => sum + p.quantity, 0)}
+                                        </td>
+                                        <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                                            ${topProducts.reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            )}
                         </table>
                     </div>
                 </div>
