@@ -9,7 +9,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile }) => {
-    const { hasPermission } = useStore();
+    const { hasPermission, currentUser } = useStore();
 
 
     // ... (rest of the hook logic is same)
@@ -162,7 +162,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         </NavLink>
                     )}
 
-                    {canManageSettings && (
+                    {canManageSettings && currentUser?.roleId !== 'customer_care' && (
                         <NavLink
                             to="/settings"
                             title={isCollapsed ? 'Settings' : ''}

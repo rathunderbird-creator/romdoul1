@@ -308,7 +308,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             id: 'customer_care',
                             name: 'Customer Care',
                             description: 'Manage support and orders',
-                            permissions: ['view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                            permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] as any[]
                         },
                         {
                             id: 'salesman',
