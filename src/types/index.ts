@@ -37,6 +37,8 @@ export interface Sale {
     remark?: string;
     amountReceived?: number;
     settleDate?: string;
+    lastEditedAt?: string; // ISO string
+    lastEditedBy?: string;
     paymentStatus?: 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending';
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;

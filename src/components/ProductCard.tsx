@@ -7,14 +7,18 @@ import type { Product } from '../types';
 interface ProductCardProps {
     product: Product;
     onAdd: (product: Product) => void;
+    cartQuantity?: number;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity = 0 }) => {
     const { pinnedProductIds, toggleProductPin } = useStore();
     const isMobile = useMobile();
     const isPinned = pinnedProductIds.includes(product.id);
-    const isOutOfStock = product.stock === 0;
-    const isLowStock = product.stock > 0 && product.stock <= 5;
+
+    // Effective Stock Calculation
+    const effectiveStock = Math.max(0, product.stock - cartQuantity);
+    const isOutOfStock = effectiveStock === 0;
+    const isLowStock = effectiveStock > 0 && effectiveStock <= 5;
 
     return (
         <div className="glass-panel" style={{
@@ -80,7 +84,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd }) => {
                     padding: '2px 8px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(4px)',
                     boxShadow: isLowStock ? '0 2px 8px rgba(245, 158, 11, 0.4)' : '0 2px 4px rgba(0,0,0,0.05)'
                 }}>
-                    Stock: {product.stock}
+                    Stock: {effectiveStock}
                 </div>
             )}
 

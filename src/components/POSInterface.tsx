@@ -154,9 +154,18 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                             paddingBottom: isMobile ? '80px' : '24px', // Extra padding for mobile cart fab
                             flex: 1
                         }}>
-                            {filteredProducts.map(product => (
-                                <ProductCard key={product.id} product={product} onAdd={handleAddToCart} />
-                            ))}
+                            {filteredProducts.map(product => {
+                                const cartItem = cart.find(item => item.id === product.id);
+                                const quantityInCart = cartItem ? cartItem.quantity : 0;
+                                return (
+                                    <ProductCard
+                                        key={product.id}
+                                        product={product}
+                                        onAdd={handleAddToCart}
+                                        cartQuantity={quantityInCart}
+                                    />
+                                );
+                            })}
                         </div>
                     </>
                 ) : (

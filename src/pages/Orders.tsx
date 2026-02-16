@@ -271,12 +271,13 @@ const Orders: React.FC = () => {
         { id: 'tracking', label: 'Tracking ID' },
         { id: 'remark', label: 'Remark' },
         { id: 'settleDate', label: 'Settled/Paid Date' },
+        { id: 'lastEdit', label: 'Last Edit' },
     ];
 
     // Default visible columns
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
         'actions', 'date', 'customer', 'phone', 'address', 'page', 'salesman', 'customerCare', 'items', 'total', 'payBy',
-        'balance', 'status', 'received', 'payStatus', 'shippingCo', 'tracking', 'remark', 'settleDate'
+        'balance', 'status', 'received', 'payStatus', 'shippingCo', 'tracking', 'remark', 'settleDate', 'lastEdit'
     ]);
 
     // Derived Columns with Pinning Logic
@@ -1634,212 +1635,225 @@ const Orders: React.FC = () => {
                                                                                 />
                                                                             </td>
                                                                         );
+                                                                    case 'lastEdit':
+                                                                        return (
+                                                                            <td key={colId} style={cellStyle}>
+                                                                                <div style={{ display: 'flex', flexDirection: 'column', fontSize: '11px', lineHeight: '1.2' }}>
+                                                                                    <span style={{ fontWeight: 500 }}>{order.lastEditedBy || '-'}</span>
+                                                                                    {order.lastEditedAt && (
+                                                                                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>
+                                                                                            {new Date(order.lastEditedAt).toLocaleString()}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </td>
+                                                                        );
                                                                     case 'settleDate': return <td key={colId} style={cellStyle}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>;
-                                                                    default: return <td key={colId} style={cellStyle}>-</td>;
+                                                default: return <td key={colId} style={cellStyle}>-</td>;
                                                                 }
                                                             })}
-                                                        </SortableRow>
-                                                    );
+                                            </SortableRow>
+                                            );
                                                 })}
-                                            </SortableContext>
-                                        </DndContext>
-                                    </tbody>
-                                    <tfoot>
-                                        <tr>
-                                            <td className="sticky-col-first" style={{ background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', position: 'sticky', left: 0, zIndex: 20 }}></td>
-                                            {visibleColumns.map((colId) => {
-                                                const isPinned = (pinnedOrderColumns || []).includes(colId);
-                                                const stickyLeft = getStickyLeft(colId);
+                                        </SortableContext>
+                                    </DndContext>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td className="sticky-col-first" style={{ background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', position: 'sticky', left: 0, zIndex: 20 }}></td>
+                                        {visibleColumns.map((colId) => {
+                                            const isPinned = (pinnedOrderColumns || []).includes(colId);
+                                            const stickyLeft = getStickyLeft(colId);
 
-                                                const commonStyle = {
-                                                    padding: '8px 12px',
-                                                    fontSize: '12px',
-                                                    fontWeight: 'bold',
-                                                    borderTop: '2px solid var(--color-border)',
-                                                    background: 'var(--color-bg)',
-                                                    textAlign: 'left' as const,
-                                                    position: isPinned ? 'sticky' as const : undefined,
-                                                    left: isPinned ? stickyLeft : undefined,
-                                                    zIndex: isPinned ? 20 : 1,
-                                                    boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
-                                                };
+                                            const commonStyle = {
+                                                padding: '8px 12px',
+                                                fontSize: '12px',
+                                                fontWeight: 'bold',
+                                                borderTop: '2px solid var(--color-border)',
+                                                background: 'var(--color-bg)',
+                                                textAlign: 'left' as const,
+                                                position: isPinned ? 'sticky' as const : undefined,
+                                                left: isPinned ? stickyLeft : undefined,
+                                                zIndex: isPinned ? 20 : 1,
+                                                boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
+                                            };
 
-                                                if (colId === 'actions') {
-                                                    return <td key={colId} style={{ ...commonStyle, minWidth: '100px' }}>Total: {stats.totalOrders}</td>;
-                                                }
-                                                if (colId === 'total') return <td key={colId} style={{ ...commonStyle, textAlign: 'right' }}>${stats.totalRevenue.toFixed(2)}</td>;
-                                                if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>${stats.totalReceived.toFixed(2)}</td>;
-                                                if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>${stats.totalOutstanding.toFixed(2)}</td>;
+                                            if (colId === 'actions') {
+                                                return <td key={colId} style={{ ...commonStyle, minWidth: '100px' }}>Total: {stats.totalOrders}</td>;
+                                            }
+                                            if (colId === 'total') return <td key={colId} style={{ ...commonStyle, textAlign: 'right' }}>${stats.totalRevenue.toFixed(2)}</td>;
+                                            if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>${stats.totalReceived.toFixed(2)}</td>;
+                                            if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>${stats.totalOutstanding.toFixed(2)}</td>;
 
-                                                return <td key={colId} style={commonStyle}></td>;
-                                            })}
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                                {filteredOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>}
-                            </>
+                                            return <td key={colId} style={commonStyle}></td>;
+                                        })}
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        {filteredOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>}
+                    </>
                         )}
-                    </div>
+                </div>
 
-                    {/* Bulk Actions Bar */}
-                    {
-                        selectedIds.size > 0 && canManage && (
-                            <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
-                                <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
-                                <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
-                                <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                    <Trash2 size={18} /> Delete
-                                </button>
-                            </div>
-                        )
-                    }
-                </>
-            ) : (
-                <POSInterface
-                    orderToEdit={editingOrder}
-                    onCancelEdit={() => {
-                        setEditingOrder(null);
-                        setActiveTab('list');
-                    }}
-                />
-            )
-            }
-
+            {/* Bulk Actions Bar */}
             {
-                activeTab === 'list' && filteredOrders.length > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length)} to {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} entries
-                        </div>
-
-
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                <span>Rows per page:</span>
-                                <select
-                                    value={itemsPerPage}
-                                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                                    style={{
-                                        padding: '4px 8px',
-                                        borderRadius: '6px',
-                                        border: '1px solid var(--color-border)',
-                                        background: 'var(--color-surface)',
-                                        color: 'var(--color-text-main)',
-                                        fontSize: '13px',
-                                        outline: 'none',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    <option value={100}>100</option>
-                                    <option value={200}>200</option>
-                                    <option value={300}>300</option>
-                                    <option value={500}>500</option>
-                                    <option value={1000}>1000</option>
-                                    <option value={3000}>3000</option>
-                                    <option value={5000}>5000</option>
-                                </select>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <button
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                    disabled={currentPage === 1}
-                                    style={{
-                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                        background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
-                                        color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}
-                                >
-                                    <ChevronLeft size={16} />
-                                </button>
-                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredOrders.length / itemsPerPage)}
-                                </span>
-                                <button
-                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredOrders.length / itemsPerPage), p + 1))}
-                                    disabled={currentPage === Math.ceil(filteredOrders.length / itemsPerPage)}
-                                    style={{
-                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                        background: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
-                                        color: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                        cursor: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'not-allowed' : 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}
-                                >
-                                    <ChevronRight size={16} />
-                                </button>
-                            </div>
-                        </div>
+                selectedIds.size > 0 && canManage && (
+                    <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
+                        <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
+                        <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
+                        <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                            <Trash2 size={18} /> Delete
+                        </button>
                     </div>
                 )
             }
+        </>
+    ) : (
+        <POSInterface
+            orderToEdit={editingOrder}
+            onCancelEdit={() => {
+                setEditingOrder(null);
+                setActiveTab('list');
+            }}
+        />
+    )
+}
 
-            {/* View Order Modal */}
-            {
-                isViewModalOpen && selectedOrder && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                        <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Order Details</h2>
-                                <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
-                                <div>
-                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer</h4>
-                                    <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{selectedOrder.customer?.name}</div>
-                                    <div style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{selectedOrder.customer?.phone}</div>
-                                    <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>{selectedOrder.customer?.address}</div>
-                                </div>
-                                <div>
-                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Info</h4>
-                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Date: {new Date(selectedOrder.date).toLocaleString()}</div>
-                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Status: {getStatusBadge(selectedOrder.shipping?.status || 'Pending')}</div>
-                                    <div style={{ fontSize: '14px' }}>Platform: {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
-                                </div>
-                            </div>
+{
+    activeTab === 'list' && filteredOrders.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
+            <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length)} to {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} entries
+            </div>
 
-                            <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-                                <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>Items</h4>
-                                {selectedOrder.items.map((item, i) => (
-                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
-                                        <span>{item.name} <span style={{ color: 'var(--color-text-secondary)' }}>x{item.quantity}</span></span>
-                                        <span>${(item.price * item.quantity).toFixed(2)}</span>
-                                    </div>
-                                ))}
-                                <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '12px', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}>
-                                    <span>Total</span>
-                                    <span>${selectedOrder.total.toFixed(2)}</span>
-                                </div>
-                            </div>
 
-                            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', display: 'grid', gap: '8px' }}>
-                                <div><strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}</div>
-                                <div><strong>Salesman:</strong> {selectedOrder.salesman}</div>
-                                <div><strong>Remark:</strong> {selectedOrder.remark || '-'}</div>
-                            </div>
-                        </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                    <span>Rows per page:</span>
+                    <select
+                        value={itemsPerPage}
+                        onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                        style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)',
+                            color: 'var(--color-text-main)',
+                            fontSize: '13px',
+                            outline: 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                        <option value={300}>300</option>
+                        <option value={500}>500</option>
+                        <option value={1000}>1000</option>
+                        <option value={3000}>3000</option>
+                        <option value={5000}>5000</option>
+                    </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        style={{
+                            padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                            background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
+                            color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                            cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                        Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredOrders.length / itemsPerPage)}
+                    </span>
+                    <button
+                        onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredOrders.length / itemsPerPage), p + 1))}
+                        disabled={currentPage === Math.ceil(filteredOrders.length / itemsPerPage)}
+                        style={{
+                            padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                            background: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                            color: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                            cursor: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+{/* View Order Modal */ }
+{
+    isViewModalOpen && selectedOrder && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+            <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Order Details</h2>
+                    <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
+                    <div>
+                        <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer</h4>
+                        <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{selectedOrder.customer?.name}</div>
+                        <div style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{selectedOrder.customer?.phone}</div>
+                        <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>{selectedOrder.customer?.address}</div>
                     </div>
-                )
-            }
+                    <div>
+                        <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Info</h4>
+                        <div style={{ fontSize: '14px', marginBottom: '4px' }}>Date: {new Date(selectedOrder.date).toLocaleString()}</div>
+                        <div style={{ fontSize: '14px', marginBottom: '4px' }}>Status: {getStatusBadge(selectedOrder.shipping?.status || 'Pending')}</div>
+                        <div style={{ fontSize: '14px' }}>Platform: {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
+                    </div>
+                </div>
 
-            {/* Receipt Modal */}
-            {
-                receiptSale && (
-                    <ReceiptModal
-                        sale={receiptSale}
-                        onClose={() => setReceiptSale(null)}
-                    />
-                )
-            }
-            <DataImportModal
-                isOpen={isImportModalOpen}
-                onClose={() => setIsImportModalOpen(false)}
-                type="order"
-                onImport={handleImportOrders}
-            />
+                <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>Items</h4>
+                    {selectedOrder.items.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+                            <span>{item.name} <span style={{ color: 'var(--color-text-secondary)' }}>x{item.quantity}</span></span>
+                            <span>${(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                    ))}
+                    <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '12px', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}>
+                        <span>Total</span>
+                        <span>${selectedOrder.total.toFixed(2)}</span>
+                    </div>
+                </div>
+
+                <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', display: 'grid', gap: '8px' }}>
+                    <div><strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}</div>
+                    <div><strong>Salesman:</strong> {selectedOrder.salesman}</div>
+                    <div><strong>Remark:</strong> {selectedOrder.remark || '-'}</div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+{/* Receipt Modal */ }
+{
+    receiptSale && (
+        <ReceiptModal
+            sale={receiptSale}
+            onClose={() => setReceiptSale(null)}
+        />
+    )
+}
+<DataImportModal
+    isOpen={isImportModalOpen}
+    onClose={() => setIsImportModalOpen(false)}
+    type="order"
+    onImport={handleImportOrders}
+/>
         </div >
     );
 };

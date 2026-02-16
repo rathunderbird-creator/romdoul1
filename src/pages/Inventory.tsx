@@ -503,6 +503,7 @@ const Inventory: React.FC = () => {
                                             <th>Order / Customer</th>
                                             <th>Items Restocked</th>
                                             <th style={{ textAlign: 'right' }}>Date</th>
+                                            <th style={{ textAlign: 'center' }}>Last Edit</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -523,6 +524,16 @@ const Inventory: React.FC = () => {
                                                 </td>
                                                 <td style={{ textAlign: 'right', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                                     {new Date(order.date).toLocaleDateString()}
+                                                </td>
+                                                <td style={{ textAlign: 'center', fontSize: '11px' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: '1.2' }}>
+                                                        <span style={{ fontWeight: 500 }}>{order.lastEditedBy || '-'}</span>
+                                                        {order.lastEditedAt && (
+                                                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>
+                                                                {new Date(order.lastEditedAt).toLocaleString()}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}

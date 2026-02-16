@@ -83,6 +83,48 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
 
 
+    // Authentication
+    const [currentUser, setCurrentUser] = useState<User | null>(() => {
+        const saved = localStorage.getItem('currentUser');
+        return saved ? JSON.parse(saved) : null;
+    });
+
+    const login = async (pin: string, userId?: string): Promise<boolean> => {
+        // Find user
+        console.log('Attempting login with PIN:', pin, 'UserID:', userId);
+
+        let user: User | undefined;
+
+        if (userId) {
+            user = (config.users || []).find(u => u.id === userId && u.pin === pin);
+        } else {
+            user = (config.users || []).find(u => u.pin === pin);
+        }
+
+        if (user) {
+            console.log('User found:', user);
+            setCurrentUser(user);
+            localStorage.setItem('currentUser', JSON.stringify(user));
+            return true;
+        }
+        console.log('User not found or PIN incorrect');
+        return false;
+    };
+
+    const logout = () => {
+        setCurrentUser(null);
+        localStorage.removeItem('currentUser');
+    };
+
+    const hasPermission = (permission: Permission): boolean => {
+        if (!currentUser) return false;
+        const userRole = (config.roles || []).find(r => r.id === currentUser.roleId);
+        if (!userRole) return false;
+        // Admin has all permissions implicitly or explicitly
+        if (userRole.id === 'admin') return true;
+        return userRole.permissions.includes(permission);
+    };
+
     // Initial Fetch
     // Initial Fetch
     // Initial Fetch
@@ -137,6 +179,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         staffName: ''
                     } : undefined,
                     customer: s.customer_snapshot,
+                    lastEditedAt: s.last_edited_at,
+                    lastEditedBy: s.last_edited_by,
                     items: s.items.map((i: any) => ({
                         id: i.product_id,
                         name: i.name,
@@ -703,10 +747,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string) => {
+        const now = new Date().toISOString();
+        const editorName = currentUser?.name;
+
         setSales(prev => prev.map(sale => {
             if (sale.id === id) {
                 return {
                     ...sale,
+                    lastEditedAt: editorName ? now : sale.lastEditedAt,
+                    lastEditedBy: editorName ? editorName : sale.lastEditedBy,
                     shipping: {
                         ...(sale.shipping || {
                             company: '',
@@ -726,6 +775,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         const updates: any = { shipping_status: status };
         if (trackingNumber) updates.tracking_number = trackingNumber;
+
+        if (currentUser) {
+            updates.last_edited_at = now;
+            updates.last_edited_by = currentUser.name;
+        }
+
         await supabase.from('sales').update(updates).eq('id', id);
     };
 
@@ -749,6 +804,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) dbUpdates.customer_snapshot = updates.customer;
+
+        // Add Last Edit Info automatically
+        if (currentUser) {
+            const now = new Date().toISOString();
+            updates.lastEditedAt = now;
+            updates.lastEditedBy = currentUser.name;
+
+            dbUpdates.last_edited_at = now;
+            dbUpdates.last_edited_by = currentUser.name;
+        }
 
         // Shipping updates need special handling if they are partial, but usually we pass full object or handle in updateOrderStatus
         if (updates.shipping !== undefined) {
@@ -1269,47 +1334,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, currency });
     };
 
-    // Authentication
-    const [currentUser, setCurrentUser] = useState<User | null>(() => {
-        const saved = localStorage.getItem('currentUser');
-        return saved ? JSON.parse(saved) : null;
-    });
-
-    const login = async (pin: string, userId?: string): Promise<boolean> => {
-        // Find user
-        console.log('Attempting login with PIN:', pin, 'UserID:', userId);
-
-        let user: User | undefined;
-
-        if (userId) {
-            user = (config.users || []).find(u => u.id === userId && u.pin === pin);
-        } else {
-            user = (config.users || []).find(u => u.pin === pin);
-        }
-
-        if (user) {
-            console.log('User found:', user);
-            setCurrentUser(user);
-            localStorage.setItem('currentUser', JSON.stringify(user));
-            return true;
-        }
-        console.log('User not found or PIN incorrect');
-        return false;
-    };
-
-    const logout = () => {
-        setCurrentUser(null);
-        localStorage.removeItem('currentUser');
-    };
-
-    const hasPermission = (permission: Permission): boolean => {
-        if (!currentUser) return false;
-        const userRole = (config.roles || []).find(r => r.id === currentUser.roleId);
-        if (!userRole) return false;
-        // Admin has all permissions implicitly or explicitly
-        if (userRole.id === 'admin') return true;
-        return userRole.permissions.includes(permission);
-    };
+    // Authentication logic moved to top
 
     return (
         <StoreContext.Provider value={{
