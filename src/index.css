@@ -163,7 +163,7 @@ button {
 }
 
 .spreadsheet-table tbody tr:hover {
-  background-color: var(--color-primary-light) !important;
+  background-color: #E5E7EB !important;
   /* User requested lightgreen - updated to primary light for consistency or keep if variable exists */
   /* If we want to keep the green/blue distinction but make it theme aware, we need variables for these states */
 }
@@ -358,7 +358,7 @@ div:has(> svg) .search-input {
 /* Ensure sticky columns match row hover/selection styles */
 .spreadsheet-table tbody tr:hover td.sticky-col-first,
 .spreadsheet-table tbody tr:hover td.sticky-col-second {
-  background-color: var(--color-primary-light) !important;
+  background-color: #E5E7EB !important;
 }
 
 .spreadsheet-table tbody tr.selected td.sticky-col-first,
