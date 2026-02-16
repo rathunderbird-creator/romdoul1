@@ -1217,12 +1217,10 @@ const Orders: React.FC = () => {
                                             updateOrderStatus(id, status);
                                             if (status === 'Delivered') {
                                                 const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
-                                                updateOrder(id, { paymentStatus: newPaymentStatus, date: new Date().toISOString() });
+                                                updateOrder(id, { paymentStatus: newPaymentStatus });
                                             } else if (status === 'ReStock') {
                                                 updateOrder(id, { paymentStatus: 'Cancel' });
                                                 restockOrder(id);
-                                            } else if (status === 'Shipped') {
-                                                updateOrder(id, { date: new Date().toISOString() });
                                             }
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
@@ -1530,9 +1528,9 @@ const Orders: React.FC = () => {
                                                                                     readOnly={!canEdit || order.shipping?.status === 'ReStock'}
                                                                                     onChange={(newStatus: string) => {
                                                                                         updateOrderStatus(order.id, newStatus as any);
-                                                                                        if (newStatus === 'Shipped') { updateOrder(order.id, { date: new Date().toISOString() }); } else if (newStatus === 'Delivered') {
+                                                                                        if (newStatus === 'Delivered') {
                                                                                             const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
-                                                                                            updateOrder(order.id, { paymentStatus: newPaymentStatus, date: new Date().toISOString() });
+                                                                                            updateOrder(order.id, { paymentStatus: newPaymentStatus });
                                                                                         } else if (newStatus === 'ReStock') {
                                                                                             updateOrder(order.id, { paymentStatus: 'Cancel' });
                                                                                             restockOrder(order.id);
