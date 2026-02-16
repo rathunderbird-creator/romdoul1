@@ -162,12 +162,14 @@ const Dashboard: React.FC = () => {
         const stats: Record<string, { count: number; cost: number }> = {};
 
         filteredSales.forEach(sale => {
-            const company = sale.shipping?.company || 'Unknown';
-            if (!stats[company]) {
-                stats[company] = { count: 0, cost: 0 };
+            if (sale.shipping?.status === 'Shipped' || sale.shipping?.status === 'Delivered') {
+                const company = sale.shipping?.company || 'Unknown';
+                if (!stats[company]) {
+                    stats[company] = { count: 0, cost: 0 };
+                }
+                stats[company].count += 1;
+                stats[company].cost += sale.shipping?.cost || 0;
             }
-            stats[company].count += 1;
-            stats[company].cost += sale.shipping?.cost || 0;
         });
 
         return Object.entries(stats).map(([company, data]) => ({
