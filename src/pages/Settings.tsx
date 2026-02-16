@@ -1,19 +1,60 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Save, Store, Globe, Bell, Shield, Database } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useTheme } from '../context/ThemeContext';
+import PinPrompt from '../components/PinPrompt';
 
 
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, updateStoreAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData, timezone, updateTimezone, taxRate, updateTaxRate, currency, updateCurrency } = useStore();
+    const { storeAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
+
+    // Local State
+    const [localState, setLocalState] = useState({
+        storeName: '',
+        storeAddress: '',
+        email: '',
+        phone: '',
+        timezone: '',
+        taxRate: 0,
+        currency: ''
+    });
+
+    // PIN Protection State
+    const [showDataManagement, setShowDataManagement] = useState(false);
+    const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+
+    // Use ref to hold the latest state for the save handler (avoid stale closure)
+    const stateRef = useRef(localState);
+    useEffect(() => {
+        stateRef.current = localState;
+    }, [localState]);
+
+    const handleSave = useCallback(async () => {
+        const currentData = stateRef.current;
+        try {
+            await updateStoreProfile({
+                storeName: currentData.storeName,
+                storeAddress: currentData.storeAddress,
+                email: currentData.email,
+                phone: currentData.phone,
+                timezone: currentData.timezone,
+                taxRate: currentData.taxRate,
+                currency: currentData.currency
+            });
+            showToast('Settings saved successfully!', 'success');
+        } catch (error) {
+            console.error(error);
+            showToast('Failed to save settings', 'error');
+        }
+    }, [updateStoreProfile, showToast]); // Dependencies for context functions
 
     // Header Content
     React.useEffect(() => {
@@ -41,18 +82,22 @@ const Settings: React.FC = () => {
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]); // Add dependencies if needed, handleSave might need to be wrapped or stable.
-
-    // Local state for settings form (mock implementation)
+    }, [setHeaderContent, handleSave]);
 
 
+    useEffect(() => {
+        setLocalState({
+            storeName: storeName || '',
+            storeAddress: storeAddress || '',
+            email: email || '',
+            phone: phone || '',
+            timezone: timezone || 'Asia/Phnom_Penh',
+            taxRate: taxRate || 0,
+            currency: currency || 'USD ($)'
+        });
+    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency]);
 
 
-
-    const handleSave = () => {
-        // Placeholder for save functionality
-        showToast('Settings saved successfully!', 'success');
-    };
 
 
 
@@ -166,8 +211,8 @@ const Settings: React.FC = () => {
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Name</label>
                             <input
                                 type="text"
-                                value={storeName}
-                                onChange={(e) => updateStoreProfile({ storeName: e.target.value })}
+                                value={localState.storeName}
+                                onChange={(e) => setLocalState({ ...localState, storeName: e.target.value })}
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             />
@@ -176,8 +221,8 @@ const Settings: React.FC = () => {
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Address</label>
                             <input
                                 type="text"
-                                value={storeAddress}
-                                onChange={(e) => updateStoreAddress(e.target.value)}
+                                value={localState.storeAddress}
+                                onChange={(e) => setLocalState({ ...localState, storeAddress: e.target.value })}
                                 placeholder="e.g. 123 Speaker Ave, Audio City"
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
@@ -188,8 +233,8 @@ const Settings: React.FC = () => {
                                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Email Address</label>
                                 <input
                                     type="email"
-                                    value={email}
-                                    onChange={(e) => updateStoreProfile({ email: e.target.value })}
+                                    value={localState.email}
+                                    onChange={(e) => setLocalState({ ...localState, email: e.target.value })}
                                     className="search-input"
                                     style={{ width: '100%', padding: '12px' }}
                                 />
@@ -198,8 +243,8 @@ const Settings: React.FC = () => {
                                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Phone Number</label>
                                 <input
                                     type="tel"
-                                    value={phone}
-                                    onChange={(e) => updateStoreProfile({ phone: e.target.value })}
+                                    value={localState.phone}
+                                    onChange={(e) => setLocalState({ ...localState, phone: e.target.value })}
                                     className="search-input"
                                     style={{ width: '100%', padding: '12px' }}
                                 />
@@ -208,75 +253,18 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Data Migration Section */}
-                <div className="glass-panel" style={{ padding: '24px', borderColor: 'var(--color-primary)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                        <Database size={24} className="text-primary" />
-                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Data Management</h3>
-                    </div>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
-                        Manage your application data. You can back up your current data to a JSON file or migrate local data to the cloud.
-                    </p>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                        <button
-                            onClick={async () => {
-                                await backupData();
-                                showToast('Backup download started', 'success');
-                            }}
-                            className="primary-button"
-                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
-                        >
-                            <Save size={18} />
-                            Backup Database
-                        </button>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type="file"
-                                id="restore-file"
-                                style={{ display: 'none' }}
-                                accept=".json"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
 
-                                    if (!confirm(`Are you sure you want to restore from ${file.name}? This will OVERWRITE existing data with the same IDs.`)) {
-                                        e.target.value = ''; // Reset
-                                        return;
-                                    }
 
-                                    const reader = new FileReader();
-                                    reader.onload = async (event) => {
-                                        try {
-                                            const json = JSON.parse(event.target?.result as string);
-                                            await restoreData(json);
-                                        } catch (err) {
-                                            console.error(err);
-                                            showToast('Failed to parse backup file', 'error');
-                                        }
-                                    };
-                                    reader.readAsText(file);
-                                    e.target.value = ''; // Reset
-                                }}
-                            />
-                            <button
-                                onClick={() => document.getElementById('restore-file')?.click()}
-                                className="primary-button"
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
-                            >
-                                <Database size={18} />
-                                Restore Database
-                            </button>
-                        </div>
-                        <button
-                            onClick={handleMigration}
-                            className="primary-button"
-                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
-                        >
-                            <Database size={18} />
-                            Migrate to Supabase
-                        </button>
-                    </div>
-                </div>
+                <PinPrompt
+                    isOpen={isPinPromptOpen}
+                    onClose={() => setIsPinPromptOpen(false)}
+                    onSuccess={() => {
+                        setShowDataManagement(true);
+                        showToast('Access granted', 'success');
+                    }}
+                    title="Unlock Data Management"
+                    description="Enter your PIN to access backup and migration tools"
+                />
 
 
 
@@ -293,8 +281,8 @@ const Settings: React.FC = () => {
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Currency</label>
                             <select
-                                value={currency}
-                                onChange={(e) => updateCurrency(e.target.value)}
+                                value={localState.currency}
+                                onChange={(e) => setLocalState({ ...localState, currency: e.target.value })}
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             >
@@ -307,8 +295,8 @@ const Settings: React.FC = () => {
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Tax Rate (%)</label>
                             <input
                                 type="number"
-                                value={taxRate}
-                                onChange={(e) => updateTaxRate(Number(e.target.value))}
+                                value={localState.taxRate}
+                                onChange={(e) => setLocalState({ ...localState, taxRate: Number(e.target.value) })}
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             />
@@ -317,8 +305,8 @@ const Settings: React.FC = () => {
                     <div style={{ marginTop: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Timezone</label>
                         <select
-                            value={timezone}
-                            onChange={(e) => updateTimezone(e.target.value)}
+                            value={localState.timezone}
+                            onChange={(e) => setLocalState({ ...localState, timezone: e.target.value })}
                             className="search-input"
                             style={{ width: '100%', padding: '12px' }}
                         >
@@ -351,6 +339,100 @@ const Settings: React.FC = () => {
                         </div>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Update password and 2FA settings.</p>
                     </div>
+                </div>
+
+                {/* Data Migration Section */}
+                <div className="glass-panel" style={{ padding: '24px', borderColor: 'var(--color-primary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                        <Database size={24} className="text-primary" />
+                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Data Management</h3>
+                    </div>
+
+                    {!showDataManagement ? (
+                        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                            <p style={{ color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+                                This section is protected. Please enter your PIN to access sensitive data operations.
+                            </p>
+                            <button
+                                onClick={() => setIsPinPromptOpen(true)}
+                                className="primary-button"
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '10px 20px'
+                                }}
+                            >
+                                <Shield size={18} />
+                                Unlock Data Management
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
+                                Manage your application data. You can back up your current data to a JSON file or migrate local data to the cloud.
+                            </p>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                    onClick={async () => {
+                                        await backupData();
+                                        showToast('Backup download started', 'success');
+                                    }}
+                                    className="primary-button"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
+                                >
+                                    <Save size={18} />
+                                    Backup Database
+                                </button>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type="file"
+                                        id="restore-file"
+                                        style={{ display: 'none' }}
+                                        accept=".json"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+
+                                            if (!confirm(`Are you sure you want to restore from ${file.name}? This will OVERWRITE existing data with the same IDs.`)) {
+                                                e.target.value = ''; // Reset
+                                                return;
+                                            }
+
+                                            const reader = new FileReader();
+                                            reader.onload = async (event) => {
+                                                try {
+                                                    const json = JSON.parse(event.target?.result as string);
+                                                    await restoreData(json);
+                                                } catch (err) {
+                                                    console.error(err);
+                                                    showToast('Failed to parse backup file', 'error');
+                                                }
+                                            };
+                                            reader.readAsText(file);
+                                            e.target.value = ''; // Reset
+                                        }}
+                                    />
+                                    <button
+                                        onClick={() => document.getElementById('restore-file')?.click()}
+                                        className="primary-button"
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
+                                    >
+                                        <Database size={18} />
+                                        Restore Database
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={handleMigration}
+                                    className="primary-button"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
+                                >
+                                    <Database size={18} />
+                                    Migrate to Supabase
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
 
 

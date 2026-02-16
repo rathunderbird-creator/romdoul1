@@ -149,7 +149,7 @@ export interface StoreContextType {
     currency: string;
     updateCurrency: (currency: string) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
-    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string }) => void;
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string }) => void;
 
     // User & Role Management
     users: User[];

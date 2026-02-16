@@ -1252,7 +1252,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, storeAddress: address });
     };
 
-    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string }) => {
+    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string }) => {
         updateConfig({ ...config, ...data });
     };
 
