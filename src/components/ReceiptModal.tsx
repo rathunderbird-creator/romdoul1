@@ -86,6 +86,18 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                                             <span>{sale.customer.phone}</span>
                                         </div>
                                     )}
+                                    {sale.customer.address && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                            <span>Address:</span>
+                                            <span style={{ maxWidth: '60%', textAlign: 'right' }}>{sale.customer.address}</span>
+                                        </div>
+                                    )}
+                                    {sale.customer.city && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                            <span>City:</span>
+                                            <span>{sale.customer.city}</span>
+                                        </div>
+                                    )}
                                 </>
                             )}
                             {sale.salesman && (
