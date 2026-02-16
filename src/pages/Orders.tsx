@@ -171,6 +171,7 @@ const Orders: React.FC = () => {
 
     // Modals State
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [showTools, setShowTools] = useState(false);
     // editingOrder is from store
 
     const handleImportOrders = async (data: any[]) => {
@@ -858,7 +859,7 @@ const Orders: React.FC = () => {
                                         }}
                                     >
                                         <span style={{ fontSize: '13px', color: statusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                            {statusFilter.length === 0 ? 'All Status' : `${statusFilter.length} Selected`}
+                                            {statusFilter.length === 0 ? 'All Order Status' : `${statusFilter.length} Selected`}
                                         </span>
                                         <ChevronDown size={16} color="var(--color-text-secondary)" />
                                     </button>
@@ -1024,164 +1025,174 @@ const Orders: React.FC = () => {
                                 {!isMobile && (
                                     <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                         <button
-                                            onClick={() => setShowAppearanceMenu(!showAppearanceMenu)}
+                                            onClick={() => setShowTools(!showTools)}
                                             style={{
                                                 padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                                background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                                                background: showTools ? 'var(--color-primary)' : 'var(--color-surface)',
+                                                color: showTools ? 'white' : 'var(--color-text-main)',
+                                                cursor: 'pointer',
                                                 display: 'flex', alignItems: 'center', gap: '8px',
                                                 width: '100%', justifyContent: 'center'
                                             }}
+                                            title="Toggle Tools"
                                         >
                                             <Settings size={18} />
-                                            Appearance
                                         </button>
-                                        {showAppearanceMenu && (
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute', top: '100%', right: 0, marginTop: '8px',
-                                                padding: '16px', width: '250px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
-                                                display: 'flex', flexDirection: 'column', gap: '12px'
-                                            }}>
-                                                <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
-                                                <div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                        <label style={{ fontSize: '13px' }}>Font Size</label>
-                                                        <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.fontSize}px</span>
-                                                    </div>
-                                                    <input
-                                                        type="range" min="9" max="16" value={tableSettings.fontSize}
-                                                        onChange={(e) => setTableSettings({ ...tableSettings, fontSize: parseInt(e.target.value) })}
-                                                        style={{ width: '100%' }}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                        <label style={{ fontSize: '13px' }}>Row Padding</label>
-                                                        <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.padding}px</span>
-                                                    </div>
-                                                    <input
-                                                        type="range" min="0" max="20" step="1" value={tableSettings.padding}
-                                                        onChange={(e) => setTableSettings({ ...tableSettings, padding: parseInt(e.target.value) })}
-                                                        style={{ width: '100%' }}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>Row Height</label>
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <button
-                                                            onClick={() => setTableSettings({ ...tableSettings, height: 'auto' })}
-                                                            style={{
-                                                                flex: 1, padding: '6px', fontSize: '12px',
-                                                                background: tableSettings.height === 'auto' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                color: tableSettings.height === 'auto' ? 'white' : 'var(--color-text-main)',
-                                                                borderRadius: '4px', border: 'none'
-                                                            }}
-                                                        >
-                                                            Auto
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setTableSettings({ ...tableSettings, height: '44px' })}
-                                                            style={{
-                                                                flex: 1, padding: '6px', fontSize: '12px',
-                                                                background: tableSettings.height === '44px' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                color: tableSettings.height === '44px' ? 'white' : 'var(--color-text-main)',
-                                                                borderRadius: '4px', border: 'none'
-                                                            }}
-                                                        >
-                                                            Fixed
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                {!isMobile && (
-                                    <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                        <button
-                                            onClick={() => setShowColumnMenu(!showColumnMenu)}
-                                            style={{
-                                                padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                                background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
-                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                width: '100%', justifyContent: 'center'
-                                            }}
-                                        >
-                                            <Settings size={18} />
-                                            Columns
-                                        </button>
-                                        {showColumnMenu && (
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute', top: '100%', right: 0, marginTop: '8px',
-                                                padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
-                                                display: 'flex', flexDirection: 'column', gap: '8px'
-                                            }}>
-                                                <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
-                                                {allColumnsDef.map(col => (
-                                                    <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={visibleColumns.includes(col.id)}
-                                                            onChange={() => {
-                                                                if (visibleColumns.includes(col.id)) {
-                                                                    setVisibleColumns(visibleColumns.filter(c => c !== col.id));
-                                                                } else {
-                                                                    setVisibleColumns([...visibleColumns, col.id]);
-                                                                }
-                                                            }}
-                                                        />
-                                                        {col.label}
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        )}
                                     </div>
                                 )}
 
-                                {!isMobile && (
-                                    <button
-                                        onClick={handleExportExcel}
-                                        disabled={selectedIds.size === 0}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: '8px',
-                                            padding: '10px 16px',
-                                            borderRadius: '8px',
-                                            border: '1px solid var(--color-border)',
-                                            background: 'white',
-                                            color: selectedIds.size > 0 ? '#10B981' : 'var(--color-text-secondary)',
-                                            cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                                            opacity: selectedIds.size > 0 ? 1 : 0.5,
-                                            fontWeight: 500,
-                                            transition: 'all 0.2s',
-                                            width: isMobile ? '100%' : 'auto',
-                                            justifyContent: 'center'
-                                        }}
-                                        title={selectedIds.size === 0 ? "Select orders to export" : "Export selected orders"}
-                                    >
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                            <polyline points="14 2 14 8 20 8"></polyline>
-                                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                                            <polyline points="10 9 9 9 8 9"></polyline>
-                                        </svg>
-                                        Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
-                                    </button>
-                                )}
-                                {/* Restoring Import button context */}
-                                <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto' }}>
-                                    {canEdit && !isMobile && (
-                                        <button onClick={() => setIsImportModalOpen(true)} className="icon-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }} title="Import Orders">
-                                            <Upload size={18} /> Import
-                                        </button>
-                                    )}
-                                    {
-                                        hasPermission('create_orders') && !isMobile && (
-                                            <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
-                                                <Plus size={18} /> New Order
+                                {showTools && !isMobile && (
+                                    <>
+                                        <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                            <button
+                                                onClick={() => setShowAppearanceMenu(!showAppearanceMenu)}
+                                                style={{
+                                                    padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    width: '100%', justifyContent: 'center'
+                                                }}
+                                            >
+                                                <Eye size={18} />
+                                                Appearance
                                             </button>
-                                        )
-                                    }
-                                </div>
+                                            {showAppearanceMenu && (
+                                                <div className="glass-panel" style={{
+                                                    position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                                                    padding: '16px', width: '250px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
+                                                    display: 'flex', flexDirection: 'column', gap: '12px'
+                                                }}>
+                                                    <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
+                                                    <div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                            <label style={{ fontSize: '13px' }}>Font Size</label>
+                                                            <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.fontSize}px</span>
+                                                        </div>
+                                                        <input
+                                                            type="range" min="9" max="16" value={tableSettings.fontSize}
+                                                            onChange={(e) => setTableSettings({ ...tableSettings, fontSize: parseInt(e.target.value) })}
+                                                            style={{ width: '100%' }}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                            <label style={{ fontSize: '13px' }}>Row Padding</label>
+                                                            <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.padding}px</span>
+                                                        </div>
+                                                        <input
+                                                            type="range" min="0" max="20" step="1" value={tableSettings.padding}
+                                                            onChange={(e) => setTableSettings({ ...tableSettings, padding: parseInt(e.target.value) })}
+                                                            style={{ width: '100%' }}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>Row Height</label>
+                                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                                            <button
+                                                                onClick={() => setTableSettings({ ...tableSettings, height: 'auto' })}
+                                                                style={{
+                                                                    flex: 1, padding: '6px', fontSize: '12px',
+                                                                    background: tableSettings.height === 'auto' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                    color: tableSettings.height === 'auto' ? 'white' : 'var(--color-text-main)',
+                                                                    borderRadius: '4px', border: 'none'
+                                                                }}
+                                                            >
+                                                                Auto
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setTableSettings({ ...tableSettings, height: '44px' })}
+                                                                style={{
+                                                                    flex: 1, padding: '6px', fontSize: '12px',
+                                                                    background: tableSettings.height === '44px' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                    color: tableSettings.height === '44px' ? 'white' : 'var(--color-text-main)',
+                                                                    borderRadius: '4px', border: 'none'
+                                                                }}
+                                                            >
+                                                                Fixed
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                            <button
+                                                onClick={() => setShowColumnMenu(!showColumnMenu)}
+                                                style={{
+                                                    padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    width: '100%', justifyContent: 'center'
+                                                }}
+                                            >
+                                                <List size={18} />
+                                                Columns
+                                            </button>
+                                            {showColumnMenu && (
+                                                <div className="glass-panel" style={{
+                                                    position: 'absolute', top: '100%', right: 0, marginTop: '8px',
+                                                    padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
+                                                    display: 'flex', flexDirection: 'column', gap: '8px'
+                                                }}>
+                                                    <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                                                    {allColumnsDef.map(col => (
+                                                        <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={visibleColumns.includes(col.id)}
+                                                                onChange={() => {
+                                                                    if (visibleColumns.includes(col.id)) {
+                                                                        setVisibleColumns(visibleColumns.filter(c => c !== col.id));
+                                                                    } else {
+                                                                        setVisibleColumns([...visibleColumns, col.id]);
+                                                                    }
+                                                                }}
+                                                            />
+                                                            {col.label}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <button
+                                            onClick={handleExportExcel}
+                                            disabled={selectedIds.size === 0}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                padding: '10px 16px',
+                                                borderRadius: '8px',
+                                                border: '1px solid var(--color-border)',
+                                                background: 'white',
+                                                color: selectedIds.size > 0 ? '#10B981' : 'var(--color-text-secondary)',
+                                                cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                                                opacity: selectedIds.size > 0 ? 1 : 0.5,
+                                                fontWeight: 500,
+                                                transition: 'all 0.2s',
+                                                width: isMobile ? '100%' : 'auto',
+                                                justifyContent: 'center'
+                                            }}
+                                            title={selectedIds.size === 0 ? "Select orders to export" : "Export selected orders"}
+                                        >
+                                            <Upload size={18} style={{ transform: 'rotate(180deg)' }} />
+                                            Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                        </button>
+
+                                        {canEdit && (
+                                            <button onClick={() => setIsImportModalOpen(true)} className="icon-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }} title="Import Orders">
+                                                <Upload size={18} /> Import
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                                {
+                                    hasPermission('create_orders') && !isMobile && (
+                                        <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
+                                            <Plus size={18} /> New Order
+                                        </button>
+                                    )
+                                }
                             </div>
                         )}
                     </div >
