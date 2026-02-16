@@ -133,6 +133,10 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                             <span>TOTAL</span>
                             <span>${sale.total.toFixed(2)}</span>
                         </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '4px' }}>
+                            <span>TOTAL KH(៛)</span>
+                            <span>{(sale.total * 4100).toLocaleString()} ៛</span>
+                        </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666', marginTop: '8px' }}>
                             <span>Payment Method</span>
                             <span>{sale.paymentMethod}</span>
