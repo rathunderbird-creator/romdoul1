@@ -6,11 +6,13 @@ import { useMobile } from '../hooks/useMobile';
 interface DateRangePickerProps {
     value: { start: string; end: string };
     onChange: (range: { start: string; end: string }) => void;
+    className?: string;
+    style?: React.CSSProperties;
 }
 
 type Preset = 'Lifetime' | 'Today' | 'Yesterday' | 'Last 7 days' | 'Last 30 days' | 'This month' | 'Last month' | 'Custom Range';
 
-const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) => {
+const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     // Helper to parse "YYYY-MM-DD" as local midnight date
@@ -377,24 +379,28 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange }) =>
     };
 
     return (
-        <div style={{ position: 'relative' }} ref={pickerRef}>
+        <div style={{ position: 'relative', ...style }} className={className} ref={pickerRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 style={{
                     padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
                     background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: '8px', minWidth: '40px',
-                    height: '42px'
+                    display: 'flex', alignItems: 'center', gap: '8px', minWidth: '42px',
+                    height: '42px',
+                    width: isMobile ? '100%' : 'auto',
+                    justifyContent: 'center'
                 }}
                 title="Select Date Range"
             >
-                <CalendarIcon size={16} />
-                {value.start ? (
-                    <span style={{ fontSize: '13px' }}>
-                        {getFormattedDate(value.start)}
-                        {value.start !== value.end && ` - ${getFormattedDate(value.end)}`}
-                    </span>
-                ) : null}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CalendarIcon size={18} />
+                    {value.start && (
+                        <span style={{ fontSize: '13px' }}>
+                            {getFormattedDate(value.start)}
+                            {value.start !== value.end && ` - ${getFormattedDate(value.end)}`}
+                        </span>
+                    )}
+                </div>
             </button>
 
             {isOpen && createPortal(pickerContent, document.body)}
