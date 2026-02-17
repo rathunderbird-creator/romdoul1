@@ -15,7 +15,7 @@ type SortConfig = {
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, currentUser } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, deleteOrders, currentUser } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -313,7 +313,7 @@ const Inventory: React.FC = () => {
                         <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10 }}>
                             All Stock ({filteredAndSortedProducts.length})
                         </h3>
-                        <table className="spreadsheet-table">
+                        <table className="spreadsheet-table compact">
                             <thead>
                                 <tr>
                                     <th style={{ width: '40px', textAlign: 'center' }}>
@@ -351,12 +351,12 @@ const Inventory: React.FC = () => {
                                                 <img src={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'contain', background: 'white', padding: '2px', border: '1px solid var(--color-border)' }} />
                                                 <div>
                                                     <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
+                                                    <div style={{ color: 'var(--color-text-secondary)' }}>{product.model}</div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td>
-                                            <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
+                                            <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
                                                 {product.category}
                                             </span>
                                         </td>
@@ -433,7 +433,7 @@ const Inventory: React.FC = () => {
                                     <p style={{ fontSize: '13px', fontWeight: 500 }}>No returned orders pending restock.</p>
                                 </div>
                             ) : (
-                                <table className="spreadsheet-table">
+                                <table className="spreadsheet-table compact">
                                     <thead style={{ background: '#FEF2F2' }}>
                                         <tr>
                                             <th>Order / Customer</th>
@@ -445,10 +445,10 @@ const Inventory: React.FC = () => {
                                         {sales.filter(s => s.shipping?.status === 'Returned').map(order => (
                                             <tr key={order.id} style={{ background: '#FEF2F2' }}>
                                                 <td style={{ whiteSpace: 'normal' }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
+                                                    <div style={{ fontWeight: 600 }}>#{order.id.slice(0, 8)}</div>
+                                                    <div style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
                                                 </td>
-                                                <td style={{ fontSize: '12px' }}>
+                                                <td style={{}}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                         {order.items.map((item, idx) => (
                                                             <span key={idx}>
@@ -497,9 +497,10 @@ const Inventory: React.FC = () => {
                                     <p style={{ fontSize: '13px', fontWeight: 500 }}>No restocked orders found.</p>
                                 </div>
                             ) : (
-                                <table className="spreadsheet-table">
+                                <table className="spreadsheet-table compact">
                                     <thead style={{ background: '#EFF6FF' }}>
                                         <tr>
+                                            {currentUser && (currentUser.roleId === 'admin' || currentUser.id === '1') && <th style={{ width: '40px' }}></th>}
                                             <th>Order / Customer</th>
                                             <th>Items Restocked</th>
                                             <th style={{ textAlign: 'right' }}>Date</th>
@@ -509,11 +510,28 @@ const Inventory: React.FC = () => {
                                     <tbody>
                                         {sales.filter(s => s.shipping?.status === 'ReStock').map(order => (
                                             <tr key={order.id} style={{ background: '#EFF6FF' }}>
+                                                {currentUser && (currentUser.roleId === 'admin' || currentUser.id === '1') && (
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (confirm('Are you sure you want to delete this restock history? This will permanently remove the order record.')) {
+                                                                    await deleteOrders([order.id]);
+                                                                    showToast('Restock history deleted', 'success');
+                                                                }
+                                                            }}
+                                                            className="icon-button danger"
+                                                            title="Delete History"
+                                                            style={{ padding: '4px' }}
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </td>
+                                                )}
                                                 <td style={{ whiteSpace: 'normal' }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
+                                                    <div style={{ fontWeight: 600 }}>#{order.id.slice(0, 8)}</div>
+                                                    <div style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
                                                 </td>
-                                                <td style={{ fontSize: '12px' }}>
+                                                <td style={{}}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                         {order.items.map((item, idx) => (
                                                             <span key={idx}>
@@ -522,14 +540,14 @@ const Inventory: React.FC = () => {
                                                         ))}
                                                     </div>
                                                 </td>
-                                                <td style={{ textAlign: 'right', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                <td style={{ textAlign: 'right', color: 'var(--color-text-secondary)' }}>
                                                     {new Date(order.date).toLocaleDateString()}
                                                 </td>
-                                                <td style={{ textAlign: 'center', fontSize: '11px' }}>
+                                                <td style={{ textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: '1.2' }}>
                                                         <span style={{ fontWeight: 500 }}>{order.lastEditedBy || '-'}</span>
                                                         {order.lastEditedAt && (
-                                                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>
+                                                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '9px' }}>
                                                                 {new Date(order.lastEditedAt).toLocaleString()}
                                                             </span>
                                                         )}

@@ -114,6 +114,20 @@ button {
   /* overflow: hidden; Removed to fix sticky - breaks z-index context */
 }
 
+.spreadsheet-table.compact {
+  font-size: 11px !important;
+}
+
+.spreadsheet-table.compact th,
+.spreadsheet-table.compact td {
+  padding: 4px 8px !important;
+  height: auto !important;
+}
+
+.spreadsheet-table.compact th {
+  font-size: 11px !important;
+}
+
 /* Cells */
 .spreadsheet-table th,
 .spreadsheet-table td {
@@ -385,6 +399,16 @@ div:has(> svg) .search-input {
   color: var(--color-primary);
   border-color: var(--color-border);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.icon-button.danger {
+  color: var(--color-text-secondary);
+}
+
+.icon-button.danger:hover {
+  background-color: #FEF2F2;
+  color: #DC2626;
+  border-color: #FECACA;
 }
 
 /* Ensure Headers stay on top of everything */
