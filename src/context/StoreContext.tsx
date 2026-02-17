@@ -861,13 +861,39 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const deleteOrders = async (ids: string[]) => {
-        // Optimistic UI update
+        // 1. Restock Items
+        const ordersToDelete = sales.filter(s => ids.includes(s.id));
+
+        for (const order of ordersToDelete) {
+            // Skip restocking if order status is 'Cancelled' or 'Returned' as stock might have already been handled?
+            // Actually, if it's 'Open' or 'Closed' and valid items, we should restock.
+            // Let's assume deletion always means "undo this sale". Use with caution.
+
+            for (const item of order.items) {
+                // Local Update
+                setProducts(prev => prev.map(p => {
+                    if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
+                    return p;
+                }));
+
+                // DB Update (Increment)
+                const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
+                if (current) {
+                    await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+                }
+            }
+        }
+
+        // 2. Optimistic UI update (Remove Order)
         setSales(prev => prev.filter(sale => !ids.includes(sale.id)));
 
-        // Batch deletion to avoid API limits (e.g. URL length or max row count)
+        // 3. Batch deletion to avoid API limits (e.g. URL length or max row count)
         const BATCH_SIZE = 500;
         for (let i = 0; i < ids.length; i += BATCH_SIZE) {
             const batch = ids.slice(i, i + BATCH_SIZE);
+            // Delete items first (Constraint usually cascades, but good practice)
+            await supabase.from('sale_items').delete().in('sale_id', batch);
+
             const { error } = await supabase.from('sales').delete().in('id', batch);
             if (error) {
                 console.error(`Error deleting batch ${i}-${i + BATCH_SIZE}:`, error);
