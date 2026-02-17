@@ -100,7 +100,12 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             {order.customer?.name}
                         </span>
                         <div className="moc-products-summary" style={{ fontSize: '12px', color: '#4B5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
-                            {order.items.map(i => i.name).join(', ')}
+                            {order.items.length > 0 ? (
+                                <>
+                                    {order.items[order.items.length - 1].name}
+                                    {order.items.length > 1 && <span style={{ color: '#6B7280' }}> + {order.items.length - 1} more</span>}
+                                </>
+                            ) : 'No items'}
                         </div>
                         <div className="moc-meta-row">
                             <span>${order.total.toFixed(2)}</span>
@@ -116,7 +121,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                     <div
                         className="moc-status-dot"
-                        style={{ backgroundColor: getShippingColor(order.shipping?.status) }}
+                        style={{ backgroundColor: order.paymentStatus === 'Cancel' ? '#DC2626' : getShippingColor(order.shipping?.status) }}
                     />
                 </div>
             </div>
