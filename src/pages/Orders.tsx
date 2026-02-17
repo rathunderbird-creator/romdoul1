@@ -820,11 +820,12 @@ const Orders: React.FC = () => {
                                     style={{ paddingLeft: '36px', width: '100%', height: '42px' }}
                                 />
                             </div>
-                            <div style={{ width: isMobile ? '100%' : 'auto' }}>
+                            <div style={{ width: 'auto' }}>
                                 <DateRangePicker
                                     value={dateRange}
                                     onChange={setDateRange}
                                     style={{ width: '100%' }}
+                                    compact={isMobile}
                                 />
                             </div>
                             {isMobile && (

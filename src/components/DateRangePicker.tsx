@@ -8,11 +8,12 @@ interface DateRangePickerProps {
     onChange: (range: { start: string; end: string }) => void;
     className?: string;
     style?: React.CSSProperties;
+    compact?: boolean;
 }
 
 type Preset = 'Lifetime' | 'Today' | 'Yesterday' | 'Last 7 days' | 'Last 30 days' | 'This month' | 'Last month' | 'Custom Range';
 
-const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style }) => {
+const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style, compact = false }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     // Helper to parse "YYYY-MM-DD" as local midnight date
@@ -387,14 +388,14 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                     background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '8px', minWidth: '42px',
                     height: '42px',
-                    width: isMobile ? '100%' : 'auto',
+                    width: '100%',
                     justifyContent: 'center'
                 }}
                 title="Select Date Range"
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CalendarIcon size={18} />
-                    {value.start && (
+                    {!compact && value.start && (
                         <span style={{ fontSize: '13px' }}>
                             {getFormattedDate(value.start)}
                             {value.start !== value.end && ` - ${getFormattedDate(value.end)}`}
