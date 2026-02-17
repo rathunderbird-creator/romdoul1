@@ -107,7 +107,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             <span>•</span>
                             <span>{order.salesman || 'Unknown'}</span>
                             <span>•</span>
-                            <span>{new Date(order.date).toLocaleDateString()}</span>
+                            <span>{new Date(order.date).toLocaleDateString()} {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                     </div>
                 </div>
