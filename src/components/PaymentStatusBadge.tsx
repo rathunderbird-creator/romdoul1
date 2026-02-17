@@ -47,7 +47,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         width: '100%'
     };
 
-    const options = ['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'];
+    const options = ['Unpaid', 'Paid', 'Cancel'];
 
     // Update position when opening
     useEffect(() => {

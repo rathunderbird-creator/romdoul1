@@ -167,7 +167,7 @@ const Orders: React.FC = () => {
     useEffect(() => { localStorage.setItem('orders_dateRange', JSON.stringify(dateRange)); }, [dateRange]);
     useEffect(() => { localStorage.setItem('orders_searchTerm', searchTerm); }, [searchTerm]);
 
-    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState<SortConfig>(null);
 
     // Modals State
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -1258,7 +1258,7 @@ const Orders: React.FC = () => {
                                         onUpdateStatus={(id, status) => {
                                             updateOrderStatus(id, status);
                                             if (status === 'Delivered') {
-                                                const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
+                                                const newPaymentStatus = order.paymentMethod === 'COD' ? 'Unpaid' : 'Unpaid';
                                                 updateOrder(id, { paymentStatus: newPaymentStatus });
                                             } else if (status === 'ReStock') {
                                                 updateOrder(id, { paymentStatus: 'Cancel' });
@@ -1275,8 +1275,9 @@ const Orders: React.FC = () => {
                                             } else if (status === 'Cancel') {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
-                                                // Auto-set Order Status to Returned
-                                                if (order.shipping) {
+                                                // Auto-set Order Status to Returned ONLY if 'Shipped' or 'Delivered'
+                                                const currentStatus = order.shipping?.status || 'Pending';
+                                                if (order.shipping && (currentStatus === 'Shipped' || currentStatus === 'Delivered')) {
                                                     updates.shipping = { ...order.shipping, status: 'Returned' };
                                                 }
                                             } else {
@@ -1538,8 +1539,9 @@ const Orders: React.FC = () => {
                                                                                         } else if (newStatus === 'Cancel') {
                                                                                             updates.amountReceived = 0;
                                                                                             updates.settleDate = null;
-                                                                                            // Auto-set Order Status to Returned
-                                                                                            if (order.shipping) {
+                                                                                            // Auto-set Order Status to Returned ONLY if 'Shipped' or 'Delivered'
+                                                                                            const currentStatus = order.shipping?.status || 'Pending';
+                                                                                            if (order.shipping && (currentStatus === 'Shipped' || currentStatus === 'Delivered')) {
                                                                                                 updates.shipping = { ...order.shipping, status: 'Returned' };
                                                                                             }
                                                                                         } else {
@@ -1548,7 +1550,7 @@ const Orders: React.FC = () => {
                                                                                         }
                                                                                         updateOrder(order.id, updates);
                                                                                     }}
-                                                                                    readOnly={!canEdit || order.shipping?.status === 'ReStock'}
+                                                                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
                                                                                 />
                                                                             </td>
                                                                         );
@@ -1569,11 +1571,16 @@ const Orders: React.FC = () => {
                                                                             }}>
                                                                                 <StatusBadge
                                                                                     status={order.shipping?.status || 'Pending'}
-                                                                                    readOnly={!canEdit || order.shipping?.status === 'ReStock'}
+                                                                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
+                                                                                    disabledOptions={
+                                                                                        (order.shipping?.status === 'Shipped')
+                                                                                            ? ['Ordered', 'Pending']
+                                                                                            : ['Delivered', 'Returned']
+                                                                                    }
                                                                                     onChange={(newStatus: string) => {
                                                                                         updateOrderStatus(order.id, newStatus as any);
                                                                                         if (newStatus === 'Delivered') {
-                                                                                            const newPaymentStatus = order.paymentMethod === 'COD' ? 'Not Settle' : 'Unpaid';
+                                                                                            const newPaymentStatus = order.paymentMethod === 'COD' ? 'Unpaid' : 'Unpaid';
                                                                                             updateOrder(order.id, { paymentStatus: newPaymentStatus });
                                                                                         } else if (newStatus === 'ReStock') {
                                                                                             updateOrder(order.id, { paymentStatus: 'Cancel' });

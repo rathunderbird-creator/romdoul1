@@ -601,21 +601,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }));
         await supabase.from('sale_items').insert(itemsPayload);
 
-        // 3. Update Stock
+        // 3. Update Stock - REMOVED (Stock now deducted on 'Shipped' status)
+        /*
         newSale.items.forEach(async (item) => {
-            // Optimistic local update
-            setProducts(prev => prev.map(p => {
-                if (p.id === item.id) return { ...p, stock: p.stock - item.quantity };
-                return p;
-            }));
-
-            // DB Update (Decrement)
-            // Ideally use RPC for atomic decrement, but here simple update:
-            const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-            if (current) {
-                await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
-            }
+            // ...
         });
+        */
 
         // Update salesOrder config
         const currentSalesOrder = config.salesOrder || [];
@@ -727,19 +718,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }));
         await supabase.from('sale_items').insert(itemsPayload);
 
-        // Update Stock
+        // 3. Update Stock - REMOVED (Stock now deducted on 'Shipped' status)
+        /*
         newSale.items.forEach(async (item) => {
-            // Local
-            setProducts(prev => prev.map(p => {
-                if (p.id === item.id) return { ...p, stock: p.stock - item.quantity };
-                return p;
-            }));
-            // DB
-            const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-            if (current) {
-                await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
-            }
+            // ...
         });
+        */
 
         // Update salesOrder config
         const currentSalesOrder = config.salesOrder || [];
@@ -772,6 +756,45 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             return sale;
         }));
+
+        // --- Stock Management Logic ---
+        const salesOrder = sales.find(s => s.id === id);
+        if (salesOrder) {
+            const oldStatus = salesOrder.shipping?.status || 'Pending';
+
+            // Case 1: Changing TO 'Shipped' (from non-shipped) -> DEDUCT Stock
+            if (status === 'Shipped' && oldStatus !== 'Shipped') {
+                for (const item of salesOrder.items) {
+                    // Local
+                    setProducts(prev => prev.map(p => {
+                        if (p.id === item.id) return { ...p, stock: p.stock - item.quantity };
+                        return p;
+                    }));
+                    // DB
+                    const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
+                    if (current) {
+                        await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
+                    }
+                }
+            }
+            // Case 2: Changing FROM 'Shipped' (to non-shipped) -> RESTORE Stock
+            // EXCEPTION: If changing to 'Delivered', do NOT restore stock (it's still gone).
+            else if (oldStatus === 'Shipped' && status !== 'Shipped' && status !== 'Delivered') {
+                for (const item of salesOrder.items) {
+                    // Local
+                    setProducts(prev => prev.map(p => {
+                        if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
+                        return p;
+                    }));
+                    // DB
+                    const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
+                    if (current) {
+                        await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+                    }
+                }
+            }
+        }
+        // ------------------------------
 
         const updates: any = { shipping_status: status };
         if (trackingNumber) updates.tracking_number = trackingNumber;
@@ -865,21 +888,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const ordersToDelete = sales.filter(s => ids.includes(s.id));
 
         for (const order of ordersToDelete) {
-            // Skip restocking if order status is 'Cancelled' or 'Returned' as stock might have already been handled?
-            // Actually, if it's 'Open' or 'Closed' and valid items, we should restock.
-            // Let's assume deletion always means "undo this sale". Use with caution.
+            // Only restore stock if status is Shipped, Delivered, or Returned
+            // (Pending/Ordered means stock wasn't deducted yet, so don't increment)
+            const status = order.shipping?.status || 'Pending';
+            if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
+                for (const item of order.items) {
+                    // Local Update
+                    setProducts(prev => prev.map(p => {
+                        if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
+                        return p;
+                    }));
 
-            for (const item of order.items) {
-                // Local Update
-                setProducts(prev => prev.map(p => {
-                    if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
-                    return p;
-                }));
-
-                // DB Update (Increment)
-                const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-                if (current) {
-                    await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+                    // DB Update (Increment)
+                    const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
+                    if (current) {
+                        await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+                    }
                 }
             }
         }

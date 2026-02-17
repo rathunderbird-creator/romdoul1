@@ -62,7 +62,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         discount: 0,
         enableDiscount: false,
         shippingStatus: 'Ordered',
-        paymentStatus: 'Pending',
+        paymentStatus: 'Unpaid',
         date: ''
     };
 
@@ -115,11 +115,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 ...prev,
                 amountReceived: 0,
                 paymentMethod: 'COD',
-                paymentStatus: 'Pending'
+                paymentStatus: 'Unpaid'
             }));
         } else {
             if (formData.paymentMethod === 'COD') {
-                setFormData(prev => ({ ...prev, paymentMethod: 'Cash', paymentStatus: 'Paid' }));
+                setFormData(prev => ({ ...prev, paymentMethod: 'Cash', paymentStatus: 'Unpaid' }));
             }
         }
     }, [formData.paymentAfterDelivery]);

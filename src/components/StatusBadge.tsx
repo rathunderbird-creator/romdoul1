@@ -6,9 +6,10 @@ interface StatusBadgeProps {
     status: string;
     onChange?: (status: string) => void;
     readOnly?: boolean;
+    disabledOptions?: string[];
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false }) => {
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [] }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -78,7 +79,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                // Check if click is inside the portal content? 
+                // Check if click is inside the portal content?
                 // Since portal is in body, contains won't work if target is in portal.
                 // We need a ref for the portal content too.
                 const portalElement = document.getElementById(`status-dropdown-${status}-${position.top}`);
@@ -135,28 +136,31 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                 >
                     {options.filter(opt => opt !== 'ReStock' || status === 'ReStock').map((opt) => {
                         const optStyle = getStatusStyle(opt);
+                        const isDisabled = (disabledOptions || []).includes(opt);
+
                         return (
                             <div
                                 key={opt}
-                                onClick={() => handleSelect(opt)}
+                                onClick={() => !isDisabled && handleSelect(opt)}
                                 style={{
                                     padding: '8px 12px',
-                                    cursor: 'pointer',
-                                    fontSize: '12px', // Hardcoded or inherit? Inherit might be risky in body
+                                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                    fontSize: '12px',
                                     fontWeight: 500,
-                                    color: optStyle.color,
+                                    color: isDisabled ? '#9CA3AF' : optStyle.color,
                                     backgroundColor: opt === status ? '#F3F4F6' : 'white',
                                     display: 'flex',
                                     alignItems: 'center',
                                     whiteSpace: 'nowrap',
                                     transition: 'background-color 0.2s',
-                                    borderLeft: `4px solid ${optStyle.color}`
+                                    borderLeft: `4px solid ${isDisabled ? '#E5E7EB' : optStyle.color}`,
+                                    opacity: isDisabled ? 0.6 : 1
                                 }}
                                 onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#F9FAFB';
+                                    if (!isDisabled) e.currentTarget.style.backgroundColor = '#F9FAFB';
                                 }}
                                 onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = opt === status ? '#F3F4F6' : 'white';
+                                    if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? '#F3F4F6' : 'white';
                                 }}
                             >
                                 {opt}
