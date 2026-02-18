@@ -1,4 +1,5 @@
 export { default as CheckoutForm } from './CheckoutForm';
+export { default as BulkEditModal } from './BulkEditModal';
 export { default as ConfigModal } from './ConfigModal';
 export { default as DateRangePicker } from './DateRangePicker';
 export { default as Header } from './Header';

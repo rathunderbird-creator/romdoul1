@@ -5,7 +5,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import { DateRangePicker } from '../components';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 const COLORS = ['var(--color-blue)', 'var(--color-green)', 'var(--color-primary)', 'var(--color-purple)', 'var(--color-red)'];
 
@@ -36,6 +36,7 @@ const Dashboard: React.FC = () => {
     const filteredSales = useMemo(() => {
         if (!dateRange.start || !dateRange.end) return sales;
         const start = new Date(dateRange.start);
+        start.setHours(0, 0, 0, 0);
         const end = new Date(dateRange.end);
         end.setHours(23, 59, 59, 999);
         return sales.filter(sale => {
@@ -91,23 +92,28 @@ const Dashboard: React.FC = () => {
 
 
 
-    const salesBySalesman = useMemo(() => {
-        const data: Record<string, number> = {};
+
+
+    const productsBySalesman = useMemo(() => {
+        const data: Record<string, { count: number; revenue: number }> = {};
         filteredSales.forEach(sale => {
             const salesman = sale.salesman || 'Unassigned';
-            data[salesman] = (data[salesman] || 0) + sale.total;
+            const count = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+
+            if (!data[salesman]) {
+                data[salesman] = { count: 0, revenue: 0 };
+            }
+            data[salesman].count += count;
+            data[salesman].revenue += sale.total;
         });
-        return Object.entries(data).map(([name, value]) => ({ name, value }));
+        return Object.entries(data).map(([name, stats]) => ({
+            name,
+            value: stats.count,
+            revenue: stats.revenue
+        })).sort((a, b) => b.value - a.value);
     }, [filteredSales]);
 
-    const salesByPage = useMemo(() => {
-        const data: Record<string, number> = {};
-        filteredSales.forEach(sale => {
-            const page = sale.customer?.page || 'Unknown';
-            data[page] = (data[page] || 0) + sale.total;
-        });
-        return Object.entries(data).map(([name, value]) => ({ name, value }));
-    }, [filteredSales]);
+
 
     const topProducts = useMemo(() => {
         const productStats: Record<string, { name: string; quantity: number; revenue: number }> = {};
@@ -177,6 +183,71 @@ const Dashboard: React.FC = () => {
             count: data.count,
             cost: data.cost
         })).sort((a, b) => b.count - a.count);
+    }, [filteredSales]);
+
+    const pivotStats = useMemo(() => {
+        const createPivot = () => ({
+            ordered: 0,
+            pending: 0,
+            shipped: 0,
+            delivered: 0,
+            cancelled: 0,
+            returned: 0,
+            restock: 0,
+            total: 0
+        });
+        const salesmanMap: Record<string, ReturnType<typeof createPivot>> = {};
+        const pageMap: Record<string, ReturnType<typeof createPivot>> = {};
+        const productMap: Record<string, ReturnType<typeof createPivot>> = {};
+
+        filteredSales.forEach(sale => {
+            const status = sale.shipping?.status;
+            let field: 'ordered' | 'pending' | 'shipped' | 'delivered' | 'cancelled' | 'returned' | 'restock' | null = null;
+
+            if (status === 'Ordered') field = 'ordered';
+            else if (status === 'Pending') field = 'pending';
+            else if (status === 'Shipped') field = 'shipped';
+            else if (status === 'Delivered') field = 'delivered';
+            else if (status === 'Cancelled') field = 'cancelled';
+            else if (status === 'Returned') field = 'returned';
+            else if (status === 'ReStock') field = 'restock';
+
+            if (!field) return;
+
+            const salesman = sale.salesman || 'Unassigned';
+            const page = sale.customer?.page || 'Unknown';
+
+            sale.items.forEach(item => {
+                const qty = item.quantity;
+
+                // Salesman Pivot
+                if (!salesmanMap[salesman]) salesmanMap[salesman] = createPivot();
+                salesmanMap[salesman][field!] += qty;
+                salesmanMap[salesman].total += qty;
+
+                // Page Pivot
+                if (!pageMap[page]) pageMap[page] = createPivot();
+                pageMap[page][field!] += qty;
+                pageMap[page].total += qty;
+
+                // Product Pivot
+                const product = item.name;
+                if (!productMap[product]) productMap[product] = createPivot();
+                productMap[product][field!] += qty;
+                productMap[product].total += qty;
+            });
+        });
+
+        const formatData = (map: Record<string, ReturnType<typeof createPivot>>) =>
+            Object.entries(map)
+                .map(([name, stats]) => ({ name, ...stats }))
+                .sort((a, b) => b.total - a.total);
+
+        return {
+            salesman: formatData(salesmanMap),
+            page: formatData(pageMap),
+            product: formatData(productMap)
+        };
     }, [filteredSales]);
 
     return (
@@ -261,54 +332,10 @@ const Dashboard: React.FC = () => {
             {/* Reports Grid: 3 Columns */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
                 gap: '16px'
             }}>
-                {/* 1. Sales by Page */}
-                <div className="glass-panel" style={{ padding: '20px', height: '300px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Sales by Page</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={salesByPage}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
-                            <XAxis dataKey="name" stroke="var(--color-text-secondary)" />
-                            <YAxis stroke="var(--color-text-secondary)" tickFormatter={(value) => `$${value}`} />
-                            <Tooltip
-                                cursor={{ fill: 'var(--color-surface-hover)' }}
-                                contentStyle={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-main)', borderRadius: '8px', boxShadow: 'var(--shadow-md)' }}
-                                itemStyle={{ color: 'var(--color-text-main)' }}
-                                formatter={(value: any) => [`$${value}`, 'Revenue']}
-                            />
-                            <Bar dataKey="value" fill="#8884d8" radius={[4, 4, 0, 0]}>
-                                {salesByPage.map((_entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
 
-                {/* 2. Sales by Salesman */}
-                <div className="glass-panel" style={{ padding: '20px', height: '300px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Sales by Salesman</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={salesBySalesman}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
-                            <XAxis dataKey="name" stroke="var(--color-text-secondary)" />
-                            <YAxis stroke="var(--color-text-secondary)" tickFormatter={(value) => `$${value}`} />
-                            <Tooltip
-                                cursor={{ fill: 'var(--color-surface-hover)' }}
-                                contentStyle={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-main)', borderRadius: '8px', boxShadow: 'var(--shadow-md)' }}
-                                itemStyle={{ color: 'var(--color-text-main)' }}
-                                formatter={(value: any) => [`$${value}`, 'Revenue']}
-                            />
-                            <Bar dataKey="value" fill="#8884d8" radius={[4, 4, 0, 0]}>
-                                {salesBySalesman.map((_entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
 
                 {/* 3. Top Selling Products */}
                 <div className="glass-panel" style={{
@@ -455,7 +482,117 @@ const Dashboard: React.FC = () => {
                         </table>
                     </div>
                 </div>
+
+                {/* 7. Products by Salesman */}
+                <div className="glass-panel" style={{ padding: '20px', height: '300px', overflowY: 'auto' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Products by Salesman</h3>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Salesman</th>
+                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Qty</th>
+                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {productsBySalesman.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No data.</td>
+                                    </tr>
+                                ) : (
+                                    productsBySalesman.map((stat, index) => (
+                                        <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                            <td style={{ padding: '8px', fontWeight: 500 }}>{stat.name}</td>
+                                            <td style={{ padding: '8px', textAlign: 'center' }}>{stat.value}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>${stat.revenue.toLocaleString()}</td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
+
+            {/* Pivot Tables Section */}
+            <div style={{
+                marginTop: '20px',
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+                gap: '20px'
+            }}>
+                <PivotTable title="Salesman Report" data={pivotStats.salesman} />
+                <PivotTable title="Page Report" data={pivotStats.page} />
+                <PivotTable title="Product Report" data={pivotStats.product} />
+            </div>
+        </div>
+    );
+};
+
+// Pivot Table Component
+const PivotTable: React.FC<{
+    title: string;
+    data: { name: string; ordered: number; pending: number; shipped: number; delivered: number; cancelled: number; returned: number; restock: number; total: number }[]
+}> = ({ title, data }) => {
+    const totals = data.reduce((acc, curr) => ({
+        ordered: acc.ordered + curr.ordered,
+        pending: acc.pending + curr.pending,
+        shipped: acc.shipped + curr.shipped,
+        delivered: acc.delivered + curr.delivered,
+        cancelled: acc.cancelled + curr.cancelled,
+        returned: acc.returned + curr.returned,
+        restock: acc.restock + curr.restock,
+        total: acc.total + curr.total
+    }), { ordered: 0, pending: 0, shipped: 0, delivered: 0, cancelled: 0, returned: 0, restock: 0, total: 0 });
+
+    return (
+        <div className="glass-panel" style={{ padding: '20px', overflowX: 'auto' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{title}</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '800px' }}>
+                <thead>
+                    <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Name</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Ordered</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Pending</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Shipped</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Delivered</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Returned</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>ReStock</th>
+                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {data.length === 0 ? (
+                        <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No data</td></tr>
+                    ) : (data.map((row, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                            <td style={{ padding: '8px', fontWeight: 500 }}>{row.name}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.ordered || ''}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.pending || ''}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.shipped || ''}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.delivered || ''}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.returned || ''}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.restock || ''}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>{row.total}</td>
+                        </tr>
+                    )))}
+                </tbody>
+                {data.length > 0 && (
+                    <tfoot>
+                        <tr style={{ borderTop: '2px solid var(--color-border)' }}>
+                            <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>Total Summary</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.ordered}</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.pending}</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.shipped}</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.delivered}</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.returned}</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.restock}</td>
+                            <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 'bold' }}>{totals.total}</td>
+                        </tr>
+                    </tfoot>
+                )}
+            </table>
         </div>
     );
 };

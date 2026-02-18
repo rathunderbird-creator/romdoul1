@@ -78,6 +78,7 @@ export interface StoreContextType {
     deleteProduct: (id: string) => void;
     deleteProducts: (ids: string[]) => void;
     updateOrder: (id: string, updates: Partial<Sale>) => void;
+    updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => void;
     reorderRows: (activeIds: string[], overId: string, leadId: string) => void;
 

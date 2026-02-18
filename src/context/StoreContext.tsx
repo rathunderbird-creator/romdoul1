@@ -827,18 +827,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) dbUpdates.customer_snapshot = updates.customer;
-
-        // Add Last Edit Info automatically
-        if (currentUser) {
-            const now = new Date().toISOString();
-            updates.lastEditedAt = now;
-            updates.lastEditedBy = currentUser.name;
-
-            dbUpdates.last_edited_at = now;
-            dbUpdates.last_edited_by = currentUser.name;
-        }
-
-        // Shipping updates need special handling if they are partial, but usually we pass full object or handle in updateOrderStatus
+        // Shipping updates
         if (updates.shipping !== undefined) {
             dbUpdates.shipping_company = updates.shipping.company;
             dbUpdates.tracking_number = updates.shipping.trackingNumber;
@@ -846,41 +835,69 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             dbUpdates.shipping_cost = updates.shipping.cost;
         }
 
-        // 3. Update 'sales' table
-        if (Object.keys(dbUpdates).length > 0) {
-            const { error } = await supabase.from('sales').update(dbUpdates).eq('id', id);
-            if (error) {
-                console.error("Error updating sale:", error);
-                alert(`Failed to update sale: ${error.message}`);
-            }
+        // Add Last Edit Info
+        const now = new Date().toISOString();
+        if (currentUser) {
+            dbUpdates.last_edited_at = now;
+            dbUpdates.last_edited_by = currentUser.name;
         }
 
-        // 4. Handle Items Update (Delete Old -> Insert New)
-        // Only if 'items' is present in updates
-        if (updates.items && updates.items.length > 0) {
-            // A. Delete existing items
-            const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', id);
-            if (deleteError) {
-                console.error("Error deleting old items:", deleteError);
-                return;
+        try {
+            // 3. Update 'sales' table
+            if (Object.keys(dbUpdates).length > 0) {
+                const { error } = await supabase.from('sales').update(dbUpdates).eq('id', id);
+                if (error) throw error;
             }
 
-            // B. Insert new items
-            const itemsPayload = updates.items.map(item => ({
-                sale_id: id,
-                product_id: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: item.quantity,
-                image: item.image
-            }));
+            // 4. Handle Items Update (Delete Old -> Insert New)
+            if (updates.items && updates.items.length > 0) {
+                // A. Delete existing items
+                const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', id);
+                if (deleteError) throw deleteError;
 
-            const { error: insertError } = await supabase.from('sale_items').insert(itemsPayload);
-            if (insertError) {
-                console.error("Error inserting new items:", insertError);
-                alert(`Failed to update items: ${insertError.message}`);
+                // B. Insert new items
+                const itemsPayload = updates.items.map(item => ({
+                    sale_id: id,
+                    product_id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    image: item.image
+                }));
+
+                const { error: insertError } = await supabase.from('sale_items').insert(itemsPayload);
+                if (insertError) throw insertError;
             }
+
+            // Re-fetch to ensure sync? Or rely on optimistic. Optimistic is fine for now.
+
+        } catch (error: any) {
+            console.error('Error updating order:', error);
+            alert(`Failed to update order: ${error.message}`);
+            // Revert local state if needed (complex without previous state copy)
         }
+    };
+
+    const updateOrders = async (ids: string[], updates: Partial<Sale>) => {
+        try {
+            const promises = ids.map(id => {
+                const currentOrder = sales.find(s => s.id === id);
+                if (!currentOrder) return Promise.resolve();
+
+                const mergedUpdates = { ...updates };
+                // Handle deep merge for shipping if needed
+                if (updates.shipping && currentOrder.shipping) {
+                    mergedUpdates.shipping = { ...currentOrder.shipping, ...updates.shipping };
+                }
+                return updateOrder(id, mergedUpdates);
+            });
+            await Promise.all(promises);
+        } catch (error) {
+            console.error('Error batch updating orders:', error);
+            throw error;
+        }
+
+
     };
 
     const deleteOrders = async (ids: string[]) => {
@@ -1412,6 +1429,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addOnlineOrder,
             updateOrderStatus,
             updateOrder,
+            updateOrders,
             deleteOrders,
             reorderRows,
             addCustomer,
