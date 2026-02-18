@@ -147,7 +147,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     ...p,
                     lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
                     stock: Number(p.stock),
-                    price: Number(p.price)
+                    price: Number(p.price),
+                    createdAt: p.created_at
                 })));
             }
 

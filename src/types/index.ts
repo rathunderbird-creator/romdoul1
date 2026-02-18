@@ -7,6 +7,7 @@ export interface Product {
     lowStockThreshold?: number;
     image: string;
     category: string;
+    createdAt?: string;
 }
 
 export interface CartItem extends Product {

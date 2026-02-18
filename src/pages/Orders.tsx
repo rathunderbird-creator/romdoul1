@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Settings, X, List, Store, Truck, CheckCircle, Clock, Eye, Edit, Printer, Upload, Copy, Filter, RefreshCw, ArrowUp, ArrowDown, ChevronsUpDown, Package, User, CreditCard } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -8,6 +9,7 @@ import { useMobile } from '../hooks/useMobile';
 import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal } from '../components';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
+import { generateOrderCopyText } from '../utils/orderUtils';
 import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 import {
@@ -165,6 +167,20 @@ const Orders: React.FC = () => {
     );
 
     const [showFilters, setShowFilters] = useState(false);
+
+    const location = useLocation();
+
+    useEffect(() => {
+        if (location.state && (location.state as any).editOrderId) {
+            const editId = (location.state as any).editOrderId;
+            const orderToEdit = sales.find(s => s.id === editId);
+            if (orderToEdit) {
+                setEditingOrder(orderToEdit);
+                setActiveTab('pos');
+                window.history.replaceState({}, document.title);
+            }
+        }
+    }, [location.state, sales]);
 
     // Persist Filters
     useEffect(() => { localStorage.setItem('orders_statusFilter', JSON.stringify(statusFilter)); }, [statusFilter]);
@@ -752,37 +768,7 @@ const Orders: React.FC = () => {
     };
 
     const handleCopyOrder = (order: Sale) => {
-        // Calculate daily sequence number based on actual data, not clicks
-        // Filter sales for the same day
-        const orderDate = new Date(order.date);
-        const orderDateStr = orderDate.toDateString();
-
-        // Get all sales for this date
-        const dailyOrders = sales
-            .filter(s => new Date(s.date).toDateString() === orderDateStr)
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-        // Find index (1-based)
-        const dailyIndex = dailyOrders.findIndex(s => s.id === order.id) + 1;
-        const sequenceNumber = dailyIndex > 0 ? dailyIndex : '?';
-
-        const lines = [
-            `No: ${sequenceNumber}`,
-            `Order ID: #${order.id.slice(-6)}`,
-            `Date: ${new Date(order.date).toLocaleDateString()}`,
-            `Customer: ${order.customer?.name || 'N/A'}`,
-            `Phone: ${order.customer?.phone || 'N/A'}`,
-            `Address: ${order.customer?.address || 'N/A'}`,
-            `Page: ${order.customer?.page || 'N/A'}`,
-            `Salesman: ${order.salesman || 'N/A'}`,
-            `Shipping: ${order.shipping?.company || 'N/A'}`,
-            `Items:`,
-            ...order.items.map(i => `- ${i.name} x${i.quantity} ($${i.price})`),
-            `Total: $${order.total.toFixed(2)}`,
-            `Remark: ${order.remark || ''}`
-        ];
-
-        const text = lines.join('\n');
+        const text = generateOrderCopyText(order, sales);
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text)
@@ -2068,7 +2054,27 @@ const Orders: React.FC = () => {
                         <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                                 <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Order Details</h2>
-                                <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                        onClick={() => {
+                                            const textToCopy = generateOrderCopyText(selectedOrder, sales);
+                                            navigator.clipboard.writeText(textToCopy);
+                                            showToast('Order info copied!', 'success');
+                                        }}
+                                        style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                        title="Copy Order Info"
+                                    >
+                                        <Copy size={16} /> Copy
+                                    </button>
+                                    <button
+                                        onClick={() => window.open(`/orders/${selectedOrder.id}`, '_blank')}
+                                        style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                        title="Open Details Page"
+                                    >
+                                        <ExternalLink size={16} /> Open
+                                    </button>
+                                    <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
+                                </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
                                 <div>
@@ -2081,7 +2087,13 @@ const Orders: React.FC = () => {
                                     <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Info</h4>
                                     <div style={{ fontSize: '14px', marginBottom: '4px' }}>Date: {new Date(selectedOrder.date).toLocaleString()}</div>
                                     <div style={{ fontSize: '14px', marginBottom: '4px' }}>Status: {getStatusBadge(selectedOrder.shipping?.status || 'Pending')}</div>
-                                    <div style={{ fontSize: '14px' }}>Platform: {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
+                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Platform: {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
+                                    <div style={{ fontSize: '14px', marginTop: '8px', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <ExternalLink size={14} style={{ color: 'var(--color-primary)' }} />
+                                        <a href={`/orders/${selectedOrder.id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                                            Open Order Page
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
 

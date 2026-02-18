@@ -10,7 +10,7 @@ import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product } from '../types';
 
 type SortConfig = {
-    key: keyof Product | 'totalValue';
+    key: keyof Product | 'totalValue' | 'createdAt';
     direction: 'asc' | 'desc';
 } | null;
 
@@ -129,6 +129,12 @@ const Inventory: React.FC = () => {
                     bValue = b.price * b.stock;
                 }
 
+                // Handle 'createdAt' sort key
+                if (sortConfig.key === 'createdAt') {
+                    aValue = new Date(a.createdAt || 0).getTime();
+                    bValue = new Date(b.createdAt || 0).getTime();
+                }
+
                 if (aValue < bValue) {
                     return sortConfig.direction === 'asc' ? -1 : 1;
                 }
@@ -160,7 +166,7 @@ const Inventory: React.FC = () => {
     }, [products, categories]);
 
     // Handlers
-    const handleSort = (key: keyof Product | 'totalValue') => {
+    const handleSort = (key: keyof Product | 'totalValue' | 'createdAt') => {
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -219,12 +225,12 @@ const Inventory: React.FC = () => {
     };
 
     // Render Helpers
-    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' }) => {
+    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' | 'createdAt' }) => {
         if (sortConfig?.key !== columnKey) return <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />;
         return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
     };
 
-    const renderHeader = (label: string, key: keyof Product | 'totalValue', width?: string) => (
+    const renderHeader = (label: string, key: keyof Product | 'totalValue' | 'createdAt', width?: string) => (
         <th
             onClick={() => handleSort(key)}
             style={{ width, cursor: 'pointer' }}
@@ -326,6 +332,7 @@ const Inventory: React.FC = () => {
                                     </th>
                                     {renderHeader('Product', 'name')}
                                     {renderHeader('Category', 'category')}
+                                    {renderHeader('Created', 'createdAt')}
                                     {renderHeader('Price', 'price')}
                                     {renderHeader('Stock', 'stock')}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
@@ -359,6 +366,9 @@ const Inventory: React.FC = () => {
                                             <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
                                                 {product.category}
                                             </span>
+                                        </td>
+                                        <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                            {product.createdAt ? new Date(product.createdAt).toLocaleDateString() : '-'}
                                         </td>
                                         <td style={{ fontWeight: 600 }}>${product.price}</td>
                                         <td>
@@ -403,6 +413,7 @@ const Inventory: React.FC = () => {
                             <tfoot>
                                 <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
                                     <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
+                                    <td style={{ padding: '12px 16px' }}>—</td>
                                     <td style={{ padding: '12px 16px' }}>—</td>
                                     <td style={{ padding: '12px 16px', color: '#10B981' }}>
                                         {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
