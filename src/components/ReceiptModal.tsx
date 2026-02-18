@@ -91,12 +91,12 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                                     <span>Customer:</span>
-                                    <span>{sale.customer.name}</span>
+                                    <span style={{ fontWeight: 'bold' }}>{sale.customer.name}</span>
                                 </div>
                                 {sale.customer.phone && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                                         <span>Phone:</span>
-                                        <span>{sale.customer.phone}</span>
+                                        <span style={{ fontWeight: 'bold' }}>{sale.customer.phone}</span>
                                     </div>
                                 )}
                                 {sale.customer.address && (
