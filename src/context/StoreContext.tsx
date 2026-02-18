@@ -22,6 +22,7 @@ interface ConfigState {
     timezone?: string;
     taxRate?: number;
     currency?: string;
+    logo?: string;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -78,7 +79,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         phone: '+1 (555) 123-4567',
         timezone: 'Asia/Phnom_Penh',
         taxRate: 0,
-        currency: 'USD ($)'
+        currency: 'USD ($)',
+        logo: ''
     });
 
 
@@ -1477,6 +1479,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             isLoading,
             storeAddress: config.storeAddress || '',
             storeName: config.storeName || '',
+            logo: config.logo || '',
             email: config.email || '',
             phone: config.phone || '',
             updateStoreAddress,

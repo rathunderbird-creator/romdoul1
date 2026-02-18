@@ -9,7 +9,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile }) => {
-    const { hasPermission, currentUser } = useStore();
+    const { hasPermission, currentUser, logo } = useStore();
 
 
     // ... (rest of the hook logic is same)
@@ -78,7 +78,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     <div style={{
                         width: '32px',
                         height: '32px',
-                        background: 'var(--color-primary)',
+                        background: logo ? 'transparent' : 'var(--color-primary)',
                         borderRadius: '6px',
                         display: 'flex',
                         alignItems: 'center',
@@ -86,9 +86,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         fontWeight: 'bold',
                         fontSize: '16px',
                         color: 'white',
-                        flexShrink: 0
+                        flexShrink: 0,
+                        overflow: 'hidden'
                     }}>
-                        JBL
+                        {logo ? (
+                            <img src={logo} alt="Store Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        ) : (
+                            'JBL'
+                        )}
                     </div>
                     {!isCollapsed && <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, background: 'none', WebkitTextFillColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>POS</h1>}
 

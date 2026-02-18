@@ -449,6 +449,7 @@ const Inventory: React.FC = () => {
                                         <tr>
                                             <th>Order / Customer</th>
                                             <th>Items</th>
+                                            <th style={{ textAlign: 'right' }}>Date</th>
                                             <th style={{ textAlign: 'right', width: '50px' }}></th>
                                         </tr>
                                     </thead>
@@ -467,6 +468,9 @@ const Inventory: React.FC = () => {
                                                             </span>
                                                         ))}
                                                     </div>
+                                                </td>
+                                                <td style={{ textAlign: 'right', color: 'var(--color-text-secondary)', verticalAlign: 'middle' }}>
+                                                    {new Date(order.date).toLocaleDateString()}
                                                 </td>
                                                 <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
                                                     <button

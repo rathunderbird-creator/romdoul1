@@ -144,6 +144,7 @@ export interface StoreContextType {
     // Store Config
     storeAddress: string;
     storeName: string;
+    logo?: string;
     email: string;
     phone: string;
     timezone: string;
@@ -153,7 +154,7 @@ export interface StoreContextType {
     currency: string;
     updateCurrency: (currency: string) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
-    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string }) => void;
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; logo?: string }) => void;
 
     // User & Role Management
     users: User[];

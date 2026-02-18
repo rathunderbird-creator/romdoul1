@@ -10,6 +10,7 @@ import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCa
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 import { generateOrderCopyText } from '../utils/orderUtils';
+import { useClickOutside } from '../hooks/useClickOutside';
 import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 import {
@@ -73,6 +74,14 @@ const SortableRow = ({ id, children, className, style, onClick, ...props }: any)
 };
 
 const Orders: React.FC = () => {
+    // -- Click Outside Refs --
+    const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
+    const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
+    const payStatusFilterRef = useClickOutside<HTMLDivElement>(() => setIsPayStatusOpen(false));
+    const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
+    const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
+    const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
+
     const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
 
     const isAdmin = currentUser?.roleId === 'admin';
@@ -941,7 +950,7 @@ const Orders: React.FC = () => {
                                 <div style={{ width: isMobile ? 'auto' : 'auto' }}>
                                     {/* DateRangePicker removed from old location */}
                                 </div>
-                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                <div ref={statusFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
                                         onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)}
                                         className="search-input"
@@ -968,7 +977,7 @@ const Orders: React.FC = () => {
 
                                     {isStatusFilterOpen && (
                                         <>
-                                            <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setIsStatusFilterOpen(false)} />
+
                                             <div className="glass-panel" style={{
                                                 position: 'absolute',
                                                 top: '100%',
@@ -983,7 +992,7 @@ const Orders: React.FC = () => {
                                                 background: 'white',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
-                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(status => (
+                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -1013,7 +1022,7 @@ const Orders: React.FC = () => {
 
 
 
-                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                <div ref={salesmanFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
                                         onClick={() => setIsSalesmanOpen(!isSalesmanOpen)}
                                         className="search-input"
@@ -1040,7 +1049,7 @@ const Orders: React.FC = () => {
 
                                     {isSalesmanOpen && (
                                         <>
-                                            <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setIsSalesmanOpen(false)} />
+
                                             <div className="glass-panel" style={{
                                                 position: 'absolute',
                                                 top: '100%',
@@ -1092,7 +1101,7 @@ const Orders: React.FC = () => {
 
 
 
-                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                <div ref={payStatusFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
                                         onClick={() => setIsPayStatusOpen(!isPayStatusOpen)}
                                         className="search-input"
@@ -1119,7 +1128,7 @@ const Orders: React.FC = () => {
 
                                     {isPayStatusOpen && (
                                         <>
-                                            <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setIsPayStatusOpen(false)} />
+
                                             <div className="glass-panel" style={{
                                                 position: 'absolute',
                                                 top: '100%',
@@ -1163,7 +1172,7 @@ const Orders: React.FC = () => {
                                 </div>
 
                                 {/* Shipping Co Filter */}
-                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                <div ref={shippingCoFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
                                         onClick={() => { setIsShippingCoOpen(!isShippingCoOpen); setIsStatusFilterOpen(false); setIsPayStatusOpen(false); }}
                                         className="search-input"
@@ -1189,7 +1198,7 @@ const Orders: React.FC = () => {
                                     </button>
                                     {isShippingCoOpen && (
                                         <>
-                                            <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setIsShippingCoOpen(false)} />
+
                                             <div className="glass-panel" style={{
                                                 position: 'absolute', top: '100%', left: 0, marginTop: '4px',
                                                 padding: '8px', width: '220px', zIndex: 100,
@@ -1274,7 +1283,7 @@ const Orders: React.FC = () => {
 
                                 {showTools && !isMobile && (
                                     <>
-                                        <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                        <div ref={appearanceMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                             <button
                                                 onClick={() => setShowAppearanceMenu(!showAppearanceMenu)}
                                                 style={{
@@ -1347,7 +1356,7 @@ const Orders: React.FC = () => {
                                             )}
                                         </div>
 
-                                        <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                        <div ref={columnMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                             <button
                                                 onClick={() => setShowColumnMenu(!showColumnMenu)}
                                                 style={{

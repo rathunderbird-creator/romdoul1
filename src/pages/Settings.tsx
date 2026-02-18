@@ -11,7 +11,7 @@ import PinPrompt from '../components/PinPrompt';
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, storeName, email, phone, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency } = useStore();
+    const { storeAddress, storeName, logo, email, phone, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -24,7 +24,8 @@ const Settings: React.FC = () => {
         phone: '',
         timezone: '',
         taxRate: 0,
-        currency: ''
+        currency: '',
+        logo: ''
     });
 
     // PIN Protection State
@@ -47,7 +48,8 @@ const Settings: React.FC = () => {
                 phone: currentData.phone,
                 timezone: currentData.timezone,
                 taxRate: currentData.taxRate,
-                currency: currentData.currency
+                currency: currentData.currency,
+                logo: currentData.logo
             });
             showToast('Settings saved successfully!', 'success');
         } catch (error) {
@@ -93,9 +95,10 @@ const Settings: React.FC = () => {
             phone: phone || '',
             timezone: timezone || 'Asia/Phnom_Penh',
             taxRate: taxRate || 0,
-            currency: currency || 'USD ($)'
+            currency: currency || 'USD ($)',
+            logo: logo || ''
         });
-    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency]);
+    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency, logo]);
 
 
 
@@ -216,6 +219,65 @@ const Settings: React.FC = () => {
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             />
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Logo</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{
+                                    width: '64px',
+                                    height: '64px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-border)',
+                                    background: 'var(--color-bg)',
+                                    backgroundImage: localState.logo ? `url(${localState.logo})` : 'none',
+                                    backgroundSize: 'cover',
+                                    backgroundPosition: 'center',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    overflow: 'hidden'
+                                }}>
+                                    {!localState.logo && <Store size={24} color="var(--color-text-secondary)" />}
+                                </div>
+                                <div>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        id="logo-upload"
+                                        style={{ display: 'none' }}
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                if (file.size > 500000) { // 500KB limit
+                                                    showToast('Image too large (max 500KB)', 'error');
+                                                    return;
+                                                }
+                                                const reader = new FileReader();
+                                                reader.onloadend = () => {
+                                                    setLocalState({ ...localState, logo: reader.result as string });
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        onClick={() => document.getElementById('logo-upload')?.click()}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '6px',
+                                            border: '1px solid var(--color-border)',
+                                            background: 'var(--color-surface)',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            color: 'var(--color-text-main)'
+                                        }}
+                                    >
+                                        Upload Logo
+                                    </button>
+                                    <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Max 500KB. Square ratio recommended.</p>
+                                </div>
+                            </div>
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Address</label>

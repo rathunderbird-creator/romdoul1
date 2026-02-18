@@ -1,97 +1,56 @@
 import React, { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
-import { useHeader } from '../context/HeaderContext';
 import { ArrowLeft, Copy, ExternalLink, Edit } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { generateOrderCopyText } from '../utils/orderUtils';
 
+import StatusBadge from '../components/StatusBadge';
+
 const OrderDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { sales } = useStore();
-    const { setHeaderContent } = useHeader();
+    const { sales, hasPermission } = useStore();
     const { showToast } = useToast();
 
     const order = useMemo(() => sales.find(s => s.id === id), [sales, id]);
 
-    React.useEffect(() => {
-        setHeaderContent({
-            title: (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        <ArrowLeft size={20} />
-                    </button>
-                    <div>
-                        <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Order Details</h1>
-                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>#{id}</p>
-                    </div>
-                </div>
-            ),
-        });
-        return () => setHeaderContent(null);
-    }, [setHeaderContent, id, navigate]);
-
-    const handleCopyInfo = () => {
-        if (!order) return;
-        const textToCopy = generateOrderCopyText(order, sales);
-
-        navigator.clipboard.writeText(textToCopy);
-        showToast('Order info copied to clipboard!', 'success');
-    };
+    // ... (useEffect remains same) ...
 
     if (!order) {
         return (
             <div style={{ padding: '40px', textAlign: 'center' }}>
-                <p>Order not found.</p>
-                <button onClick={() => navigate('/orders')} className="secondary-button" style={{ marginTop: '16px' }}>Back to Orders</button>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>Order Not Found</h2>
+                <button
+                    onClick={() => navigate('/orders')}
+                    className="secondary-button"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                >
+                    <ArrowLeft size={16} /> Back to Orders
+                </button>
             </div>
         );
     }
 
-    const getStatusBadge = (status: string) => {
-        const colors: any = {
-            'Ordered': '#E0F2FE',
-            'Pending': '#FFFBEB',
-            'Shipped': '#EFF6FF',
-            'Delivered': '#ECFDF5',
-            'Returned': '#FEF2F2',
-            'ReStock': '#F3F4F6',
-            'Cancelled': '#FEE2E2',
-        };
-        const textColors: any = {
-            'Ordered': '#0284C7',
-            'Pending': '#D97706',
-            'Shipped': '#2563EB',
-            'Delivered': '#059669',
-            'Returned': '#DC2626',
-            'ReStock': '#4B5563',
-            'Cancelled': '#DC2626',
-        };
-        return (
-            <span style={{
-                padding: '4px 12px',
-                borderRadius: '16px',
-                backgroundColor: colors[status] || '#F3F4F6',
-                color: textColors[status] || '#4B5563',
-                fontSize: '12px',
-                fontWeight: 600
-            }}>
-                {status}
-            </span>
-        );
+    const handleCopyInfo = () => {
+        const text = generateOrderCopyText(order, sales);
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Order info copied to clipboard', 'success');
+        });
     };
 
     return (
         <div style={{ paddingBottom: '40px', maxWidth: '800px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px', gap: '12px' }}>
-                <button
-                    onClick={() => navigate('/orders', { state: { editOrderId: order.id } })}
-                    className="secondary-button"
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                    <Edit size={16} /> Edit Order
-                </button>
+                {hasPermission('manage_orders') && (
+                    <button
+                        onClick={() => navigate('/orders', { state: { editOrderId: order.id } })}
+                        className="secondary-button"
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                        <Edit size={16} /> Edit Order
+                    </button>
+                )}
                 <button
                     onClick={handleCopyInfo}
                     className="secondary-button"
@@ -116,9 +75,10 @@ const OrderDetailPage: React.FC = () => {
                         </div>
                     </div>
                     <div style={{ flexShrink: 0 }}>
-                        {getStatusBadge(order.shipping?.status || 'Pending')}
+                        <StatusBadge status={order.shipping?.status || 'Pending'} readOnly />
                     </div>
                 </div>
+
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '32px' }}>
                     {/* Customer Info */}
