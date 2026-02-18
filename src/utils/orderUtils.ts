@@ -29,7 +29,7 @@ export const generateOrderCopyText = (order: Sale, sales: Sale[]) => {
         ...order.items.map(i => `- ${i.name} x${i.quantity} ($${i.price})`),
         `Total: $${order.total.toFixed(2)}`,
         `Remark: ${order.remark || ''}`,
-        `Link: ${window.location.origin}/orders/${order.id}`
+        `Link: ${import.meta.env.VITE_APP_URL || window.location.origin}/orders/${order.id}`
     ];
 
     return lines.join('\n');
