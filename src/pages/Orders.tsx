@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -169,6 +169,7 @@ const Orders: React.FC = () => {
     const [showFilters, setShowFilters] = useState(false);
 
     const location = useLocation();
+    const navigate = useNavigate();
 
     useEffect(() => {
         if (location.state && (location.state as any).editOrderId) {
@@ -177,10 +178,10 @@ const Orders: React.FC = () => {
             if (orderToEdit) {
                 setEditingOrder(orderToEdit);
                 setActiveTab('pos');
-                window.history.replaceState({}, document.title);
+                navigate(location.pathname, { replace: true, state: {} });
             }
         }
-    }, [location.state, sales]);
+    }, [location.state, sales, navigate, location.pathname]);
 
     // Persist Filters
     useEffect(() => { localStorage.setItem('orders_statusFilter', JSON.stringify(statusFilter)); }, [statusFilter]);
