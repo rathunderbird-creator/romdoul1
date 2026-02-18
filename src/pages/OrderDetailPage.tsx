@@ -102,20 +102,20 @@ const OrderDetailPage: React.FC = () => {
             </div>
 
             <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-                    <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                    <div style={{ maxWidth: '100%' }}>
                         <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>Order #{order.id.substring(0, 8)}</h2>
                         <div style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>
                             Placed on {new Date(order.date).toLocaleString()}
                         </div>
-                        <div style={{ marginTop: '8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <ExternalLink size={14} style={{ color: 'var(--color-primary)' }} />
-                            <a href={`/orders/${order.id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                        <div style={{ marginTop: '8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                            <ExternalLink size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                            <a href={`/orders/${order.id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline', wordBreak: 'break-all' }}>
                                 {window.location.origin}/orders/{order.id}
                             </a>
                         </div>
                     </div>
-                    <div>
+                    <div style={{ flexShrink: 0 }}>
                         {getStatusBadge(order.shipping?.status || 'Pending')}
                     </div>
                 </div>
@@ -126,7 +126,7 @@ const OrderDetailPage: React.FC = () => {
                         <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '12px' }}>
                             Customer Details
                         </h3>
-                        <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px', wordBreak: 'break-word' }}>
                             <div style={{ fontWeight: 600 }}>{order.customer?.name}</div>
                             <div>{order.customer?.phone || 'No phone'}</div>
                             <div>{order.customer?.address || 'No address'}</div>
@@ -142,7 +142,7 @@ const OrderDetailPage: React.FC = () => {
                         <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '12px' }}>
                             Payment & Shipping
                         </h3>
-                        <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px', wordBreak: 'break-word' }}>
                             <div>Paying by: <span style={{ fontWeight: 500 }}>{order.paymentMethod}</span></div>
                             <div>Status: <span style={{ fontWeight: 500, color: order.paymentStatus === 'Paid' ? 'var(--color-green)' : 'var(--color-text-main)' }}>{order.paymentStatus}</span></div>
                             {order.shipping?.company && (
@@ -162,8 +162,8 @@ const OrderDetailPage: React.FC = () => {
                 <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>Order Items</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {order.items.map((item, index) => (
-                        <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: index === order.items.length - 1 ? 'none' : '1px solid var(--color-border)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: index === order.items.length - 1 ? 'none' : '1px solid var(--color-border)', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', overflow: 'hidden' }}>
                                 <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     {item.image ? (
                                         <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }} />
