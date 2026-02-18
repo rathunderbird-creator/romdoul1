@@ -9,7 +9,7 @@ interface ReceiptModalProps {
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
-    const { storeAddress, storeName, email, phone } = useStore();
+    const { storeAddress, storeName, phone, logo } = useStore();
     const handlePrint = () => {
         window.print();
     };
@@ -55,59 +55,72 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 </div>
 
                 <div id="receipt-content" style={{ padding: '32px', overflowY: 'auto' }}>
-                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0' }}>{storeName || 'JBL STORE'}</h1>
-                        <div style={{ fontSize: '12px', color: '#666' }}>Premium Audio Experience</div>
-                        {storeAddress && <div style={{ fontSize: '12px', color: '#666' }}>{storeAddress}</div>}
-                        {phone && <div style={{ fontSize: '12px', color: '#666' }}>{phone}</div>}
-                        {email && <div style={{ fontSize: '12px', color: '#666' }}>{email}</div>}
-                        <div style={{ marginTop: '16px', borderTop: '1px dashed #ccc', borderBottom: '1px dashed #ccc', padding: '8px 0' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                <span>Date:</span>
-                                <span>{new Date(sale.date).toLocaleDateString()}</span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                <span>Time:</span>
-                                <span>{new Date(sale.date).toLocaleTimeString()}</span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                <span>Order No:</span>
-                                <span>#{sale.id.slice(-6)}</span>
-                            </div>
-                            {sale.customer && (
-                                <>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                        <span>Customer:</span>
-                                        <span>{sale.customer.name}</span>
-                                    </div>
-                                    {sale.customer.phone && (
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                            <span>Phone:</span>
-                                            <span>{sale.customer.phone}</span>
-                                        </div>
-                                    )}
-                                    {sale.customer.address && (
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                            <span>Address:</span>
-                                            <span style={{ maxWidth: '60%', textAlign: 'right' }}>{sale.customer.address}</span>
-                                        </div>
-                                    )}
-                                    {sale.customer.city && (
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                            <span>City:</span>
-                                            <span>{sale.customer.city}</span>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                            {sale.salesman && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                    <span>Salesman:</span>
-                                    <span>{sale.salesman}</span>
-                                </div>
-                            )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', textAlign: 'left' }}>
+                        {logo && (
+                            <img
+                                src={logo}
+                                alt="Store Logo"
+                                style={{
+                                    width: '60px',
+                                    height: '60px',
+                                    objectFit: 'contain',
+                                    flexShrink: 0
+                                }}
+                            />
+                        )}
+                        <div>
+                            <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'JBL STORE'}</h1>
+                            {storeAddress && <div style={{ fontSize: '12px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{storeAddress}</div>}
+                            {phone && <div style={{ fontSize: '12px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{phone}</div>}
                         </div>
                     </div>
+                    <div style={{ marginTop: '16px', borderTop: '1px dashed #ccc', borderBottom: '1px dashed #ccc', padding: '8px 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                            <span>Date:</span>
+                            <span>{new Date(sale.date).toLocaleDateString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                            <span>Time:</span>
+                            <span>{new Date(sale.date).toLocaleTimeString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                            <span>Order No:</span>
+                            <span>#{sale.id.slice(-6)}</span>
+                        </div>
+                        {sale.customer && (
+                            <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                    <span>Customer:</span>
+                                    <span>{sale.customer.name}</span>
+                                </div>
+                                {sale.customer.phone && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                        <span>Phone:</span>
+                                        <span>{sale.customer.phone}</span>
+                                    </div>
+                                )}
+                                {sale.customer.address && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                        <span>Address:</span>
+                                        <span style={{ maxWidth: '60%', textAlign: 'right' }}>{sale.customer.address}</span>
+                                    </div>
+                                )}
+                                {sale.customer.city && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                        <span>City:</span>
+                                        <span>{sale.customer.city}</span>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                        {sale.salesman && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                <span>Salesman:</span>
+                                <span>{sale.salesman}</span>
+                            </div>
+                        )}
+                    </div>
+
 
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse', marginBottom: '16px' }}>
                         <thead>
@@ -143,10 +156,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                         </div>
                     </div>
 
-                    <div style={{ textAlign: 'center', fontSize: '12px', color: '#666' }}>
-                        <p>Thank you for your purchase!</p>
-                        <p>Please keep this receipt for warranty.</p>
-                    </div>
+
                 </div>
 
                 <div className="no-print" style={{ padding: '16px', borderTop: '1px solid #e5e5e5', backgroundColor: '#f9fafb' }}>
@@ -173,6 +183,15 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
 
             <style>{`
         @media print {
+          @page {
+            size: 80mm 140mm;
+            margin: 0;
+          }
+          body {
+            width: 80mm;
+            margin: 0;
+            padding: 0;
+          }
           body * {
             visibility: hidden;
           }
@@ -183,18 +202,26 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
             position: absolute;
             left: 0;
             top: 0;
-            width: 100%;
+            width: 80mm;
+            min-height: 140mm;
             margin: 0;
             padding: 0;
             box-shadow: none !important;
             max-width: none !important;
+            border-radius: 0;
           }
           .no-print {
             display: none !important;
           }
           #receipt-content {
-            padding: 0 !important;
+            padding: 10px !important;
             overflow: visible !important;
+          }
+          /* Adjust font sizes for small paper */
+          h1 { font-size: 14px !important; }
+          h3 { font-size: 12px !important; }
+          .receipt-container div, .receipt-container span, .receipt-container p, .receipt-container td, .receipt-container th {
+             font-size: 10px !important;
           }
         }
       `}</style>

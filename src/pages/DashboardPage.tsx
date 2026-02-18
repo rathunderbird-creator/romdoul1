@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { DollarSign, ShoppingBag, AlertTriangle, TrendingUp } from 'lucide-react';
+import { DollarSign, ShoppingBag, AlertTriangle, TrendingUp, RefreshCw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -262,8 +262,42 @@ const Dashboard: React.FC = () => {
                 position: 'relative',
                 zIndex: 50
             }}>
-                <div style={{ width: isMobile ? '100%' : 'auto' }}>
-                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    width: isMobile ? '100%' : 'auto'
+                }}>
+                    <div style={{ flex: 1 }}>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
+                    <button
+                        onClick={() => {
+                            const btn = document.getElementById('dashboard-refresh-btn');
+                            if (btn) btn.style.animation = 'spin 1s linear infinite';
+
+                            useStore().refreshData().finally(() => {
+                                if (btn) btn.style.animation = 'none';
+                            });
+                        }}
+                        className="secondary-button"
+                        style={{
+                            padding: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            height: '42px', // Match date picker height roughly
+                            aspectRatio: '1/1'
+                        }}
+                        title="Refresh Data"
+                    >
+                        <RefreshCw id="dashboard-refresh-btn" size={20} />
+                    </button>
+                    <style>{`
+                        @keyframes spin { 
+                            100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
+                        }
+                    `}</style>
                 </div>
             </div>
 

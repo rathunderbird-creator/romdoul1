@@ -16,8 +16,12 @@ const Login: React.FC = () => {
 
     // Auto-select first user if available and none selected
     useEffect(() => {
-        if (!selectedUserId && users.length > 0) {
-            setSelectedUserId(users[0].id);
+        if (users.length > 0) {
+            // If no user selected, OR selected user not in list (stale ID)
+            if (!selectedUserId || !users.find(u => u.id === selectedUserId)) {
+                console.log('Resetting selected user to:', users[0].id);
+                setSelectedUserId(users[0].id);
+            }
         }
     }, [users, selectedUserId]);
 
@@ -62,6 +66,7 @@ const Login: React.FC = () => {
         }
 
         setIsLoading(true);
+        console.log('Login Page: Calling login with:', { pin, selectedUserId });
         try {
             const success = await login(pin, selectedUserId);
             if (success) {

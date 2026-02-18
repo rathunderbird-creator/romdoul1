@@ -88,7 +88,7 @@ export interface StoreContextType {
     updateCustomer: (id: string, customer: Partial<Customer>) => void;
     deleteCustomer: (id: string) => void;
 
-    refreshData: () => Promise<void>;
+    refreshData: (silent?: boolean) => Promise<void>;
 
     shippingCompanies: string[];
     salesmen: string[];

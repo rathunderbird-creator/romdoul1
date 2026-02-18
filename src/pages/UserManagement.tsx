@@ -5,9 +5,24 @@ import { Plus, Edit2, Trash2, Shield, User as UserIcon, Check, Lock } from 'luci
 import { useToast } from '../context/ToastContext';
 
 const UserManagement: React.FC = () => {
-    const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole } = useStore();
+    const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole, refreshData } = useStore();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
+
+    React.useEffect(() => {
+        refreshData(true);
+
+        // Debug: Direct fetch
+        const debugFetch = async () => {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const supabase = createClient(supabaseUrl, supabaseKey);
+            const { data, error } = await supabase.from('users').select('*');
+            console.log('UserManagement: Direct Fetch Result:', { data, error });
+        };
+        debugFetch();
+    }, []);
 
     // User State
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -196,7 +211,11 @@ const UserManagement: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {users.map(user => (
+                                {[...users].sort((a, b) => {
+                                    const roleA = roles.find(r => r.id === a.roleId)?.name || '';
+                                    const roleB = roles.find(r => r.id === b.roleId)?.name || '';
+                                    return roleA.localeCompare(roleB);
+                                }).map(user => (
                                     <tr key={user.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                                         <td style={{ padding: '16px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

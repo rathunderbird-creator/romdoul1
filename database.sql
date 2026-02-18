@@ -62,7 +62,17 @@ CREATE TABLE IF NOT EXISTS sale_items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 5. App Config Table (Stores dynamic configuration, users, roles)
+-- 5. Users Table
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    role_id TEXT NOT NULL,
+    pin TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 6. App Config Table (Stores dynamic configuration, roles)
 CREATE TABLE IF NOT EXISTS app_config (
     id BIGINT PRIMARY KEY,
     data JSONB DEFAULT '{}'::jsonb,
@@ -107,6 +117,11 @@ VALUES (1, '{
     "phone": "+1 (555) 123-4567",
     "storeAddress": "123 Speaker Ave, Audio City"
 }')
+ON CONFLICT (id) DO NOTHING;
+
+-- Initial Data for Users
+INSERT INTO users (id, name, email, role_id, pin)
+VALUES ('admin', 'Admin', 'admin@example.com', 'admin', '1234')
 ON CONFLICT (id) DO NOTHING;
 
 -- Policies (Row Level Security - Optional, referencing for completeness)
