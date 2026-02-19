@@ -156,9 +156,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const hasPermission = (permission: Permission): boolean => {
         if (!currentUser) return false;
+        // Optimization: Admin always has full permissions, check roleId directly first
+        if (currentUser.roleId === 'admin') return true;
+
         const userRole = (config.roles || []).find(r => r.id === currentUser.roleId);
         if (!userRole) return false;
-        // Admin has all permissions implicitly or explicitly
+
+        // Redundant safely check inside role (though optimization above catches it)
         if (userRole.id === 'admin') return true;
         return userRole.permissions.includes(permission);
     };

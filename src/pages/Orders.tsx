@@ -97,6 +97,14 @@ const Orders: React.FC = () => {
         return hasPermission('view_orders') ? 'list' : 'pos';
     });
 
+    console.log('Orders Debug:', {
+        currentUser,
+        roleId: currentUser?.roleId,
+        canCreate: hasPermission('create_orders'),
+        canView: hasPermission('view_orders'),
+        activeTab
+    });
+
     // Update Header Content
     React.useEffect(() => {
         setHeaderContent({
