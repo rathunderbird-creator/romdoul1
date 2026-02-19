@@ -46,7 +46,8 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
 
     const filteredProducts = products.filter(p =>
         (selectedCategory === 'All' || p.category === selectedCategory) &&
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+        p.stock > 0
     ).sort((a, b) => {
         const indexA = pinnedProductIds.indexOf(a.id);
         const indexB = pinnedProductIds.indexOf(b.id);

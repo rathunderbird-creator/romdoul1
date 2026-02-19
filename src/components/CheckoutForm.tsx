@@ -479,7 +479,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
                         <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={productSelection.id} onChange={e => setProductSelection({ ...productSelection, id: e.target.value })}>
                             <option value="">Quick Add Product...</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.price}</option>)}
+                            {products.filter(p => p.stock > 0).map(p => <option key={p.id} value={p.id}>{p.name} - ${p.price}</option>)}
                         </select>
                         <input type="number" className="search-input" style={{ width: '70px', padding: '10px' }} value={productSelection.quantity} onChange={e => setProductSelection({ ...productSelection, quantity: Number(e.target.value) })} min={1} />
                         <button onClick={handleAddItem} className="primary-button" style={{ padding: '0 14px', borderRadius: '8px' }}><Plus size={20} /></button>
