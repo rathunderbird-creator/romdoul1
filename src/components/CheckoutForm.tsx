@@ -147,9 +147,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         onUpdateCart(newItems);
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!formData.customerName) {
             showToast('Customer name is required', 'error');
+            return;
+        }
+        if (!formData.customerPhone) {
+            showToast('Phone number is required', 'error');
             return;
         }
         if (cartItems.length === 0) {
@@ -157,51 +161,56 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             return;
         }
 
-        const discountVal = formData.discount === '' ? 0 : Number(formData.discount);
-        const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const discount = formData.enableDiscount ? discountVal : 0;
-        const total = Math.max(0, subtotal - discount);
+        try {
+            const discountVal = formData.discount === '' ? 0 : Number(formData.discount);
+            const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const discount = formData.enableDiscount ? discountVal : 0;
+            const total = Math.max(0, subtotal - discount);
 
-        const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+            const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
 
-        const orderData = {
-            items: cartItems,
-            total,
-            discount,
-            paymentMethod: formData.paymentMethod,
-            type: 'Online' as const,
-            salesman: formData.salesman,
-            customerCare: formData.customerCare,
-            remark: formData.remark,
-            amountReceived: formData.paymentAfterDelivery ? 0 : amountReceivedVal,
-            settleDate: formData.settleDate,
-            paymentStatus: formData.paymentStatus,
-            customer: {
-                name: formData.customerName,
-                phone: formData.customerPhone,
-                platform: 'Facebook' as const,
-                page: formData.pageName,
-                city: formData.city,
-                address: formData.city ? `${formData.city}, ${formData.address}` : formData.address
-            },
-            shipping: {
-                company: formData.shippingCompany,
-                trackingNumber: (orderToEdit && orderToEdit.shipping) ? orderToEdit.shipping.trackingNumber : '',
-                status: formData.shippingStatus,
-                cost: 0,
-                staffName: formData.staffName
+            const orderData = {
+                items: cartItems,
+                total,
+                discount,
+                paymentMethod: formData.paymentMethod,
+                type: 'Online' as const,
+                salesman: formData.salesman,
+                customerCare: formData.customerCare,
+                remark: formData.remark,
+                amountReceived: formData.paymentAfterDelivery ? 0 : amountReceivedVal,
+                settleDate: formData.settleDate,
+                paymentStatus: formData.paymentStatus,
+                customer: {
+                    name: formData.customerName,
+                    phone: formData.customerPhone,
+                    platform: 'Facebook' as const,
+                    page: formData.pageName,
+                    city: formData.city,
+                    address: formData.city ? `${formData.city}, ${formData.address}` : formData.address
+                },
+                shipping: {
+                    company: formData.shippingCompany,
+                    trackingNumber: (orderToEdit && orderToEdit.shipping) ? orderToEdit.shipping.trackingNumber : '',
+                    status: formData.shippingStatus,
+                    cost: 0,
+                    staffName: formData.staffName
+                }
+            };
+
+            if (orderToEdit) {
+                await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
+                showToast('Order updated', 'success');
+            } else {
+                await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
+                showToast('Order created', 'success');
             }
-        };
 
-        if (orderToEdit) {
-            updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
-            showToast('Order updated', 'success');
-        } else {
-            addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
-            showToast('Order created', 'success');
+            onSuccess();
+        } catch (error) {
+            console.error('Checkout failed:', error);
+            showToast('Failed to save order. Please try again.', 'error');
         }
-
-        onSuccess();
     };
 
     return (
@@ -298,7 +307,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Enter name" />
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Phone Number</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Phone Number <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value })} placeholder="012..." />
                             </div>
                         </div>
@@ -553,7 +562,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             </div >
 
             {isMobile && (
-                <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 10 }}>
+                <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
                     <button onClick={onCancel} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Cancel</button>
                     <button onClick={handleSubmit} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
                 </div>

@@ -334,7 +334,31 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
                             },
                             // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
-                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager')
+                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager' && r.id !== 'salesman'),
+                            {
+                                id: 'store_manager',
+                                name: 'Store Manager',
+                                description: 'Manage store operations',
+                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'salesman',
+                                name: 'Salesman',
+                                description: 'Sales and order viewing',
+                                permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] as any[]
+                            },
+                            {
+                                id: 'cashier',
+                                name: 'Cashier',
+                                description: 'Process sales and payments',
+                                permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'customer_care',
+                                name: 'Customer Care',
+                                description: 'Manage support and orders',
+                                permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] as any[]
+                            }
                         ]
                     };
                     setConfig(updatedConfig);
@@ -413,7 +437,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             id: 'salesman',
                             name: 'Salesman',
                             description: 'Sales and order viewing',
-                            permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders'] as any[]
+                            permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] as any[]
                         }
                     ],
                     storeAddress: '123 Speaker Ave, Audio City',
@@ -760,6 +784,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         if (saleError) {
             console.error("Error creating online order:", saleError);
+            throw new Error("Failed to create order: " + saleError.message);
         }
 
         // Items
@@ -1130,7 +1155,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Skip header row if it somehow got included (check if 'Total' is 'Total' string)
             if (order['Total'] === 'Total' || order['Received'] === 'Received') return;
 
-            const id = order['Order ID'] || crypto.randomUUID();
+            const id = order['Order ID'] || Date.now().toString() + Math.random().toString(36).substring(2);
             const productsStr = order['Products'] || order['Items'] || '';
             const items = parseProductsString(productsStr);
 
@@ -1172,7 +1197,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Prepare Sale Items Records
             items.forEach(item => {
-                const itemId = crypto.randomUUID();
+                const itemId = Date.now().toString() + Math.random().toString(36).substring(2);
                 saleItemsToInsert.push({
                     id: itemId,
                     sale_id: id,
@@ -1343,7 +1368,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (s.items) {
                         s.items.forEach(item => {
                             allItems.push({
-                                id: crypto.randomUUID(), // Generate new ID or use item.id if available (CartItem might not have unique ID in backup if not from DB)
+                                id: Date.now().toString() + Math.random().toString(36).substring(2), // Generate new ID
                                 sale_id: s.id,
                                 product_id: item.id, // This is product ID
                                 name: item.name,
@@ -1404,7 +1429,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // User & Role Management
     const addUser = async (userData: Omit<User, 'id'>) => {
-        const newUser: User = { ...userData, id: crypto.randomUUID() };
+        const newUser: User = { ...userData, id: Date.now().toString() + Math.random().toString(36).substring(2) };
         setUsers(prev => [...prev, newUser]);
 
         await supabase.from('users').insert({

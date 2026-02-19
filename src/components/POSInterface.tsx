@@ -78,6 +78,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
     }
 
     const handleSuccess = () => {
+        // window.alert('Debug: POSInterface handleSuccess called');
         clearCart();
         setViewMode('grid');
         setIsCartOpen(false);

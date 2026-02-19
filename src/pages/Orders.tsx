@@ -958,78 +958,6 @@ const Orders: React.FC = () => {
                                 <div style={{ width: isMobile ? 'auto' : 'auto' }}>
                                     {/* DateRangePicker removed from old location */}
                                 </div>
-                                <div ref={statusFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                    <button
-                                        onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)}
-                                        className="search-input"
-                                        style={{
-                                            minWidth: '160px',
-                                            width: isMobile ? '100%' : 'auto',
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            cursor: 'pointer',
-                                            paddingRight: '12px',
-                                            background: 'white',
-                                            height: '42px'
-                                        }}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <Package size={16} color="var(--color-primary)" />
-                                            <span style={{ fontSize: '13px', color: statusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {statusFilter.length === 0 ? 'All Order Status' : `${statusFilter.length} Selected`}
-                                            </span>
-                                        </div>
-                                        <ChevronDown size={14} color="var(--color-text-secondary)" />
-                                    </button>
-
-                                    {isStatusFilterOpen && (
-                                        <>
-
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: 0,
-                                                marginTop: '4px',
-                                                width: '200px',
-                                                padding: '8px',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '2px',
-                                                zIndex: 100,
-                                                background: 'white',
-                                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                                            }}>
-                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned'].map(status => (
-                                                    <label key={status} style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '10px',
-                                                        padding: '8px 12px',
-                                                        cursor: 'pointer',
-                                                        borderRadius: '6px',
-                                                        transition: 'background 0.2s',
-                                                        backgroundColor: statusFilter.includes(status) ? 'var(--color-bg)' : 'transparent'
-                                                    }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={statusFilter.includes(status)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) setStatusFilter([...statusFilter, status]);
-                                                                else setStatusFilter(statusFilter.filter(s => s !== status));
-                                                            }}
-                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                                                        />
-                                                        <span style={{ fontSize: '13px' }}>{status}</span>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-
-
-
                                 <div ref={salesmanFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
                                         onClick={() => setIsSalesmanOpen(!isSalesmanOpen)}
@@ -1100,6 +1028,78 @@ const Orders: React.FC = () => {
                                                         onClick={() => { setSalesmanFilter(s); setIsSalesmanOpen(false); }}
                                                     >
                                                         <span style={{ fontSize: '13px' }}>{s}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+
+
+                                <div ref={statusFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <button
+                                        onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)}
+                                        className="search-input"
+                                        style={{
+                                            minWidth: '160px',
+                                            width: isMobile ? '100%' : 'auto',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            cursor: 'pointer',
+                                            paddingRight: '12px',
+                                            background: 'white',
+                                            height: '42px'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Package size={16} color="var(--color-primary)" />
+                                            <span style={{ fontSize: '13px', color: statusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                                {statusFilter.length === 0 ? 'All Order Status' : `${statusFilter.length} Selected`}
+                                            </span>
+                                        </div>
+                                        <ChevronDown size={14} color="var(--color-text-secondary)" />
+                                    </button>
+
+                                    {isStatusFilterOpen && (
+                                        <>
+
+                                            <div className="glass-panel" style={{
+                                                position: 'absolute',
+                                                top: '100%',
+                                                left: 0,
+                                                marginTop: '4px',
+                                                width: '200px',
+                                                padding: '8px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '2px',
+                                                zIndex: 100,
+                                                background: 'white',
+                                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                                            }}>
+                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned'].map(status => (
+                                                    <label key={status} style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '10px',
+                                                        padding: '8px 12px',
+                                                        cursor: 'pointer',
+                                                        borderRadius: '6px',
+                                                        transition: 'background 0.2s',
+                                                        backgroundColor: statusFilter.includes(status) ? 'var(--color-bg)' : 'transparent'
+                                                    }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={statusFilter.includes(status)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setStatusFilter([...statusFilter, status]);
+                                                                else setStatusFilter(statusFilter.filter(s => s !== status));
+                                                            }}
+                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '13px' }}>{status}</span>
                                                     </label>
                                                 ))}
                                             </div>
