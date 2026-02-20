@@ -423,26 +423,32 @@ const Orders: React.FC = () => {
             const matchesShippingCo = shippingCoFilter.length === 0 || shippingCoFilter.includes(order.shipping?.company || '');
 
             const lowerTerm = searchTerm.toLowerCase();
-            const matchesSearch =
-                String(order.customer?.name || '').toLowerCase().includes(lowerTerm) ||
-                String(order.id || '').toLowerCase().includes(lowerTerm) ||
-                String(order.customer?.phone || '').toLowerCase().includes(lowerTerm) ||
-                String(order.customer?.address || '').toLowerCase().includes(lowerTerm) ||
-                String(order.customer?.city || '').toLowerCase().includes(lowerTerm) ||
-                String(order.customer?.page || '').toLowerCase().includes(lowerTerm) ||
-                order.items.some(item => String(item.name || '').toLowerCase().includes(lowerTerm) || String(item.model || '').toLowerCase().includes(lowerTerm)) ||
-                String(order.paymentMethod || '').toLowerCase().includes(lowerTerm) ||
-                String(order.total || '').includes(lowerTerm) ||
-                String(order.remark || '').toLowerCase().includes(lowerTerm) ||
-                String(order.shipping?.company || '').toLowerCase().includes(lowerTerm) ||
-                String(order.shipping?.trackingNumber || '').toLowerCase().includes(lowerTerm) ||
-                String(order.shipping?.staffName || '').toLowerCase().includes(lowerTerm) ||
-                String(order.salesman || '').toLowerCase().includes(lowerTerm) ||
-                String(order.customerCare || '').toLowerCase().includes(lowerTerm) ||
-                String(order.paymentStatus || 'Paid').toLowerCase().includes(lowerTerm) ||
-                String(order.shipping?.status || 'Pending').toLowerCase().includes(lowerTerm) ||
-                new Date(order.date).toLocaleDateString().toLowerCase().includes(lowerTerm) ||
-                (order.settleDate ? new Date(order.settleDate).toLocaleDateString().toLowerCase().includes(lowerTerm) : false);
+            // Split by newline, comma, or whitespace to support multiple search terms
+            const searchTokens = lowerTerm.split(/[\n,\s]+/).map(t => t.trim()).filter(t => t.length > 0);
+
+            const matchesSearch = searchTokens.length === 0 || searchTokens.some(token => {
+                return (
+                    String(order.customer?.name || '').toLowerCase().includes(token) ||
+                    String(order.id || '').toLowerCase().includes(token) ||
+                    String(order.customer?.phone || '').toLowerCase().includes(token) ||
+                    String(order.customer?.address || '').toLowerCase().includes(token) ||
+                    String(order.customer?.city || '').toLowerCase().includes(token) ||
+                    String(order.customer?.page || '').toLowerCase().includes(token) ||
+                    order.items.some(item => String(item.name || '').toLowerCase().includes(token) || String(item.model || '').toLowerCase().includes(token)) ||
+                    String(order.paymentMethod || '').toLowerCase().includes(token) ||
+                    String(order.total || '').includes(token) ||
+                    String(order.remark || '').toLowerCase().includes(token) ||
+                    String(order.shipping?.company || '').toLowerCase().includes(token) ||
+                    String(order.shipping?.trackingNumber || '').toLowerCase().includes(token) ||
+                    String(order.shipping?.staffName || '').toLowerCase().includes(token) ||
+                    String(order.salesman || '').toLowerCase().includes(token) ||
+                    String(order.customerCare || '').toLowerCase().includes(token) ||
+                    String(order.paymentStatus || 'Paid').toLowerCase().includes(token) ||
+                    String(order.shipping?.status || 'Pending').toLowerCase().includes(token) ||
+                    new Date(order.date).toLocaleDateString().toLowerCase().includes(token) ||
+                    (order.settleDate ? new Date(order.settleDate).toLocaleDateString().toLowerCase().includes(token) : false)
+                );
+            });
 
             let matchesDate = true;
             if (dateRange.start && dateRange.end) {
