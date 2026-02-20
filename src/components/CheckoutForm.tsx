@@ -15,10 +15,21 @@ interface CheckoutFormProps {
 }
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, salesmen, pages, customerCare, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser } = useStore();
+    const { products, pages, customerCare, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
+
+    // Salesman Logic
+    // Filter out admins (roleId === 'admin')
+    const availableSalesmen = users.filter(u => u.roleId !== 'admin');
+
+    // Determine default salesman based on current user role
+    const defaultSalesman = (() => {
+        if (!currentUser) return '';
+        if (currentUser.roleId === 'salesman') return currentUser.name;
+        return '';
+    })();
 
     // Config Modal State
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -47,13 +58,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     } = {
         customerName: '',
         customerPhone: '',
-        pageName: pages[0] || '',
-        shippingCompany: shippingCompanies[0] || '',
+        pageName: '',
+        shippingCompany: '',
         staffName: '',
         customerCare: customerCare[0] || '',
-        salesman: salesmen[0] || '',
+        salesman: defaultSalesman, // Use calculated default
         remark: '',
-        city: cities[0] || '',
+        city: '',
         address: '',
         amountReceived: 0,
         settleDate: '',
@@ -71,7 +82,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
     useEffect(() => {
         if (orderToEdit) {
-            const city = orderToEdit.customer?.city || cities[0] || '';
+            const city = orderToEdit.customer?.city || '';
             let addressDetails = orderToEdit.customer?.address || '';
 
             // Try to split address details if it starts with city
@@ -84,13 +95,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setFormData({
                 customerName: orderToEdit.customer?.name || '',
                 customerPhone: orderToEdit.customer?.phone || '',
-                pageName: orderToEdit.customer?.page || pages[0] || '',
-                shippingCompany: orderToEdit.shipping?.company || shippingCompanies[0] || '',
+                pageName: orderToEdit.customer?.page || '',
+                shippingCompany: orderToEdit.shipping?.company || '',
                 staffName: orderToEdit.shipping?.staffName || '',
                 customerCare: orderToEdit.customerCare || customerCare[0] || '',
-                salesman: orderToEdit.salesman || salesmen[0] || '',
+                salesman: orderToEdit.salesman || '',
                 remark: orderToEdit.remark || '',
-                city: city,
+                city: city, // uses updated local var city
                 address: addressDetails,
                 amountReceived: orderToEdit.amountReceived || 0,
                 settleDate: orderToEdit.settleDate || '',
@@ -104,9 +115,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             });
         } else {
             // Reset to defaults when not editing
-            setFormData(initialFormState);
+            setFormData({
+                ...initialFormState,
+                salesman: defaultSalesman, // Ensure default is applied
+                customerCare: customerCare[0] || '' // Ensure default is applied
+            });
         }
-    }, [orderToEdit]);
+    }, [orderToEdit, currentUser]); // Added currentUser dependency
 
     // Update payment status when checkbox changes
     useEffect(() => {
@@ -154,6 +169,26 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         }
         if (!formData.customerPhone) {
             showToast('Phone number is required', 'error');
+            return;
+        }
+        if (!formData.city) {
+            showToast('City / Province is required', 'error');
+            return;
+        }
+        if (!formData.pageName) {
+            showToast('Page Source is required', 'error');
+            return;
+        }
+        if (!formData.salesman) {
+            showToast('Salesman is required', 'error');
+            return;
+        }
+        if (!formData.customerCare) {
+            showToast('Customer Care is required', 'error');
+            return;
+        }
+        if (!formData.shippingCompany) {
+            showToast('Shipping Company is required', 'error');
             return;
         }
         if (cartItems.length === 0) {
@@ -247,7 +282,24 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             {(currentUser?.roleId === 'admin' || currentUser?.roleId === 'customer_care') && (
                                 <div style={{ marginBottom: '0' }}>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)', marginBottom: '8px' }}>Order Date</label>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)' }}>Order Date</label>
+                                        <button
+                                            onClick={() => setFormData({ ...formData, date: new Date().toISOString() })}
+                                            style={{
+                                                fontSize: '11px',
+                                                padding: '2px 8px',
+                                                background: 'var(--color-primary-light)',
+                                                color: 'var(--color-primary)',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                fontWeight: 600
+                                            }}
+                                        >
+                                            Set Now
+                                        </button>
+                                    </div>
                                     {isMobile ? (
                                         <div style={{ position: 'relative', width: '100%' }}>
                                             <div style={{
@@ -303,7 +355,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 </div>
                             )}
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Name</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Name <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Enter name" />
                             </div>
                             <div>
@@ -314,10 +366,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.5fr 1fr', gap: isMobile ? '12px' : '20px' }}>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>City / Province</label>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>City / Province <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })}>
-                                            <option value="">Select...</option>
+                                            <option value="">Select City...</option>
                                             {cities.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                         {!isMobile && (
@@ -330,7 +382,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} placeholder="House, Street, etc..." />
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Page Source</label>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Page Source <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.pageName} onChange={e => setFormData({ ...formData, pageName: e.target.value })}>
                                             <option value="">Select Page...</option>
@@ -352,23 +404,27 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
 
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Salesman</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Salesman <span style={{ color: '#EF4444' }}>*</span></label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.salesman} onChange={e => setFormData({ ...formData, salesman: e.target.value })}>
-                                        <option value="">Select...</option>
-                                        {salesmen.map(s => <option key={s} value={s}>{s}</option>)}
+                                    <select
+                                        className="search-input"
+                                        style={{ flex: 1, padding: '10px 12px', background: currentUser?.roleId === 'salesman' ? 'var(--color-bg)' : 'white', opacity: currentUser?.roleId === 'salesman' ? 0.7 : 1 }}
+                                        value={formData.salesman}
+                                        onChange={e => setFormData({ ...formData, salesman: e.target.value })}
+                                        disabled={currentUser?.roleId === 'salesman'}
+                                    >
+                                        <option value="">Select Salesman...</option>
+                                        {availableSalesmen.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
-                                    {!isMobile && (
-                                        <button onClick={() => { setConfigType('salesman'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
-                                    )}
+
                                 </div>
                             </div>
                             {/* Customer Care */}
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Care</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Care <span style={{ color: '#EF4444' }}>*</span></label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.customerCare} onChange={e => setFormData({ ...formData, customerCare: e.target.value })}>
-                                        <option value="">Select...</option>
+                                        <option value="">Select Customer Care...</option>
                                         {customerCare.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                     {!isMobile && (
@@ -377,10 +433,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 </div>
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Company</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Company <span style={{ color: '#EF4444' }}>*</span></label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
-                                        <option value="">Select...</option>
+                                        <option value="">Select Shipping Company...</option>
                                         {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                     {!isMobile && (
@@ -431,7 +487,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
                                         disabled={formData.paymentAfterDelivery}
                                     >
-                                        <option value="">Select...</option>
+                                        <option value="">Select Payment Method...</option>
                                         {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                                     </select>
                                     {!isMobile && (
