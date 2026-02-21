@@ -81,6 +81,7 @@ const Orders: React.FC = () => {
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
     const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
+    const toolsMenuRef = useClickOutside<HTMLDivElement>(() => setShowTools(false));
 
     const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
 
@@ -886,7 +887,7 @@ const Orders: React.FC = () => {
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                     className="search-input"
-                                    style={{ paddingLeft: '36px', width: '100%', height: '42px' }}
+                                    style={{ paddingLeft: '36px', width: '100%', height: '40px', borderRadius: '8px', border: '1px solid var(--color-border)' }}
                                 />
                             </div>
                             {canEdit && selectedIds.size > 0 && (
@@ -902,7 +903,7 @@ const Orders: React.FC = () => {
                                         cursor: 'pointer',
                                         fontWeight: 500,
                                         transition: 'all 0.2s',
-                                        height: '42px',
+                                        height: '40px',
                                         whiteSpace: 'nowrap'
                                     }}
                                     title="Bulk Edit Selected Orders"
@@ -977,7 +978,9 @@ const Orders: React.FC = () => {
                                             cursor: 'pointer',
                                             paddingRight: '12px',
                                             background: 'white',
-                                            height: '42px'
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)'
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1056,7 +1059,9 @@ const Orders: React.FC = () => {
                                             cursor: 'pointer',
                                             paddingRight: '12px',
                                             background: 'white',
-                                            height: '42px'
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)'
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1085,6 +1090,30 @@ const Orders: React.FC = () => {
                                                 background: 'white',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
+                                                <label style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    padding: '8px 12px',
+                                                    cursor: 'pointer',
+                                                    borderRadius: '6px',
+                                                    borderBottom: '1px solid var(--color-border)',
+                                                    marginBottom: '4px'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={statusFilter.length === 5}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setStatusFilter(['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned']);
+                                                            } else {
+                                                                setStatusFilter([]);
+                                                            }
+                                                        }}
+                                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                    />
+                                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                </label>
                                                 {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
@@ -1128,7 +1157,9 @@ const Orders: React.FC = () => {
                                             cursor: 'pointer',
                                             paddingRight: '12px',
                                             background: 'white',
-                                            height: '42px'
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)'
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1157,6 +1188,30 @@ const Orders: React.FC = () => {
                                                 background: 'white',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
+                                                <label style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    padding: '8px 12px',
+                                                    cursor: 'pointer',
+                                                    borderRadius: '6px',
+                                                    borderBottom: '1px solid var(--color-border)',
+                                                    marginBottom: '4px'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={payStatusFilter.length === 6}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setPayStatusFilter(['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel']);
+                                                            } else {
+                                                                setPayStatusFilter([]);
+                                                            }
+                                                        }}
+                                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                    />
+                                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                </label>
                                                 {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
@@ -1199,7 +1254,9 @@ const Orders: React.FC = () => {
                                             cursor: 'pointer',
                                             paddingRight: '12px',
                                             background: 'white',
-                                            height: '42px'
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)'
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1220,6 +1277,29 @@ const Orders: React.FC = () => {
                                                 background: 'white',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
+                                                {shippingCompanies.length > 0 && (
+                                                    <label style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '10px',
+                                                        padding: '8px 12px',
+                                                        cursor: 'pointer',
+                                                        borderRadius: '6px',
+                                                        borderBottom: '1px solid var(--color-border)',
+                                                        marginBottom: '4px'
+                                                    }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={shippingCoFilter.length === shippingCompanies.length && shippingCompanies.length > 0}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setShippingCoFilter([...shippingCompanies]);
+                                                                else setShippingCoFilter([]);
+                                                            }}
+                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                    </label>
+                                                )}
                                                 {shippingCompanies.map(co => (
                                                     <label key={co} style={{
                                                         display: 'flex', alignItems: 'center', gap: '10px',
@@ -1269,7 +1349,8 @@ const Orders: React.FC = () => {
                                         fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
                                         transition: 'all 0.2s',
                                         width: isMobile ? '100%' : 'auto',
-                                        justifyContent: 'center'
+                                        justifyContent: 'center',
+                                        height: '40px'
                                     }}
                                     title="Clear All Filters"
                                 >
@@ -1277,7 +1358,7 @@ const Orders: React.FC = () => {
                                 </button>
 
                                 {!isMobile && (
-                                    <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <div ref={toolsMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                         <button
                                             onClick={() => setShowTools(!showTools)}
                                             style={{
@@ -1286,183 +1367,198 @@ const Orders: React.FC = () => {
                                                 color: showTools ? 'white' : 'var(--color-text-main)',
                                                 cursor: 'pointer',
                                                 display: 'flex', alignItems: 'center', gap: '8px',
-                                                width: '100%', justifyContent: 'center'
+                                                width: '100%', justifyContent: 'center', height: '40px',
+                                                transition: 'all 0.2s'
                                             }}
                                             title="Toggle Tools"
                                         >
                                             <Settings size={18} />
+                                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Tools</span>
+                                            <ChevronDown size={14} style={{ transform: showTools ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                                         </button>
-                                    </div>
-                                )}
 
-                                {showTools && !isMobile && (
-                                    <>
-                                        <div ref={appearanceMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                            <button
-                                                onClick={() => setShowAppearanceMenu(!showAppearanceMenu)}
-                                                style={{
-                                                    padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
-                                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                                    width: '100%', justifyContent: 'center'
-                                                }}
-                                            >
-                                                <Eye size={18} />
-                                                Appearance
-                                            </button>
-                                            {showAppearanceMenu && (
-                                                <div className="glass-panel" style={{
-                                                    position: 'absolute', top: '100%', right: 0, marginTop: '8px',
-                                                    padding: '16px', width: '250px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
-                                                    display: 'flex', flexDirection: 'column', gap: '12px'
-                                                }}>
-                                                    <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
-                                                    <div>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                            <label style={{ fontSize: '13px' }}>Font Size</label>
-                                                            <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.fontSize}px</span>
-                                                        </div>
-                                                        <input
-                                                            type="range" min="9" max="16" value={tableSettings.fontSize}
-                                                            onChange={(e) => setTableSettings({ ...tableSettings, fontSize: parseInt(e.target.value) })}
-                                                            style={{ width: '100%' }}
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                            <label style={{ fontSize: '13px' }}>Row Padding</label>
-                                                            <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.padding}px</span>
-                                                        </div>
-                                                        <input
-                                                            type="range" min="0" max="20" step="1" value={tableSettings.padding}
-                                                            onChange={(e) => setTableSettings({ ...tableSettings, padding: parseInt(e.target.value) })}
-                                                            style={{ width: '100%' }}
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>Row Height</label>
-                                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                                            <button
-                                                                onClick={() => setTableSettings({ ...tableSettings, height: 'auto' })}
-                                                                style={{
-                                                                    flex: 1, padding: '6px', fontSize: '12px',
-                                                                    background: tableSettings.height === 'auto' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                    color: tableSettings.height === 'auto' ? 'white' : 'var(--color-text-main)',
-                                                                    borderRadius: '4px', border: 'none'
-                                                                }}
-                                                            >
-                                                                Auto
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setTableSettings({ ...tableSettings, height: '44px' })}
-                                                                style={{
-                                                                    flex: 1, padding: '6px', fontSize: '12px',
-                                                                    background: tableSettings.height === '44px' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                    color: tableSettings.height === '44px' ? 'white' : 'var(--color-text-main)',
-                                                                    borderRadius: '4px', border: 'none'
-                                                                }}
-                                                            >
-                                                                Fixed
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div ref={columnMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                            <button
-                                                onClick={() => setShowColumnMenu(!showColumnMenu)}
-                                                style={{
-                                                    padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
-                                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                                    width: '100%', justifyContent: 'center'
-                                                }}
-                                            >
-                                                <List size={18} />
-                                                Columns
-                                            </button>
-                                            {showColumnMenu && (
-                                                <div className="glass-panel" style={{
-                                                    position: 'absolute', top: '100%', right: 0, marginTop: '8px',
-                                                    padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
-                                                    display: 'flex', flexDirection: 'column', gap: '8px'
-                                                }}>
-                                                    <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
-                                                    {allColumnsDef.map(col => (
-                                                        <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={visibleColumns.includes(col.id)}
-                                                                onChange={() => {
-                                                                    if (visibleColumns.includes(col.id)) {
-                                                                        setVisibleColumns(visibleColumns.filter(c => c !== col.id));
-                                                                    } else {
-                                                                        setVisibleColumns([...visibleColumns, col.id]);
-                                                                    }
-                                                                }}
-                                                            />
-                                                            {col.label}
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <button
-                                            onClick={handleExportExcel}
-                                            disabled={selectedIds.size === 0}
-                                            style={{
-                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                padding: '10px 16px',
-                                                borderRadius: '8px',
-                                                border: '1px solid var(--color-border)',
+                                        {showTools && (
+                                            <div className="glass-panel" style={{
+                                                position: 'absolute', top: '100%', right: 0, marginTop: '4px',
+                                                padding: '8px', width: '220px', zIndex: 100,
+                                                display: 'flex', flexDirection: 'column', gap: '4px',
                                                 background: 'white',
-                                                color: selectedIds.size > 0 ? '#10B981' : 'var(--color-text-secondary)',
-                                                cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                                                opacity: selectedIds.size > 0 ? 1 : 0.5,
-                                                fontWeight: 500,
-                                                transition: 'all 0.2s',
-                                                width: isMobile ? '100%' : 'auto',
-                                                justifyContent: 'center'
-                                            }}
-                                            title={selectedIds.size === 0 ? "Select orders to export" : "Export selected orders"}
-                                        >
-                                            <Upload size={18} style={{ transform: 'rotate(180deg)' }} />
-                                            Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
-                                        </button>
+                                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                                            }}>
+                                                <div ref={appearanceMenuRef} style={{ position: 'relative', width: '100%' }}>
+                                                    <button
+                                                        onClick={() => { setShowAppearanceMenu(!showAppearanceMenu); setShowColumnMenu(false); }}
+                                                        style={{
+                                                            padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                                            background: showAppearanceMenu ? 'var(--color-bg)' : 'transparent',
+                                                            color: 'var(--color-text-main)', cursor: 'pointer',
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                            width: '100%', textAlign: 'left', fontSize: '13px',
+                                                            transition: 'background 0.2s'
+                                                        }}
+                                                    >
+                                                        <Eye size={16} color="var(--color-primary)" />
+                                                        <span style={{ flex: 1, textAlign: 'left' }}>Appearance</span>
+                                                        <ChevronRight size={14} color="var(--color-text-secondary)" />
+                                                    </button>
+                                                    {showAppearanceMenu && (
+                                                        <div className="glass-panel" style={{
+                                                            position: 'absolute', top: 0, right: '100%', marginRight: '8px',
+                                                            padding: '16px', width: '250px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
+                                                            display: 'flex', flexDirection: 'column', gap: '12px', background: 'white',
+                                                            boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
+                                                        }}>
+                                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
+                                                            <div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                                    <label style={{ fontSize: '13px' }}>Font Size</label>
+                                                                    <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.fontSize}px</span>
+                                                                </div>
+                                                                <input
+                                                                    type="range" min="9" max="16" value={tableSettings.fontSize}
+                                                                    onChange={(e) => setTableSettings({ ...tableSettings, fontSize: parseInt(e.target.value) })}
+                                                                    style={{ width: '100%' }}
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                                    <label style={{ fontSize: '13px' }}>Row Padding</label>
+                                                                    <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.padding}px</span>
+                                                                </div>
+                                                                <input
+                                                                    type="range" min="0" max="20" step="1" value={tableSettings.padding}
+                                                                    onChange={(e) => setTableSettings({ ...tableSettings, padding: parseInt(e.target.value) })}
+                                                                    style={{ width: '100%' }}
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>Row Height</label>
+                                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                                    <button
+                                                                        onClick={() => setTableSettings({ ...tableSettings, height: 'auto' })}
+                                                                        style={{
+                                                                            flex: 1, padding: '6px', fontSize: '12px',
+                                                                            background: tableSettings.height === 'auto' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                            color: tableSettings.height === 'auto' ? 'white' : 'var(--color-text-main)',
+                                                                            borderRadius: '4px', border: 'none', cursor: 'pointer'
+                                                                        }}
+                                                                    >
+                                                                        Auto
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setTableSettings({ ...tableSettings, height: '44px' })}
+                                                                        style={{
+                                                                            flex: 1, padding: '6px', fontSize: '12px',
+                                                                            background: tableSettings.height === '44px' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                            color: tableSettings.height === '44px' ? 'white' : 'var(--color-text-main)',
+                                                                            borderRadius: '4px', border: 'none', cursor: 'pointer'
+                                                                        }}
+                                                                    >
+                                                                        Fixed
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
 
+                                                <div ref={columnMenuRef} style={{ position: 'relative', width: '100%' }}>
+                                                    <button
+                                                        onClick={() => { setShowColumnMenu(!showColumnMenu); setShowAppearanceMenu(false); }}
+                                                        style={{
+                                                            padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                                            background: showColumnMenu ? 'var(--color-bg)' : 'transparent',
+                                                            color: 'var(--color-text-main)', cursor: 'pointer',
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                            width: '100%', textAlign: 'left', fontSize: '13px',
+                                                            transition: 'background 0.2s'
+                                                        }}
+                                                    >
+                                                        <List size={16} color="var(--color-primary)" />
+                                                        <span style={{ flex: 1, textAlign: 'left' }}>Columns</span>
+                                                        <ChevronRight size={14} color="var(--color-text-secondary)" />
+                                                    </button>
+                                                    {showColumnMenu && (
+                                                        <div className="glass-panel" style={{
+                                                            position: 'absolute', top: 0, right: '100%', marginRight: '8px',
+                                                            padding: '16px', width: '200px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
+                                                            display: 'flex', flexDirection: 'column', gap: '8px', background: 'white',
+                                                            boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
+                                                        }}>
+                                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                                                            {allColumnsDef.map(col => (
+                                                                <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={visibleColumns.includes(col.id)}
+                                                                        onChange={() => {
+                                                                            if (visibleColumns.includes(col.id)) {
+                                                                                setVisibleColumns(visibleColumns.filter(c => c !== col.id));
+                                                                            } else {
+                                                                                setVisibleColumns([...visibleColumns, col.id]);
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    {col.label}
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
 
+                                                <button
+                                                    onClick={handleExportExcel}
+                                                    disabled={selectedIds.size === 0}
+                                                    style={{
+                                                        padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                                        background: 'transparent',
+                                                        color: selectedIds.size > 0 ? 'var(--color-text-main)' : 'var(--color-text-secondary)',
+                                                        cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                                        width: '100%', textAlign: 'left', fontSize: '13px',
+                                                        transition: 'background 0.2s', opacity: selectedIds.size > 0 ? 1 : 0.5
+                                                    }}
+                                                >
+                                                    <Upload size={16} color={selectedIds.size > 0 ? '#10B981' : "var(--color-text-secondary)"} style={{ transform: 'rotate(180deg)' }} />
+                                                    Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                                </button>
 
-                                        {canEdit && (
-                                            <button onClick={() => setIsImportModalOpen(true)} className="icon-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }} title="Import Orders">
-                                                <Upload size={18} /> Import
-                                            </button>
+                                                {canEdit && (
+                                                    <button
+                                                        onClick={() => { setIsImportModalOpen(true); setShowTools(false); }}
+                                                        style={{
+                                                            padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                                            background: 'transparent',
+                                                            color: 'var(--color-text-main)', cursor: 'pointer',
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                            width: '100%', textAlign: 'left', fontSize: '13px',
+                                                            transition: 'background 0.2s'
+                                                        }}
+                                                    >
+                                                        <Upload size={16} color="var(--color-primary)" />
+                                                        Import
+                                                    </button>
+                                                )}
+
+                                                {isAdmin && selectedIds.size > 0 && (
+                                                    <button
+                                                        onClick={() => { handleDelete(); setShowTools(false); }}
+                                                        style={{
+                                                            padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                                            background: '#FEE2E2',
+                                                            color: '#DC2626', cursor: 'pointer',
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                            width: '100%', textAlign: 'left', fontSize: '13px',
+                                                            transition: 'background 0.2s', marginTop: '4px'
+                                                        }}
+                                                    >
+                                                        <Trash2 size={16} color="#DC2626" />
+                                                        Delete {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
-                                        {isAdmin && selectedIds.size > 0 && (
-                                            <button
-                                                onClick={handleDelete}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                                    padding: '10px 16px',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid #FECACA',
-                                                    background: '#FEE2E2',
-                                                    color: '#DC2626',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 500,
-                                                    transition: 'all 0.2s',
-                                                    width: isMobile ? '100%' : 'auto',
-                                                    justifyContent: 'center'
-                                                }}
-                                                title="Delete Selected Orders"
-                                            >
-                                                <Trash2 size={18} />
-                                                Delete {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
-                                            </button>
-                                        )}
-                                    </>
+                                    </div>
                                 )}
                                 {
                                     hasPermission('create_orders') && !isMobile && (
