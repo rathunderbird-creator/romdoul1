@@ -168,15 +168,35 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     // Initial Fetch
-    // Initial Fetch
-    // Initial Fetch
     const refreshData = async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
+            const fetchAllSales = async () => {
+                let allSales: any[] = [];
+                let from = 0;
+                const limit = 1000;
+
+                while (true) {
+                    const { data, error } = await supabase
+                        .from('sales')
+                        .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+                        .order('date', { ascending: false })
+                        .range(from, from + limit - 1);
+
+                    if (error) return { data: null, error };
+                    if (!data || data.length === 0) break;
+
+                    allSales = [...allSales, ...data];
+                    if (data.length < limit) break;
+                    from += limit;
+                }
+                return { data: allSales, error: null };
+            };
+
             const [productsResult, customersResult, salesResult, configResult, usersResult] = await Promise.all([
                 supabase.from('products').select('*'),
                 supabase.from('customers').select('*'),
-                supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').order('date', { ascending: false }).range(0, 9999),
+                fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*')
             ]);
@@ -671,6 +691,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // 2. Insert Items
         const itemsPayload = newSale.items.map(item => ({
+            id: Date.now().toString() + Math.random().toString(36).substring(2),
             sale_id: newSale.id,
             product_id: item.id,
             name: item.name,
@@ -789,6 +810,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // Items
         const itemsPayload = newSale.items.map(item => ({
+            id: Date.now().toString() + Math.random().toString(36).substring(2),
             sale_id: newSale.id,
             product_id: item.id,
             name: item.name,
@@ -937,6 +959,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                 // B. Insert new items
                 const itemsPayload = updates.items.map(item => ({
+                    id: Date.now().toString() + Math.random().toString(36).substring(2),
                     sale_id: id,
                     product_id: item.id,
                     name: item.name,
@@ -1150,6 +1173,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const salesToInsert: any[] = [];
         const saleItemsToInsert: any[] = [];
         const localSalesMap: Record<string, any[]> = {}; // Map saleId -> items
+        const processedSaleIds = new Set<string>(); // Keep track of processed IDs
 
         importedOrders.forEach(order => {
             // Skip header row if it somehow got included (check if 'Total' is 'Total' string)
@@ -1168,32 +1192,36 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 amountReceived = total;
             }
 
-            // Prepare Sale Record
-            salesToInsert.push({
-                id: id,
-                date: convertExcelDate(order['Date']) || new Date().toISOString(),
-                customer_snapshot: {
-                    name: order['Customer'] || 'Unknown',
-                    phone: order['Phone'] || '',
-                    address: order['Address'] || '',
-                    city: order['City / Province'] || '',
-                    page: order['Page Name'] || '',
-                    platform: order['Platform'] || 'Facebook'
-                },
-                total: total,
-                payment_method: order['Pay By'] || order['Payment Method'] || 'Cash',
-                payment_status: order['Pay Status'] || order['Payment Status'] || 'Unpaid',
-                order_status: 'Closed',
-                salesman: order['Salesman'] || '',
-                customer_care: order['Customer Care'] || '',
-                amount_received: amountReceived,
-                settle_date: convertExcelDate(order['Settled/Paid Date']) || ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? new Date().toISOString() : null),
-                remark: order['Remark'] || order['Remarks'] || (items.length === 0 ? 'Imported Order' : ''),
-                type: 'POS',
-                shipping_company: order['Shipping Co'] || order['Shipping Company'] || '',
-                tracking_number: order['Tracking ID'] || order['Tracking Number'] || '',
-                shipping_status: order['Ship Status'] || order['Shipping Status'] || 'Pending',
-            });
+            // Prepare Sale Record (only once per ID in this batch)
+            if (!processedSaleIds.has(id)) {
+                processedSaleIds.add(id);
+
+                salesToInsert.push({
+                    id: id,
+                    date: convertExcelDate(order['Date']) || new Date().toISOString(),
+                    customer_snapshot: {
+                        name: order['Customer'] || 'Unknown',
+                        phone: order['Phone'] || '',
+                        address: order['Address'] || '',
+                        city: order['City / Province'] || '',
+                        page: order['Page Name'] || '',
+                        platform: order['Platform'] || 'Facebook'
+                    },
+                    total: total,
+                    payment_method: order['Pay By'] || order['Payment Method'] || 'Cash',
+                    payment_status: order['Pay Status'] || order['Payment Status'] || 'Unpaid',
+                    order_status: 'Closed',
+                    salesman: order['Salesman'] || '',
+                    customer_care: order['Customer Care'] || '',
+                    amount_received: amountReceived,
+                    settle_date: convertExcelDate(order['Settled/Paid Date']) || ((order['Pay Status'] === 'Paid' || order['Pay Status'] === 'Settled') ? new Date().toISOString() : null),
+                    remark: order['Remark'] || order['Remarks'] || (items.length === 0 ? 'Imported Order' : ''),
+                    type: 'POS',
+                    shipping_company: order['Shipping Co'] || order['Shipping Company'] || '',
+                    tracking_number: order['Tracking ID'] || order['Tracking Number'] || '',
+                    shipping_status: order['Ship Status'] || order['Shipping Status'] || 'Pending',
+                });
+            }
 
             // Prepare Sale Items Records
             items.forEach(item => {
@@ -1214,8 +1242,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             });
         });
 
-        // 1. Insert Sales
-        const { data: insertedSales, error: salesError } = await supabase.from('sales').insert(salesToInsert).select();
+        // 1. Upsert Sales
+        const { data: insertedSales, error: salesError } = await supabase.from('sales').upsert(salesToInsert).select();
 
         if (salesError) {
             console.error('Error importing orders:', salesError);
@@ -1224,10 +1252,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // 2. Insert Sale Items (if any)
         if (saleItemsToInsert.length > 0) {
+            // Clear existing items for these sales to prevent duplicates on re-import
+            const saleIdsToClear = salesToInsert.map(s => s.id);
+            await supabase.from('sale_items').delete().in('sale_id', saleIdsToClear);
+
             const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
             if (itemsError) {
                 console.error('Error importing sale items:', itemsError);
-                // Note: Sales were already inserted. We might want to warn user but simpler to throw
+                // Note: Sales were already upserted.
                 throw new Error('Failed to import order items: ' + itemsError.message);
             }
         }

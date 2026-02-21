@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS sales (
     shipping_status TEXT,
     shipping_cost NUMERIC DEFAULT 0,
     customer_snapshot JSONB,
+    last_edited_at TIMESTAMP WITH TIME ZONE,
+    last_edited_by TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
