@@ -29,6 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
         navItems.push({ icon: Package, label: 'Inventory', path: '/inventory' });
+        navItems.push({ icon: LayoutDashboard, label: 'Stock Details', path: '/stock-details' }); // Reusing LayoutDashboard icon or could import another like ClipboardList
     }
 
     if (canManageUsers) {
