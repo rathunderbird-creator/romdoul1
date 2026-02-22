@@ -10,7 +10,7 @@ import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product } from '../types';
 
 type SortConfig = {
-    key: keyof Product | 'totalValue' | 'createdAt';
+    key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid';
     direction: 'asc' | 'desc';
 } | null;
 
@@ -70,7 +70,10 @@ const Inventory: React.FC = () => {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('All');
-    const [sortConfig, setSortConfig] = useState<SortConfig>(null);
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'soldPaid', direction: 'desc' });
+
+    // Daily Stock Summary State
+    const [dailyStockDate, setDailyStockDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -110,8 +113,25 @@ const Inventory: React.FC = () => {
     };
 
     // Derived State
+    const soldPaidMap = useMemo(() => {
+        const map = new Map<string, number>();
+        sales.forEach(sale => {
+            if (sale.paymentStatus === 'Paid' || sale.paymentStatus === 'Settled' || sale.paymentStatus === 'Paid/Settled' as any) {
+                sale.items.forEach(item => {
+                    map.set(item.id, (map.get(item.id) || 0) + item.quantity);
+                });
+            }
+        });
+        return map;
+    }, [sales]);
+
     const filteredAndSortedProducts = useMemo(() => {
-        let result = products.filter(product => {
+        let mappedProducts = products.map(p => ({
+            ...p,
+            soldPaid: soldPaidMap.get(p.id) || 0
+        }));
+
+        let result = mappedProducts.filter(product => {
             const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 product.model.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesCategory = categoryFilter === 'All' || product.category === categoryFilter;
@@ -120,8 +140,8 @@ const Inventory: React.FC = () => {
 
         if (sortConfig) {
             result.sort((a, b) => {
-                let aValue: any = a[sortConfig.key as keyof Product];
-                let bValue: any = b[sortConfig.key as keyof Product];
+                let aValue: any = a[sortConfig.key as keyof typeof a];
+                let bValue: any = b[sortConfig.key as keyof typeof b];
 
                 // Handle 'totalValue' sort key
                 if (sortConfig.key === 'totalValue') {
@@ -135,6 +155,11 @@ const Inventory: React.FC = () => {
                     bValue = new Date(b.createdAt || 0).getTime();
                 }
 
+                if (sortConfig.key === 'soldPaid') {
+                    aValue = a.soldPaid;
+                    bValue = b.soldPaid;
+                }
+
                 if (aValue < bValue) {
                     return sortConfig.direction === 'asc' ? -1 : 1;
                 }
@@ -146,7 +171,7 @@ const Inventory: React.FC = () => {
         }
 
         return result;
-    }, [products, searchTerm, categoryFilter, sortConfig]);
+    }, [products, searchTerm, categoryFilter, sortConfig, soldPaidMap]);
 
     // Calculate Totals
     const stats = useMemo(() => {
@@ -165,8 +190,95 @@ const Inventory: React.FC = () => {
         };
     }, [products, categories]);
 
+    // Daily Stock Calculations
+    const dailyStockData = useMemo(() => {
+        const selectedStartOfDay = new Date(dailyStockDate);
+        selectedStartOfDay.setHours(0, 0, 0, 0);
+        const selectedEndOfDay = new Date(dailyStockDate);
+        selectedEndOfDay.setHours(23, 59, 59, 999);
+
+        // Calculate total sales/returns that happened AFTER this date to reverse-engineer Old Stock limit
+        // Current Stock = Old Stock - Sold (since) + Returned (since) + Bought (since, assuming 0)
+        // Old Stock = Current Stock + Sold (since) - Returned (since)
+
+        // Similarly for the exact date, we just look at sales/returns on that specific date.
+
+        const map = new Map<string, {
+            soldToday: number;
+            returnedToday: number;
+            soldSince: number;
+            returnedSince: number;
+        }>();
+
+        // Initialize maps
+        products.forEach(p => map.set(p.id, { soldToday: 0, returnedToday: 0, soldSince: 0, returnedSince: 0 }));
+
+        sales.forEach(sale => {
+            const saleDate = new Date(sale.date);
+
+            const isToday = saleDate >= selectedStartOfDay && saleDate <= selectedEndOfDay;
+            const isAfterToday = saleDate > selectedEndOfDay;
+
+            // Sold logic (Only counting Paid/Settled for sold logic to match earlier logic? The image just says "Sold")
+            // Let's count all sales that aren't cancelled or returned as sold for the day? Or only Paid?
+            // "Sold (Paid)" logic usually expects paid. We'll use all non-cancelled closed orders as sold for history, 
+            // but the user's previous request strictly wanted Paid. I'll stick to Paid/Settled.
+            const isSold = sale.paymentStatus === 'Paid' || sale.paymentStatus === 'Settled' || sale.paymentStatus === 'Paid/Settled' as any;
+
+            // Return logic (Count returned/restocked items)
+            const isReturned = sale.shipping?.status === 'Returned' || sale.shipping?.status === 'ReStock';
+
+            sale.items.forEach(item => {
+                const data = map.get(item.id);
+                if (!data) return;
+
+                if (isSold && !isReturned) {
+                    if (isToday) data.soldToday += item.quantity;
+                    if (isAfterToday) data.soldSince += item.quantity;
+                }
+
+                if (isReturned) {
+                    if (isToday) data.returnedToday += item.quantity;
+                    if (isAfterToday) data.returnedSince += item.quantity;
+                }
+            });
+        });
+
+        // Map back to array
+        const result = products.map(p => {
+            const data = map.get(p.id)!;
+            // Calculations
+            const newStock = p.stock; // Database source of truth for right now
+            const buy = 0; // Manual placeholder as requested
+
+            // Reversing the flow: 
+            // Old Stock = New Stock (current) + (All Sold Since Start Of Day) - (All Returned Since Start Of Day) - (All Bought)
+            // Wait, New Stock in the sheet is Old Stock - Sold + Return + Buy.
+            // So if today is the day:
+            // Old Stock (Beginning of Day) = Current Stock + Sold Today + Sold Since - Return Today - Return Since
+            const oldStock = newStock + data.soldToday + data.soldSince - data.returnedToday - data.returnedSince;
+
+            // In the sheet: New Stock (End of day) = Old Stock - Sold + Return + Buy
+            // However, Current Stock reflects TODAY's operations + operations since then.
+            // If we are viewing History, New Stock for THAT day = Old Stock (beginning of that day) - Sold Today + Returned Today + Buy Today
+            const newStockEndOfThatDay = oldStock - data.soldToday + data.returnedToday + buy;
+
+            return {
+                ...p,
+                oldStock,
+                soldOnDate: data.soldToday,
+                returnedOnDate: data.returnedToday,
+                buyOnDate: buy,
+                newStockOnDate: newStockEndOfThatDay
+            };
+        });
+
+        // Filter out items with 0 stock and 0 movements so the table isn't cluttered with dead inventory
+        return result.filter(r => r.oldStock !== 0 || r.soldOnDate !== 0 || r.returnedOnDate !== 0 || r.newStockOnDate !== 0);
+    }, [products, sales, dailyStockDate]);
+
     // Handlers
-    const handleSort = (key: keyof Product | 'totalValue' | 'createdAt') => {
+    const handleSort = (key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid') => {
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -225,12 +337,12 @@ const Inventory: React.FC = () => {
     };
 
     // Render Helpers
-    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' | 'createdAt' }) => {
+    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid' }) => {
         if (sortConfig?.key !== columnKey) return <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />;
         return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
     };
 
-    const renderHeader = (label: string, key: keyof Product | 'totalValue' | 'createdAt', width?: string) => (
+    const renderHeader = (label: string, key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid', width?: string) => (
         <th
             onClick={() => handleSort(key)}
             style={{ width, cursor: 'pointer' }}
@@ -335,6 +447,7 @@ const Inventory: React.FC = () => {
                                     {renderHeader('Created', 'createdAt')}
                                     {renderHeader('Price', 'price')}
                                     {renderHeader('Stock', 'stock')}
+                                    {renderHeader('Sold (Paid)', 'soldPaid')}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
                                     {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
                                 </tr>
@@ -380,6 +493,9 @@ const Inventory: React.FC = () => {
                                                 <span style={{ color: '#10B981', fontWeight: 500 }}>{product.stock}</span>
                                             )}
                                         </td>
+                                        <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+                                            {product.soldPaid}
+                                        </td>
                                         {canViewFinancials && (
                                             <td style={{ color: 'var(--color-text-secondary)' }}>
                                                 ${(product.price * product.stock).toLocaleString()}
@@ -418,6 +534,9 @@ const Inventory: React.FC = () => {
                                     <td style={{ padding: '12px 16px', color: '#10B981' }}>
                                         {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
                                     </td>
+                                    <td style={{ padding: '12px 16px', color: 'var(--color-primary)' }}>
+                                        {filteredAndSortedProducts.reduce((sum, p) => sum + p.soldPaid, 0)}
+                                    </td>
                                     {canViewFinancials && (
                                         <td style={{ padding: '12px 16px' }}>
                                             ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
@@ -427,6 +546,60 @@ const Inventory: React.FC = () => {
                                 </tr>
                             </tfoot>
                         </table>
+
+                        {/* Daily Stock Summary Table */}
+                        <div style={{ marginTop: '16px', overflow: 'hidden', borderTop: '2px solid var(--color-border)' }}>
+                            <div style={{ padding: '16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#E0F7FA' }}>
+                                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>Daily Stock Summary</h3>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '13px' }}>Date:</span>
+                                    <input
+                                        type="date"
+                                        className="search-input"
+                                        style={{ background: 'white', padding: '4px 8px', fontSize: '13px' }}
+                                        value={dailyStockDate}
+                                        onChange={e => setDailyStockDate(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ overflow: 'auto' }}>
+                                <table className="spreadsheet-table compact">
+                                    <thead>
+                                        <tr style={{ background: '#E3F2FD' }}>
+                                            <th style={{ width: '25%' }}>Model</th>
+                                            <th style={{ textAlign: 'center' }}>Old Stock</th>
+                                            <th style={{ textAlign: 'center', color: '#DC2626' }}>Sold</th>
+                                            <th style={{ textAlign: 'center' }}>Return</th>
+                                            <th style={{ textAlign: 'center', color: '#9333EA' }}>Buy</th>
+                                            <th style={{ textAlign: 'center', color: '#2563EB' }}>New Stock</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {dailyStockData.map(row => (
+                                            <tr key={row.id}>
+                                                <td style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{row.model || row.name}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.oldStock}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#DC2626' }}>{row.soldOnDate}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.returnedOnDate}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#9333EA' }}>{row.buyOnDate}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#2563EB' }}>{row.newStockOnDate}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot style={{ background: '#FEF08A' }}>
+                                        <tr>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>Total</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.oldStock, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#DC2626' }}>{dailyStockData.reduce((sum, row) => sum + row.soldOnDate, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.returnedOnDate, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#9333EA' }}>{dailyStockData.reduce((sum, row) => sum + row.buyOnDate, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#2563EB' }}>{dailyStockData.reduce((sum, row) => sum + row.newStockOnDate, 0)}</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
                     </div>
 
                     {/* Right Column: Returned & Restocked */}

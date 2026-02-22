@@ -691,7 +691,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // 2. Insert Items
         const itemsPayload = newSale.items.map(item => ({
-            id: Date.now().toString() + Math.random().toString(36).substring(2),
+            id: crypto.randomUUID(),
             sale_id: newSale.id,
             product_id: item.id,
             name: item.name,
@@ -810,7 +810,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // Items
         const itemsPayload = newSale.items.map(item => ({
-            id: Date.now().toString() + Math.random().toString(36).substring(2),
+            id: crypto.randomUUID(),
             sale_id: newSale.id,
             product_id: item.id,
             name: item.name,
@@ -959,7 +959,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                 // B. Insert new items
                 const itemsPayload = updates.items.map(item => ({
-                    id: Date.now().toString() + Math.random().toString(36).substring(2),
+                    id: crypto.randomUUID(),
                     sale_id: id,
                     product_id: item.id,
                     name: item.name,
