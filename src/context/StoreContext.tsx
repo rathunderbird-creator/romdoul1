@@ -699,7 +699,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             quantity: item.quantity
             // image: item.image - Removed to save DB space
         }));
-        await supabase.from('sale_items').insert(itemsPayload);
+        const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
+        if (itemsError) {
+            console.error('Failed to insert items:', itemsError);
+            throw new Error('Failed to insert items: ' + itemsError.message);
+        }
 
         // 3. Update Stock - REMOVED (Stock now deducted on 'Shipped' status)
         /*
@@ -818,7 +822,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             quantity: item.quantity
             // image: item.image - Removed to save DB space
         }));
-        await supabase.from('sale_items').insert(itemsPayload);
+        const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
+        if (itemsError) {
+            console.error('Failed to insert online items:', itemsError);
+            throw new Error('Failed to insert items: ' + itemsError.message);
+        }
 
         // 3. Update Stock - REMOVED (Stock now deducted on 'Shipped' status)
         /*
