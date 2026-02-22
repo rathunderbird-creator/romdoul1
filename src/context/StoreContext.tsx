@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock } from '../types';
+import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction } from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -34,6 +34,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [products, setProducts] = useState<Product[]>([]);
     const [sales, setSales] = useState<Sale[]>([]);
     const [restocks, setRestocks] = useState<Restock[]>([]);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [users, setUsers] = useState<User[]>([]); // Added users state
     const [isLoading, setIsLoading] = useState(true);
@@ -194,13 +195,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return { data: allSales, error: null };
             };
 
-            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult] = await Promise.all([
+            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
                 supabase.from('products').select('*'),
                 supabase.from('customers').select('*'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
-                supabase.from('restocks').select('*').order('date', { ascending: false })
+                supabase.from('restocks').select('*').order('date', { ascending: false }),
+                supabase.from('transactions').select('*').order('date', { ascending: false })
             ]);
 
 
@@ -298,6 +300,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     addedBy: r.added_by,
                     note: r.note
                 })));
+            }
+
+            // Transactions
+            if (transactionsResult && transactionsResult.data) {
+                setTransactions(transactionsResult.data);
             }
 
             // Users
@@ -652,6 +659,53 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const deleteCustomer = async (id: string) => {
         setCustomers(prev => prev.filter(c => c.id !== id));
         await supabase.from('customers').delete().eq('id', id);
+    };
+
+    // Transaction Actions
+    const addTransaction = async (transaction: Omit<Transaction, 'id' | 'created_at'>) => {
+        setIsLoading(true);
+        try {
+            const newTransaction = {
+                ...transaction,
+                id: crypto.randomUUID()
+            };
+            const { data, error } = await supabase.from('transactions').insert([newTransaction]).select().single();
+            if (error) throw error;
+            if (data) setTransactions(prev => [data, ...prev]);
+        } catch (error) {
+            console.error('Error adding transaction:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase.from('transactions').update(updates).eq('id', id).select().single();
+            if (error) throw error;
+            if (data) setTransactions(prev => prev.map(t => t.id === id ? data : t));
+        } catch (error) {
+            console.error('Error updating transaction:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const deleteTransaction = async (id: string) => {
+        setIsLoading(true);
+        try {
+            const { error } = await supabase.from('transactions').delete().eq('id', id);
+            if (error) throw error;
+            setTransactions(prev => prev.filter(t => t.id !== id));
+        } catch (error) {
+            console.error('Error deleting transaction:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // Sales Actions
@@ -1626,6 +1680,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deleteProduct,
             deleteProducts,
             addStock, // Added addStock to context
+            transactions,
+            addTransaction,
+            updateTransaction,
+            deleteTransaction,
             addOnlineOrder,
             updateOrderStatus,
             updateOrder,

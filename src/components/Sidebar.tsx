@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { NavLink } from 'react-router-dom';
 
@@ -29,6 +29,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
         navItems.push({ icon: Package, label: 'Inventory', path: '/inventory' });
+        // Assume users who can view reports or manage inventory can see income/expense for now.
+        // Ideally there's a specific 'manage_transactions' permission. 
+        navItems.push({ icon: Wallet, label: 'Income & Expense', path: '/income-expense' });
     }
 
     if (canManageUsers) {

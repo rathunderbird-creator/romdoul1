@@ -71,11 +71,23 @@ export interface Restock {
     note?: string;
 }
 
+export interface Transaction {
+    id: string;
+    type: 'Income' | 'Expense';
+    amount: number;
+    category?: string;
+    description?: string;
+    date: string;
+    added_by?: string;
+    created_at?: string;
+}
+
 export interface StoreContextType {
     products: Product[];
     cart: CartItem[];
     sales: Sale[];
     restocks: Restock[]; // Added restocks
+    transactions: Transaction[]; // Added transactions
     customers: Customer[]; // Added customers
     addToCart: (product: Product) => void;
     removeFromCart: (productId: string) => void;
@@ -101,6 +113,11 @@ export interface StoreContextType {
     addCustomer: (customer: Omit<Customer, 'id'>) => void;
     updateCustomer: (id: string, customer: Partial<Customer>) => void;
     deleteCustomer: (id: string) => void;
+
+    // Transaction Management
+    addTransaction: (transaction: Omit<Transaction, 'id' | 'created_at'>) => Promise<void>;
+    updateTransaction: (id: string, transaction: Partial<Transaction>) => Promise<void>;
+    deleteTransaction: (id: string) => Promise<void>;
 
     refreshData: (silent?: boolean) => Promise<void>;
 

@@ -431,7 +431,10 @@ const Orders: React.FC = () => {
                 ? (order.shipping?.status !== 'ReStock')
                 : statusFilter.includes(order.shipping?.status || 'Pending');
 
-            const matchesSalesman = salesmanFilter === 'All' || order.salesman === salesmanFilter;
+            const isSalesman = currentUser?.roleId === 'salesman';
+            const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
+
+            const matchesSalesman = effectiveSalesmanFilter === 'All' || order.salesman === effectiveSalesmanFilter;
             const matchesPayStatus = payStatusFilter.length === 0 || payStatusFilter.includes(order.paymentStatus || 'Paid');
             const matchesShippingCo = shippingCoFilter.length === 0 || shippingCoFilter.includes(order.shipping?.company || '');
 
@@ -1024,7 +1027,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <User size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {salesmanFilter === 'All' ? 'All Salesmen' : salesmanFilter}
+                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen') : salesmanFilter}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1059,9 +1062,9 @@ const Orders: React.FC = () => {
                                                 }}
                                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                                 >
-                                                    <span style={{ fontSize: '13px' }}>All Salesmen</span>
+                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
                                                 </label>
-                                                {salesmen.map(s => (
+                                                {currentUser?.roleId !== 'salesman' && salesmen.map(s => (
                                                     <label key={s} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
