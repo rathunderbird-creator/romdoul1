@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission } from '../types';
+import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock } from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -33,6 +33,7 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [products, setProducts] = useState<Product[]>([]);
     const [sales, setSales] = useState<Sale[]>([]);
+    const [restocks, setRestocks] = useState<Restock[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [users, setUsers] = useState<User[]>([]); // Added users state
     const [isLoading, setIsLoading] = useState(true);
@@ -193,12 +194,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return { data: allSales, error: null };
             };
 
-            const [productsResult, customersResult, salesResult, configResult, usersResult] = await Promise.all([
+            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult] = await Promise.all([
                 supabase.from('products').select('*'),
                 supabase.from('customers').select('*'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
-                supabase.from('users').select('*')
+                supabase.from('users').select('*'),
+                supabase.from('restocks').select('*').order('date', { ascending: false })
             ]);
 
 
@@ -283,6 +285,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     });
                     setSales(mappedSales);
                 }
+            }
+
+            // Restocks
+            if (restocksResult.data) {
+                setRestocks(restocksResult.data.map((r: any) => ({
+                    id: r.id,
+                    productId: r.product_id,
+                    quantity: Number(r.quantity),
+                    cost: Number(r.cost),
+                    date: r.date,
+                    addedBy: r.added_by,
+                    note: r.note
+                })));
             }
 
             // Users
@@ -776,6 +791,55 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             alert(`Failed to delete products: ${error.message}`);
         } else {
             setProducts(prev => prev.filter(p => !ids.includes(p.id)));
+        }
+    };
+
+    const addStock = async (productId: string, quantity: number, cost?: number, note?: string) => {
+        setIsLoading(true);
+        try {
+            const id = crypto.randomUUID();
+            const date = new Date().toISOString();
+
+            // 1. Insert restock record
+            const { error: restockError } = await supabase.from('restocks').insert([{
+                id,
+                product_id: productId,
+                quantity,
+                cost: cost || 0,
+                date,
+                added_by: currentUser?.name || 'Unknown',
+                note: note || ''
+            }]);
+
+            if (restockError) throw restockError;
+
+            // 2. Fetch current product stock
+            const product = products.find(p => p.id === productId);
+            if (!product) throw new Error("Product not found");
+
+            const newStock = product.stock + quantity;
+
+            // 3. Update product stock in DB
+            const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
+            if (productError) throw productError;
+
+            // 4. Update local state
+            setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
+            setRestocks([{
+                id,
+                productId,
+                quantity,
+                cost: cost || 0,
+                date,
+                addedBy: currentUser?.name || 'Unknown',
+                note: note || ''
+            }, ...restocks]);
+
+        } catch (error) {
+            console.error('Error adding stock:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -1542,6 +1606,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             products,
             cart,
             sales,
+            restocks, // Added restocks to context
             customers,
             users: users,
             roles: config.roles || [],
@@ -1560,6 +1625,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateProduct,
             deleteProduct,
             deleteProducts,
+            addStock, // Added addStock to context
             addOnlineOrder,
             updateOrderStatus,
             updateOrder,

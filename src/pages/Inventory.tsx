@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, Boxes } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -15,7 +15,7 @@ type SortConfig = {
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, deleteOrders, currentUser } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, deleteOrders, currentUser, addStock, restocks } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -39,7 +39,16 @@ const Inventory: React.FC = () => {
 
     // State
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+    // Restock Form State
+    const [restockData, setRestockData] = useState({
+        productId: '',
+        quantity: 0,
+        cost: 0,
+        note: ''
+    });
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -75,9 +84,7 @@ const Inventory: React.FC = () => {
     // Daily Stock Summary State
     const [dailyStockDate, setDailyStockDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
-    // Pagination State
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(20);
+
 
     // Form State
     type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold'> & {
@@ -197,35 +204,23 @@ const Inventory: React.FC = () => {
         const selectedEndOfDay = new Date(dailyStockDate);
         selectedEndOfDay.setHours(23, 59, 59, 999);
 
-        // Calculate total sales/returns that happened AFTER this date to reverse-engineer Old Stock limit
-        // Current Stock = Old Stock - Sold (since) + Returned (since) + Bought (since, assuming 0)
-        // Old Stock = Current Stock + Sold (since) - Returned (since)
-
-        // Similarly for the exact date, we just look at sales/returns on that specific date.
-
         const map = new Map<string, {
             soldToday: number;
             returnedToday: number;
             soldSince: number;
             returnedSince: number;
+            boughtToday: number;
+            boughtSince: number;
         }>();
 
-        // Initialize maps
-        products.forEach(p => map.set(p.id, { soldToday: 0, returnedToday: 0, soldSince: 0, returnedSince: 0 }));
+        products.forEach(p => map.set(p.id, { soldToday: 0, returnedToday: 0, soldSince: 0, returnedSince: 0, boughtToday: 0, boughtSince: 0 }));
 
         sales.forEach(sale => {
             const saleDate = new Date(sale.date);
-
             const isToday = saleDate >= selectedStartOfDay && saleDate <= selectedEndOfDay;
             const isAfterToday = saleDate > selectedEndOfDay;
 
-            // Sold logic (Only counting Paid/Settled for sold logic to match earlier logic? The image just says "Sold")
-            // Let's count all sales that aren't cancelled or returned as sold for the day? Or only Paid?
-            // "Sold (Paid)" logic usually expects paid. We'll use all non-cancelled closed orders as sold for history, 
-            // but the user's previous request strictly wanted Paid. I'll stick to Paid/Settled.
             const isSold = sale.paymentStatus === 'Paid' || sale.paymentStatus === 'Settled' || sale.paymentStatus === 'Paid/Settled' as any;
-
-            // Return logic (Count returned/restocked items)
             const isReturned = sale.shipping?.status === 'Returned' || sale.shipping?.status === 'ReStock';
 
             sale.items.forEach(item => {
@@ -244,38 +239,42 @@ const Inventory: React.FC = () => {
             });
         });
 
-        // Map back to array
+        restocks.forEach(restock => {
+            const restockDate = new Date(restock.date);
+            const isToday = restockDate >= selectedStartOfDay && restockDate <= selectedEndOfDay;
+            const isAfterToday = restockDate > selectedEndOfDay;
+
+            const data = map.get(restock.productId);
+            if (!data) return;
+
+            if (isToday) data.boughtToday += restock.quantity;
+            if (isAfterToday) data.boughtSince += restock.quantity;
+        });
+
         const result = products.map(p => {
             const data = map.get(p.id)!;
-            // Calculations
-            const newStock = p.stock; // Database source of truth for right now
-            const buy = 0; // Manual placeholder as requested
+            const newStock = p.stock;
 
-            // Reversing the flow: 
-            // Old Stock = New Stock (current) + (All Sold Since Start Of Day) - (All Returned Since Start Of Day) - (All Bought)
-            // Wait, New Stock in the sheet is Old Stock - Sold + Return + Buy.
-            // So if today is the day:
-            // Old Stock (Beginning of Day) = Current Stock + Sold Today + Sold Since - Return Today - Return Since
-            const oldStock = newStock + data.soldToday + data.soldSince - data.returnedToday - data.returnedSince;
+            // Stock at end of today = Current Stock + Sold Since - Returned Since - Bought Since
+            const newStockEndOfThatDay = newStock + data.soldSince - data.returnedSince - data.boughtSince;
 
-            // In the sheet: New Stock (End of day) = Old Stock - Sold + Return + Buy
-            // However, Current Stock reflects TODAY's operations + operations since then.
-            // If we are viewing History, New Stock for THAT day = Old Stock (beginning of that day) - Sold Today + Returned Today + Buy Today
-            const newStockEndOfThatDay = oldStock - data.soldToday + data.returnedToday + buy;
+            // Old Stock = Stock at end of today + Sold Today - Returned Today - Bought Today
+            const oldStock = newStockEndOfThatDay + data.soldToday - data.returnedToday - data.boughtToday;
 
             return {
                 ...p,
                 oldStock,
                 soldOnDate: data.soldToday,
                 returnedOnDate: data.returnedToday,
-                buyOnDate: buy,
+                buyOnDate: data.boughtToday,
                 newStockOnDate: newStockEndOfThatDay
             };
         });
 
-        // Filter out items with 0 stock and 0 movements so the table isn't cluttered with dead inventory
-        return result.filter(r => r.oldStock !== 0 || r.soldOnDate !== 0 || r.returnedOnDate !== 0 || r.newStockOnDate !== 0);
-    }, [products, sales, dailyStockDate]);
+        return result.filter(r => r.oldStock !== 0 || r.soldOnDate !== 0 || r.returnedOnDate !== 0 || r.buyOnDate !== 0 || r.newStockOnDate !== 0)
+            .sort((a, b) => (a.model || a.name).localeCompare(b.model || b.name));
+    }, [products, sales, restocks, dailyStockDate]);
+
 
     // Handlers
     const handleSort = (key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid') => {
@@ -290,6 +289,11 @@ const Inventory: React.FC = () => {
         setEditingProduct(null);
         setFormData(initialFormState);
         setIsModalOpen(true);
+    };
+
+    const openRestockModal = () => {
+        setRestockData({ productId: products.length > 0 ? products[0].id : '', quantity: 0, cost: 0, note: '' });
+        setIsRestockModalOpen(true);
     };
 
     const openEditModal = (product: Product) => {
@@ -322,6 +326,21 @@ const Inventory: React.FC = () => {
             showToast('Product added successfully', 'success');
         }
         setIsModalOpen(false);
+    };
+
+    const handleRestockSave = async () => {
+        if (!restockData.productId || restockData.quantity <= 0) {
+            showToast('Please select a product and enter a valid quantity', 'error');
+            return;
+        }
+
+        try {
+            await addStock(restockData.productId, restockData.quantity, restockData.cost, restockData.note);
+            showToast('Stock added successfully', 'success');
+            setIsRestockModalOpen(false);
+        } catch (error) {
+            showToast('Failed to add stock', 'error');
+        }
     };
 
     const promptDelete = (id: string) => {
@@ -360,14 +379,24 @@ const Inventory: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', gap: '12px' }}>
                     {canManageInventory && (
-                        <button
-                            onClick={openAddModal}
-                            className="primary-button"
-                            style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                        >
-                            <Plus size={20} />
-                            Add Product
-                        </button>
+                        <>
+                            <button
+                                onClick={openAddModal}
+                                className="primary-button"
+                                style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                            >
+                                <Plus size={20} />
+                                Add Product
+                            </button>
+                            <button
+                                onClick={openRestockModal}
+                                className="secondary-button"
+                                style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                            >
+                                <Package size={20} />
+                                Add Stock
+                            </button>
+                        </>
                     )}
                 </div>
             </div>
@@ -409,7 +438,7 @@ const Inventory: React.FC = () => {
             {/* Content: List or Table */}
             {isMobile ? (
                 <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', paddingBottom: '80px' }}>
-                    {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
+                    {filteredAndSortedProducts.map((product) => (
                         <MobileInventoryCard
                             key={product.id}
                             product={product}
@@ -428,10 +457,16 @@ const Inventory: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', height: 'calc(100vh - 200px)' }}>
                     {/* Main Stock Table */}
                     <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <style>{`
+                            .stock-table-14px.spreadsheet-table { font-size: 14px !important; }
+                            .stock-table-14px.spreadsheet-table th, .stock-table-14px.spreadsheet-table td { font-size: 14px !important; }
+                            .stock-table-14px.spreadsheet-table th { padding: 8px 12px !important; }
+                            .stock-table-14px.spreadsheet-table td { padding: 8px 12px !important; }
+                        `}</style>
                         <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10 }}>
                             All Stock ({filteredAndSortedProducts.length})
                         </h3>
-                        <table className="spreadsheet-table compact">
+                        <table className="spreadsheet-table stock-table-14px">
                             <thead>
                                 <tr>
                                     <th style={{ width: '40px', textAlign: 'center' }}>
@@ -443,7 +478,6 @@ const Inventory: React.FC = () => {
                                         />
                                     </th>
                                     {renderHeader('Product', 'name')}
-                                    {renderHeader('Category', 'category')}
                                     {renderHeader('Created', 'createdAt')}
                                     {renderHeader('Price', 'price')}
                                     {renderHeader('Stock', 'stock')}
@@ -453,7 +487,7 @@ const Inventory: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
+                                {filteredAndSortedProducts.map((product) => (
                                     <tr
                                         key={product.id}
                                         className={selectedIds.has(product.id) ? 'selected' : ''}
@@ -471,14 +505,9 @@ const Inventory: React.FC = () => {
                                                 <img src={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'contain', background: 'white', padding: '2px', border: '1px solid var(--color-border)' }} />
                                                 <div>
                                                     <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                                    <div style={{ color: 'var(--color-text-secondary)' }}>{product.model}</div>
+                                                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>{product.model}</div>
                                                 </div>
                                             </div>
-                                        </td>
-                                        <td>
-                                            <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
-                                                {product.category}
-                                            </span>
                                         </td>
                                         <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
                                             {product.createdAt ? new Date(product.createdAt).toLocaleDateString() : '-'}
@@ -528,7 +557,7 @@ const Inventory: React.FC = () => {
                             </tbody>
                             <tfoot>
                                 <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                    <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
+                                    <td colSpan={2} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
                                     <td style={{ padding: '12px 16px' }}>—</td>
                                     <td style={{ padding: '12px 16px' }}>—</td>
                                     <td style={{ padding: '12px 16px', color: '#10B981' }}>
@@ -546,60 +575,6 @@ const Inventory: React.FC = () => {
                                 </tr>
                             </tfoot>
                         </table>
-
-                        {/* Daily Stock Summary Table */}
-                        <div style={{ marginTop: '16px', overflow: 'hidden', borderTop: '2px solid var(--color-border)' }}>
-                            <div style={{ padding: '16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#E0F7FA' }}>
-                                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>Daily Stock Summary</h3>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontWeight: 600, fontSize: '13px' }}>Date:</span>
-                                    <input
-                                        type="date"
-                                        className="search-input"
-                                        style={{ background: 'white', padding: '4px 8px', fontSize: '13px' }}
-                                        value={dailyStockDate}
-                                        onChange={e => setDailyStockDate(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div style={{ overflow: 'auto' }}>
-                                <table className="spreadsheet-table compact">
-                                    <thead>
-                                        <tr style={{ background: '#E3F2FD' }}>
-                                            <th style={{ width: '25%' }}>Model</th>
-                                            <th style={{ textAlign: 'center' }}>Old Stock</th>
-                                            <th style={{ textAlign: 'center', color: '#DC2626' }}>Sold</th>
-                                            <th style={{ textAlign: 'center' }}>Return</th>
-                                            <th style={{ textAlign: 'center', color: '#9333EA' }}>Buy</th>
-                                            <th style={{ textAlign: 'center', color: '#2563EB' }}>New Stock</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {dailyStockData.map(row => (
-                                            <tr key={row.id}>
-                                                <td style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{row.model || row.name}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.oldStock}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#DC2626' }}>{row.soldOnDate}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.returnedOnDate}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#9333EA' }}>{row.buyOnDate}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#2563EB' }}>{row.newStockOnDate}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot style={{ background: '#FEF08A' }}>
-                                        <tr>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>Total</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.oldStock, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#DC2626' }}>{dailyStockData.reduce((sum, row) => sum + row.soldOnDate, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.returnedOnDate, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#9333EA' }}>{dailyStockData.reduce((sum, row) => sum + row.buyOnDate, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#2563EB' }}>{dailyStockData.reduce((sum, row) => sum + row.newStockOnDate, 0)}</th>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-
                     </div>
 
                     {/* Right Column: Returned & Restocked */}
@@ -747,6 +722,62 @@ const Inventory: React.FC = () => {
                                 </table>
                             )}
                         </div>
+
+                        {/* Daily Stock Summary Table */}
+                        <div className="glass-panel" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)', flex: 1 }}>
+                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#E0F7FA', position: 'sticky', top: 0, zIndex: 10 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Layers size={16} /> Daily Stock Summary
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '13px' }}>Date:</span>
+                                    <input
+                                        type="date"
+                                        className="search-input"
+                                        style={{ background: 'white', padding: '4px 8px', fontSize: '13px' }}
+                                        value={dailyStockDate}
+                                        onChange={e => setDailyStockDate(e.target.value)}
+                                    />
+                                </div>
+                            </h3>
+                            <div style={{ overflow: 'auto' }}>
+                                <table className="spreadsheet-table compact">
+                                    <thead>
+                                        <tr style={{ background: '#E3F2FD' }}>
+                                            <th style={{ width: '25%' }}>Model</th>
+                                            <th style={{ textAlign: 'center' }}>Old Stock</th>
+                                            <th style={{ textAlign: 'center', color: '#DC2626' }}>Sold</th>
+                                            <th style={{ textAlign: 'center' }}>Return</th>
+                                            <th style={{ textAlign: 'center', color: '#9333EA' }}>Buy</th>
+                                            <th style={{ textAlign: 'center', color: '#2563EB' }}>New Stock</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {dailyStockData.map(row => (
+                                            <tr key={row.id}>
+                                                <td style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{row.model || row.name}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.oldStock}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#DC2626' }}>{row.soldOnDate || ''}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.returnedOnDate || ''}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#9333EA' }}>{row.buyOnDate || ''}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#2563EB' }}>{row.newStockOnDate}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot style={{ background: '#FEF08A' }}>
+                                        <tr>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>Total Summary</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.oldStock, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#DC2626' }}>{dailyStockData.reduce((sum, row) => sum + row.soldOnDate, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.returnedOnDate, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#9333EA' }}>{dailyStockData.reduce((sum, row) => sum + row.buyOnDate, 0)}</th>
+                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#2563EB' }}>{dailyStockData.reduce((sum, row) => sum + row.newStockOnDate, 0)}</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             )}
@@ -782,72 +813,7 @@ const Inventory: React.FC = () => {
                 </div>
             )}
 
-            {/* Pagination */}
-            {filteredAndSortedProducts.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 4px' }}>
-                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredAndSortedProducts.length)} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length} products
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            <span>Rows per page:</span>
-                            <select
-                                value={itemsPerPage}
-                                onChange={(e) => {
-                                    setItemsPerPage(Number(e.target.value));
-                                    setCurrentPage(1);
-                                }}
-                                style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '6px',
-                                    border: '1px solid var(--color-border)',
-                                    background: 'var(--color-surface)',
-                                    color: 'var(--color-text-main)',
-                                    fontSize: '13px',
-                                    outline: 'none',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                            </select>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button
-                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                disabled={currentPage === 1}
-                                style={{
-                                    padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                    background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
-                                    color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}
-                            >
-                                <ChevronLeft size={16} />
-                            </button>
-                            <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
-                            </span>
-                            <button
-                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
-                                disabled={currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
-                                style={{
-                                    padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                    background: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
-                                    color: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                    cursor: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}
-                            >
-                                <ChevronRight size={16} />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
 
 
             {/* Bulk Actions Bar */}
@@ -949,6 +915,55 @@ const Inventory: React.FC = () => {
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                 <button onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button onClick={handleSave} className="primary-button" style={{ padding: '10px 24px' }}>{editingProduct ? 'Save Changes' : 'Add Product'}</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Add Stock Modal */}
+            {
+                isRestockModalOpen && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                    }}>
+                        <div className="glass-panel" style={{ width: '400px', padding: '32px', animation: 'slideIn 0.3s ease-out' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Add Stock</h3>
+                                <button onClick={() => setIsRestockModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
+                            </div>
+                            <div style={{ display: 'grid', gap: '16px', marginBottom: '12px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product</label>
+                                    <select
+                                        className="search-input"
+                                        style={{ width: '100%' }}
+                                        value={restockData.productId}
+                                        onChange={e => setRestockData({ ...restockData, productId: e.target.value })}
+                                    >
+                                        <option value="">Select a product...</option>
+                                        {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.model})</option>)}
+                                    </select>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Quantity to Add</label>
+                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0" value={restockData.quantity || ''} onChange={e => setRestockData({ ...restockData, quantity: Number(e.target.value) })} />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Cost per unit ($)</label>
+                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0.00" value={restockData.cost || ''} onChange={e => setRestockData({ ...restockData, cost: Number(e.target.value) })} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Note / Supplier (Optional)</label>
+                                    <input className="search-input" style={{ width: '100%' }} placeholder="e.g. Resupplied from main warehouse" value={restockData.note} onChange={e => setRestockData({ ...restockData, note: e.target.value })} />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                                <button onClick={() => setIsRestockModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                                <button onClick={handleRestockSave} className="primary-button" style={{ padding: '10px 24px' }}>Add Stock</button>
                             </div>
                         </div>
                     </div>

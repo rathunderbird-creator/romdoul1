@@ -10,7 +10,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const COLORS = ['var(--color-blue)', 'var(--color-green)', 'var(--color-primary)', 'var(--color-purple)', 'var(--color-red)'];
 
 const Dashboard: React.FC = () => {
-    const { products, sales } = useStore();
+    const { products, sales, refreshData } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
 
@@ -275,7 +275,7 @@ const Dashboard: React.FC = () => {
                             const btn = document.getElementById('dashboard-refresh-btn');
                             if (btn) btn.style.animation = 'spin 1s linear infinite';
 
-                            useStore().refreshData().finally(() => {
+                            refreshData().finally(() => {
                                 if (btn) btn.style.animation = 'none';
                             });
                         }}

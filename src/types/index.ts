@@ -61,10 +61,21 @@ export interface Sale {
     };
 }
 
+export interface Restock {
+    id: string;
+    productId: string;
+    quantity: number;
+    cost: number;
+    date: string;
+    addedBy?: string;
+    note?: string;
+}
+
 export interface StoreContextType {
     products: Product[];
     cart: CartItem[];
     sales: Sale[];
+    restocks: Restock[]; // Added restocks
     customers: Customer[]; // Added customers
     addToCart: (product: Product) => void;
     removeFromCart: (productId: string) => void;
@@ -82,6 +93,9 @@ export interface StoreContextType {
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => void;
     reorderRows: (activeIds: string[], overId: string, leadId: string) => void;
+
+    // Restock Management
+    addStock: (productId: string, quantity: number, cost?: number, note?: string) => Promise<void>;
 
     // Customer Management
     addCustomer: (customer: Omit<Customer, 'id'>) => void;
