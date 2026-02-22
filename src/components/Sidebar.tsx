@@ -126,6 +126,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             key={item.path}
                             to={item.path}
                             title={isCollapsed ? item.label : ''}
+                            onClick={() => {
+                                if (isMobile && !isCollapsed) {
+                                    toggleSidebar();
+                                }
+                            }}
                             style={({ isActive }) => ({
                                 display: 'flex',
                                 alignItems: 'center',
@@ -151,6 +156,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         <NavLink
                             to="/users"
                             title={isCollapsed ? 'User Management' : ''}
+                            onClick={() => {
+                                if (isMobile && !isCollapsed) {
+                                    toggleSidebar();
+                                }
+                            }}
                             style={({ isActive }) => ({
                                 display: 'flex',
                                 alignItems: 'center',
@@ -174,6 +184,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         <NavLink
                             to="/settings"
                             title={isCollapsed ? 'Settings' : ''}
+                            onClick={() => {
+                                if (isMobile && !isCollapsed) {
+                                    toggleSidebar();
+                                }
+                            }}
                             style={({ isActive }) => ({
                                 display: 'flex',
                                 alignItems: 'center',
