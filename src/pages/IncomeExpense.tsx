@@ -7,6 +7,14 @@ import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
 
+// Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
+const parseDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    const safeStr = dateStr.includes(' ') ? dateStr.replace(' ', 'T') : dateStr;
+    const d = new Date(safeStr);
+    return isNaN(d.getTime()) ? new Date() : d;
+};
+
 const IncomeExpense: React.FC = () => {
     const { transactions, addTransaction, updateTransaction, deleteTransaction, currentUser } = useStore();
     const { setHeaderContent } = useHeader();
@@ -51,22 +59,22 @@ const IncomeExpense: React.FC = () => {
             const matchesSearch = (t.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                 (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
-            const itemDate = new Date(t.date);
+            const itemDate = parseDate(t.date);
 
             let matchesDate = true;
             if (dateRange.start) {
-                const startDate = new Date(dateRange.start);
+                const startDate = parseDate(dateRange.start);
                 startDate.setHours(0, 0, 0, 0);
                 matchesDate = matchesDate && itemDate >= startDate;
             }
             if (dateRange.end) {
-                const endDate = new Date(dateRange.end);
+                const endDate = parseDate(dateRange.end);
                 endDate.setHours(23, 59, 59, 999);
                 matchesDate = matchesDate && itemDate <= endDate;
             }
 
             return matchesType && matchesSearch && matchesDate;
-        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        }).sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime());
     }, [transactions, filterType, searchTerm, dateRange]);
 
     // Stats
@@ -109,7 +117,7 @@ const IncomeExpense: React.FC = () => {
             exchangeRate: '4100',
             category: t.category || '',
             description: t.description || '',
-            date: new Date(t.date).toISOString().split('T')[0]
+            date: parseDate(t.date).toISOString().split('T')[0]
         });
         setIsAddModalOpen(true);
     };
@@ -283,7 +291,7 @@ const IncomeExpense: React.FC = () => {
                             filteredTransactions.map(t => (
                                 <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                     <td style={{ padding: '16px', fontSize: '14px' }}>
-                                        {new Date(t.date).toLocaleDateString()}
+                                        {parseDate(t.date).toLocaleDateString()}
                                     </td>
                                     <td style={{ padding: '16px' }}>
                                         <span style={{
