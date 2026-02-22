@@ -52,8 +52,18 @@ const IncomeExpense: React.FC = () => {
                 (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
             const itemDate = new Date(t.date);
-            const matchesDate = (!dateRange.start || itemDate >= new Date(dateRange.start)) &&
-                (!dateRange.end || itemDate <= new Date(dateRange.end + 'T23:59:59'));
+
+            let matchesDate = true;
+            if (dateRange.start) {
+                const startDate = new Date(dateRange.start);
+                startDate.setHours(0, 0, 0, 0);
+                matchesDate = matchesDate && itemDate >= startDate;
+            }
+            if (dateRange.end) {
+                const endDate = new Date(dateRange.end);
+                endDate.setHours(23, 59, 59, 999);
+                matchesDate = matchesDate && itemDate <= endDate;
+            }
 
             return matchesType && matchesSearch && matchesDate;
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
