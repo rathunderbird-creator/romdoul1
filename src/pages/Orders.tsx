@@ -65,7 +65,7 @@ const SortableRow = ({ id, children, className, style, onClick, ...props }: any)
             className={className}
             onClick={onClick}
             {...attributes}
-            {...listeners}
+            {...(props.isRowMovable ? listeners : {})}
             {...props}
         >
             {children}
@@ -74,14 +74,7 @@ const SortableRow = ({ id, children, className, style, onClick, ...props }: any)
 };
 
 const Orders: React.FC = () => {
-    // -- Click Outside Refs --
-    const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
-    const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
-    const payStatusFilterRef = useClickOutside<HTMLDivElement>(() => setIsPayStatusOpen(false));
-    const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
-    const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
-    const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
-    const toolsMenuRef = useClickOutside<HTMLDivElement>(() => setShowTools(false));
+    // (Move refs below state declarations)
 
     const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
 
@@ -209,7 +202,16 @@ const Orders: React.FC = () => {
     useEffect(() => { localStorage.setItem('orders_dateRange', JSON.stringify(dateRange)); }, [dateRange]);
     useEffect(() => { localStorage.setItem('orders_searchTerm', searchTerm); }, [searchTerm]);
 
-    const [sortConfig, setSortConfig] = useState<SortConfig>(null);
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' });
+
+    const [isRowMovable, setIsRowMovable] = useState(() => {
+        const saved = localStorage.getItem('orders_isRowMovable');
+        return saved ? JSON.parse(saved) : true;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('orders_isRowMovable', JSON.stringify(isRowMovable));
+    }, [isRowMovable]);
 
     // Modals State
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -393,6 +395,7 @@ const Orders: React.FC = () => {
 
     // Appearance State
     const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
         return saved ? JSON.parse(saved) : { fontSize: 12, padding: 8, height: 'auto' };
@@ -401,6 +404,15 @@ const Orders: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('pos_table_settings', JSON.stringify(tableSettings));
     }, [tableSettings]);
+
+    // -- Click Outside Refs --
+    const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
+    const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
+    const payStatusFilterRef = useClickOutside<HTMLDivElement>(() => setIsPayStatusOpen(false));
+    const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
+    const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
+    const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
+    const toolsMenuRef = useClickOutside<HTMLDivElement>(() => setShowTools(false));
 
     // Cleanup on unmount
     React.useEffect(() => {
@@ -517,8 +529,33 @@ const Orders: React.FC = () => {
         return sortableOrders;
     }, [filteredOrders, sortConfig]);
 
+    const duplicateOrderIds = useMemo(() => {
+        const exactMatches = new Map<string, string[]>();
+        sales.forEach(order => {
+            const dateStr = new Date(order.date).toLocaleDateString();
+            const itemsStr = order.items.map(i => `${i.name}_${i.quantity}`).sort().join('|');
+            const customerName = String(order.customer?.name || '').trim().toLowerCase();
+            const customerPhone = String(order.customer?.phone || '').trim();
+            const key = `${customerName}_${customerPhone}_${order.total}_${dateStr}_${itemsStr}`;
+
+            if (!exactMatches.has(key)) {
+                exactMatches.set(key, []);
+            }
+            exactMatches.get(key)!.push(order.id);
+        });
+
+        const duplicates = new Set<string>();
+        exactMatches.forEach(ids => {
+            if (ids.length > 1) {
+                ids.forEach(id => duplicates.add(id));
+            }
+        });
+        return duplicates;
+    }, [sales]);
+
     const getRowClass = (order: Sale) => {
         if (selectedIds.has(order.id)) return 'selected';
+        if (duplicateOrderIds.has(order.id)) return 'duplicate-row';
 
         // Priority 1: Payment Status = Cancel
         if (order.paymentStatus === 'Cancel') return 'returned-row';
@@ -540,6 +577,7 @@ const Orders: React.FC = () => {
 
     const getRowBackgroundColor = (order: Sale, isSelected: boolean) => {
         if (isSelected) return 'var(--color-primary-light)';
+        if (duplicateOrderIds.has(order.id)) return '#6B21A8';
 
         // Priority 1: Payment Status = Cancel
         if (order.paymentStatus === 'Cancel') return '#FCA5A5'; // Red 300
@@ -1462,6 +1500,21 @@ const Orders: React.FC = () => {
                                                     )}
                                                 </div>
 
+                                                <button
+                                                    onClick={() => { setIsRowMovable(!isRowMovable); setShowTools(false); }}
+                                                    style={{
+                                                        padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                                        background: isRowMovable ? 'var(--color-primary-light)' : 'transparent',
+                                                        color: isRowMovable ? 'var(--color-primary)' : 'var(--color-text-main)', cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                                        width: '100%', textAlign: 'left', fontSize: '13px',
+                                                        transition: 'background 0.2s', marginTop: '4px'
+                                                    }}
+                                                >
+                                                    <ChevronsUpDown size={16} color={isRowMovable ? 'var(--color-primary)' : 'var(--color-text-secondary)'} />
+                                                    {isRowMovable ? 'Disable Row Movable' : 'Enable Row Movable'}
+                                                </button>
+
                                                 <div ref={columnMenuRef} style={{ position: 'relative', width: '100%' }}>
                                                     <button
                                                         onClick={() => { setShowColumnMenu(!showColumnMenu); setShowAppearanceMenu(false); }}
@@ -1779,7 +1832,7 @@ const Orders: React.FC = () => {
 
 
                                                     return (
-                                                        <SortableRow key={order.id} id={order.id} className={rowClass}>
+                                                        <SortableRow key={order.id} id={order.id} className={rowClass} isRowMovable={isRowMovable}>
                                                             <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15 }} className="sticky-col-first">
                                                                 {isAdmin && (
                                                                     <input

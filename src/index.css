@@ -258,6 +258,21 @@ button {
   background-color: #FCA5A5 !important;
 }
 
+.spreadsheet-table tbody tr.duplicate-row {
+  background-color: #6B21A8 !important;
+  color: white !important;
+}
+
+.spreadsheet-table tbody tr.duplicate-row td {
+  color: white !important;
+}
+
+.spreadsheet-table tbody tr.duplicate-row td.sticky-col-first,
+.spreadsheet-table tbody tr.duplicate-row td.sticky-col-second {
+  background-color: #6B21A8 !important;
+  color: white !important;
+}
+
 .spreadsheet-table tbody tr.restock-row td.sticky-col-first,
 .spreadsheet-table tbody tr.restock-row td.sticky-col-second {
   background-color: #F5F3FF;
