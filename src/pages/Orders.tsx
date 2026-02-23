@@ -76,7 +76,7 @@ const SortableRow = ({ id, children, className, style, onClick, ...props }: any)
 const Orders: React.FC = () => {
     // (Move refs below state declarations)
 
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, salesmen, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
@@ -1064,8 +1064,8 @@ const Orders: React.FC = () => {
                                                 >
                                                     <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
                                                 </label>
-                                                {currentUser?.roleId !== 'salesman' && salesmen.map(s => (
-                                                    <label key={s} style={{
+                                                {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
+                                                    <label key={s.id} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         gap: '10px',
@@ -1073,11 +1073,11 @@ const Orders: React.FC = () => {
                                                         cursor: 'pointer',
                                                         borderRadius: '6px',
                                                         transition: 'background 0.2s',
-                                                        backgroundColor: salesmanFilter === s ? 'var(--color-bg)' : 'transparent'
+                                                        backgroundColor: salesmanFilter === s.name ? 'var(--color-bg)' : 'transparent'
                                                     }}
-                                                        onClick={() => { setSalesmanFilter(s); setIsSalesmanOpen(false); }}
+                                                        onClick={() => { setSalesmanFilter(s.name); setIsSalesmanOpen(false); }}
                                                     >
-                                                        <span style={{ fontSize: '13px' }}>{s}</span>
+                                                        <span style={{ fontSize: '13px' }}>{s.name}</span>
                                                     </label>
                                                 ))}
                                             </div>
