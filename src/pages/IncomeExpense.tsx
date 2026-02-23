@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { DateRangePicker } from '../components';
 import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
@@ -25,10 +26,7 @@ const IncomeExpense: React.FC = () => {
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
     const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>('All');
     const [searchTerm, setSearchTerm] = useState('');
-    const [dateRange, setDateRange] = useState({
-        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-        end: new Date().toISOString().split('T')[0]
-    });
+    const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const categoryRef = useClickOutside<HTMLDivElement>(() => setShowCategoryDropdown(false));
@@ -66,15 +64,20 @@ const IncomeExpense: React.FC = () => {
             const itemDate = parseDate(t.date);
 
             let matchesDate = true;
-            if (dateRange.start) {
+            if (dateRange.start && dateRange.end) {
                 const startDate = parseDate(dateRange.start);
                 startDate.setHours(0, 0, 0, 0);
-                matchesDate = matchesDate && itemDate >= startDate;
-            }
-            if (dateRange.end) {
                 const endDate = parseDate(dateRange.end);
                 endDate.setHours(23, 59, 59, 999);
-                matchesDate = matchesDate && itemDate <= endDate;
+                matchesDate = itemDate >= startDate && itemDate <= endDate;
+            } else if (dateRange.start) {
+                const startDate = parseDate(dateRange.start);
+                startDate.setHours(0, 0, 0, 0);
+                matchesDate = itemDate >= startDate;
+            } else if (dateRange.end) {
+                const endDate = parseDate(dateRange.end);
+                endDate.setHours(23, 59, 59, 999);
+                matchesDate = itemDate <= endDate;
             }
 
             return matchesType && matchesSearch && matchesDate;
@@ -205,47 +208,63 @@ const IncomeExpense: React.FC = () => {
                 </button>
             </div>
 
-            {/* Stats Cards */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
                 gap: '16px',
                 marginBottom: '24px'
             }}>
-                <StatsCard
-                    title="Total Income"
-                    value={`$${stats.totalIncome.toLocaleString()}`}
-                    icon={TrendingUp}
-                    color="var(--color-green)"
-                />
-                <StatsCard
-                    title="Total Expense"
-                    value={`$${stats.totalExpense.toLocaleString()}`}
-                    icon={TrendingDown}
-                    color="var(--color-red)"
-                />
-                <StatsCard
-                    title="Net Balance"
-                    value={`$${stats.netBalance.toLocaleString()}`}
-                    icon={DollarSign}
-                    color={stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)'}
-                />
+                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%)', zIndex: 0 }} />
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                        <StatsCard
+                            title="Total Income"
+                            value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            icon={TrendingUp}
+                            color="var(--color-green)"
+                        />
+                    </div>
+                </div>
+
+                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%)', zIndex: 0 }} />
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                        <StatsCard
+                            title="Total Expense"
+                            value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            icon={TrendingDown}
+                            color="var(--color-red)"
+                        />
+                    </div>
+                </div>
+
+                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `linear-gradient(135deg, ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)'} 0%, transparent 100%)`, zIndex: 0 }} />
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                        <StatsCard
+                            title="Net Balance"
+                            value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            icon={DollarSign}
+                            color={stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)'}
+                        />
+                    </div>
+                </div>
             </div>
 
             {/* Filters */}
-            <div className="glass-panel" style={{ padding: '16px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '8px', flex: isMobile ? '1 1 100%' : 'none' }}>
+            <div className="glass-panel" style={{ padding: '16px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', gap: '4px', flex: isMobile ? '1 1 100%' : 'none', background: 'var(--color-background)', padding: '4px', borderRadius: '10px' }}>
                     <button
                         onClick={() => setFilterType('All')}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: filterType === 'All' ? 'var(--color-primary)' : 'transparent', color: filterType === 'All' ? 'white' : 'var(--color-text-main)', cursor: 'pointer' }}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 400, boxShadow: filterType === 'All' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                     >All</button>
                     <button
                         onClick={() => setFilterType('Income')}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: filterType === 'Income' ? 'var(--color-green)' : 'transparent', color: filterType === 'Income' ? 'white' : 'var(--color-text-main)', cursor: 'pointer' }}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-green)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 400, boxShadow: filterType === 'Income' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                     >Income</button>
                     <button
                         onClick={() => setFilterType('Expense')}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: filterType === 'Expense' ? 'var(--color-red)' : 'transparent', color: filterType === 'Expense' ? 'white' : 'var(--color-text-main)', cursor: 'pointer' }}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 400, boxShadow: filterType === 'Expense' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                     >Expense</button>
                 </div>
 
@@ -271,19 +290,25 @@ const IncomeExpense: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', flex: isMobile ? '1 1 100%' : 'none', alignItems: 'center' }}>
-                    <input
-                        type="date"
-                        value={dateRange.start}
-                        onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                        style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text-main)' }}
+                    <DateRangePicker
+                        value={dateRange}
+                        onChange={setDateRange}
                     />
-                    <span style={{ color: 'var(--color-text-secondary)' }}>to</span>
-                    <input
-                        type="date"
-                        value={dateRange.end}
-                        onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                        style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text-main)' }}
-                    />
+                    {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All') && (
+                        <button
+                            onClick={() => {
+                                setDateRange({ start: '', end: '' });
+                                setSearchTerm('');
+                                setFilterType('All');
+                            }}
+                            className="secondary-button"
+                            style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '42px' }}
+                            title="Clear Filters"
+                        >
+                            <FilterX size={16} />
+                            {!isMobile && 'Clear'}
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -309,7 +334,7 @@ const IncomeExpense: React.FC = () => {
                             </tr>
                         ) : (
                             filteredTransactions.map(t => (
-                                <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }} className="table-row-hover">
                                     <td style={{ padding: '16px', fontSize: '14px' }}>
                                         {parseDate(t.date).toLocaleDateString()}
                                     </td>
