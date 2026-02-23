@@ -42,7 +42,17 @@ const IncomeExpense: React.FC = () => {
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
     const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>('All');
     const [searchTerm, setSearchTerm] = useState('');
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [dateRange, setDateRange] = useState(() => {
+        const saved = localStorage.getItem('incomeExpenseDateRange');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { }
+        }
+        return { start: '', end: '' };
+    });
+
+    useEffect(() => {
+        localStorage.setItem('incomeExpenseDateRange', JSON.stringify(dateRange));
+    }, [dateRange]);
 
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const categoryRef = useClickOutside<HTMLDivElement>(() => setShowCategoryDropdown(false));
