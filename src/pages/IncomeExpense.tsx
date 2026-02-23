@@ -216,28 +216,63 @@ const IncomeExpense: React.FC = () => {
 
     return (
         <div style={{ paddingBottom: '40px' }}>
-            {/* Action Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <DateRangePicker
-                        value={dateRange}
-                        onChange={setDateRange}
-                        style={{ minWidth: isMobile ? '100%' : '240px' }}
-                    />
+            {/* Filters (matching Dashboard layout) */}
+            <div className="glass-panel" style={{
+                marginBottom: '20px',
+                padding: '16px',
+                display: 'flex',
+                justifyContent: isMobile ? 'center' : 'flex-end',
+                alignItems: 'center',
+                position: 'relative',
+                zIndex: 50,
+                gap: '12px',
+                flexWrap: isMobile ? 'wrap' : 'nowrap'
+            }}>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    width: isMobile ? '100%' : 'auto',
+                    flex: isMobile ? '1 1 100%' : 'none'
+                }}>
+                    <div style={{ flex: 1 }}>
+                        <DateRangePicker
+                            value={dateRange}
+                            onChange={setDateRange}
+                        />
+                    </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <button onClick={handleOpenAddModal} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'center' : 'flex-end' }}>
+                    <button onClick={handleOpenAddModal} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? 1 : 'none', justifyContent: 'center' }}>
                         <Plus size={20} />
-                        {!isMobile && 'Add Transaction'}
+                        Add Transaction
                     </button>
                     <button
-                        onClick={() => refreshData()}
+                        onClick={() => {
+                            const btn = document.getElementById('ie-refresh-btn');
+                            if (btn) btn.style.animation = 'spin 1s linear infinite';
+                            refreshData().finally(() => {
+                                if (btn) btn.style.animation = 'none';
+                            });
+                        }}
                         className="secondary-button"
-                        style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
+                        style={{
+                            padding: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            height: '42px',
+                            aspectRatio: '1/1'
+                        }}
                         title="Refresh Transactions"
                     >
-                        <RefreshCw size={20} />
+                        <RefreshCw id="ie-refresh-btn" size={20} />
                     </button>
+                    <style>{`
+                        @keyframes spin { 
+                            100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
+                        }
+                    `}</style>
                 </div>
             </div>
 
