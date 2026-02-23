@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, Boxes } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, Boxes, RefreshCw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -15,7 +15,7 @@ type SortConfig = {
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, deleteOrders, currentUser, addStock, restocks } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, deleteOrders, currentUser, addStock, restocks, refreshData } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -394,10 +394,18 @@ const Inventory: React.FC = () => {
                                 style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                             >
                                 <Package size={20} />
-                                Add Stock
+                                {!isMobile && 'Add Stock'}
                             </button>
                         </>
                     )}
+                    <button
+                        onClick={() => refreshData()}
+                        className="secondary-button"
+                        style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
+                        title="Refresh Inventory"
+                    >
+                        <RefreshCw size={20} />
+                    </button>
                 </div>
             </div>
 

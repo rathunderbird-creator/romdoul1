@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, RefreshCw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -19,7 +19,7 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC = () => {
-    const { transactions, addTransaction, updateTransaction, deleteTransaction, currentUser } = useStore();
+    const { transactions, addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
 
@@ -225,10 +225,20 @@ const IncomeExpense: React.FC = () => {
                         style={{ minWidth: isMobile ? '100%' : '240px' }}
                     />
                 </div>
-                <button onClick={handleOpenAddModal} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Plus size={20} />
-                    {!isMobile && 'Add Transaction'}
-                </button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <button onClick={handleOpenAddModal} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Plus size={20} />
+                        {!isMobile && 'Add Transaction'}
+                    </button>
+                    <button
+                        onClick={() => refreshData()}
+                        className="secondary-button"
+                        style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
+                        title="Refresh Transactions"
+                    >
+                        <RefreshCw size={20} />
+                    </button>
+                </div>
             </div>
 
             <div style={{
