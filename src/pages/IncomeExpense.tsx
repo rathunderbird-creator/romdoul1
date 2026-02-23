@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -22,6 +22,21 @@ const IncomeExpense: React.FC = () => {
     const { transactions, addTransaction, updateTransaction, deleteTransaction, currentUser } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+
+    const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+
+    const toggleCardExpand = (id: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setExpandedCards(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -324,45 +339,65 @@ const IncomeExpense: React.FC = () => {
                             No transactions found.
                         </div>
                     ) : (
-                        filteredTransactions.map(t => (
-                            <div key={t.id} className="mobile-order-card" style={{ cursor: 'default' }}>
-                                <div className="moc-header" style={{ paddingBottom: '12px', alignItems: 'flex-start' }}>
-                                    <div className="moc-avatar" style={{
-                                        backgroundColor: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                        color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)',
-                                        marginTop: '2px'
-                                    }}>
-                                        {t.type === 'Income' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                        filteredTransactions.map(t => {
+                            const isExpanded = expandedCards.has(t.id);
+                            return (
+                                <div key={t.id} className="mobile-order-card" style={{ cursor: 'pointer' }} onClick={() => toggleCardExpand(t.id)}>
+                                    <div className="moc-header" style={{ paddingBottom: '12px', alignItems: 'flex-start' }}>
+                                        <div
+                                            className="moc-chevron"
+                                            style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', marginTop: '2px', marginRight: '4px' }}
+                                        >
+                                            <ChevronDown size={20} />
+                                        </div>
+                                        <div className="moc-avatar" style={{
+                                            backgroundColor: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                            color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)',
+                                            marginTop: '2px'
+                                        }}>
+                                            {t.type === 'Income' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                                        </div>
+                                        <div className="moc-info">
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span className="moc-customer-name">
+                                                    {t.category || 'Uncategorized'}
+                                                </span>
+                                                <span style={{ color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
+                                                    {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                            {!isExpanded && (
+                                                <div className="moc-products-summary" style={{ fontSize: '13px', color: '#4B5563', marginTop: '2px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {t.description || 'No description'}
+                                                </div>
+                                            )}
+                                            <div className="moc-meta-row" style={{ marginTop: '2px' }}>
+                                                <span>{parseDate(t.date).toLocaleDateString()}</span>
+                                                <span>•</span>
+                                                <span>{t.type}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="moc-info">
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span className="moc-customer-name">
-                                                {t.category || 'Uncategorized'}
-                                            </span>
-                                            <span style={{ color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
-                                                {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </span>
+                                    {isExpanded && (
+                                        <div className="moc-expanded">
+                                            {t.description && (
+                                                <div style={{ fontSize: '13px', color: 'var(--color-text-main)', padding: '12px 0', borderTop: '1px dashed var(--color-border)', marginBottom: '8px' }}>
+                                                    {t.description}
+                                                </div>
+                                            )}
+                                            <div className="moc-actions" style={{ padding: 0, marginTop: t.description ? 0 : '12px', justifyContent: 'flex-end', gap: '8px', borderTop: t.description ? 'none' : '1px dashed var(--color-border)', paddingTop: t.description ? 0 : '12px' }}>
+                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(t); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px' }}>
+                                                    <Edit2 size={14} style={{ marginRight: '6px' }} /> Edit
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px', color: 'var(--color-red)' }}>
+                                                    <Trash2 size={14} style={{ marginRight: '6px' }} /> Delete
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="moc-products-summary" style={{ fontSize: '13px', color: '#4B5563', marginTop: '2px', marginBottom: '4px', whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                                            {t.description || 'No description'}
-                                        </div>
-                                        <div className="moc-meta-row">
-                                            <span>{parseDate(t.date).toLocaleDateString()}</span>
-                                            <span>•</span>
-                                            <span>{t.type}</span>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
-                                <div className="moc-actions" style={{ padding: '0 16px 16px', marginTop: 0, justifyContent: 'flex-end', gap: '8px' }}>
-                                    <button onClick={() => handleOpenEditModal(t)} className="moc-action-btn" style={{ padding: '6px 12px', fontSize: '13px' }}>
-                                        <Edit2 size={14} style={{ marginRight: '6px' }} /> Edit
-                                    </button>
-                                    <button onClick={() => handleDelete(t.id)} className="moc-action-btn" style={{ padding: '6px 12px', fontSize: '13px', color: 'var(--color-red)' }}>
-                                        <Trash2 size={14} style={{ marginRight: '6px' }} /> Delete
-                                    </button>
-                                </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             ) : (
