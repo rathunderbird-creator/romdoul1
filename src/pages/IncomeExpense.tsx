@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Ta
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
+import { useClickOutside } from '../hooks/useClickOutside';
 import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
@@ -28,6 +29,9 @@ const IncomeExpense: React.FC = () => {
         start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
     });
+
+    const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+    const categoryRef = useClickOutside<HTMLDivElement>(() => setShowCategoryDropdown(false));
 
     // Form State
     const [formData, setFormData] = useState({
@@ -93,6 +97,22 @@ const IncomeExpense: React.FC = () => {
             netBalance: totalIncome - totalExpense
         };
     }, [filteredTransactions]);
+
+    const uniqueCategories = useMemo(() => {
+        const cats = new Set<string>();
+        transactions.forEach(t => {
+            if (t.category) {
+                cats.add(t.category.trim());
+            }
+        });
+        return Array.from(cats).sort();
+    }, [transactions]);
+
+    const filteredCategories = useMemo(() => {
+        if (!formData.category) return uniqueCategories;
+        const lowerCategory = formData.category.toLowerCase();
+        return uniqueCategories.filter(c => c.toLowerCase().includes(lowerCategory));
+    }, [uniqueCategories, formData.category]);
 
     const handleOpenAddModal = () => {
         setFormData({
@@ -510,13 +530,17 @@ const IncomeExpense: React.FC = () => {
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
-                            <div style={{ position: 'relative' }}>
+                            <div style={{ position: 'relative' }} ref={categoryRef}>
                                 <Tag size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                 <input
                                     type="text"
                                     placeholder="e.g. Utility, Salary"
                                     value={formData.category}
-                                    onChange={(e) => setFormData(p => ({ ...p, category: e.target.value }))}
+                                    onFocus={() => setShowCategoryDropdown(true)}
+                                    onChange={(e) => {
+                                        setFormData(p => ({ ...p, category: e.target.value }));
+                                        setShowCategoryDropdown(true);
+                                    }}
                                     style={{
                                         width: '100%',
                                         padding: '12px 12px 12px 40px',
@@ -527,6 +551,42 @@ const IncomeExpense: React.FC = () => {
                                         fontSize: '14px'
                                     }}
                                 />
+                                {showCategoryDropdown && filteredCategories.length > 0 && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        width: '100%',
+                                        maxHeight: '200px',
+                                        overflowY: 'auto',
+                                        background: 'var(--color-surface)',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: '8px',
+                                        marginTop: '4px',
+                                        zIndex: 50,
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                    }}>
+                                        {filteredCategories.map(cat => (
+                                            <div
+                                                key={cat}
+                                                onClick={() => {
+                                                    setFormData(p => ({ ...p, category: cat }));
+                                                    setShowCategoryDropdown(false);
+                                                }}
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    cursor: 'pointer',
+                                                    borderBottom: '1px solid var(--color-border)',
+                                                    fontSize: '14px',
+                                                    color: 'var(--color-text-main)'
+                                                }}
+                                                className="hover-bg-light"
+                                            >
+                                                {cat}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
