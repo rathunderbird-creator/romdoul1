@@ -201,7 +201,14 @@ const IncomeExpense: React.FC = () => {
     return (
         <div style={{ paddingBottom: '40px' }}>
             {/* Action Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <DateRangePicker
+                        value={dateRange}
+                        onChange={setDateRange}
+                        style={{ minWidth: isMobile ? '100%' : '240px' }}
+                    />
+                </div>
                 <button onClick={handleOpenAddModal} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Plus size={20} />
                     {!isMobile && 'Add Transaction'}
@@ -290,10 +297,6 @@ const IncomeExpense: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', flex: isMobile ? '1 1 100%' : 'none', alignItems: 'center' }}>
-                    <DateRangePicker
-                        value={dateRange}
-                        onChange={setDateRange}
-                    />
                     {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All') && (
                         <button
                             onClick={() => {
@@ -312,82 +315,148 @@ const IncomeExpense: React.FC = () => {
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="glass-panel" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
-                    <thead>
-                        <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-background)' }}>
-                            <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Date</th>
-                            <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Type</th>
-                            <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Category</th>
-                            <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Description</th>
-                            <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', textAlign: 'right' }}>Amount</th>
-                            <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', textAlign: 'center' }}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredTransactions.length === 0 ? (
-                            <tr>
-                                <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                    No transactions found.
-                                </td>
-                            </tr>
-                        ) : (
-                            filteredTransactions.map(t => (
-                                <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }} className="table-row-hover">
-                                    <td style={{ padding: '16px', fontSize: '14px' }}>
-                                        {parseDate(t.date).toLocaleDateString()}
-                                    </td>
-                                    <td style={{ padding: '16px' }}>
+            {/* Transactions List / Table */}
+            {isMobile ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {filteredTransactions.length === 0 ? (
+                        <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            No transactions found.
+                        </div>
+                    ) : (
+                        filteredTransactions.map(t => (
+                            <div key={t.id} className="glass-panel" style={{ padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--color-surface)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <div>
+                                        <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '4px' }}>
+                                            {t.category || 'Uncategorized'}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                            {parseDate(t.date).toLocaleDateString()}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)' }}>
+                                            {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
+                                        </div>
                                         <span style={{
                                             display: 'inline-flex',
                                             alignItems: 'center',
                                             gap: '4px',
-                                            padding: '4px 8px',
+                                            padding: '2px 8px',
                                             borderRadius: '12px',
-                                            fontSize: '12px',
+                                            fontSize: '11px',
                                             fontWeight: 500,
                                             background: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                            color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)'
+                                            color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)',
+                                            marginTop: '4px'
                                         }}>
-                                            {t.type === 'Income' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                                            {t.type === 'Income' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                                             {t.type}
                                         </span>
-                                    </td>
-                                    <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
-                                        {t.category || '-'}
-                                    </td>
-                                    <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                                        {t.description || '-'}
-                                    </td>
-                                    <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', textAlign: 'right' }}>
-                                        {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
-                                    </td>
-                                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                                            <button
-                                                onClick={() => handleOpenEditModal(t)}
-                                                className="icon-button"
-                                                title="Edit"
-                                            >
-                                                <Edit2 size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(t.id)}
-                                                className="icon-button"
-                                                style={{ color: 'var(--color-red)' }}
-                                                title="Delete"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
+                                    </div>
+                                </div>
+                                {t.description && (
+                                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', padding: '8px', background: 'var(--color-background)', borderRadius: '8px' }}>
+                                        {t.description}
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+                                    <button
+                                        onClick={() => handleOpenEditModal(t)}
+                                        className="secondary-button"
+                                        style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                                    >
+                                        <Edit2 size={14} /> Edit
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(t.id)}
+                                        className="secondary-button"
+                                        style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-red)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
+                                    >
+                                        <Trash2 size={14} /> Delete
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            ) : (
+                <div className="glass-panel" style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-background)' }}>
+                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Date</th>
+                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Type</th>
+                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Category</th>
+                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Description</th>
+                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', textAlign: 'center' }}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredTransactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                        No transactions found.
                                     </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                            ) : (
+                                filteredTransactions.map(t => (
+                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }} className="table-row-hover">
+                                        <td style={{ padding: '16px', fontSize: '14px' }}>
+                                            {parseDate(t.date).toLocaleDateString()}
+                                        </td>
+                                        <td style={{ padding: '16px' }}>
+                                            <span style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                padding: '4px 8px',
+                                                borderRadius: '12px',
+                                                fontSize: '12px',
+                                                fontWeight: 500,
+                                                background: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                                color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)'
+                                            }}>
+                                                {t.type === 'Income' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                                                {t.type}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                            {t.category || '-'}
+                                        </td>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                                            {t.description || '-'}
+                                        </td>
+                                        <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', textAlign: 'right' }}>
+                                            {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
+                                        </td>
+                                        <td style={{ padding: '16px', textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                                                <button
+                                                    onClick={() => handleOpenEditModal(t)}
+                                                    className="icon-button"
+                                                    title="Edit"
+                                                >
+                                                    <Edit2 size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(t.id)}
+                                                    className="icon-button"
+                                                    style={{ color: 'var(--color-red)' }}
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {/* Add/Edit Modal */}
             <Modal
