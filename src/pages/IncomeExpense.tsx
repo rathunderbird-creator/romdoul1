@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { DateRangePicker } from '../components';
+import '../components/MobileOrderCard.css';
 import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
@@ -27,6 +28,7 @@ const IncomeExpense: React.FC = () => {
     const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>('All');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const categoryRef = useClickOutside<HTMLDivElement>(() => setShowCategoryDropdown(false));
@@ -317,67 +319,67 @@ const IncomeExpense: React.FC = () => {
 
             {/* Transactions List / Table */}
             {isMobile ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
                     {filteredTransactions.length === 0 ? (
-                        <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                             No transactions found.
                         </div>
                     ) : (
-                        filteredTransactions.map(t => (
-                            <div key={t.id} className="glass-panel" style={{ padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--color-surface)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div>
-                                        <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '4px' }}>
-                                            {t.category || 'Uncategorized'}
+                        filteredTransactions.map(t => {
+                            const isExpanded = expandedCardId === t.id;
+                            return (
+                                <div key={t.id} className={`mobile-order-card ${isExpanded ? 'expanded' : ''}`} style={{ cursor: 'pointer' }}>
+                                    <div className="moc-header" style={{ paddingBottom: isExpanded ? '12px' : '12px', alignItems: 'flex-start' }} onClick={() => setExpandedCardId(isExpanded ? null : t.id)}>
+                                        <div className="moc-chevron" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', marginTop: '2px' }}>
+                                            <ChevronDown size={20} />
                                         </div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                            {parseDate(t.date).toLocaleDateString()}
-                                        </div>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)' }}>
-                                            {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
-                                        </div>
-                                        <span style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            padding: '2px 8px',
-                                            borderRadius: '12px',
-                                            fontSize: '11px',
-                                            fontWeight: 500,
-                                            background: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                        <div className="moc-avatar" style={{
+                                            backgroundColor: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                                             color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)',
-                                            marginTop: '4px'
+                                            marginTop: '2px'
                                         }}>
-                                            {t.type === 'Income' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                                            {t.type}
-                                        </span>
+                                            {t.type === 'Income' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                                        </div>
+                                        <div className="moc-info">
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span className="moc-customer-name">
+                                                    {t.category || 'Uncategorized'}
+                                                </span>
+                                                <span style={{ color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
+                                                    {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                            {!isExpanded && (
+                                                <div className="moc-products-summary" style={{ fontSize: '13px', color: '#4B5563', marginTop: '2px', marginBottom: '4px', whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                                    {t.description || 'No description'}
+                                                </div>
+                                            )}
+                                            <div className="moc-meta-row" style={{ marginTop: isExpanded ? '4px' : '0' }}>
+                                                <span>{parseDate(t.date).toLocaleDateString()}</span>
+                                                <span>•</span>
+                                                <span>{t.type}</span>
+                                            </div>
+                                        </div>
                                     </div>
+                                    {isExpanded && (
+                                        <div className="moc-expanded">
+                                            <div style={{ padding: '8px 12px', background: 'var(--color-background)', borderRadius: '8px', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+                                                <div style={{ fontWeight: 600, marginBottom: '4px', color: 'var(--color-text-main)' }}>Description</div>
+                                                {t.description || 'No description provided.'}
+                                            </div>
+                                            <div className="moc-actions" style={{ marginTop: 0, justifyContent: 'flex-end', gap: '8px' }}>
+                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(t); }} className="moc-action-btn" style={{ padding: '6px 12px', fontSize: '13px' }}>
+                                                    <Edit2 size={14} style={{ marginRight: '6px' }} /> Edit
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }} className="moc-action-btn" style={{ padding: '6px 12px', fontSize: '13px', color: 'var(--color-red)' }}>
+                                                    <Trash2 size={14} style={{ marginRight: '6px' }} /> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                {t.description && (
-                                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', padding: '8px', background: 'var(--color-background)', borderRadius: '8px' }}>
-                                        {t.description}
-                                    </div>
-                                )}
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-                                    <button
-                                        onClick={() => handleOpenEditModal(t)}
-                                        className="secondary-button"
-                                        style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
-                                    >
-                                        <Edit2 size={14} /> Edit
-                                    </button>
-                                    <button
-                                        onClick={() => handleDelete(t.id)}
-                                        className="secondary-button"
-                                        style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-red)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
-                                    >
-                                        <Trash2 size={14} /> Delete
-                                    </button>
-                                </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             ) : (
