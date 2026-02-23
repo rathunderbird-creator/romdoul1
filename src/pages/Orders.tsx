@@ -962,44 +962,53 @@ const Orders: React.FC = () => {
                                 />
                             </div>
                             {isMobile && (
-                                <>
-                                    <button
-                                        onClick={() => setShowFilters(!showFilters)}
-                                        style={{
-                                            padding: '10px',
-                                            borderRadius: '8px',
-                                            border: '1px solid var(--color-border)',
-                                            background: showFilters ? 'var(--color-primary)' : 'var(--color-surface)',
-                                            color: showFilters ? 'white' : 'var(--color-text-secondary)',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center'
-                                        }}
-                                    >
-                                        <Filter size={18} />
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            refreshData();
-                                            showToast('Refreshing data...', 'success');
-                                        }}
-                                        style={{
-                                            padding: '10px',
-                                            borderRadius: '8px',
-                                            border: '1px solid var(--color-border)',
-                                            background: 'var(--color-surface)',
-                                            color: 'var(--color-text-secondary)',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center'
-                                        }}
-                                    >
-                                        <RefreshCw size={18} />
-                                    </button>
-                                </>
+                                <button
+                                    onClick={() => setShowFilters(!showFilters)}
+                                    style={{
+                                        padding: '10px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        background: showFilters ? 'var(--color-primary)' : 'var(--color-surface)',
+                                        color: showFilters ? 'white' : 'var(--color-text-secondary)',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                    title="Toggle Filters"
+                                >
+                                    <Filter size={18} />
+                                </button>
                             )}
+                            <button
+                                onClick={() => {
+                                    const btn = document.getElementById('orders-refresh-btn');
+                                    if (btn) btn.style.animation = 'spin 1s linear infinite';
+                                    refreshData().finally(() => {
+                                        if (btn) btn.style.animation = 'none';
+                                        showToast('Data refreshed', 'success');
+                                    });
+                                }}
+                                style={{
+                                    padding: '10px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-border)',
+                                    background: 'var(--color-surface)',
+                                    color: 'var(--color-text-secondary)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                                title="Refresh Orders"
+                            >
+                                <RefreshCw id="orders-refresh-btn" size={18} />
+                            </button>
+                            <style>{`
+                                @keyframes spin { 
+                                    100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
+                                }
+                            `}</style>
                         </div>
                         {(!isMobile || showFilters) && (
                             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
