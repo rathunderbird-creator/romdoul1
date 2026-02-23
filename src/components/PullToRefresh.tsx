@@ -17,8 +17,8 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ onRefresh, children }) =>
     const currentY = useRef<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const MAX_PULL = 100;
-    const THRESHOLD = 80;
+    const MAX_PULL = 180;
+    const THRESHOLD = 150;
 
     useEffect(() => {
         if (!isMobile) return;
@@ -45,7 +45,7 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ onRefresh, children }) =>
                 }
 
                 // Add resistance
-                const distance = Math.min(diff * 0.5, MAX_PULL);
+                const distance = Math.min(diff * 0.4, MAX_PULL);
                 setPullDistance(distance);
             }
         };
