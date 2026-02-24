@@ -76,7 +76,7 @@ const SortableRow = ({ id, children, className, style, onClick, ...props }: any)
 const Orders: React.FC = () => {
     // (Move refs below state declarations)
 
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows, customerCare } = useStore();
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
@@ -184,6 +184,8 @@ const Orders: React.FC = () => {
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
     const [selectedCompany, setSelectedCompany] = useState<string>('');
     const [shippingRemark, setShippingRemark] = useState<string>('');
+    const [shippingAddress, setShippingAddress] = useState<string>('');
+    const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -1985,6 +1987,8 @@ const Orders: React.FC = () => {
                                                                                             setShippingOrderToUpdate(order);
                                                                                             setSelectedCompany(order.shipping?.company || shippingCompanies[0] || '');
                                                                                             setShippingRemark(order.remark || '');
+                                                                                            setShippingAddress(order.customer?.address || '');
+                                                                                            setShippingCustomerCare(order.customerCare || '');
                                                                                             setIsShippingModalOpen(true);
                                                                                             return;
                                                                                         }
@@ -2369,6 +2373,37 @@ const Orders: React.FC = () => {
                                 }}
                             />
                         </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Address</label>
+                            <input
+                                type="text"
+                                placeholder="Shipping address..."
+                                value={shippingAddress}
+                                onChange={(e) => setShippingAddress(e.target.value)}
+                                style={{
+                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                    outline: 'none'
+                                }}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Customer Care</label>
+                            <select
+                                value={shippingCustomerCare}
+                                onChange={(e) => setShippingCustomerCare(e.target.value)}
+                                style={{
+                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                    outline: 'none'
+                                }}
+                            >
+                                <option value="" disabled>Select Customer Care</option>
+                                {(customerCare || []).map((cc: string) => (
+                                    <option key={cc} value={cc}>{cc}</option>
+                                ))}
+                            </select>
+                        </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                             <button
                                 onClick={() => setIsShippingModalOpen(false)}
@@ -2387,8 +2422,15 @@ const Orders: React.FC = () => {
                                         return;
                                     }
                                     try {
-                                        if (shippingRemark !== (shippingOrderToUpdate.remark || '')) {
-                                            await updateOrder(shippingOrderToUpdate.id, { remark: shippingRemark });
+                                        const updates: Partial<Sale> = {};
+                                        if (shippingRemark !== (shippingOrderToUpdate.remark || '')) updates.remark = shippingRemark;
+                                        if (shippingCustomerCare !== (shippingOrderToUpdate.customerCare || '')) updates.customerCare = shippingCustomerCare;
+                                        if (shippingAddress !== (shippingOrderToUpdate.customer?.address || '')) {
+                                            updates.customer = { ...shippingOrderToUpdate.customer, address: shippingAddress } as any;
+                                        }
+
+                                        if (Object.keys(updates).length > 0) {
+                                            await updateOrder(shippingOrderToUpdate.id, updates);
                                         }
                                         await updateOrderStatus(shippingOrderToUpdate.id, 'Shipped', shippingOrderToUpdate.shipping?.trackingNumber, selectedCompany);
                                         showToast('Order marked as shipped', 'success');
