@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
+import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal } from '../components';
@@ -2047,7 +2048,17 @@ const Orders: React.FC = () => {
                                                                         );
                                                                     case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
                                                                     case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
-                                                                    case 'phone': return <td key={colId} style={cellStyle}>{order.customer?.phone}</td>;
+                                                                    case 'phone': {
+                                                                        const operator = getOperatorForPhone(order.customer?.phone);
+                                                                        return (
+                                                                            <td key={colId} style={cellStyle}>
+                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                    {operator && <img src={operator.logo} alt={operator.name} style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '2px' }} title={operator.name} />}
+                                                                                    <span>{order.customer?.phone || '-'}</span>
+                                                                                </div>
+                                                                            </td>
+                                                                        );
+                                                                    }
                                                                     case 'address': return <td key={colId} style={cellStyle}>{order.customer?.address || '-'}</td>;
                                                                     case 'page': return <td key={colId} style={cellStyle}>{order.customer?.page || '-'}</td>;
                                                                     case 'items':

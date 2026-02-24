@@ -3,6 +3,7 @@ import { ChevronDown, Edit, Eye, Printer, Copy, MapPin, Phone, Globe } from 'luc
 import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge from './PaymentStatusBadge';
+import { getOperatorForPhone } from '../utils/telecom';
 import './MobileOrderCard.css';
 
 interface MobileOrderCardProps {
@@ -131,11 +132,19 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                 <div className="moc-expanded">
                     {/* Customer Details */}
                     <div className="moc-details-grid">
-                        {order.customer?.phone && (
-                            <div className="moc-detail-item">
-                                <Phone size={14} /> <span>{order.customer.phone}</span>
-                            </div>
-                        )}
+                        {order.customer?.phone && (() => {
+                            const operator = getOperatorForPhone(order.customer.phone);
+                            return (
+                                <div className="moc-detail-item" style={{ gap: '6px' }}>
+                                    {operator ? (
+                                        <img src={operator.logo} alt={operator.name} style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '2px' }} title={operator.name} />
+                                    ) : (
+                                        <Phone size={14} />
+                                    )}
+                                    <span>{order.customer.phone}</span>
+                                </div>
+                            );
+                        })()}
                         {order.customer?.address && (
                             <div className="moc-detail-item align-start">
                                 <MapPin size={14} /> <span>{order.customer.address}</span>
