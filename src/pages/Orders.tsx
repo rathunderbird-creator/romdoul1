@@ -73,10 +73,156 @@ const SortableRow = ({ id, children, className, style, onClick, ...props }: any)
     );
 };
 
+const ShippingModalComponent: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    order: Sale | null;
+}> = ({ isOpen, onClose, order }) => {
+    const { shippingCompanies, customerCare, updateOrder, updateOrderStatus } = useStore();
+    const { showToast } = useToast();
+
+    const [selectedCompany, setSelectedCompany] = useState<string>('');
+    const [shippingRemark, setShippingRemark] = useState<string>('');
+    const [shippingAddress, setShippingAddress] = useState<string>('');
+    const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
+
+    useEffect(() => {
+        if (isOpen && order) {
+            setSelectedCompany(order.shipping?.company || shippingCompanies[0] || '');
+            setShippingRemark(order.remark || '');
+            setShippingAddress(order.customer?.address || '');
+            setShippingCustomerCare(order.customerCare || '');
+        }
+    }, [isOpen, order, shippingCompanies]);
+
+    if (!order) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Select Shipping Company">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                    Please select the shipping company for this order before changing its status to Shipped.
+                </p>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
+                    <select
+                        value={selectedCompany}
+                        onChange={(e) => setSelectedCompany(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none'
+                        }}
+                    >
+                        <option value="" disabled>Select a company</option>
+                        {shippingCompanies.map(company => (
+                            <option key={company} value={company}>{company}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Remark</label>
+                    <input
+                        type="text"
+                        placeholder="Add an optional remark..."
+                        value={shippingRemark}
+                        onChange={(e) => setShippingRemark(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none'
+                        }}
+                    />
+                </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Address</label>
+                    <input
+                        type="text"
+                        placeholder="Shipping address..."
+                        value={shippingAddress}
+                        onChange={(e) => setShippingAddress(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none'
+                        }}
+                    />
+                </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Customer Care</label>
+                    <select
+                        value={shippingCustomerCare}
+                        onChange={(e) => setShippingCustomerCare(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none'
+                        }}
+                    >
+                        <option value="" disabled>Select Customer Care</option>
+                        {(customerCare || []).map((cc: string) => (
+                            <option key={cc} value={cc}>{cc}</option>
+                        ))}
+                    </select>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer',
+                            fontSize: '14px', fontWeight: 500
+                        }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={async () => {
+                            if (!selectedCompany) {
+                                showToast('Please select a shipping company', 'error');
+                                return;
+                            }
+                            try {
+                                const updates: Partial<Sale> = {};
+                                if (shippingRemark !== (order.remark || '')) updates.remark = shippingRemark;
+                                if (shippingCustomerCare !== (order.customerCare || '')) updates.customerCare = shippingCustomerCare;
+                                if (shippingAddress !== (order.customer?.address || '')) {
+                                    updates.customer = { ...order.customer, address: shippingAddress } as any;
+                                }
+
+                                if (Object.keys(updates).length > 0) {
+                                    await updateOrder(order.id, updates);
+                                }
+                                await updateOrderStatus(order.id, 'Shipped', order.shipping?.trackingNumber, selectedCompany);
+                                showToast('Order marked as shipped', 'success');
+                            } catch (e: any) {
+                                console.error('Failed to update shipping status:', e);
+                                showToast('Update failed. Please try again.', 'error');
+                            } finally {
+                                onClose();
+                            }
+                        }}
+                        disabled={!selectedCompany}
+                        className="primary-button"
+                        style={{
+                            padding: '10px 16px', borderRadius: '8px', border: 'none',
+                            background: selectedCompany ? 'var(--color-primary)' : 'var(--color-border)',
+                            color: 'white', cursor: selectedCompany ? 'pointer' : 'not-allowed',
+                            fontSize: '14px', fontWeight: 500
+                        }}
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const Orders: React.FC = () => {
     // (Move refs below state declarations)
 
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows, customerCare } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
@@ -182,10 +328,6 @@ const Orders: React.FC = () => {
     // Shipping Modal State
     const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
-    const [selectedCompany, setSelectedCompany] = useState<string>('');
-    const [shippingRemark, setShippingRemark] = useState<string>('');
-    const [shippingAddress, setShippingAddress] = useState<string>('');
-    const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -1985,10 +2127,6 @@ const Orders: React.FC = () => {
                                                                                     onChange={(newStatus: string) => {
                                                                                         if (newStatus === 'Shipped') {
                                                                                             setShippingOrderToUpdate(order);
-                                                                                            setSelectedCompany(order.shipping?.company || shippingCompanies[0] || '');
-                                                                                            setShippingRemark(order.remark || '');
-                                                                                            setShippingAddress(order.customer?.address || '');
-                                                                                            setShippingCustomerCare(order.customerCare || '');
                                                                                             setIsShippingModalOpen(true);
                                                                                             return;
                                                                                         }
@@ -2336,127 +2474,11 @@ const Orders: React.FC = () => {
             }
 
             {/* Shipping Company Selection Modal */}
-            <Modal isOpen={isShippingModalOpen} onClose={() => setIsShippingModalOpen(false)} title="Select Shipping Company">
-                {shippingOrderToUpdate && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                            Please select the shipping company for this order before changing its status to Shipped.
-                        </p>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
-                            <select
-                                value={selectedCompany}
-                                onChange={(e) => setSelectedCompany(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            >
-                                <option value="" disabled>Select a company</option>
-                                {shippingCompanies.map(company => (
-                                    <option key={company} value={company}>{company}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Remark</label>
-                            <input
-                                type="text"
-                                placeholder="Add an optional remark..."
-                                value={shippingRemark}
-                                onChange={(e) => setShippingRemark(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Address</label>
-                            <input
-                                type="text"
-                                placeholder="Shipping address..."
-                                value={shippingAddress}
-                                onChange={(e) => setShippingAddress(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Customer Care</label>
-                            <select
-                                value={shippingCustomerCare}
-                                onChange={(e) => setShippingCustomerCare(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            >
-                                <option value="" disabled>Select Customer Care</option>
-                                {(customerCare || []).map((cc: string) => (
-                                    <option key={cc} value={cc}>{cc}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                            <button
-                                onClick={() => setIsShippingModalOpen(false)}
-                                style={{
-                                    padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                    background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer',
-                                    fontSize: '14px', fontWeight: 500
-                                }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    if (!selectedCompany) {
-                                        showToast('Please select a shipping company', 'error');
-                                        return;
-                                    }
-                                    try {
-                                        const updates: Partial<Sale> = {};
-                                        if (shippingRemark !== (shippingOrderToUpdate.remark || '')) updates.remark = shippingRemark;
-                                        if (shippingCustomerCare !== (shippingOrderToUpdate.customerCare || '')) updates.customerCare = shippingCustomerCare;
-                                        if (shippingAddress !== (shippingOrderToUpdate.customer?.address || '')) {
-                                            updates.customer = { ...shippingOrderToUpdate.customer, address: shippingAddress } as any;
-                                        }
-
-                                        if (Object.keys(updates).length > 0) {
-                                            await updateOrder(shippingOrderToUpdate.id, updates);
-                                        }
-                                        await updateOrderStatus(shippingOrderToUpdate.id, 'Shipped', shippingOrderToUpdate.shipping?.trackingNumber, selectedCompany);
-                                        showToast('Order marked as shipped', 'success');
-                                    } catch (e: any) {
-                                        console.error('Failed to update shipping status:', e);
-                                        showToast('Update failed. Please try again.', 'error');
-                                    } finally {
-                                        setIsShippingModalOpen(false);
-                                        setShippingOrderToUpdate(null);
-                                    }
-                                }}
-                                disabled={!selectedCompany}
-                                className="primary-button"
-                                style={{
-                                    padding: '10px 16px', borderRadius: '8px', border: 'none',
-                                    background: selectedCompany ? 'var(--color-primary)' : 'var(--color-border)',
-                                    color: 'white', cursor: selectedCompany ? 'pointer' : 'not-allowed',
-                                    fontSize: '14px', fontWeight: 500
-                                }}
-                            >
-                                Confirm
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </Modal>
+            <ShippingModalComponent
+                isOpen={isShippingModalOpen}
+                onClose={() => { setIsShippingModalOpen(false); setShippingOrderToUpdate(null); }}
+                order={shippingOrderToUpdate}
+            />
             <DataImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}
