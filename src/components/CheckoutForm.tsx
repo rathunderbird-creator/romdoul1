@@ -360,7 +360,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Phone Number <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value })} placeholder="012..." />
+                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value.replace(/\D/g, '') })} placeholder="012..." />
                             </div>
                         </div>
                         <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
