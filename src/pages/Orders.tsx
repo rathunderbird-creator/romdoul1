@@ -6,7 +6,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal } from '../components';
+import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal } from '../components';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 import { generateOrderCopyText } from '../utils/orderUtils';
@@ -178,6 +178,12 @@ const Orders: React.FC = () => {
     );
 
     const [showFilters, setShowFilters] = useState(false);
+
+    // Shipping Modal State
+    const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
+    const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
+    const [selectedCompany, setSelectedCompany] = useState<string>('');
+    const [shippingRemark, setShippingRemark] = useState<string>('');
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -1975,6 +1981,13 @@ const Orders: React.FC = () => {
                                                                                             : ['Delivered', 'Returned']
                                                                                     }
                                                                                     onChange={(newStatus: string) => {
+                                                                                        if (newStatus === 'Shipped') {
+                                                                                            setShippingOrderToUpdate(order);
+                                                                                            setSelectedCompany(order.shipping?.company || shippingCompanies[0] || '');
+                                                                                            setShippingRemark(order.remark || '');
+                                                                                            setIsShippingModalOpen(true);
+                                                                                            return;
+                                                                                        }
                                                                                         updateOrderStatus(order.id, newStatus as any);
                                                                                         if (newStatus === 'Delivered') {
                                                                                             const newPaymentStatus = order.paymentMethod === 'COD' ? 'Unpaid' : 'Unpaid';
@@ -1993,6 +2006,7 @@ const Orders: React.FC = () => {
                                                                         return (
                                                                             <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
                                                                                 <input
+                                                                                    key={`tracking-${order.shipping?.trackingNumber || ''}`}
                                                                                     type="text"
                                                                                     readOnly={!canEdit}
                                                                                     className="search-input"
@@ -2040,6 +2054,7 @@ const Orders: React.FC = () => {
                                                                         return (
                                                                             <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
                                                                                 <input
+                                                                                    key={`remark-${order.remark || ''}`}
                                                                                     type="text"
                                                                                     readOnly={!canEdit}
                                                                                     className="search-input"
@@ -2315,6 +2330,91 @@ const Orders: React.FC = () => {
                     />
                 )
             }
+
+            {/* Shipping Company Selection Modal */}
+            <Modal isOpen={isShippingModalOpen} onClose={() => setIsShippingModalOpen(false)} title="Select Shipping Company">
+                {shippingOrderToUpdate && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                            Please select the shipping company for this order before changing its status to Shipped.
+                        </p>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
+                            <select
+                                value={selectedCompany}
+                                onChange={(e) => setSelectedCompany(e.target.value)}
+                                style={{
+                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                    outline: 'none'
+                                }}
+                            >
+                                <option value="" disabled>Select a company</option>
+                                {shippingCompanies.map(company => (
+                                    <option key={company} value={company}>{company}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Remark</label>
+                            <input
+                                type="text"
+                                placeholder="Add an optional remark..."
+                                value={shippingRemark}
+                                onChange={(e) => setShippingRemark(e.target.value)}
+                                style={{
+                                    width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                    background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                    outline: 'none'
+                                }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                            <button
+                                onClick={() => setIsShippingModalOpen(false)}
+                                style={{
+                                    padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                    background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer',
+                                    fontSize: '14px', fontWeight: 500
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!selectedCompany) {
+                                        showToast('Please select a shipping company', 'error');
+                                        return;
+                                    }
+                                    try {
+                                        if (shippingRemark !== (shippingOrderToUpdate.remark || '')) {
+                                            await updateOrder(shippingOrderToUpdate.id, { remark: shippingRemark });
+                                        }
+                                        await updateOrderStatus(shippingOrderToUpdate.id, 'Shipped', shippingOrderToUpdate.shipping?.trackingNumber, selectedCompany);
+                                        showToast('Order marked as shipped', 'success');
+                                    } catch (e: any) {
+                                        console.error('Failed to update shipping status:', e);
+                                        showToast('Update failed. Please try again.', 'error');
+                                    } finally {
+                                        setIsShippingModalOpen(false);
+                                        setShippingOrderToUpdate(null);
+                                    }
+                                }}
+                                disabled={!selectedCompany}
+                                className="primary-button"
+                                style={{
+                                    padding: '10px 16px', borderRadius: '8px', border: 'none',
+                                    background: selectedCompany ? 'var(--color-primary)' : 'var(--color-border)',
+                                    color: 'white', cursor: selectedCompany ? 'pointer' : 'not-allowed',
+                                    fontSize: '14px', fontWeight: 500
+                                }}
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
             <DataImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}
