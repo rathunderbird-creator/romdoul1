@@ -6,11 +6,14 @@ import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import { DateRangePicker } from '../components';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { supabase } from '../lib/supabase';
+import { mapSaleEntity } from '../utils/mapper';
+import type { Sale } from '../types';
 
 const COLORS = ['var(--color-blue)', 'var(--color-green)', 'var(--color-primary)', 'var(--color-purple)', 'var(--color-red)'];
 
 const Dashboard: React.FC = () => {
-    const { products, sales, refreshData } = useStore();
+    const { products, refreshData } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
 
@@ -32,17 +35,41 @@ const Dashboard: React.FC = () => {
         return { start: today, end: today };
     });
 
-    const filteredSales = useMemo(() => {
-        if (!dateRange.start || !dateRange.end) return sales;
-        const start = new Date(dateRange.start);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(dateRange.end);
-        end.setHours(23, 59, 59, 999);
-        return sales.filter(sale => {
-            const date = new Date(sale.date);
-            return date >= start && date <= end;
-        });
-    }, [sales, dateRange]);
+    const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
+    const [isLoadingSales, setIsLoadingSales] = React.useState(false);
+
+    const fetchDashboardSales = React.useCallback(async () => {
+        setIsLoadingSales(true);
+        try {
+            let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
+
+            if (dateRange.start) {
+                const start = new Date(dateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('date', start.toISOString());
+            }
+            if (dateRange.end) {
+                const end = new Date(dateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('date', end.toISOString());
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            const mapped = (data || []).map(mapSaleEntity);
+            setFilteredSales(mapped);
+
+        } catch (error) {
+            console.error("Failed to fetch dashboard sales:", error);
+        } finally {
+            setIsLoadingSales(false);
+        }
+    }, [dateRange]);
+
+    React.useEffect(() => {
+        fetchDashboardSales();
+    }, [fetchDashboardSales]);
 
     const stats = useMemo(() => {
         const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
@@ -271,11 +298,15 @@ const Dashboard: React.FC = () => {
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
                     <button
+                        disabled={isLoadingSales}
                         onClick={() => {
                             const btn = document.getElementById('dashboard-refresh-btn');
                             if (btn) btn.style.animation = 'spin 1s linear infinite';
 
-                            refreshData().finally(() => {
+                            Promise.all([
+                                refreshData(true),
+                                fetchDashboardSales()
+                            ]).finally(() => {
                                 if (btn) btn.style.animation = 'none';
                             });
                         }}

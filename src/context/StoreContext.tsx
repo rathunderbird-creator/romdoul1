@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import { mapSaleEntity } from '../utils/mapper';
 import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction } from '../types';
 
 interface ConfigState {
@@ -174,25 +175,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (!silent) setIsLoading(true);
         try {
             const fetchAllSales = async () => {
-                let allSales: any[] = [];
-                let from = 0;
-                const limit = 1000;
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+                    .order('date', { ascending: false })
+                    .limit(500);
 
-                while (true) {
-                    const { data, error } = await supabase
-                        .from('sales')
-                        .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
-                        .order('date', { ascending: false })
-                        .range(from, from + limit - 1);
-
-                    if (error) return { data: null, error };
-                    if (!data || data.length === 0) break;
-
-                    allSales = [...allSales, ...data];
-                    if (data.length < limit) break;
-                    from += limit;
-                }
-                return { data: allSales, error: null };
+                return { data: data || [], error };
             };
 
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
@@ -201,8 +190,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
-                supabase.from('restocks').select('*').order('date', { ascending: false }),
-                supabase.from('transactions').select('*').order('date', { ascending: false })
+                supabase.from('restocks').select('*').order('date', { ascending: false }).limit(500),
+                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(500)
             ]);
 
 
@@ -227,41 +216,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Sales
             if (salesResult.data) {
                 // Map DB structure to App structure
-                const mappedSales: Sale[] = salesResult.data.map((s: any) => ({
-                    id: s.id,
-                    total: Number(s.total),
-                    discount: Number(s.discount),
-                    date: s.date,
-                    paymentMethod: s.payment_method as any,
-                    type: s.type as any,
-                    salesman: s.salesman,
-                    customerCare: s.customer_care,
-                    remark: s.remark,
-                    amountReceived: Number(s.amount_received),
-                    settleDate: s.settle_date,
-                    paymentStatus: s.payment_status as any,
-                    orderStatus: s.order_status as any,
-                    shipping: s.shipping_status ? {
-                        company: s.shipping_company,
-                        trackingNumber: s.tracking_number || '',
-                        status: s.shipping_status as any,
-                        cost: Number(s.shipping_cost || 0),
-                        staffName: ''
-                    } : undefined,
-                    customer: s.customer_snapshot,
-                    lastEditedAt: s.last_edited_at,
-                    lastEditedBy: s.last_edited_by,
-                    items: s.items.map((i: any) => ({
-                        id: i.product_id,
-                        name: i.name,
-                        price: Number(i.price),
-                        quantity: i.quantity,
-                        image: i.image,
-                        model: '', // Optional in CartItem
-                        stock: 0, // Not needed in history
-                        category: ''
-                    }))
-                }));
+                const mappedSales: Sale[] = salesResult.data.map(mapSaleEntity);
                 setSales(mappedSales);
 
                 // Apply sort if config is ready (But config is fetched in parallel, so we might need useEffect or dependency)

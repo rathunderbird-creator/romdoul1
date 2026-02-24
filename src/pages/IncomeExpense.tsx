@@ -9,6 +9,7 @@ import '../components/MobileOrderCard.css';
 import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
+import { supabase } from '../lib/supabase';
 
 // Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
 const parseDate = (dateStr: string) => {
@@ -19,7 +20,7 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC = () => {
-    const { transactions, addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData } = useStore();
+    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
 
@@ -54,6 +55,44 @@ const IncomeExpense: React.FC = () => {
         localStorage.setItem('incomeExpenseDateRange', JSON.stringify(dateRange));
     }, [dateRange]);
 
+    const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
+    const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+
+    const fetchTransactions = React.useCallback(async () => {
+        setIsLoadingTransactions(true);
+        try {
+            let query = supabase.from('transactions').select('*');
+
+            if (dateRange.start) {
+                const start = new Date(dateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('date', start.toISOString());
+            }
+            if (dateRange.end) {
+                const end = new Date(dateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('date', end.toISOString());
+            }
+
+            if (!dateRange.start && !dateRange.end) {
+                query = query.limit(1000); // Limit to prevent freezing on "All" dates
+            }
+
+            const { data, error } = await query.order('date', { ascending: false });
+            if (error) throw error;
+
+            setLocalTransactions((data || []) as Transaction[]);
+        } catch (error) {
+            console.error("Failed to fetch transactions:", error);
+        } finally {
+            setIsLoadingTransactions(false);
+        }
+    }, [dateRange]);
+
+    useEffect(() => {
+        fetchTransactions();
+    }, [fetchTransactions]);
+
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const categoryRef = useClickOutside<HTMLDivElement>(() => setShowCategoryDropdown(false));
 
@@ -82,7 +121,7 @@ const IncomeExpense: React.FC = () => {
 
     // Filtering
     const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
+        return localTransactions.filter(t => {
             const matchesType = filterType === 'All' || t.type === filterType;
             const matchesSearch = (t.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                 (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
@@ -127,7 +166,7 @@ const IncomeExpense: React.FC = () => {
             // If same type and day, newest time first
             return dateB.getTime() - dateA.getTime();
         });
-    }, [transactions, filterType, searchTerm, dateRange]);
+    }, [localTransactions, filterType, searchTerm, dateRange]);
 
     // Stats
     const stats = useMemo(() => {
@@ -148,13 +187,13 @@ const IncomeExpense: React.FC = () => {
 
     const uniqueCategories = useMemo(() => {
         const cats = new Set<string>();
-        transactions.forEach(t => {
+        localTransactions.forEach(t => {
             if (t.category) {
                 cats.add(t.category.trim());
             }
         });
         return Array.from(cats).sort();
-    }, [transactions]);
+    }, [localTransactions]);
 
     const filteredCategories = useMemo(() => {
         if (!formData.category) return uniqueCategories;
@@ -226,6 +265,7 @@ const IncomeExpense: React.FC = () => {
                 });
             }
             setIsAddModalOpen(false);
+            await fetchTransactions();
         } catch (error) {
             console.error(error);
             alert('Failed to save transaction');
@@ -236,6 +276,7 @@ const IncomeExpense: React.FC = () => {
         if (confirm('Are you sure you want to delete this transaction?')) {
             try {
                 await deleteTransaction(id);
+                await fetchTransactions();
             } catch (error) {
                 console.error(error);
                 alert('Failed to delete transaction');
@@ -277,10 +318,14 @@ const IncomeExpense: React.FC = () => {
                         Add Transaction
                     </button>
                     <button
+                        disabled={isLoadingTransactions}
                         onClick={() => {
                             const btn = document.getElementById('ie-refresh-btn');
                             if (btn) btn.style.animation = 'spin 1s linear infinite';
-                            refreshData().finally(() => {
+                            Promise.all([
+                                refreshData(true),
+                                fetchTransactions()
+                            ]).finally(() => {
                                 if (btn) btn.style.animation = 'none';
                             });
                         }}

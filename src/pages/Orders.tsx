@@ -12,6 +12,8 @@ import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 import { generateOrderCopyText } from '../utils/orderUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { supabase } from '../lib/supabase';
+import { mapSaleEntity } from '../utils/mapper';
 import * as XLSX from 'xlsx';
 import type { Sale } from '../types';
 import {
@@ -221,6 +223,7 @@ const ShippingModalComponent: React.FC<{
 };
 
 const Orders: React.FC = () => {
+    console.log('Orders render');
     // (Move refs below state declarations)
 
     const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
@@ -374,6 +377,7 @@ const Orders: React.FC = () => {
             await importOrders(data);
             setIsImportModalOpen(false);
             showToast('Orders imported successfully', 'success');
+            await fetchOrders();
         } catch (error: any) {
             console.error("Import failed:", error);
             showToast(`Failed to import orders: ${error.message || error}`, 'error');
@@ -437,11 +441,12 @@ const Orders: React.FC = () => {
         }
     };
 
-    const handleBulkDelete = () => {
+    const handleBulkDelete = async () => {
         if (confirm(`Are you sure you want to delete ${selectedIds.size} orders ? `)) {
-            deleteOrders(Array.from(selectedIds));
+            await deleteOrders(Array.from(selectedIds));
             setSelectedIds(new Set());
             showToast('Orders deleted successfully', 'success');
+            await fetchOrders();
         }
     };
 
@@ -575,117 +580,107 @@ const Orders: React.FC = () => {
 
 
     // Derived State (filteredOrders, paginatedOrders, stats) -> kept same essentially
-    const filteredOrders = useMemo(() => {
-        return sales.filter(order => {
-            // Hide 'ReStock' by default unless explicitly filtered for
-            const matchesStatus = statusFilter.length === 0
-                ? (order.shipping?.status !== 'ReStock')
-                : statusFilter.includes(order.shipping?.status || 'Pending');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(100);
+    const [totalCount, setTotalCount] = useState(0);
+
+    const [serverOrders, setServerOrders] = useState<Sale[]>([]);
+    const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, itemsPerPage]);
+
+    const fetchOrders = React.useCallback(async () => {
+        setIsLoadingOrders(true);
+        try {
+            let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
+
+            if (statusFilter.length > 0) {
+                query = query.in('shipping_status', statusFilter);
+            } else {
+                query = query.neq('shipping_status', 'ReStock');
+            }
 
             const isSalesman = currentUser?.roleId === 'salesman';
             const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
 
-            const matchesSalesman = effectiveSalesmanFilter === 'All' || order.salesman === effectiveSalesmanFilter;
-            const matchesPayStatus = payStatusFilter.length === 0 || payStatusFilter.includes(order.paymentStatus || 'Paid');
-            const matchesShippingCo = shippingCoFilter.length === 0 || shippingCoFilter.includes(order.shipping?.company || '');
-
-            const lowerTerm = searchTerm.toLowerCase();
-            // Split by newline, comma, or whitespace to support multiple search terms
-            const searchTokens = lowerTerm.split(/[\n,\s]+/).map(t => t.trim()).filter(t => t.length > 0);
-
-            const matchesSearch = searchTokens.length === 0 || searchTokens.some(token => {
-                return (
-                    String(order.customer?.name || '').toLowerCase().includes(token) ||
-                    String(order.id || '').toLowerCase().includes(token) ||
-                    String(order.customer?.phone || '').toLowerCase().includes(token) ||
-                    String(order.customer?.address || '').toLowerCase().includes(token) ||
-                    String(order.customer?.city || '').toLowerCase().includes(token) ||
-                    String(order.customer?.page || '').toLowerCase().includes(token) ||
-                    order.items.some(item => String(item.name || '').toLowerCase().includes(token) || String(item.model || '').toLowerCase().includes(token)) ||
-                    String(order.paymentMethod || '').toLowerCase().includes(token) ||
-                    String(order.total || '').includes(token) ||
-                    String(order.remark || '').toLowerCase().includes(token) ||
-                    String(order.shipping?.company || '').toLowerCase().includes(token) ||
-                    String(order.shipping?.trackingNumber || '').toLowerCase().includes(token) ||
-                    String(order.shipping?.staffName || '').toLowerCase().includes(token) ||
-                    String(order.salesman || '').toLowerCase().includes(token) ||
-                    String(order.customerCare || '').toLowerCase().includes(token) ||
-                    String(order.paymentStatus || 'Paid').toLowerCase().includes(token) ||
-                    String(order.shipping?.status || 'Pending').toLowerCase().includes(token) ||
-                    new Date(order.date).toLocaleDateString().toLowerCase().includes(token) ||
-                    (order.settleDate ? new Date(order.settleDate).toLocaleDateString().toLowerCase().includes(token) : false)
-                );
-            });
-
-            let matchesDate = true;
-            if (dateRange.start && dateRange.end) {
-                const orderDate = new Date(order.date); // Converts UTC to Local
-
-                // ... keep existing date logic ...
-                const startDate = new Date(dateRange.start);
-                startDate.setHours(0, 0, 0, 0);
-                const endDate = new Date(dateRange.end);
-                endDate.setHours(23, 59, 59, 999);
-                matchesDate = orderDate >= startDate && orderDate <= endDate;
+            if (effectiveSalesmanFilter !== 'All') {
+                query = query.eq('salesman', effectiveSalesmanFilter);
             }
 
-            return matchesStatus && matchesSalesman && matchesPayStatus && matchesShippingCo && matchesSearch && matchesDate;
-        });
-    }, [sales, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, searchTerm, dateRange]);
+            if (payStatusFilter.length > 0) {
+                query = query.in('payment_status', payStatusFilter);
+            }
 
-    const sortedOrders = useMemo(() => {
-        let sortableOrders = [...filteredOrders];
-        if (sortConfig !== null) {
-            sortableOrders.sort((a, b) => {
-                const getSortValue = (order: Sale, key: string) => {
-                    switch (key) {
-                        case 'customer': return order.customer?.name || '';
-                        case 'phone': return order.customer?.phone || '';
-                        case 'address': return order.customer?.address || '';
-                        case 'page': return order.customer?.page || '';
-                        case 'payBy': return order.paymentMethod || '';
-                        case 'shippingCo': return order.shipping?.company || '';
-                        case 'tracking': return order.shipping?.trackingNumber || '';
-                        case 'status': return order.shipping?.status || '';
-                        case 'payStatus': return order.paymentStatus || 'Paid';
-                        case 'received': return order.amountReceived ?? (order.paymentStatus === 'Paid' ? order.total : 0);
-                        case 'balance':
-                            const received = order.amountReceived ?? (order.paymentStatus === 'Paid' ? order.total : 0);
-                            return order.total - received;
-                        case 'items':
-                            return order.items.map(i => i.name).join(', ');
-                        default:
-                            // Handle simple properties and fallback
-                            const val = order[key as keyof Sale];
-                            return val === null || val === undefined ? '' : val;
-                    }
+            if (shippingCoFilter.length > 0) {
+                query = query.in('shipping_company', shippingCoFilter);
+            }
+
+            if (dateRange.start) {
+                const start = new Date(dateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('date', start.toISOString());
+            }
+            if (dateRange.end) {
+                const end = new Date(dateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('date', end.toISOString());
+            }
+
+            if (searchTerm.trim()) {
+                const term = searchTerm.toLowerCase().trim();
+                // PostgREST fully supports OR across standard columns and JSONB paths.
+                query = query.or(`id.ilike.%${term}%,salesman.ilike.%${term}%,remark.ilike.%${term}%,customer_care.ilike.%${term}%,shipping_company.ilike.%${term}%,tracking_number.ilike.%${term}%,payment_method.ilike.%${term}%,customer_snapshot->>name.ilike.%${term}%,customer_snapshot->>phone.ilike.%${term}%,customer_snapshot->>city.ilike.%${term}%`);
+            }
+
+            let dbSortCol = 'date';
+            if (sortConfig) {
+                const map: Record<string, string> = {
+                    'date': 'date',
+                    'total': 'total',
+                    'balance': 'total',
+                    'payBy': 'payment_method',
+                    'shippingCo': 'shipping_company',
+                    'tracking': 'tracking_number',
+                    'status': 'shipping_status',
+                    'payStatus': 'payment_status',
+                    'remark': 'remark',
+                    'settleDate': 'settle_date'
                 };
+                dbSortCol = map[sortConfig.key] || 'date';
+            }
+            query = query.order(dbSortCol, { ascending: sortConfig?.direction === 'asc' });
 
-                let aValue = getSortValue(a, sortConfig.key);
-                let bValue = getSortValue(b, sortConfig.key);
+            const from = (currentPage - 1) * itemsPerPage;
+            const to = from + itemsPerPage - 1;
+            query = query.range(from, to);
 
-                if (typeof aValue === 'number' && typeof bValue === 'number') {
-                    return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-                }
+            const { data, count, error } = await query;
+            if (error) throw error;
 
-                aValue = String(aValue).toLowerCase();
-                bValue = String(bValue).toLowerCase();
+            setTotalCount(count || 0);
 
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'asc' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'asc' ? 1 : -1;
-                }
-                return 0;
-            });
+            const mapped = (data || []).map(mapSaleEntity);
+            setServerOrders(mapped);
+        } catch (err) {
+            console.error("Fetch orders failed", err);
+        } finally {
+            setIsLoadingOrders(false);
         }
-        return sortableOrders;
-    }, [filteredOrders, sortConfig]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser]);
+
+    useEffect(() => {
+        fetchOrders();
+    }, [fetchOrders]);
+
+    // Derived states based on the SINGLE PAGE of fetched items
+    const filteredOrders = serverOrders;
 
     const duplicateOrderIds = useMemo(() => {
         const exactMatches = new Map<string, string[]>();
-        sales.forEach(order => {
+        serverOrders.forEach(order => {
             const dateStr = new Date(order.date).toLocaleDateString();
             const itemsStr = order.items.map(i => `${i.name}_${i.quantity}`).sort().join('|');
             const customerName = String(order.customer?.name || '').trim().toLowerCase();
@@ -705,7 +700,7 @@ const Orders: React.FC = () => {
             }
         });
         return duplicates;
-    }, [sales]);
+    }, [serverOrders]);
 
     const getRowClass = (order: Sale) => {
         if (selectedIds.has(order.id)) return 'selected';
@@ -750,26 +745,15 @@ const Orders: React.FC = () => {
 
 
 
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(100);
-
-    React.useEffect(() => {
-        setCurrentPage(1);
-    }, [statusFilter, payStatusFilter, searchTerm, dateRange, itemsPerPage]);
-
-    const paginatedOrders = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        return sortedOrders.slice(startIndex, startIndex + itemsPerPage);
-    }, [sortedOrders, currentPage, itemsPerPage]);
+    const paginatedOrders = serverOrders;
 
     const stats = useMemo(() => {
-        const totalOrders = filteredOrders.length;
+        const totalOrders = totalCount;
         const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.total, 0);
         const totalReceived = filteredOrders.reduce((sum, order) => sum + (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)), 0);
         const totalOutstanding = totalRevenue - totalReceived;
         return { totalOrders, totalRevenue, totalReceived, totalOutstanding };
-        return { totalOrders, totalRevenue, totalReceived, totalOutstanding };
-    }, [filteredOrders]);
+    }, [filteredOrders, totalCount]);
 
     // Drag and Drop Logic
     const sensors = useSensors(
@@ -905,6 +889,7 @@ const Orders: React.FC = () => {
                 await deleteOrders(Array.from(selectedIds));
                 setSelectedIds(new Set());
                 showToast('Orders deleted and stock restored', 'success');
+                await fetchOrders();
             } catch (error) {
                 console.error('Failed to delete orders:', error);
                 showToast('Failed to delete orders', 'error');
@@ -949,6 +934,7 @@ const Orders: React.FC = () => {
 
             showToast(`Updated ${ids.length} orders`, 'success');
             setSelectedIds(new Set()); // Clear selection
+            await fetchOrders();
         } catch (error) {
             console.error('Bulk edit failed:', error);
             showToast('Failed to update orders', 'error');
@@ -1132,10 +1118,14 @@ const Orders: React.FC = () => {
                                 </button>
                             )}
                             <button
+                                disabled={isLoadingOrders}
                                 onClick={() => {
                                     const btn = document.getElementById('orders-refresh-btn');
                                     if (btn) btn.style.animation = 'spin 1s linear infinite';
-                                    refreshData().finally(() => {
+                                    Promise.all([
+                                        refreshData(true),
+                                        fetchOrders()
+                                    ]).finally(() => {
                                         if (btn) btn.style.animation = 'none';
                                         showToast('Data refreshed', 'success');
                                     });
@@ -2379,16 +2369,16 @@ const Orders: React.FC = () => {
                                     <ChevronLeft size={16} />
                                 </button>
                                 <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredOrders.length / itemsPerPage)}
+                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
                                 </span>
                                 <button
-                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredOrders.length / itemsPerPage), p + 1))}
-                                    disabled={currentPage === Math.ceil(filteredOrders.length / itemsPerPage)}
+                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / itemsPerPage), p + 1))}
+                                    disabled={currentPage >= Math.ceil(totalCount / itemsPerPage)}
                                     style={{
                                         padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                        background: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
-                                        color: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                        cursor: currentPage === Math.ceil(filteredOrders.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                                        background: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'not-allowed' : 'pointer',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center'
                                     }}
                                 >
