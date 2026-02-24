@@ -1,35 +1,30 @@
-export const generateLogoUri = (color: string, text: string) => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="4" fill="${color}"/><text x="20" y="26" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="${text.length > 2 ? '14' : '20'}" fill="white" text-anchor="middle">${text}</text></svg>`;
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-};
-
 export const OPERATOR_DATA = [
     {
         name: 'Cellcard',
         color: '#F48220', // Cellcard Orange
         bg: 'rgba(244, 130, 32, 0.1)',
-        logo: generateLogoUri('#F48220', 'CEL'),
+        logo: 'https://tse1.mm.bing.net/th/id/OIP.WAFj-JJfqyHWfAV_Yy-m1AHaHa?rs=1&pid=ImgDetMain&o=7&rm=3',
         prefixes: ['011', '012', '014', '017', '061', '076', '077', '078', '079', '085', '089', '092', '095', '099']
     },
     {
         name: 'Smart',
         color: '#00A54F', // Smart Green
         bg: 'rgba(0, 165, 79, 0.1)',
-        logo: generateLogoUri('#00A54F', 'SMT'),
+        logo: 'https://www.google.com/s2/favicons?domain=smart.com.kh&sz=128',
         prefixes: ['010', '015', '016', '069', '070', '081', '086', '087', '093', '096', '098']
     },
     {
         name: 'Metfone',
         color: '#E3000F', // Metfone Red
         bg: 'rgba(227, 0, 15, 0.1)',
-        logo: generateLogoUri('#E3000F', 'MET'),
+        logo: 'https://www.google.com/s2/favicons?domain=metfone.com.kh&sz=128',
         prefixes: ['031', '060', '066', '067', '068', '071', '088', '090', '097']
     },
     {
         name: 'Seatel',
         color: '#0059A6', // Seatel Blue
         bg: 'rgba(0, 89, 166, 0.1)',
-        logo: generateLogoUri('#0059A6', 'yes'),
+        logo: 'https://www.google.com/s2/favicons?domain=yes.com.kh&sz=128',
         prefixes: ['018', '0189']
     }
 ];
