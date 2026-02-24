@@ -32,8 +32,8 @@ export const OPERATOR_DATA = [
 export const getOperatorForPhone = (phone: string | null | undefined) => {
     if (!phone) return null;
 
-    // Remove all non-digits
-    const cleanPhone = phone.replace(/\D/g, '');
+    // Ensure phone is a string and remove all non-digits
+    const cleanPhone = String(phone).replace(/\D/g, '');
 
     // Check for each prefix (longest first to avoid overlap)
     // Cambodia numbers often start with 0, but sometimes +855, or just 855.
