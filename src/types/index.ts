@@ -96,7 +96,7 @@ export interface StoreContextType {
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => void; // Updated signature
     addOnlineOrder: (order: Omit<Sale, 'id'>) => void;
-    updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string) => void;
+    updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => void;
     addProduct: (product: Omit<Product, 'id'>) => void;
     updateProduct: (id: string, product: Partial<Product>) => void;
     deleteProduct: (id: string) => void;

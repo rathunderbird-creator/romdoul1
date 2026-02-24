@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet, Phone } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { NavLink } from 'react-router-dom';
 
@@ -21,6 +21,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: LayoutDashboard, label: 'Dashboard', path: '/' });
+        navItems.push({ icon: Phone, label: 'Mobile Operators', path: '/mobile-operators' });
     }
 
     if (hasPermission('manage_orders') || hasPermission('create_orders') || hasPermission('view_orders')) {

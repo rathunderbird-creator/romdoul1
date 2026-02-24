@@ -958,7 +958,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
     };
 
-    const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string) => {
+    const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => {
         const now = new Date().toISOString();
         const editorName = currentUser?.name;
 
@@ -978,7 +978,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             status: 'Pending'
                         }),
                         status,
-                        trackingNumber: trackingNumber ?? (sale.shipping?.trackingNumber || '')
+                        trackingNumber: trackingNumber ?? (sale.shipping?.trackingNumber || ''),
+                        company: shippingCompany ?? (sale.shipping?.company || '')
                     }
                 };
             }
@@ -1026,6 +1027,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         const updates: any = { shipping_status: status };
         if (trackingNumber) updates.tracking_number = trackingNumber;
+        if (shippingCompany) updates.shipping_company = shippingCompany;
 
         if (currentUser) {
             updates.last_edited_at = now;
