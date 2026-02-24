@@ -21,7 +21,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: LayoutDashboard, label: 'Dashboard', path: '/' });
-        navItems.push({ icon: Phone, label: 'Mobile Operators', path: '/mobile-operators' });
     }
 
     if (hasPermission('manage_orders') || hasPermission('create_orders') || hasPermission('view_orders')) {
@@ -33,6 +32,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         // Assume users who can view reports or manage inventory can see income/expense for now.
         // Ideally there's a specific 'manage_transactions' permission. 
         navItems.push({ icon: Wallet, label: 'Income & Expense', path: '/income-expense' });
+    }
+
+    if (hasPermission('view_dashboard')) {
+        navItems.push({ icon: Phone, label: 'Mobile Operators', path: '/mobile-operators' });
     }
 
     if (canManageUsers) {
