@@ -11,20 +11,20 @@ ON storage.objects FOR SELECT
 TO public 
 USING ( bucket_id = 'products' );
 
--- 2. Allow authenticated users to upload images
-CREATE POLICY "Allow authenticated uploads to products bucket" 
+-- 2. Allow public users to upload images
+CREATE POLICY "Allow public uploads to products bucket" 
 ON storage.objects FOR INSERT 
-TO authenticated 
+TO public 
 WITH CHECK ( bucket_id = 'products' );
 
--- 3. Allow authenticated users to update their uploaded images
-CREATE POLICY "Allow authenticated updates to products bucket" 
+-- 3. Allow public users to update their uploaded images
+CREATE POLICY "Allow public updates to products bucket" 
 ON storage.objects FOR UPDATE 
-TO authenticated 
+TO public 
 USING ( bucket_id = 'products' );
 
--- 4. Allow authenticated users to delete images
-CREATE POLICY "Allow authenticated deletes from products bucket" 
+-- 4. Allow public users to delete images
+CREATE POLICY "Allow public deletes from products bucket" 
 ON storage.objects FOR DELETE 
-TO authenticated 
+TO public 
 USING ( bucket_id = 'products' );
