@@ -222,6 +222,86 @@ const ShippingModalComponent: React.FC<{
     );
 };
 
+const PendingRemarkModalComponent: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    order: Sale | null;
+}> = ({ isOpen, onClose, order }) => {
+    const { updateOrder, updateOrderStatus } = useStore();
+    const { showToast } = useToast();
+
+    const [remark, setRemark] = useState<string>('');
+
+    useEffect(() => {
+        if (isOpen && order) {
+            setRemark(order.remark || '');
+        }
+    }, [isOpen, order]);
+
+    if (!order) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Update Pending Remark">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                    Add or update the remark for this pending order before confirming.
+                </p>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Remark</label>
+                    <input
+                        type="text"
+                        placeholder="Add remark..."
+                        value={remark}
+                        onChange={(e) => setRemark(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none'
+                        }}
+                    />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer',
+                            fontSize: '14px', fontWeight: 500
+                        }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={async () => {
+                            try {
+                                if (remark !== (order.remark || '')) {
+                                    await updateOrder(order.id, { remark });
+                                }
+                                await updateOrderStatus(order.id, 'Pending');
+                                showToast('Order marked as Pending', 'success');
+                            } catch (e: any) {
+                                console.error('Failed to update pending status:', e);
+                                showToast('Update failed. Please try again.', 'error');
+                            } finally {
+                                onClose();
+                            }
+                        }}
+                        className="primary-button"
+                        style={{
+                            padding: '10px 16px', borderRadius: '8px', border: 'none',
+                            background: 'var(--color-primary)',
+                            color: 'white', cursor: 'pointer',
+                            fontSize: '14px', fontWeight: 500
+                        }}
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
@@ -564,6 +644,10 @@ const Orders: React.FC = () => {
 
     // Appearance State
     const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
+
+    // Pending Modal State
+    const [isPendingRemarkModalOpen, setIsPendingRemarkModalOpen] = useState(false);
+    const [pendingOrderToUpdate, setPendingOrderToUpdate] = useState<Sale | null>(null);
 
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
@@ -2150,6 +2234,11 @@ const Orders: React.FC = () => {
                                                                                             setIsShippingModalOpen(true);
                                                                                             return;
                                                                                         }
+                                                                                        if (newStatus === 'Pending') {
+                                                                                            setPendingOrderToUpdate(order);
+                                                                                            setIsPendingRemarkModalOpen(true);
+                                                                                            return;
+                                                                                        }
                                                                                         updateOrderStatus(order.id, newStatus as any);
                                                                                         if (newStatus === 'Delivered') {
                                                                                             const newPaymentStatus = order.paymentMethod === 'COD' ? 'Unpaid' : 'Unpaid';
@@ -2498,6 +2587,12 @@ const Orders: React.FC = () => {
                 isOpen={isShippingModalOpen}
                 onClose={() => { setIsShippingModalOpen(false); setShippingOrderToUpdate(null); }}
                 order={shippingOrderToUpdate}
+            />
+            {/* Pending Remark Modal */}
+            <PendingRemarkModalComponent
+                isOpen={isPendingRemarkModalOpen}
+                onClose={() => { setIsPendingRemarkModalOpen(false); setPendingOrderToUpdate(null); }}
+                order={pendingOrderToUpdate}
             />
             <DataImportModal
                 isOpen={isImportModalOpen}
