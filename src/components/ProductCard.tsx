@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Plus, Pin } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useMobile } from '../hooks/useMobile';
+import { supabase } from '../lib/supabase';
+import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 import type { Product } from '../types';
 
 interface ProductCardProps {
@@ -14,6 +16,32 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
     const { pinnedProductIds, toggleProductPin } = useStore();
     const isMobile = useMobile();
     const isPinned = pinnedProductIds.includes(product.id);
+
+    const imageContainerRef = useRef<HTMLDivElement>(null);
+    const hasIntersected = useIntersectionObserver(imageContainerRef, {
+        rootMargin: '100px',
+        threshold: 0.1
+    });
+
+    const [lazyImage, setLazyImage] = useState<string>(product.image || '');
+
+    useEffect(() => {
+        if (hasIntersected && !lazyImage && product.id) {
+            let isMounted = true;
+            const fetchImage = async () => {
+                try {
+                    const { data } = await supabase.from('products').select('image').eq('id', product.id).single();
+                    if (isMounted && data?.image) {
+                        setLazyImage(data.image);
+                    }
+                } catch (e) {
+                    console.error('Lazy image load failed', e);
+                }
+            };
+            fetchImage();
+            return () => { isMounted = false; };
+        }
+    }, [hasIntersected, lazyImage, product.id]);
 
     // Effective Stock Calculation
     const effectiveStock = Math.max(0, product.stock - cartQuantity);
@@ -88,22 +116,28 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
                 </div>
             )}
 
-            <div style={{
-                height: isMobile ? '120px' : '200px', // Fixed height on desktop too for consistency
-                flexShrink: 0,
-                background: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '6px',
-                position: 'relative',
-                borderBottom: '1px solid rgba(0,0,0,0.03)'
-            }}>
-                <img
-                    src={product.image}
-                    alt={product.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                />
+            <div
+                ref={imageContainerRef}
+                style={{
+                    height: isMobile ? '120px' : '200px',
+                    flexShrink: 0,
+                    background: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '6px',
+                    position: 'relative',
+                    borderBottom: '1px solid rgba(0,0,0,0.03)'
+                }}>
+                {lazyImage ? (
+                    <img
+                        src={lazyImage}
+                        alt={product.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                    />
+                ) : (
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Loading image...</div>
+                )}
             </div>
 
             <div style={{ padding: isMobile ? '8px' : '10px 12px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>

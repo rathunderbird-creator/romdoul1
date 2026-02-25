@@ -222,8 +222,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             };
 
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
-                supabase.from('products').select('*'),
-                supabase.from('customers').select('*'),
+                supabase.from('products').select('id, name, model, price, stock, category, low_stock_threshold, created_at'),
+                supabase.from('customers').select('id, name, phone, email, address, city, platform, page'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
