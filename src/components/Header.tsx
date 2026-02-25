@@ -8,9 +8,10 @@ import { useNavigate } from 'react-router-dom';
 interface HeaderProps {
     isCollapsed: boolean;
     toggleSidebar?: () => void; // Pass toggle function
+    isHidden?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
+const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const { headerContent } = useHeader();
     const { currentUser, roles, logout } = useStore();
     const isMobile = useMobile();
@@ -34,10 +35,16 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
             justifyContent: 'space-between',
             padding: isMobile ? '8px 12px' : '0 24px',
             zIndex: 90,
-            transition: 'left 0.3s ease',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             gap: isMobile ? '8px' : '0',
             width: '100%',
-            flexShrink: 0
+            flexShrink: 0,
+            position: isMobile ? 'sticky' : 'static',
+            top: 0,
+            transform: isMobile && isHidden ? 'translateY(-100%)' : 'translateY(0)',
+            opacity: isMobile && isHidden ? 0 : 1,
+            pointerEvents: isMobile && isHidden ? 'none' : 'auto',
+            marginBottom: isMobile && isHidden ? (headerContent?.actions ? '-90px' : '-50px') : '0' // smooth content collapse
         }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                 {/* Left: Menu Toggle & Title */}

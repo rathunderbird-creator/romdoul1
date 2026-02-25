@@ -1,21 +1,22 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, Boxes, RefreshCw } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import MobileInventoryCard from '../components/MobileInventoryCard';
-import type { Product } from '../types';
+import type { Product, Sale } from '../types';
+import { supabase } from '../lib/supabase';
 
 type SortConfig = {
-    key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid';
+    key: keyof Product | 'totalValue';
     direction: 'asc' | 'desc';
 } | null;
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, sales, restockOrder, updateOrder, deleteOrders, currentUser, addStock, restocks, refreshData } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, restockOrder, updateOrder, currentUser, salesUpdatedAt } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -39,16 +40,60 @@ const Inventory: React.FC = () => {
 
     // State
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-    // Restock Form State
-    const [restockData, setRestockData] = useState({
-        productId: '',
-        quantity: 0,
-        cost: 0,
-        note: ''
-    });
+    // Historical Orders State
+    const [returnedOrders, setReturnedOrders] = useState<Sale[]>([]);
+    const [restockedHistory, setRestockedHistory] = useState<Sale[]>([]);
+
+    React.useEffect(() => {
+        const fetchHistoricalOrders = async () => {
+            try {
+                // Fetch Returned Orders
+                const { data: retData, error: retErr } = await supabase
+                    .from('sales')
+                    .select('*, items:sale_items(*)')
+                    .eq('shipping_status', 'Returned')
+                    .order('date', { ascending: false });
+
+                if (retErr) throw retErr;
+
+                // Fetch Restocked History
+                const { data: resData, error: resErr } = await supabase
+                    .from('sales')
+                    .select('*, items:sale_items(*)')
+                    .eq('shipping_status', 'ReStock')
+                    .order('date', { ascending: false });
+
+                if (resErr) throw resErr;
+
+                // Map Supabase snake_case back to frontend camelCase expectations for minimal UI disruption
+                const mapToSale = (dbRow: any): Sale => ({
+                    ...dbRow,
+                    paymentMethod: dbRow.payment_method,
+                    paymentStatus: dbRow.payment_status,
+                    customerCare: dbRow.customer_care,
+                    amountReceived: dbRow.amount_received,
+                    settleDate: dbRow.settle_date,
+                    orderStatus: dbRow.order_status,
+                    shipping: {
+                        company: dbRow.shipping_company,
+                        trackingNumber: dbRow.tracking_number,
+                        status: dbRow.shipping_status,
+                        cost: 0
+                    },
+                    customer: dbRow.customer_snapshot || {}
+                });
+
+                setReturnedOrders((retData || []).map(mapToSale));
+                setRestockedHistory((resData || []).map(mapToSale));
+            } catch (err) {
+                console.error("Failed to fetch historical orders:", err);
+            }
+        };
+
+        fetchHistoricalOrders();
+    }, [salesUpdatedAt]);
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -79,12 +124,11 @@ const Inventory: React.FC = () => {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('All');
-    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'soldPaid', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState<SortConfig>(null);
 
-    // Daily Stock Summary State
-    const [dailyStockDate, setDailyStockDate] = useState<string>(new Date().toISOString().split('T')[0]);
-
-
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(20);
 
     // Form State
     type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold'> & {
@@ -120,25 +164,8 @@ const Inventory: React.FC = () => {
     };
 
     // Derived State
-    const soldPaidMap = useMemo(() => {
-        const map = new Map<string, number>();
-        sales.forEach(sale => {
-            if (sale.paymentStatus === 'Paid' || sale.paymentStatus === 'Settled' || sale.paymentStatus === 'Paid/Settled' as any) {
-                sale.items.forEach(item => {
-                    map.set(item.id, (map.get(item.id) || 0) + item.quantity);
-                });
-            }
-        });
-        return map;
-    }, [sales]);
-
     const filteredAndSortedProducts = useMemo(() => {
-        let mappedProducts = products.map(p => ({
-            ...p,
-            soldPaid: soldPaidMap.get(p.id) || 0
-        }));
-
-        let result = mappedProducts.filter(product => {
+        let result = products.filter(product => {
             const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 product.model.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesCategory = categoryFilter === 'All' || product.category === categoryFilter;
@@ -147,24 +174,13 @@ const Inventory: React.FC = () => {
 
         if (sortConfig) {
             result.sort((a, b) => {
-                let aValue: any = a[sortConfig.key as keyof typeof a];
-                let bValue: any = b[sortConfig.key as keyof typeof b];
+                let aValue: any = a[sortConfig.key as keyof Product];
+                let bValue: any = b[sortConfig.key as keyof Product];
 
                 // Handle 'totalValue' sort key
                 if (sortConfig.key === 'totalValue') {
                     aValue = a.price * a.stock;
                     bValue = b.price * b.stock;
-                }
-
-                // Handle 'createdAt' sort key
-                if (sortConfig.key === 'createdAt') {
-                    aValue = new Date(a.createdAt || 0).getTime();
-                    bValue = new Date(b.createdAt || 0).getTime();
-                }
-
-                if (sortConfig.key === 'soldPaid') {
-                    aValue = a.soldPaid;
-                    bValue = b.soldPaid;
                 }
 
                 if (aValue < bValue) {
@@ -178,7 +194,7 @@ const Inventory: React.FC = () => {
         }
 
         return result;
-    }, [products, searchTerm, categoryFilter, sortConfig, soldPaidMap]);
+    }, [products, searchTerm, categoryFilter, sortConfig]);
 
     // Calculate Totals
     const stats = useMemo(() => {
@@ -197,87 +213,8 @@ const Inventory: React.FC = () => {
         };
     }, [products, categories]);
 
-    // Daily Stock Calculations
-    const dailyStockData = useMemo(() => {
-        const selectedStartOfDay = new Date(dailyStockDate);
-        selectedStartOfDay.setHours(0, 0, 0, 0);
-        const selectedEndOfDay = new Date(dailyStockDate);
-        selectedEndOfDay.setHours(23, 59, 59, 999);
-
-        const map = new Map<string, {
-            soldToday: number;
-            returnedToday: number;
-            soldSince: number;
-            returnedSince: number;
-            boughtToday: number;
-            boughtSince: number;
-        }>();
-
-        products.forEach(p => map.set(p.id, { soldToday: 0, returnedToday: 0, soldSince: 0, returnedSince: 0, boughtToday: 0, boughtSince: 0 }));
-
-        sales.forEach(sale => {
-            const saleDate = new Date(sale.date);
-            const isToday = saleDate >= selectedStartOfDay && saleDate <= selectedEndOfDay;
-            const isAfterToday = saleDate > selectedEndOfDay;
-
-            const isSold = sale.paymentStatus === 'Paid' || sale.paymentStatus === 'Settled' || sale.paymentStatus === 'Paid/Settled' as any;
-            const isReturned = sale.shipping?.status === 'Returned' || sale.shipping?.status === 'ReStock';
-
-            sale.items.forEach(item => {
-                const data = map.get(item.id);
-                if (!data) return;
-
-                if (isSold && !isReturned) {
-                    if (isToday) data.soldToday += item.quantity;
-                    if (isAfterToday) data.soldSince += item.quantity;
-                }
-
-                if (isReturned) {
-                    if (isToday) data.returnedToday += item.quantity;
-                    if (isAfterToday) data.returnedSince += item.quantity;
-                }
-            });
-        });
-
-        restocks.forEach(restock => {
-            const restockDate = new Date(restock.date);
-            const isToday = restockDate >= selectedStartOfDay && restockDate <= selectedEndOfDay;
-            const isAfterToday = restockDate > selectedEndOfDay;
-
-            const data = map.get(restock.productId);
-            if (!data) return;
-
-            if (isToday) data.boughtToday += restock.quantity;
-            if (isAfterToday) data.boughtSince += restock.quantity;
-        });
-
-        const result = products.map(p => {
-            const data = map.get(p.id)!;
-            const newStock = p.stock;
-
-            // Stock at end of today = Current Stock + Sold Since - Returned Since - Bought Since
-            const newStockEndOfThatDay = newStock + data.soldSince - data.returnedSince - data.boughtSince;
-
-            // Old Stock = Stock at end of today + Sold Today - Returned Today - Bought Today
-            const oldStock = newStockEndOfThatDay + data.soldToday - data.returnedToday - data.boughtToday;
-
-            return {
-                ...p,
-                oldStock,
-                soldOnDate: data.soldToday,
-                returnedOnDate: data.returnedToday,
-                buyOnDate: data.boughtToday,
-                newStockOnDate: newStockEndOfThatDay
-            };
-        });
-
-        return result.filter(r => r.oldStock !== 0 || r.soldOnDate !== 0 || r.returnedOnDate !== 0 || r.buyOnDate !== 0 || r.newStockOnDate !== 0)
-            .sort((a, b) => (a.model || a.name).localeCompare(b.model || b.name));
-    }, [products, sales, restocks, dailyStockDate]);
-
-
     // Handlers
-    const handleSort = (key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid') => {
+    const handleSort = (key: keyof Product | 'totalValue') => {
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -289,11 +226,6 @@ const Inventory: React.FC = () => {
         setEditingProduct(null);
         setFormData(initialFormState);
         setIsModalOpen(true);
-    };
-
-    const openRestockModal = () => {
-        setRestockData({ productId: products.length > 0 ? products[0].id : '', quantity: 0, cost: 0, note: '' });
-        setIsRestockModalOpen(true);
     };
 
     const openEditModal = (product: Product) => {
@@ -328,21 +260,6 @@ const Inventory: React.FC = () => {
         setIsModalOpen(false);
     };
 
-    const handleRestockSave = async () => {
-        if (!restockData.productId || restockData.quantity <= 0) {
-            showToast('Please select a product and enter a valid quantity', 'error');
-            return;
-        }
-
-        try {
-            await addStock(restockData.productId, restockData.quantity, restockData.cost, restockData.note);
-            showToast('Stock added successfully', 'success');
-            setIsRestockModalOpen(false);
-        } catch (error) {
-            showToast('Failed to add stock', 'error');
-        }
-    };
-
     const promptDelete = (id: string) => {
         setDeleteId(id);
     };
@@ -356,12 +273,12 @@ const Inventory: React.FC = () => {
     };
 
     // Render Helpers
-    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid' }) => {
+    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' }) => {
         if (sortConfig?.key !== columnKey) return <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />;
         return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
     };
 
-    const renderHeader = (label: string, key: keyof Product | 'totalValue' | 'createdAt' | 'soldPaid', width?: string) => (
+    const renderHeader = (label: string, key: keyof Product | 'totalValue', width?: string) => (
         <th
             onClick={() => handleSort(key)}
             style={{ width, cursor: 'pointer' }}
@@ -379,33 +296,15 @@ const Inventory: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', gap: '12px' }}>
                     {canManageInventory && (
-                        <>
-                            <button
-                                onClick={openAddModal}
-                                className="primary-button"
-                                style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                            >
-                                <Plus size={20} />
-                                Add Product
-                            </button>
-                            <button
-                                onClick={openRestockModal}
-                                className="secondary-button"
-                                style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                            >
-                                <Package size={20} />
-                                {!isMobile && 'Add Stock'}
-                            </button>
-                        </>
+                        <button
+                            onClick={openAddModal}
+                            className="primary-button"
+                            style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                            <Plus size={20} />
+                            Add Product
+                        </button>
                     )}
-                    <button
-                        onClick={() => refreshData()}
-                        className="secondary-button"
-                        style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
-                        title="Refresh Inventory"
-                    >
-                        <RefreshCw size={20} />
-                    </button>
                 </div>
             </div>
 
@@ -446,7 +345,7 @@ const Inventory: React.FC = () => {
             {/* Content: List or Table */}
             {isMobile ? (
                 <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', paddingBottom: '80px' }}>
-                    {filteredAndSortedProducts.map((product) => (
+                    {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
                         <MobileInventoryCard
                             key={product.id}
                             product={product}
@@ -465,16 +364,10 @@ const Inventory: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', height: 'calc(100vh - 200px)' }}>
                     {/* Main Stock Table */}
                     <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        <style>{`
-                            .stock-table-14px.spreadsheet-table { font-size: 14px !important; }
-                            .stock-table-14px.spreadsheet-table th, .stock-table-14px.spreadsheet-table td { font-size: 14px !important; }
-                            .stock-table-14px.spreadsheet-table th { padding: 8px 12px !important; }
-                            .stock-table-14px.spreadsheet-table td { padding: 8px 12px !important; }
-                        `}</style>
                         <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10 }}>
                             All Stock ({filteredAndSortedProducts.length})
                         </h3>
-                        <table className="spreadsheet-table stock-table-14px">
+                        <table className="spreadsheet-table">
                             <thead>
                                 <tr>
                                     <th style={{ width: '40px', textAlign: 'center' }}>
@@ -486,16 +379,15 @@ const Inventory: React.FC = () => {
                                         />
                                     </th>
                                     {renderHeader('Product', 'name')}
-                                    {renderHeader('Created', 'createdAt')}
+                                    {renderHeader('Category', 'category')}
                                     {renderHeader('Price', 'price')}
                                     {renderHeader('Stock', 'stock')}
-                                    {renderHeader('Sold (Paid)', 'soldPaid')}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
                                     {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAndSortedProducts.map((product) => (
+                                {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
                                     <tr
                                         key={product.id}
                                         className={selectedIds.has(product.id) ? 'selected' : ''}
@@ -513,12 +405,14 @@ const Inventory: React.FC = () => {
                                                 <img src={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'contain', background: 'white', padding: '2px', border: '1px solid var(--color-border)' }} />
                                                 <div>
                                                     <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>{product.model}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                            {product.createdAt ? new Date(product.createdAt).toLocaleDateString() : '-'}
+                                        <td>
+                                            <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
+                                                {product.category}
+                                            </span>
                                         </td>
                                         <td style={{ fontWeight: 600 }}>${product.price}</td>
                                         <td>
@@ -529,9 +423,6 @@ const Inventory: React.FC = () => {
                                             ) : (
                                                 <span style={{ color: '#10B981', fontWeight: 500 }}>{product.stock}</span>
                                             )}
-                                        </td>
-                                        <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
-                                            {product.soldPaid}
                                         </td>
                                         {canViewFinancials && (
                                             <td style={{ color: 'var(--color-text-secondary)' }}>
@@ -565,14 +456,10 @@ const Inventory: React.FC = () => {
                             </tbody>
                             <tfoot>
                                 <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                    <td colSpan={2} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
-                                    <td style={{ padding: '12px 16px' }}>—</td>
+                                    <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
                                     <td style={{ padding: '12px 16px' }}>—</td>
                                     <td style={{ padding: '12px 16px', color: '#10B981' }}>
                                         {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
-                                    </td>
-                                    <td style={{ padding: '12px 16px', color: 'var(--color-primary)' }}>
-                                        {filteredAndSortedProducts.reduce((sum, p) => sum + p.soldPaid, 0)}
                                     </td>
                                     {canViewFinancials && (
                                         <td style={{ padding: '12px 16px' }}>
@@ -592,7 +479,7 @@ const Inventory: React.FC = () => {
                             <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '14px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
                                 <AlertTriangle size={16} /> Returned Orders
                             </h3>
-                            {sales.filter(s => s.shipping?.status === 'Returned').length === 0 ? (
+                            {returnedOrders.length === 0 ? (
                                 <div style={{ padding: '32px', textAlign: 'center', color: '#059669', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <Boxes size={20} />
@@ -600,23 +487,22 @@ const Inventory: React.FC = () => {
                                     <p style={{ fontSize: '13px', fontWeight: 500 }}>No returned orders pending restock.</p>
                                 </div>
                             ) : (
-                                <table className="spreadsheet-table compact">
+                                <table className="spreadsheet-table">
                                     <thead style={{ background: '#FEF2F2' }}>
                                         <tr>
                                             <th>Order / Customer</th>
                                             <th>Items</th>
-                                            <th style={{ textAlign: 'right' }}>Date</th>
                                             <th style={{ textAlign: 'right', width: '50px' }}></th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {sales.filter(s => s.shipping?.status === 'Returned').map(order => (
+                                        {returnedOrders.map(order => (
                                             <tr key={order.id} style={{ background: '#FEF2F2' }}>
                                                 <td style={{ whiteSpace: 'normal' }}>
-                                                    <div style={{ fontWeight: 600 }}>#{order.id.slice(0, 8)}</div>
-                                                    <div style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
                                                 </td>
-                                                <td style={{}}>
+                                                <td style={{ fontSize: '12px' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                         {order.items.map((item, idx) => (
                                                             <span key={idx}>
@@ -624,9 +510,6 @@ const Inventory: React.FC = () => {
                                                             </span>
                                                         ))}
                                                     </div>
-                                                </td>
-                                                <td style={{ textAlign: 'right', color: 'var(--color-text-secondary)', verticalAlign: 'middle' }}>
-                                                    {new Date(order.date).toLocaleDateString()}
                                                 </td>
                                                 <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
                                                     <button
@@ -663,46 +546,27 @@ const Inventory: React.FC = () => {
                             <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #3B82F6', margin: 0, fontSize: '14px', fontWeight: 600, color: '#2563EB', background: '#EFF6FF', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
                                 <Layers size={16} /> Restocked History
                             </h3>
-                            {sales.filter(s => s.shipping?.status === 'ReStock').length === 0 ? (
+                            {restockedHistory.length === 0 ? (
                                 <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                     <p style={{ fontSize: '13px', fontWeight: 500 }}>No restocked orders found.</p>
                                 </div>
                             ) : (
-                                <table className="spreadsheet-table compact">
+                                <table className="spreadsheet-table">
                                     <thead style={{ background: '#EFF6FF' }}>
                                         <tr>
-                                            {currentUser && (currentUser.roleId === 'admin' || currentUser.id === '1') && <th style={{ width: '40px' }}></th>}
                                             <th>Order / Customer</th>
                                             <th>Items Restocked</th>
                                             <th style={{ textAlign: 'right' }}>Date</th>
-                                            <th style={{ textAlign: 'center' }}>Last Edit</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {sales.filter(s => s.shipping?.status === 'ReStock').map(order => (
+                                        {restockedHistory.map(order => (
                                             <tr key={order.id} style={{ background: '#EFF6FF' }}>
-                                                {currentUser && (currentUser.roleId === 'admin' || currentUser.id === '1') && (
-                                                    <td style={{ textAlign: 'center' }}>
-                                                        <button
-                                                            onClick={async () => {
-                                                                if (confirm('Are you sure you want to delete this restock history? This will permanently remove the order record.')) {
-                                                                    await deleteOrders([order.id]);
-                                                                    showToast('Restock history deleted', 'success');
-                                                                }
-                                                            }}
-                                                            className="icon-button danger"
-                                                            title="Delete History"
-                                                            style={{ padding: '4px' }}
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </td>
-                                                )}
                                                 <td style={{ whiteSpace: 'normal' }}>
-                                                    <div style={{ fontWeight: 600 }}>#{order.id.slice(0, 8)}</div>
-                                                    <div style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
                                                 </td>
-                                                <td style={{}}>
+                                                <td style={{ fontSize: '12px' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                         {order.items.map((item, idx) => (
                                                             <span key={idx}>
@@ -711,18 +575,8 @@ const Inventory: React.FC = () => {
                                                         ))}
                                                     </div>
                                                 </td>
-                                                <td style={{ textAlign: 'right', color: 'var(--color-text-secondary)' }}>
+                                                <td style={{ textAlign: 'right', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                                     {new Date(order.date).toLocaleDateString()}
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: '1.2' }}>
-                                                        <span style={{ fontWeight: 500 }}>{order.lastEditedBy || '-'}</span>
-                                                        {order.lastEditedAt && (
-                                                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '9px' }}>
-                                                                {new Date(order.lastEditedAt).toLocaleString()}
-                                                            </span>
-                                                        )}
-                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -730,62 +584,6 @@ const Inventory: React.FC = () => {
                                 </table>
                             )}
                         </div>
-
-                        {/* Daily Stock Summary Table */}
-                        <div className="glass-panel" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)', flex: 1 }}>
-                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#E0F7FA', position: 'sticky', top: 0, zIndex: 10 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <Layers size={16} /> Daily Stock Summary
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontWeight: 600, fontSize: '13px' }}>Date:</span>
-                                    <input
-                                        type="date"
-                                        className="search-input"
-                                        style={{ background: 'white', padding: '4px 8px', fontSize: '13px' }}
-                                        value={dailyStockDate}
-                                        onChange={e => setDailyStockDate(e.target.value)}
-                                    />
-                                </div>
-                            </h3>
-                            <div style={{ overflow: 'auto' }}>
-                                <table className="spreadsheet-table compact">
-                                    <thead>
-                                        <tr style={{ background: '#E3F2FD' }}>
-                                            <th style={{ width: '25%' }}>Model</th>
-                                            <th style={{ textAlign: 'center' }}>Old Stock</th>
-                                            <th style={{ textAlign: 'center', color: '#DC2626' }}>Sold</th>
-                                            <th style={{ textAlign: 'center' }}>Return</th>
-                                            <th style={{ textAlign: 'center', color: '#9333EA' }}>Buy</th>
-                                            <th style={{ textAlign: 'center', color: '#2563EB' }}>New Stock</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {dailyStockData.map(row => (
-                                            <tr key={row.id}>
-                                                <td style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{row.model || row.name}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.oldStock}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#DC2626' }}>{row.soldOnDate || ''}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.returnedOnDate || ''}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#9333EA' }}>{row.buyOnDate || ''}</td>
-                                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#2563EB' }}>{row.newStockOnDate}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot style={{ background: '#FEF08A' }}>
-                                        <tr>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>Total Summary</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.oldStock, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#DC2626' }}>{dailyStockData.reduce((sum, row) => sum + row.soldOnDate, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold' }}>{dailyStockData.reduce((sum, row) => sum + row.returnedOnDate, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#9333EA' }}>{dailyStockData.reduce((sum, row) => sum + row.buyOnDate, 0)}</th>
-                                            <th style={{ textAlign: 'center', fontWeight: 'bold', color: '#2563EB' }}>{dailyStockData.reduce((sum, row) => sum + row.newStockOnDate, 0)}</th>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-
                     </div>
                 </div>
             )}
@@ -821,7 +619,72 @@ const Inventory: React.FC = () => {
                 </div>
             )}
 
-
+            {/* Pagination */}
+            {filteredAndSortedProducts.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 4px' }}>
+                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredAndSortedProducts.length)} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length} products
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                            <span>Rows per page:</span>
+                            <select
+                                value={itemsPerPage}
+                                onChange={(e) => {
+                                    setItemsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}
+                                style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--color-border)',
+                                    background: 'var(--color-surface)',
+                                    color: 'var(--color-text-main)',
+                                    fontSize: '13px',
+                                    outline: 'none',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                style={{
+                                    padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                    background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
+                                    color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                            >
+                                <ChevronLeft size={16} />
+                            </button>
+                            <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
+                                disabled={currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
+                                style={{
+                                    padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                    background: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                                    color: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                    cursor: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                            >
+                                <ChevronRight size={16} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
 
             {/* Bulk Actions Bar */}
@@ -923,55 +786,6 @@ const Inventory: React.FC = () => {
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                 <button onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button onClick={handleSave} className="primary-button" style={{ padding: '10px 24px' }}>{editingProduct ? 'Save Changes' : 'Add Product'}</button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Add Stock Modal */}
-            {
-                isRestockModalOpen && (
-                    <div style={{
-                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-                    }}>
-                        <div className="glass-panel" style={{ width: '400px', padding: '32px', animation: 'slideIn 0.3s ease-out' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Add Stock</h3>
-                                <button onClick={() => setIsRestockModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
-                            </div>
-                            <div style={{ display: 'grid', gap: '16px', marginBottom: '12px' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product</label>
-                                    <select
-                                        className="search-input"
-                                        style={{ width: '100%' }}
-                                        value={restockData.productId}
-                                        onChange={e => setRestockData({ ...restockData, productId: e.target.value })}
-                                    >
-                                        <option value="">Select a product...</option>
-                                        {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.model})</option>)}
-                                    </select>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Quantity to Add</label>
-                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0" value={restockData.quantity || ''} onChange={e => setRestockData({ ...restockData, quantity: Number(e.target.value) })} />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Cost per unit ($)</label>
-                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0.00" value={restockData.cost || ''} onChange={e => setRestockData({ ...restockData, cost: Number(e.target.value) })} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Note / Supplier (Optional)</label>
-                                    <input className="search-input" style={{ width: '100%' }} placeholder="e.g. Resupplied from main warehouse" value={restockData.note} onChange={e => setRestockData({ ...restockData, note: e.target.value })} />
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                                <button onClick={() => setIsRestockModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
-                                <button onClick={handleRestockSave} className="primary-button" style={{ padding: '10px 24px' }}>Add Stock</button>
                             </div>
                         </div>
                     </div>

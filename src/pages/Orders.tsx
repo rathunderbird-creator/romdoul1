@@ -226,7 +226,7 @@ const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
 
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows, salesUpdatedAt } = useStore();
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
@@ -469,8 +469,8 @@ const Orders: React.FC = () => {
         { id: 'received', label: 'Received' },
         { id: 'payStatus', label: 'Pay Status' },
         { id: 'shippingCo', label: 'Shipping Co' },
-        { id: 'tracking', label: 'Tracking ID' },
         { id: 'remark', label: 'Remark' },
+        { id: 'tracking', label: 'Tracking ID' },
         { id: 'settleDate', label: 'Settled/Paid Date' },
         { id: 'lastEdit', label: 'Last Edit' },
     ];
@@ -487,7 +487,7 @@ const Orders: React.FC = () => {
         }
         return [
             'actions', 'date', 'customer', 'phone', 'address', 'page', 'salesman', 'customerCare', 'items', 'total', 'payBy',
-            'balance', 'status', 'received', 'payStatus', 'shippingCo', 'tracking', 'remark', 'settleDate', 'lastEdit'
+            'balance', 'status', 'received', 'payStatus', 'shippingCo', 'remark', 'tracking', 'settleDate', 'lastEdit'
         ];
     });
 
@@ -538,10 +538,23 @@ const Orders: React.FC = () => {
         if (!resizeRef.current) return;
         const { startX, startWidth, colId } = resizeRef.current;
         const diff = e.clientX - startX;
-        setColumnWidths(prev => ({ ...prev, [colId]: Math.max(50, startWidth + diff) }));
+        const newWidth = Math.max(50, startWidth + diff);
+        // Fast DOM update avoiding React re-render of 100 rows
+        document.documentElement.style.setProperty(`--col-${colId}-width`, `${newWidth}px`);
     }, []);
 
-    const handleGlobalMouseUp = React.useCallback(() => {
+    const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const { startX, startWidth, colId } = resizeRef.current;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(50, startWidth + diff);
+
+        // Save to state/localStorage only on mouse up
+        setColumnWidths(prev => ({ ...prev, [colId]: newWidth }));
+
+        // Clean up CSS var so React state takes over
+        document.documentElement.style.removeProperty(`--col-${colId}-width`);
+
         resizeRef.current = null;
         setResizingCol(null);
         document.removeEventListener('mousemove', handleGlobalMouseMove);
@@ -669,7 +682,7 @@ const Orders: React.FC = () => {
         } finally {
             setIsLoadingOrders(false);
         }
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt]);
 
     useEffect(() => {
         fetchOrders();
@@ -1778,7 +1791,12 @@ const Orders: React.FC = () => {
                     </div >
 
                     {/* Table or Mobile List */}
-                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)', paddingBottom: '0' }}>
+                    <div style={{
+                        overflowX: 'auto',
+                        overflowY: isMobile ? 'visible' : 'auto',
+                        maxHeight: isMobile ? 'none' : 'calc(100vh - 200px)',
+                        paddingBottom: '0'
+                    }}>
                         {isMobile ? (
                             <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '80px' }}>
                                 {paginatedOrders.map(order => (
@@ -1896,8 +1914,8 @@ const Orders: React.FC = () => {
                                                     <th
                                                         key={colId}
                                                         style={{
-                                                            width: width ? `${width}px` : '150px',
-                                                            minWidth: width ? `${width}px` : '150px',
+                                                            width: `var(--col-${colId}-width, ${width ? `${width}px` : '150px'})`,
+                                                            minWidth: `var(--col-${colId}-width, ${width ? `${width}px` : '150px'})`,
                                                             overflow: 'visible',
                                                             borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
                                                             transition: 'border-color 0.1s',
@@ -2005,7 +2023,8 @@ const Orders: React.FC = () => {
                                                                 const cellStyle: React.CSSProperties = {
                                                                     overflow: 'hidden',
                                                                     textOverflow: 'ellipsis',
-                                                                    maxWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                                    maxWidth: `var(--col-${colId}-width, ${columnWidths[colId] ? `${columnWidths[colId]}px` : '150px'})`,
+                                                                    width: `var(--col-${colId}-width, ${columnWidths[colId] ? `${columnWidths[colId]}px` : '150px'})`,
                                                                     position: isPinned ? 'sticky' : undefined,
                                                                     left: isPinned ? stickyLeft : undefined,
                                                                     zIndex: isPinned ? 15 : 1,
@@ -2070,8 +2089,8 @@ const Orders: React.FC = () => {
                                                                     case 'payStatus':
                                                                         return (
                                                                             <td key={colId} style={{
-                                                                                width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                                                minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                                                width: `var(--col-${colId}-width, ${columnWidths[colId] ? `${columnWidths[colId]}px` : '150px'})`,
+                                                                                minWidth: `var(--col-${colId}-width, ${columnWidths[colId] ? `${columnWidths[colId]}px` : '150px'})`,
                                                                                 overflow: 'visible',
                                                                                 textOverflow: 'ellipsis',
                                                                                 textAlign: 'left'
@@ -2111,8 +2130,8 @@ const Orders: React.FC = () => {
                                                                     case 'status':
                                                                         return (
                                                                             <td key={colId} style={{
-                                                                                width: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
-                                                                                minWidth: columnWidths[colId] ? `${columnWidths[colId]}px` : '150px',
+                                                                                width: `var(--col-${colId}-width, ${columnWidths[colId] ? `${columnWidths[colId]}px` : '150px'})`,
+                                                                                minWidth: `var(--col-${colId}-width, ${columnWidths[colId] ? `${columnWidths[colId]}px` : '150px'})`,
                                                                                 overflow: 'visible',
                                                                                 textOverflow: 'ellipsis',
                                                                                 textAlign: 'left'

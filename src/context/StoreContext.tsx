@@ -39,6 +39,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [users, setUsers] = useState<User[]>([]); // Added users state
     const [isLoading, setIsLoading] = useState(true);
+    const [productsUpdatedAt, setProductsUpdatedAt] = useState<number>(Date.now());
+    const [salesUpdatedAt, setSalesUpdatedAt] = useState<number>(Date.now());
     const [config, setConfig] = useState<ConfigState>({
         shippingCompanies: ['J&T', 'VET', 'JS Express'],
         salesmen: ['Sokheng', 'Thida'],
@@ -761,6 +763,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             model: newProduct.model
         };
         await supabase.from('products').insert(dbProduct);
+        setProductsUpdatedAt(Date.now());
     };
 
     const updateProduct = async (id: string, updates: Partial<Product>) => {
@@ -777,6 +780,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.model !== undefined) dbUpdates.model = updates.model;
 
         await supabase.from('products').update(dbUpdates).eq('id', id);
+        setProductsUpdatedAt(Date.now());
     };
 
     const deleteProduct = async (id: string) => {
@@ -790,6 +794,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (data) setProducts(prev => [...prev, data]);
         } else {
             setProducts(prev => prev.filter(p => p.id !== id));
+            setProductsUpdatedAt(Date.now());
         }
     };
 
@@ -800,6 +805,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             alert(`Failed to delete products: ${error.message}`);
         } else {
             setProducts(prev => prev.filter(p => !ids.includes(p.id)));
+            setProductsUpdatedAt(Date.now());
         }
     };
 
@@ -843,6 +849,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 addedBy: currentUser?.name || 'Unknown',
                 note: note || ''
             }, ...restocks]);
+            setProductsUpdatedAt(Date.now());
 
         } catch (error) {
             console.error('Error adding stock:', error);
@@ -875,8 +882,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             customer_snapshot: newSale.customer,
             order_status: 'Open',
             shipping_company: newSale.shipping?.company,
-            shipping_status: newSale.shipping?.status,
             tracking_number: newSale.shipping?.trackingNumber,
+            shipping_status: newSale.shipping?.status,
             remark: newSale.remark
         });
 
@@ -911,6 +918,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Update salesOrder config
         const currentSalesOrder = config.salesOrder || [];
         updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
+        setSalesUpdatedAt(Date.now());
     };
 
     const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => {
@@ -990,9 +998,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
 
         await supabase.from('sales').update(updates).eq('id', id);
+        setSalesUpdatedAt(Date.now());
     };
 
-    const updateOrder = async (id: string, updates: Partial<Sale>) => {
+    const updateOrder = async (id: string, updates: Partial<Sale>): Promise<void> => {
         // 1. Optimistic Local Update
         setSales(prev => prev.map(sale =>
             sale.id === id ? { ...sale, ...updates } : sale
@@ -1054,8 +1063,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const { error: insertError } = await supabase.from('sale_items').insert(itemsPayload);
                 if (insertError) throw insertError;
             }
-
-            // Re-fetch to ensure sync? Or rely on optimistic. Optimistic is fine for now.
+            setSalesUpdatedAt(Date.now());
 
         } catch (error: any) {
             console.error('Error updating order:', error);
@@ -1064,7 +1072,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
-    const updateOrders = async (ids: string[], updates: Partial<Sale>) => {
+    const updateOrders = async (ids: string[], updates: Partial<Sale>): Promise<void> => {
         try {
             const promises = ids.map(id => {
                 const currentOrder = sales.find(s => s.id === id);
@@ -1078,55 +1086,66 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return updateOrder(id, mergedUpdates);
             });
             await Promise.all(promises);
+            setSalesUpdatedAt(Date.now());
         } catch (error) {
             console.error('Error batch updating orders:', error);
             throw error;
         }
-
-
     };
 
-    const deleteOrders = async (ids: string[]) => {
-        // 1. Restock Items
-        const ordersToDelete = sales.filter(s => ids.includes(s.id));
+    const deleteOrders = async (ids: string[]): Promise<void> => {
+        try {
+            // 1. Fetch DB orders and items directly since local `sales` state is now paginated/stale
+            const { data: dbOrders, error: ordersErr } = await supabase.from('sales').select('id, shipping_status').in('id', ids);
+            if (ordersErr) throw ordersErr;
 
-        for (const order of ordersToDelete) {
-            // Only restore stock if status is Shipped, Delivered, or Returned
-            // (Pending/Ordered means stock wasn't deducted yet, so don't increment)
-            const status = order.shipping?.status || 'Pending';
-            if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
-                for (const item of order.items) {
-                    // Local Update
-                    setProducts(prev => prev.map(p => {
-                        if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
-                        return p;
-                    }));
+            const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('sale_id, product_id, quantity').in('sale_id', ids);
+            if (itemsErr) throw itemsErr;
 
-                    // DB Update (Increment)
-                    const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-                    if (current) {
-                        await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+            // 2. Restock Items based on real source of truth
+            const ordersToDelete = dbOrders || [];
+            const allItemsToDelete = dbItems || [];
+
+            for (const order of ordersToDelete) {
+                // Only restore stock if status is Shipped, Delivered, or Returned
+                // (Pending/Ordered means stock wasn't deducted yet, so don't increment)
+                const status = order.shipping_status || 'Pending';
+                if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
+                    const orderItems = allItemsToDelete.filter(item => item.sale_id === order.id);
+                    for (const item of orderItems) {
+                        // DB Update (Increment)
+                        const { data: originProduct } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
+                        if (originProduct) {
+                            await supabase.from('products').update({ stock: originProduct.stock + item.quantity }).eq('id', item.product_id);
+                        }
                     }
                 }
             }
-        }
 
-        // 2. Optimistic UI update (Remove Order)
-        setSales(prev => prev.filter(sale => !ids.includes(sale.id)));
+            // 3. Batch deletion to avoid API limits (e.g. URL length or max row count)
+            const BATCH_SIZE = 500;
+            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                const batch = ids.slice(i, i + BATCH_SIZE);
+                // Delete items first (Constraint usually cascades, but good practice)
+                const { error: itemsDelErr } = await supabase.from('sale_items').delete().in('sale_id', batch);
+                if (itemsDelErr) {
+                    console.error('Error deleting items batch:', itemsDelErr);
+                    throw itemsDelErr;
+                }
 
-        // 3. Batch deletion to avoid API limits (e.g. URL length or max row count)
-        const BATCH_SIZE = 500;
-        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-            const batch = ids.slice(i, i + BATCH_SIZE);
-            // Delete items first (Constraint usually cascades, but good practice)
-            await supabase.from('sale_items').delete().in('sale_id', batch);
-
-            const { error } = await supabase.from('sales').delete().in('id', batch);
-            if (error) {
-                console.error(`Error deleting batch ${i}-${i + BATCH_SIZE}:`, error);
-                // Optionally alert user, but since we already updated UI, it might be confusing.
-                // Best to log and maybe show a toast if possible (but toast is not in context here).
+                const { error } = await supabase.from('sales').delete().in('id', batch);
+                if (error) {
+                    console.error(`Error deleting batch ${i}-${i + BATCH_SIZE}:`, error);
+                    throw error;
+                }
             }
+
+            // 4. Trigger UI Updates
+            setProductsUpdatedAt(Date.now());
+            setSalesUpdatedAt(Date.now());
+        } catch (error) {
+            console.error('Error deleting orders:', error);
+            throw error;
         }
     };
 
@@ -1186,6 +1205,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (data) {
             // 2. Update Local State
             setProducts(prev => [...prev, ...data]);
+            setProductsUpdatedAt(Date.now());
         }
     };
 
@@ -1373,6 +1393,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
             }));
             setSales(prev => [...newSales, ...prev]);
+            setSalesUpdatedAt(Date.now());
         }
     };
 
@@ -1394,6 +1415,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
             }
         });
+        setSalesUpdatedAt(Date.now()); // Assuming restock is part of order management
     };
 
     const backupData = async () => {
@@ -1442,6 +1464,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (jsonData.products.length > 0) {
                 const { error } = await supabase.from('products').upsert(jsonData.products);
                 if (error) throw new Error("Failed to restore products: " + error.message);
+                setProductsUpdatedAt(Date.now());
             }
 
             // 3. Restore Customers
@@ -1619,6 +1642,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             sales,
             restocks, // Added restocks to context
             customers,
+            productsUpdatedAt,
+            salesUpdatedAt,
             users: users,
             roles: config.roles || [],
             addUser,

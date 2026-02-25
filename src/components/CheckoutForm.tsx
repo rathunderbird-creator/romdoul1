@@ -79,6 +79,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
     const [formData, setFormData] = useState(initialFormState);
     const [productSelection, setProductSelection] = useState({ id: '', quantity: 1 });
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
         if (orderToEdit) {
@@ -163,6 +164,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     };
 
     const handleSubmit = async () => {
+        if (isSubmitting) return;
+
         if (!formData.customerName) {
             showToast('Customer name is required', 'error');
             return;
@@ -203,6 +206,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             const total = Math.max(0, subtotal - discount);
 
             const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+
+            setIsSubmitting(true);
 
             const orderData = {
                 items: cartItems,
@@ -245,6 +250,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         } catch (error) {
             console.error('Checkout failed:', error);
             showToast('Failed to save order. Please try again.', 'error');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -258,8 +265,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 <div style={{ display: 'flex', gap: '8px' }}>
                     {!isMobile && (
                         <>
-                            <button onClick={onCancel} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px' }}>Cancel</button>
-                            <button onClick={handleSubmit} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                            <button onClick={onCancel} disabled={isSubmitting} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
+                            <button onClick={handleSubmit} disabled={isSubmitting} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
+                                {isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
+                            </button>
                         </>
                     )}
                 </div>
@@ -619,8 +628,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
             {isMobile && (
                 <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
-                    <button onClick={onCancel} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Cancel</button>
-                    <button onClick={handleSubmit} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}>{orderToEdit ? 'Update Order' : 'Confirm Order'}</button>
+                    <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
+                    <button onClick={handleSubmit} disabled={isSubmitting} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)', opacity: isSubmitting ? 0.7 : 1 }}>
+                        {isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
+                    </button>
                 </div>
             )}
 

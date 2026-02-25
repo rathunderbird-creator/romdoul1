@@ -89,21 +89,23 @@ export interface StoreContextType {
     restocks: Restock[]; // Added restocks
     transactions: Transaction[]; // Added transactions
     customers: Customer[]; // Added customers
+    productsUpdatedAt: number; // Added to trigger re-fetches
+    salesUpdatedAt: number;
     addToCart: (product: Product) => void;
     removeFromCart: (productId: string) => void;
     updateCartQuantity: (productId: string, quantity: number) => void;
     updateCart: (items: CartItem[]) => void;
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => void; // Updated signature
-    addOnlineOrder: (order: Omit<Sale, 'id'>) => void;
+    addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<void>;
     updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => void;
-    addProduct: (product: Omit<Product, 'id'>) => void;
-    updateProduct: (id: string, product: Partial<Product>) => void;
-    deleteProduct: (id: string) => void;
-    deleteProducts: (ids: string[]) => void;
-    updateOrder: (id: string, updates: Partial<Sale>) => void;
+    addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+    updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
+    deleteProduct: (id: string) => Promise<void>;
+    deleteProducts: (ids: string[]) => Promise<void>;
+    updateOrder: (id: string, updates: Partial<Sale>) => Promise<void>;
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
-    deleteOrders: (ids: string[]) => void;
+    deleteOrders: (ids: string[]) => Promise<void>;
     reorderRows: (activeIds: string[], overId: string, leadId: string) => void;
 
     // Restock Management
