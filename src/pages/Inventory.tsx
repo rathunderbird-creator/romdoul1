@@ -10,6 +10,7 @@ import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product, Sale } from '../types';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
+import LazyAvatar from '../components/LazyAvatar';
 
 type SortConfig = {
     key: keyof Product | 'totalValue';
@@ -408,7 +409,7 @@ const Inventory: React.FC = () => {
                                         </td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                <img src={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'contain', background: 'white', padding: '2px', border: '1px solid var(--color-border)' }} />
+                                                <LazyAvatar productId={product.id} initialImage={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: 'white', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }} />
                                                 <div>
                                                     <div style={{ fontWeight: 600 }}>{product.name}</div>
                                                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>

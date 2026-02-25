@@ -2,6 +2,7 @@ import React from 'react';
 import { Edit2, Trash2, AlertTriangle, ChevronDown } from 'lucide-react';
 import type { Product } from '../types';
 import './MobileInventoryCard.css';
+import LazyAvatar from './LazyAvatar';
 
 interface MobileInventoryCardProps {
     product: Product;
@@ -45,7 +46,7 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                 </div>
 
                 {/* Thumb & Info */}
-                <img src={product.image} alt={product.name} className="mic-image" />
+                <LazyAvatar productId={product.id} initialImage={product.image} alt={product.name} className="mic-image" />
 
                 <div className="mic-info">
                     <div className="mic-name">{product.name}</div>
