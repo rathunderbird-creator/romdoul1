@@ -245,7 +245,6 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
             <style>{`
         @media print {
             @page {
-                size: 80mm 140mm;
                 margin: 0;
             }
             body * {
@@ -263,7 +262,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 position: absolute;
                 left: 0;
                 top: 0;
-                width: 100%;
+                width: 80mm;
             }
             
             /* Ensure page breaks work */
