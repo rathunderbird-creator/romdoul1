@@ -122,6 +122,9 @@ export interface StoreContextType {
     deleteTransaction: (id: string) => Promise<void>;
 
     refreshData: (silent?: boolean) => Promise<void>;
+    loadMoreOrders: () => Promise<void>;
+    hasMoreOrders: boolean;
+    isLoadingMore: boolean;
 
     shippingCompanies: string[];
     salesmen: string[];

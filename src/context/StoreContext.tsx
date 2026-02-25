@@ -39,6 +39,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [users, setUsers] = useState<User[]>([]); // Added users state
     const [isLoading, setIsLoading] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [hasMoreOrders, setHasMoreOrders] = useState(true);
     const [productsUpdatedAt, setProductsUpdatedAt] = useState<number>(Date.now());
     const [salesUpdatedAt, setSalesUpdatedAt] = useState<number>(Date.now());
     const [config, setConfig] = useState<ConfigState>({
@@ -172,6 +174,39 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return userRole.permissions.includes(permission);
     };
 
+    const loadMoreOrders = async () => {
+        if (isLoadingMore || !hasMoreOrders) return;
+        setIsLoadingMore(true);
+        try {
+            const currentCount = sales.length;
+            const { data, error } = await supabase
+                .from('sales')
+                .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+                .order('date', { ascending: false })
+                .range(currentCount, currentCount + 49);
+
+            if (error) throw error;
+            if (data && data.length > 0) {
+                const mappedSales = data.map(mapSaleEntity);
+                setSales(prev => {
+                    // Prevent duplicates just in case
+                    const existingIds = new Set(prev.map(s => s.id));
+                    const newUniqueSales = mappedSales.filter(s => !existingIds.has(s.id));
+                    return [...prev, ...newUniqueSales];
+                });
+                if (data.length < 50) {
+                    setHasMoreOrders(false);
+                }
+            } else {
+                setHasMoreOrders(false);
+            }
+        } catch (e) {
+            console.error('Failed to load more orders:', e);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    };
+
     // Initial Fetch
     const refreshData = async (silent = false) => {
         if (!silent) setIsLoading(true);
@@ -181,7 +216,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     .from('sales')
                     .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
                     .order('date', { ascending: false })
-                    .limit(500);
+                    .limit(50);
 
                 return { data: data || [], error };
             };
@@ -192,8 +227,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
-                supabase.from('restocks').select('*').order('date', { ascending: false }).limit(500),
-                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(500)
+                supabase.from('restocks').select('*').order('date', { ascending: false }).limit(50),
+                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50)
             ]);
 
 
@@ -244,6 +279,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     });
                     setSales(mappedSales);
                 }
+                setHasMoreOrders(mappedSales.length >= 50);
             }
 
             // Restocks
@@ -1644,6 +1680,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             customers,
             productsUpdatedAt,
             salesUpdatedAt,
+            hasMoreOrders,
+            isLoadingMore,
+            loadMoreOrders,
             users: users,
             roles: config.roles || [],
             addUser,

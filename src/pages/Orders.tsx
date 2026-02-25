@@ -305,8 +305,7 @@ const PendingRemarkModalComponent: React.FC<{
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows, salesUpdatedAt } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, reorderRows, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore } = useStore();
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
@@ -2492,6 +2491,29 @@ const Orders: React.FC = () => {
                                 >
                                     <ChevronRight size={16} />
                                 </button>
+                                {hasMoreOrders && (
+                                    <button
+                                        onClick={loadMoreOrders}
+                                        disabled={isLoadingMore}
+                                        style={{
+                                            padding: '6px 16px',
+                                            borderRadius: '6px',
+                                            border: '1px solid var(--color-border)',
+                                            background: 'var(--color-primary)',
+                                            color: 'white',
+                                            cursor: isLoadingMore ? 'not-allowed' : 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '13px',
+                                            fontWeight: 500,
+                                            marginLeft: '12px',
+                                            opacity: isLoadingMore ? 0.7 : 1
+                                        }}
+                                    >
+                                        {isLoadingMore ? 'Loading...' : 'Load Older Records'}
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
