@@ -7,6 +7,7 @@ import ReceiptModal from './ReceiptModal';
 import CheckoutForm from './CheckoutForm';
 import type { Sale } from '../types';
 import { useMobile } from '../hooks/useMobile';
+import LazyAvatar from './LazyAvatar';
 
 interface POSInterfaceProps {
     orderToEdit?: Sale | null;
@@ -345,7 +346,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                                 border: '1px solid transparent'
                                             }}>
                                                 <div style={{ width: '64px', height: '64px', background: '#F9FAFB', borderRadius: '12px', padding: '4px', flexShrink: 0 }}>
-                                                    <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                                    <LazyAvatar productId={item.id} initialImage={item.image} alt={item.name} style={{ width: '100%', height: '100%', borderRadius: '12px' }} />
                                                 </div>
                                                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                                     <div style={{ fontWeight: 700, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>

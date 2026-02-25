@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { generateOrderCopyText } from '../utils/orderUtils';
 
 import StatusBadge from '../components/StatusBadge';
+import LazyAvatar from '../components/LazyAvatar';
 
 const OrderDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -125,11 +126,7 @@ const OrderDetailPage: React.FC = () => {
                         <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: index === order.items.length - 1 ? 'none' : '1px solid var(--color-border)', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', overflow: 'hidden' }}>
                                 <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {item.image ? (
-                                        <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }} />
-                                    ) : (
-                                        <span style={{ fontSize: '10px' }}>No Img</span>
-                                    )}
+                                    <LazyAvatar productId={item.id} initialImage={item.image} alt={item.name} style={{ width: '100%', height: '100%', borderRadius: '8px' }} />
                                 </div>
                                 <div>
                                     <div style={{ fontWeight: 500, fontSize: '15px' }}>{item.name}</div>

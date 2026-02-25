@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import ConfigModal from './ConfigModal';
 import type { Sale, CartItem } from '../types';
+import LazyAvatar from './LazyAvatar';
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -554,7 +555,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         {cartItems.map((item) => (
                             <div key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '12px', padding: '8px', borderRadius: '8px', background: 'var(--color-bg)', border: '1px solid transparent' }}>
                                 <div style={{ width: '48px', height: '48px', background: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.05)' }}>
-                                    <img src={item.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                                    <LazyAvatar productId={item.id} initialImage={item.image} alt="" style={{ width: '100%', height: '100%', borderRadius: '8px' }} />
                                 </div>
                                 <div style={{ flex: 1 }}>
                                     <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text-main)' }}>{item.name}</div>
