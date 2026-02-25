@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { X, Printer } from 'lucide-react';
 import type { Sale } from '../types';
 import { useStore } from '../context/StoreContext';
@@ -17,7 +18,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
     const { storeAddress, storeName, phone, logo } = useStore();
 
     return (
-        <div className="receipt-content-wrapper" style={{ padding: variant === 'simple' ? '12px' : '12px', overflowY: 'visible', maxWidth: '100%', boxSizing: 'border-box' }}>
+        <div className="receipt-content-wrapper" style={{ padding: '12px', overflowY: 'visible', width: '100%', boxSizing: 'border-box' }}>
             {variant === 'full' ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', textAlign: 'left' }}>
                     {logo && (
@@ -231,47 +232,48 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 </div>
             </div>
 
-            {/* Hidden Print-Only Container */}
-            <div id="printable-area" style={{ display: 'none' }}>
-                <ReceiptContent sale={sale} variant="full" />
-                {printTwoCopies && (
-                    <>
-                        <div className="page-break" style={{ pageBreakBefore: 'always', breakBefore: 'page', height: '1px', width: '100%', visibility: 'hidden' }}></div>
-                        <ReceiptContent sale={sale} variant="simple" />
-                    </>
-                )}
-            </div>
+            {/* Hidden Print-Only Container, rendered into body via Portal */}
+            {ReactDOM.createPortal(
+                <div id="printable-area" className="print-only">
+                    <ReceiptContent sale={sale} variant="full" />
+                    {printTwoCopies && (
+                        <>
+                            <div className="page-break" style={{ pageBreakBefore: 'always', breakBefore: 'page', height: '1px', width: '100%', visibility: 'hidden' }}></div>
+                            <ReceiptContent sale={sale} variant="simple" />
+                        </>
+                    )}
+                </div>,
+                document.body
+            )}
 
             <style>{`
         @media print {
             @page {
-                size: 80mm 140mm;
+                size: 80mm auto;
                 margin: 0;
-            }
-            body * {
-                visibility: hidden;
-            }
-            .no-print {
-                display: none !important;
             }
             
-            #printable-area, #printable-area * {
-                visibility: visible;
+            body, html {
+                background: white !important;
+                margin: 0 !important;
+                padding: 0 !important;
             }
-            #printable-area {
+
+            /* Hide the main application root entirely during print to prevent layout stretching */
+            #root {
+                display: none !important;
+            }
+
+            /* Show ONLY our portal */
+            .print-only {
                 display: block !important;
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 78mm; /* Strictly constrain to less than 80mm to avoid horizontal spill */
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
+                width: 80mm;
+                max-width: 80mm;
+                margin: 0 auto;
             }
             
             .receipt-content-wrapper {
-                padding: 5px !important; /* Minimal padding for print */
-                width: 100% !important;
+                padding: 10px !important;
             }
             
             /* Ensure page breaks work */
@@ -280,13 +282,24 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 break-before: page !important;
                 display: block !important;
                 height: 1px;
+                border: none;
+                margin: 0;
             }
 
-            /* Adjust font sizes for small paper */
+            /* Adjust font sizes for thermal paper */
             h1 { font-size: 14px !important; }
             h3 { font-size: 12px !important; }
-            #printable-area div, #printable-area span, #printable-area p, #printable-area td, #printable-area th {
+            .print-only div, .print-only span, .print-only p, .print-only td, .print-only th {
                 font-size: 10px !important;
+            }
+        }
+        
+        @media screen {
+            .print-only {
+                display: none !important;
+                position: absolute;
+                opacity: 0;
+                pointer-events: none;
             }
         }
       `}</style>
