@@ -42,6 +42,10 @@ const Inventory: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
+    // Add Stock State
+    const [addStockProduct, setAddStockProduct] = useState<Product | null>(null);
+    const [addStockAmount, setAddStockAmount] = useState<number | string>('');
+
     // Historical Orders State
     const [returnedOrders, setReturnedOrders] = useState<Sale[]>([]);
     const [restockedHistory, setRestockedHistory] = useState<Sale[]>([]);
@@ -433,6 +437,17 @@ const Inventory: React.FC = () => {
                                             <td style={{ textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                                                     <button
+                                                        onClick={() => {
+                                                            setAddStockProduct(product);
+                                                            setAddStockAmount('');
+                                                        }}
+                                                        style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#10B981', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                        className="hover-primary"
+                                                        title="Add Stock"
+                                                    >
+                                                        <Plus size={16} />
+                                                    </button>
+                                                    <button
                                                         onClick={() => openEditModal(product)}
                                                         style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
                                                         className="hover-primary"
@@ -810,6 +825,68 @@ const Inventory: React.FC = () => {
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                                 <button onClick={() => setDeleteId(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button onClick={confirmDelete} style={{ padding: '10px 24px', borderRadius: '8px', backgroundColor: '#EF4444', color: 'white', border: 'none', cursor: 'pointer' }}>Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Add Stock Modal */}
+            {
+                addStockProduct && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                    }}>
+                        <div className="glass-panel" style={{ width: '400px', padding: '32px', animation: 'slideIn 0.3s ease-out' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                <div>
+                                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Add Stock</h3>
+                                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', marginTop: '4px' }}>
+                                        {addStockProduct.name} - Current Stock: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{addStockProduct.stock}</span>
+                                    </p>
+                                </div>
+                                <button onClick={() => setAddStockProduct(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', height: 'fit-content' }}><X size={24} /></button>
+                            </div>
+
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Quantity to Add</label>
+                                <input
+                                    className="search-input"
+                                    type="number"
+                                    style={{ width: '100%', fontSize: '16px', padding: '12px' }}
+                                    placeholder="e.g. 50"
+                                    autoFocus
+                                    value={addStockAmount}
+                                    onChange={e => setAddStockAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && addStockAmount !== '' && Number(addStockAmount) > 0) {
+                                            updateProduct(addStockProduct.id, { stock: addStockProduct.stock + Number(addStockAmount) });
+                                            showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
+                                            setAddStockProduct(null);
+                                        }
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                                <button onClick={() => setAddStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                                <button
+                                    onClick={() => {
+                                        if (addStockAmount === '' || Number(addStockAmount) <= 0) {
+                                            showToast('Please enter a valid stock amount', 'error');
+                                            return;
+                                        }
+                                        updateProduct(addStockProduct.id, { stock: addStockProduct.stock + Number(addStockAmount) });
+                                        showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
+                                        setAddStockProduct(null);
+                                    }}
+                                    className="primary-button"
+                                    style={{ padding: '10px 24px' }}
+                                    disabled={addStockAmount === '' || Number(addStockAmount) <= 0}
+                                >
+                                    Confirm Addition
+                                </button>
                             </div>
                         </div>
                     </div>
