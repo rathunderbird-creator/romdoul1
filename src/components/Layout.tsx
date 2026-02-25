@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { useLocation } from 'react-router-dom';
 
 import { useMobile } from '../hooks/useMobile';
 
@@ -11,9 +12,17 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const isMobile = useMobile();
+    const location = useLocation();
     const [isCollapsed, setIsCollapsed] = useState(true);
     const [isHeaderHidden, setIsHeaderHidden] = useState(false);
     const lastScrollY = React.useRef(0);
+
+    // Reset header visibility when entering POS route
+    React.useEffect(() => {
+        if (location.pathname === '/') {
+            setIsHeaderHidden(false);
+        }
+    }, [location.pathname]);
 
     // Auto-collapse on mobile, but let user toggle
     // Actually, on mobile, "collapsed" might mean hidden vs shown.
@@ -21,6 +30,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     const handleScroll = (e: React.UIEvent<HTMLElement>) => {
         if (!isMobile) return;
+
+        // Disable header auto-hide on the POS form to prevent layout jumping
+        if (location.pathname === '/') {
+            return;
+        }
 
         const currentScrollY = e.currentTarget.scrollTop;
         if (currentScrollY > lastScrollY.current && currentScrollY > 60) {
