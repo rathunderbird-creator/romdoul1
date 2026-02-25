@@ -17,7 +17,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
     const { storeAddress, storeName, phone, logo } = useStore();
 
     return (
-        <div style={{ padding: variant === 'simple' ? '20px 32px' : '32px', overflowY: 'visible' }}>
+        <div className="receipt-content-wrapper" style={{ padding: variant === 'simple' ? '12px' : '12px', overflowY: 'visible', maxWidth: '100%', boxSizing: 'border-box' }}>
             {variant === 'full' ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', textAlign: 'left' }}>
                     {logo && (
@@ -104,8 +104,8 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                 <tbody>
                     {sale.items.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px dashed #eee' }}>
-                            <td style={{ padding: '8px 0' }}>{item.name}</td>
-                            <td style={{ textAlign: 'center', padding: '8px 0' }}>{item.quantity}</td>
+                            <td style={{ padding: '8px 0', wordBreak: 'break-word', whiteSpace: 'normal', paddingRight: '4px' }}>{item.name}</td>
+                            <td style={{ textAlign: 'center', padding: '8px 0', whiteSpace: 'nowrap' }}>{item.quantity}</td>
                             <td style={{ textAlign: 'right', padding: '8px 0' }}>${(item.price * item.quantity).toFixed(2)}</td>
                         </tr>
                     ))}
@@ -263,7 +263,15 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 position: absolute;
                 left: 0;
                 top: 0;
-                width: 100%;
+                width: 78mm; /* Strictly constrain to less than 80mm to avoid horizontal spill */
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            .receipt-content-wrapper {
+                padding: 5px !important; /* Minimal padding for print */
+                width: 100% !important;
             }
             
             /* Ensure page breaks work */
