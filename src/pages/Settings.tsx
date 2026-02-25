@@ -6,6 +6,8 @@ import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useTheme } from '../context/ThemeContext';
 import PinPrompt from '../components/PinPrompt';
+import { supabase } from '../lib/supabase';
+import { processImageForUpload } from '../utils/imageUtils';
 
 
 
@@ -31,6 +33,7 @@ const Settings: React.FC = () => {
     // PIN Protection State
     const [showDataManagement, setShowDataManagement] = useState(false);
     const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
     // Use ref to hold the latest state for the save handler (avoid stale closure)
     const stateRef = useRef(localState);
@@ -246,36 +249,63 @@ const Settings: React.FC = () => {
                                         accept="image/*"
                                         id="logo-upload"
                                         style={{ display: 'none' }}
-                                        onChange={(e) => {
+                                        onChange={async (e) => {
                                             const file = e.target.files?.[0];
-                                            if (file) {
-                                                if (file.size > 500000) { // 500KB limit
-                                                    showToast('Image too large (max 500KB)', 'error');
-                                                    return;
+                                            if (!file) return;
+
+                                            try {
+                                                setIsUploadingLogo(true);
+
+                                                // 1. Process logo (crop 1:1, resize to 300x300 logo size)
+                                                const processedBlob = await processImageForUpload(file, { width: 300, quality: 0.9 });
+
+                                                const fileName = `logo_${Date.now()}.jpg`;
+
+                                                // 2. Upload to Storage
+                                                const { error } = await supabase.storage
+                                                    .from('products')
+                                                    .upload(fileName, processedBlob, {
+                                                        contentType: 'image/jpeg',
+                                                        upsert: false
+                                                    });
+
+                                                if (error) throw error;
+
+                                                // 3. Get Public URL
+                                                const { data: publicData } = supabase.storage
+                                                    .from('products')
+                                                    .getPublicUrl(fileName);
+
+                                                if (publicData?.publicUrl) {
+                                                    setLocalState({ ...localState, logo: publicData.publicUrl });
+                                                    showToast('Logo uploaded', 'success');
                                                 }
-                                                const reader = new FileReader();
-                                                reader.onloadend = () => {
-                                                    setLocalState({ ...localState, logo: reader.result as string });
-                                                };
-                                                reader.readAsDataURL(file);
+                                            } catch (err: any) {
+                                                console.error('Logo upload error:', err);
+                                                showToast('Logo upload failed', 'error');
+                                            } finally {
+                                                setIsUploadingLogo(false);
+                                                e.target.value = ''; // Reset input
                                             }
                                         }}
                                     />
                                     <button
                                         onClick={() => document.getElementById('logo-upload')?.click()}
+                                        disabled={isUploadingLogo}
                                         style={{
                                             padding: '8px 16px',
                                             borderRadius: '6px',
                                             border: '1px solid var(--color-border)',
                                             background: 'var(--color-surface)',
-                                            cursor: 'pointer',
+                                            cursor: isUploadingLogo ? 'not-allowed' : 'pointer',
                                             fontSize: '13px',
-                                            color: 'var(--color-text-main)'
+                                            color: 'var(--color-text-main)',
+                                            opacity: isUploadingLogo ? 0.7 : 1
                                         }}
                                     >
-                                        Upload Logo
+                                        {isUploadingLogo ? 'Uploading...' : 'Upload Logo'}
                                     </button>
-                                    <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Max 500KB. Square ratio recommended.</p>
+                                    <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Auto-crops square.</p>
                                 </div>
                             </div>
                         </div>

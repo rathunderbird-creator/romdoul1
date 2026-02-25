@@ -9,6 +9,7 @@ import StatsCard from '../components/StatsCard';
 import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product, Sale } from '../types';
 import { supabase } from '../lib/supabase';
+import { processImageForUpload } from '../utils/imageUtils';
 
 type SortConfig = {
     key: keyof Product | 'totalValue';
@@ -41,6 +42,7 @@ const Inventory: React.FC = () => {
     // State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     // Add Stock State
     const [addStockProduct, setAddStockProduct] = useState<Product | null>(null);
@@ -777,23 +779,63 @@ const Inventory: React.FC = () => {
                                             <input
                                                 type="file"
                                                 accept="image/*"
-                                                onChange={(e) => {
+                                                onChange={async (e) => {
                                                     const file = e.target.files?.[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onloadend = () => {
-                                                            setFormData(prev => ({ ...prev, image: reader.result as string }));
-                                                        };
-                                                        reader.readAsDataURL(file);
+                                                    if (!file) return;
+
+                                                    try {
+                                                        setIsUploadingImage(true);
+
+                                                        // 1. Process image (crop & resize)
+                                                        const processedBlob = await processImageForUpload(file);
+
+                                                        // 2. Generate unique filename
+                                                        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+
+                                                        // 3. Upload to Supabase Storage
+                                                        const { error } = await supabase.storage
+                                                            .from('products')
+                                                            .upload(fileName, processedBlob, {
+                                                                contentType: 'image/jpeg',
+                                                                upsert: false
+                                                            });
+
+                                                        if (error) {
+                                                            // Handle missing bucket gracefully by falling back if needed, but normally throw
+                                                            throw error;
+                                                        }
+
+                                                        // 4. Retrieve Public URL and save to form
+                                                        const { data: publicData } = supabase.storage
+                                                            .from('products')
+                                                            .getPublicUrl(fileName);
+
+                                                        if (publicData?.publicUrl) {
+                                                            setFormData(prev => ({ ...prev, image: publicData.publicUrl }));
+                                                            showToast('Image processed and uploaded', 'success');
+                                                        }
+
+                                                    } catch (err: any) {
+                                                        console.error('Image upload failed:', err);
+                                                        showToast('Upload failed: ' + err.message, 'error');
+                                                    } finally {
+                                                        setIsUploadingImage(false);
+                                                        e.target.value = ''; // Reset input so same file can be selected again
                                                     }
                                                 }}
                                                 className="search-input"
-                                                style={{ width: '100%', padding: '8px' }}
+                                                style={{ width: '100%', padding: '8px', opacity: isUploadingImage ? 0.5 : 1 }}
+                                                disabled={isUploadingImage}
                                             />
-                                            <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
-                                                Select an image file (JPG, PNG, GIF). <br />
-                                                <span style={{ fontSize: '11px', opacity: 0.7 }}>Note: Large images may affect performance as they are stored locally.</span>
-                                            </p>
+                                            {isUploadingImage ? (
+                                                <p style={{ fontSize: '12px', color: 'var(--color-primary)', marginTop: '6px', fontWeight: 600 }}>
+                                                    Processing and uploading image...
+                                                </p>
+                                            ) : (
+                                                <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
+                                                    Select an image file (Auto crops to 1:1, Auto resizes, & compressed).
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
