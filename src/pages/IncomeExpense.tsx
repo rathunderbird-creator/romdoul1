@@ -57,6 +57,33 @@ const IncomeExpense: React.FC = () => {
 
     const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
     const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+    const [allGlobalCategories, setAllGlobalCategories] = useState<string[]>([]);
+
+    const fetchAllCategories = async () => {
+        try {
+            // Fetch distinct categories, limit to 200 to prevent huge payloads
+            // Supabase RPC or distinct is better, but this simple approach works for small-medium tables
+            const { data, error } = await supabase.from('transactions')
+                .select('category')
+                .not('category', 'is', null)
+                .not('category', 'eq', '')
+                .limit(500);
+
+            if (error) throw error;
+
+            const cats = new Set<string>();
+            data?.forEach(t => {
+                if (t.category) cats.add(t.category.trim());
+            });
+            setAllGlobalCategories(Array.from(cats).sort());
+        } catch (e) {
+            console.error('Failed to fetch global categories', e);
+        }
+    };
+
+    useEffect(() => {
+        fetchAllCategories();
+    }, []);
 
     const fetchTransactions = React.useCallback(async () => {
         setIsLoadingTransactions(true);
@@ -186,14 +213,14 @@ const IncomeExpense: React.FC = () => {
     }, [filteredTransactions]);
 
     const uniqueCategories = useMemo(() => {
-        const cats = new Set<string>();
+        const cats = new Set<string>(allGlobalCategories);
         localTransactions.forEach(t => {
             if (t.category) {
                 cats.add(t.category.trim());
             }
         });
         return Array.from(cats).sort();
-    }, [localTransactions]);
+    }, [localTransactions, allGlobalCategories]);
 
     const filteredCategories = useMemo(() => {
         if (!formData.category) return uniqueCategories;
@@ -266,6 +293,7 @@ const IncomeExpense: React.FC = () => {
             }
             setIsAddModalOpen(false);
             await fetchTransactions();
+            fetchAllCategories(); // Refresh global categories since a new one might have been added
         } catch (error) {
             console.error(error);
             alert('Failed to save transaction');
