@@ -150,7 +150,8 @@ const PaymentTracking: React.FC = () => {
         updateOrder(selectedOrder.id, {
             amountReceived: formData.amountReceived,
             settleDate: formData.settleDate,
-            paymentStatus: formData.paymentStatus
+            paymentStatus: formData.paymentStatus,
+            ...(formData.paymentStatus === 'Paid' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
         showToast('Payment details updated', 'success');
         setIsEditModalOpen(false);
@@ -333,7 +334,8 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('status') && <td>
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
-                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending' })}
+                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending', ...(newStatus === 'Paid' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
+                                        readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
                                     />
                                 </td>}
                                 {visibleColumns.includes('settleDate') && <td>{order.settleDate || '-'}</td>}
@@ -443,7 +445,7 @@ const PaymentTracking: React.FC = () => {
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending' })}>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending' })} disabled={selectedOrder?.paymentStatus === 'Paid' || selectedOrder?.paymentStatus === 'Cancel'}>
                                         <option value="Paid">Paid</option>
                                         <option value="Unpaid">Unpaid</option>
                                         <option value="Settled">Settled</option>

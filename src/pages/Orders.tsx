@@ -1010,32 +1010,26 @@ const Orders: React.FC = () => {
         if (selectedIds.size === 0) return;
 
         try {
-            const ids = Array.from(selectedIds);
+            let ids = Array.from(selectedIds);
             const updates: Partial<Sale> = {};
 
             if (field === 'date') {
                 updates.date = new Date(value).toISOString();
             } else if (field === 'status') {
-                // For Status, we need to update shipping.status
-                // We'll pass it as { shipping: { status: value } } and let store handle merge
-                // BUT current updateOrders implementation does merge shipping if provided.
-                // However, shipping property in Sale is 'shipping', inside it is 'status'.
-                // If we pass { shipping: { status: 'Shipped' } }, we need to be carefully not to overwrite other shipping fields if the store doesn't handle partial deep merge.
-                // My implementation of updateOrders DOES handle deep merge for shipping.
                 updates.shipping = { status: value } as any;
-
-                // If status is Delivered, we might want to auto-set payment status?
-                // The individual updateOrderStatus does this.
-                // For bulk, let's keep it simple or mimic logic? 
-                // "Refining Date Picker" -> "Bulk Edit Orders".
-                // Let's stick to simple field update for now as user requested "Edit Date, Order Status, Pay Status".
             } else if (field === 'paymentStatus') {
+                ids = ids.filter(id => {
+                    const order = sales.find(o => o.id === id);
+                    return order && order.paymentStatus !== 'Paid' && order.paymentStatus !== 'Cancel';
+                });
+                if (ids.length === 0) {
+                    showToast('Selected orders cannot have their Pay Status changed', 'error');
+                    setSelectedIds(new Set());
+                    return;
+                }
                 updates.paymentStatus = value;
                 if (value === 'Paid' || value === 'Settled') {
-                    updates.amountReceived = 0; // Or keep as is? Usually Paid implies full amount.
-                    // Let's NOT clear amountReceived for bulk unless we know.
-                    // But if it was Unpaid, amount might be 0.
-                    // Let's just update the status tag for now.
+                    // if bulk updated, keeping it simple as it was
                 }
             }
 
@@ -1924,6 +1918,9 @@ const Orders: React.FC = () => {
                                             if (status === 'Paid' || status === 'Settled') {
                                                 updates.amountReceived = order.total;
                                                 updates.settleDate = new Date().toISOString();
+                                                if (status === 'Paid') {
+                                                    updates.shipping = { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' };
+                                                }
                                             } else if (status === 'Cancel') {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
@@ -2199,6 +2196,9 @@ const Orders: React.FC = () => {
                                                                                         if (newStatus === 'Paid' || newStatus === 'Settled') {
                                                                                             updates.amountReceived = order.total;
                                                                                             updates.settleDate = new Date().toISOString();
+                                                                                            if (newStatus === 'Paid') {
+                                                                                                updates.shipping = { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' };
+                                                                                            }
                                                                                         } else if (newStatus === 'Cancel') {
                                                                                             updates.amountReceived = 0;
                                                                                             updates.settleDate = null;
