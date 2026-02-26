@@ -20,7 +20,7 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC = () => {
-    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData } = useStore();
+    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
 
@@ -284,6 +284,14 @@ const IncomeExpense: React.FC = () => {
         }
     };
 
+    if (!hasPermission('manage_income_expense')) {
+        return (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                You do not have permission to view Income & Expense.
+            </div>
+        );
+    }
+
     return (
         <div style={{ paddingBottom: '40px' }}>
             {/* Filters (matching Dashboard layout) */}
@@ -508,9 +516,11 @@ const IncomeExpense: React.FC = () => {
                                                 <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(t); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px' }}>
                                                     <Edit2 size={14} style={{ marginRight: '6px' }} /> Edit
                                                 </button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px', color: 'var(--color-red)' }}>
-                                                    <Trash2 size={14} style={{ marginRight: '6px' }} /> Delete
-                                                </button>
+                                                {currentUser?.roleId === 'admin' && (
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px', color: 'var(--color-red)' }}>
+                                                        <Trash2 size={14} style={{ marginRight: '6px' }} /> Delete
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -579,14 +589,16 @@ const IncomeExpense: React.FC = () => {
                                                 >
                                                     <Edit2 size={16} />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleDelete(t.id)}
-                                                    className="icon-button"
-                                                    style={{ color: 'var(--color-red)' }}
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                {currentUser?.roleId === 'admin' && (
+                                                    <button
+                                                        onClick={() => handleDelete(t.id)}
+                                                        className="icon-button"
+                                                        style={{ color: 'var(--color-red)' }}
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
