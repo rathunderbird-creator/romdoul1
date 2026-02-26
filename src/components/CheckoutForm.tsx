@@ -457,13 +457,25 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
-                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.shippingStatus} onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}>
+                                <select
+                                    className="search-input"
+                                    style={{ width: '100%', padding: '10px 12px', background: currentUser?.roleId === 'salesman' ? 'var(--color-bg)' : 'white', opacity: currentUser?.roleId === 'salesman' ? 0.7 : 1 }}
+                                    value={formData.shippingStatus}
+                                    onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}
+                                    disabled={currentUser?.roleId === 'salesman'}
+                                >
                                     {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Status</label>
-                                <select className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}>
+                                <select
+                                    className="search-input"
+                                    style={{ width: '100%', padding: '10px 12px', background: currentUser?.roleId === 'salesman' ? 'var(--color-bg)' : 'white', opacity: currentUser?.roleId === 'salesman' ? 0.7 : 1 }}
+                                    value={formData.paymentStatus}
+                                    onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
+                                    disabled={currentUser?.roleId === 'salesman'}
+                                >
                                     {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
