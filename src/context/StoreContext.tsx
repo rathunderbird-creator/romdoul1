@@ -231,8 +231,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50)
             ]);
 
-
-
             console.log('Fetched Sales Count:', salesResult.data?.length);
             if (salesResult.error) console.error('Sales Fetch Error:', salesResult.error);
 
@@ -726,6 +724,36 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             customerCare: 'Chantha'
         };
 
+        // If paying instantly (not COD), record the income transaction
+        if (newSale.paymentStatus === 'Paid') {
+            const transactionId = crypto.randomUUID();
+            const newTransaction = {
+                id: transactionId,
+                date: new Date().toISOString(),
+                type: 'Income' as const,
+                category: 'លក់ឥវ៉ាន់',
+                amount: newSale.amountReceived || newSale.total,
+                description: newSale.customer?.name || 'Customer',
+                addedBy: currentUser?.name || 'System'
+            };
+
+            // Optimistic update
+            setTransactions(prev => [newTransaction, ...prev]);
+
+            // Async insert
+            supabase.from('transactions').insert([{
+                id: newTransaction.id,
+                date: newTransaction.date,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                description: newTransaction.description,
+                added_by: newTransaction.addedBy
+            }]).then(({ error }) => {
+                if (error) console.error('Failed to create transaction for POS sale:', error);
+            });
+        }
+
         // Update Sales Local
         setSales(prev => [newSale, ...prev]);
 
@@ -895,12 +923,43 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
-    const addOnlineOrder = async (order: Omit<Sale, 'id'>) => {
+    const addOnlineOrder = async (order: Omit<Sale, 'id' | 'date'>) => {
         const newSale: Sale = {
             ...order,
             id: Date.now().toString(),
-            date: order.date || new Date().toISOString()
+            date: new Date().toISOString()
         };
+
+        // If creating a new order as already paid, record the income transaction
+        if (newSale.paymentStatus === 'Paid') {
+            const transactionId = crypto.randomUUID();
+            const newTransaction = {
+                id: transactionId,
+                date: new Date().toISOString(),
+                type: 'Income' as const,
+                category: 'លក់ឥវ៉ាន់',
+                amount: newSale.amountReceived || newSale.total,
+                description: newSale.customer?.name || 'Customer',
+                addedBy: currentUser?.name || 'System'
+            };
+
+            // Optimistic update
+            setTransactions(prev => [newTransaction, ...prev]);
+
+            // Async insert
+            supabase.from('transactions').insert([{
+                id: newTransaction.id,
+                date: newTransaction.date,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                description: newTransaction.description,
+                added_by: newTransaction.addedBy
+            }]).then(({ error }) => {
+                if (error) console.error('Failed to create transaction for online order:', error);
+            });
+        }
+
         setSales(prev => [newSale, ...prev]);
 
         // DB Insert
@@ -1038,10 +1097,51 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateOrder = async (id: string, updates: Partial<Sale>): Promise<void> => {
+        // Find existing order BEFORE local update for checking status change
+        const existingOrder = sales.find(s => s.id === id);
+
         // 1. Optimistic Local Update
         setSales(prev => prev.map(sale =>
             sale.id === id ? { ...sale, ...updates } : sale
         ));
+
+        // Sync Income/Expense: If changed to 'Paid' (and wasn't before)
+        if (updates.paymentStatus === 'Paid' && existingOrder && existingOrder.paymentStatus !== 'Paid') {
+            const transactionId = crypto.randomUUID();
+            const amountToRecord = updates.amountReceived !== undefined
+                ? updates.amountReceived
+                : (existingOrder.amountReceived || existingOrder.total);
+
+            const customerName = updates.customer?.name
+                || existingOrder.customer?.name
+                || 'Customer';
+
+            const newTransaction = {
+                id: transactionId,
+                date: new Date().toISOString(),
+                type: 'Income' as const,
+                category: 'លក់ឥវ៉ាន់',
+                amount: amountToRecord || 0,
+                description: customerName,
+                addedBy: currentUser?.name || 'System'
+            };
+
+            // Optimistic update
+            setTransactions(prev => [newTransaction, ...prev]);
+
+            // Async insert
+            supabase.from('transactions').insert([{
+                id: newTransaction.id,
+                date: newTransaction.date,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                description: newTransaction.description,
+                added_by: newTransaction.addedBy
+            }]).then(({ error }) => {
+                if (error) console.error('Failed to create transaction for updated order:', error);
+            });
+        }
 
         // 2. Prepare DB Updates for 'sales' table
         const dbUpdates: any = {};
