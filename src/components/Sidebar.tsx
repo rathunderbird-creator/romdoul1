@@ -29,8 +29,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
         navItems.push({ icon: Package, label: 'Inventory', path: '/inventory' });
-        // Assume users who can view reports or manage inventory can see income/expense for now.
-        // Ideally there's a specific 'manage_transactions' permission. 
+    }
+
+    if (hasPermission('manage_income_expense')) {
         navItems.push({ icon: Wallet, label: 'Income & Expense', path: '/income-expense' });
     }
 

@@ -364,10 +364,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 id: 'admin',
                                 name: 'Administrator',
                                 description: 'Full system access',
-                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
+                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
                             },
                             // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
-                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager' && r.id !== 'salesman'),
+                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager' && r.id !== 'salesman' && r.id !== 'accountant'),
+                            {
+                                id: 'accountant',
+                                name: 'Accountant',
+                                description: 'Manage finances and records',
+                                permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] as any[]
+                            },
                             {
                                 id: 'store_manager',
                                 name: 'Store Manager',
@@ -446,7 +452,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             id: 'admin',
                             name: 'Administrator',
                             description: 'Full system access',
-                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock'] as any[]
+                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
+                        },
+                        {
+                            id: 'accountant',
+                            name: 'Accountant',
+                            description: 'Manage finances and records',
+                            permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] as any[]
                         },
                         {
                             id: 'store_manager',

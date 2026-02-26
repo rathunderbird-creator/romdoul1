@@ -213,7 +213,8 @@ export type Permission =
     | 'manage_orders'
     | 'create_orders'
     | 'view_orders'
-    | 'view_inventory_stock';
+    | 'view_inventory_stock'
+    | 'manage_income_expense';
 
 export interface Role {
     id: string;

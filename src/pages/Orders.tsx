@@ -315,6 +315,87 @@ const PendingRemarkModalComponent: React.FC<{
     );
 };
 
+const PayByModalComponent: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    order: Sale | null;
+}> = ({ isOpen, onClose, order }) => {
+    const { paymentMethods, updateOrder, updateOrderStatus } = useStore();
+    const { showToast } = useToast();
+
+    const [selectedPayBy, setSelectedPayBy] = useState<string>('');
+
+    useEffect(() => {
+        if (isOpen && order) {
+            setSelectedPayBy(order.paymentMethod || paymentMethods[0] || 'Cash');
+        }
+    }, [isOpen, order, paymentMethods]);
+
+    if (!order) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Select Payment Method">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                    Please select the payment method for this order before confirming it as Delivered.
+                </p>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Pay By <span style={{ color: 'red' }}>*</span></label>
+                    <select
+                        value={selectedPayBy}
+                        onChange={(e) => setSelectedPayBy(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none'
+                        }}
+                    >
+                        {paymentMethods.map(method => (
+                            <option key={method} value={method}>{method}</option>
+                        ))}
+                    </select>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer',
+                            fontSize: '14px', fontWeight: 500
+                        }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={async () => {
+                            try {
+                                const newPaymentStatus = selectedPayBy === 'COD' ? 'Unpaid' : 'Unpaid';
+                                await updateOrder(order.id, { paymentMethod: selectedPayBy as any, paymentStatus: newPaymentStatus });
+                                await updateOrderStatus(order.id, 'Delivered');
+                                showToast('Order marked as Delivered', 'success');
+                            } catch (e: any) {
+                                console.error('Failed to update status to Delivered:', e);
+                                showToast('Update failed. Please try again.', 'error');
+                            } finally {
+                                onClose();
+                            }
+                        }}
+                        className="primary-button"
+                        style={{
+                            padding: '10px 16px', borderRadius: '8px', border: 'none',
+                            background: 'var(--color-primary)',
+                            color: 'white', cursor: 'pointer',
+                            fontSize: '14px', fontWeight: 500
+                        }}
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
@@ -660,6 +741,10 @@ const Orders: React.FC = () => {
     // Pending Modal State
     const [isPendingRemarkModalOpen, setIsPendingRemarkModalOpen] = useState(false);
     const [pendingOrderToUpdate, setPendingOrderToUpdate] = useState<Sale | null>(null);
+
+    // Pay By Modal State
+    const [isPayByModalOpen, setIsPayByModalOpen] = useState(false);
+    const [payByOrderToUpdate, setPayByOrderToUpdate] = useState<Sale | null>(null);
 
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
@@ -1902,11 +1987,13 @@ const Orders: React.FC = () => {
                                         onPrint={(o) => setReceiptSale(o)}
                                         onCopy={(o) => handleCopyOrder(o)}
                                         onUpdateStatus={(id, status) => {
-                                            updateOrderStatus(id, status);
                                             if (status === 'Delivered') {
-                                                const newPaymentStatus = order.paymentMethod === 'COD' ? 'Unpaid' : 'Unpaid';
-                                                updateOrder(id, { paymentStatus: newPaymentStatus });
-                                            } else if (status === 'ReStock') {
+                                                setPayByOrderToUpdate(order);
+                                                setIsPayByModalOpen(true);
+                                                return;
+                                            }
+                                            updateOrderStatus(id, status);
+                                            if (status === 'ReStock') {
                                                 updateOrder(id, { paymentStatus: 'Cancel' });
                                                 restockOrder(id);
                                             } else if (status === 'Returned') {
@@ -2251,11 +2338,13 @@ const Orders: React.FC = () => {
                                                                                             setIsPendingRemarkModalOpen(true);
                                                                                             return;
                                                                                         }
-                                                                                        updateOrderStatus(order.id, newStatus as any);
                                                                                         if (newStatus === 'Delivered') {
-                                                                                            const newPaymentStatus = order.paymentMethod === 'COD' ? 'Unpaid' : 'Unpaid';
-                                                                                            updateOrder(order.id, { paymentStatus: newPaymentStatus });
-                                                                                        } else if (newStatus === 'ReStock') {
+                                                                                            setPayByOrderToUpdate(order);
+                                                                                            setIsPayByModalOpen(true);
+                                                                                            return;
+                                                                                        }
+                                                                                        updateOrderStatus(order.id, newStatus as any);
+                                                                                        if (newStatus === 'ReStock') {
                                                                                             updateOrder(order.id, { paymentStatus: 'Cancel' });
                                                                                             restockOrder(order.id);
                                                                                         } else if (newStatus === 'Returned') {
@@ -2629,6 +2718,12 @@ const Orders: React.FC = () => {
                 isOpen={isPendingRemarkModalOpen}
                 onClose={() => { setIsPendingRemarkModalOpen(false); setPendingOrderToUpdate(null); }}
                 order={pendingOrderToUpdate}
+            />
+            {/* Pay By Modal */}
+            <PayByModalComponent
+                isOpen={isPayByModalOpen}
+                onClose={() => { setIsPayByModalOpen(false); setPayByOrderToUpdate(null); }}
+                order={payByOrderToUpdate}
             />
             <DataImportModal
                 isOpen={isImportModalOpen}
