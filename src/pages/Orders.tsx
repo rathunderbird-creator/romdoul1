@@ -38,6 +38,19 @@ type SortConfig = {
     direction: 'asc' | 'desc';
 } | null;
 
+const getStatusBorderColor = (s: string) => {
+    switch (s) {
+        case 'Pending': return '#D97706';
+        case 'Shipped': return '#2563EB';
+        case 'Delivered': return '#059669';
+        case 'Cancelled': return '#DC2626';
+        case 'Returned': return '#DC2626';
+        case 'ReStock': return '#7E22CE';
+        case 'Ordered': return '#111827';
+        default: return '#4B5563';
+    }
+};
+
 const SortableRow = ({ id, children, className, style, onClick, ...props }: any) => {
     const {
         attributes,
@@ -2087,7 +2100,7 @@ const Orders: React.FC = () => {
 
                                                     return (
                                                         <SortableRow key={order.id} id={order.id} className={rowClass} isRowMovable={isRowMovable}>
-                                                            <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15 }} className="sticky-col-first">
+                                                            <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Ordered' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
                                                                 {isAdmin && (
                                                                     <input
                                                                         type="checkbox"
@@ -2459,6 +2472,7 @@ const Orders: React.FC = () => {
                                     <option value={1000}>1000</option>
                                     <option value={3000}>3000</option>
                                     <option value={5000}>5000</option>
+                                    <option value={999999}>All Rows</option>
                                 </select>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

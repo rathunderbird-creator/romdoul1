@@ -17,11 +17,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [isHeaderHidden, setIsHeaderHidden] = useState(false);
     const lastScrollY = React.useRef(0);
 
-    // Reset header visibility when entering POS route
+    // Reset header visibility when switching routes
     React.useEffect(() => {
-        if (location.pathname === '/') {
-            setIsHeaderHidden(false);
-        }
+        setIsHeaderHidden(false);
     }, [location.pathname]);
 
     // Auto-collapse on mobile, but let user toggle
@@ -31,8 +29,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const handleScroll = (e: React.UIEvent<HTMLElement>) => {
         if (!isMobile) return;
 
-        // Disable header auto-hide on the POS form to prevent layout jumping
-        if (location.pathname === '/') {
+        // Disable header auto-hide when the POS form is mounted to prevent layout jumps
+        if (document.body.classList.contains('pos-active')) {
             return;
         }
 

@@ -40,6 +40,12 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
         }
     }, [orderToEdit]);
 
+    // Lock Header Auto-Hide globally
+    useEffect(() => {
+        document.body.classList.add('pos-active');
+        return () => document.body.classList.remove('pos-active');
+    }, []);
+
     // Payment Flow State
     const [completedSale, setCompletedSale] = useState<Sale | null>(null);
 
