@@ -151,7 +151,7 @@ const PaymentTracking: React.FC = () => {
             amountReceived: formData.amountReceived,
             settleDate: formData.settleDate,
             paymentStatus: formData.paymentStatus,
-            ...(formData.paymentStatus === 'Paid' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
+            ...(formData.paymentStatus === 'Paid' && selectedOrder.shipping?.status !== 'Delivered' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
         showToast('Payment details updated', 'success');
         setIsEditModalOpen(false);
@@ -334,7 +334,7 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('status') && <td>
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
-                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending', ...(newStatus === 'Paid' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
+                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending', ...(newStatus === 'Paid' && order.shipping?.status !== 'Delivered' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
                                         readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
                                     />
                                 </td>}

@@ -2005,7 +2005,7 @@ const Orders: React.FC = () => {
                                             if (status === 'Paid' || status === 'Settled') {
                                                 updates.amountReceived = order.total;
                                                 updates.settleDate = new Date().toISOString();
-                                                if (status === 'Paid') {
+                                                if (status === 'Paid' && order.shipping?.status !== 'Delivered') {
                                                     updates.shipping = { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' };
                                                 }
                                             } else if (status === 'Cancel') {
@@ -2283,7 +2283,7 @@ const Orders: React.FC = () => {
                                                                                         if (newStatus === 'Paid' || newStatus === 'Settled') {
                                                                                             updates.amountReceived = order.total;
                                                                                             updates.settleDate = new Date().toISOString();
-                                                                                            if (newStatus === 'Paid') {
+                                                                                            if (newStatus === 'Paid' && order.shipping?.status !== 'Delivered') {
                                                                                                 updates.shipping = { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' };
                                                                                             }
                                                                                         } else if (newStatus === 'Cancel') {
