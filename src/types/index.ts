@@ -43,6 +43,7 @@ export interface Sale {
     paymentStatus?: 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending';
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;
+    pageSource?: string;
     customer?: {
         id?: string; // Added optional ID to link to Customer entity
         name: string;

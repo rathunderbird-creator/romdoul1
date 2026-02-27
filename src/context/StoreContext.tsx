@@ -786,7 +786,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             amount_received: newSale.amountReceived,
             payment_status: newSale.paymentStatus,
             customer_snapshot: newSale.customer,
-            order_status: 'Closed' // POS sales usually closed? Or Open?
+            order_status: 'Closed', // POS sales usually closed? Or Open?
+            page_source: newSale.customer?.page || null
         });
 
         if (saleError) console.error('Sale insert error', saleError);
@@ -988,6 +989,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             payment_status: newSale.paymentStatus,
             customer_snapshot: newSale.customer,
             order_status: 'Open',
+            page_source: newSale.customer?.page || null,
             shipping_company: newSale.shipping?.company,
             tracking_number: newSale.shipping?.trackingNumber,
             shipping_status: newSale.shipping?.status,
@@ -1168,7 +1170,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.settleDate !== undefined) dbUpdates.settle_date = updates.settleDate || null;
         if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
-        if (updates.customer !== undefined) dbUpdates.customer_snapshot = updates.customer;
+        if (updates.customer !== undefined) {
+            dbUpdates.customer_snapshot = updates.customer;
+            if (updates.customer.page !== undefined) {
+                dbUpdates.page_source = updates.customer.page;
+            }
+        }
         // Shipping updates
         if (updates.shipping !== undefined) {
             dbUpdates.shipping_company = updates.shipping.company;
