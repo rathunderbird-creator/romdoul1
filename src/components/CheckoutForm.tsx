@@ -483,7 +483,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    {['Unpaid', 'Paid', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
                         </div>
