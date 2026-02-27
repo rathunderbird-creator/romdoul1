@@ -16,7 +16,7 @@ interface CheckoutFormProps {
 }
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, customerCare, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -30,6 +30,16 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         if (!currentUser) return '';
         if (currentUser.roleId === 'salesman') return currentUser.name;
         return '';
+    })();
+
+    // Customer Care Logic
+    const availableCustomerCare = users.filter(u => u.roleId === 'customer_care');
+
+    // Determine default customer care based on current user role
+    const defaultCustomerCare = (() => {
+        if (!currentUser) return availableCustomerCare[0]?.name || '';
+        if (currentUser.roleId === 'customer_care') return currentUser.name;
+        return availableCustomerCare[0]?.name || '';
     })();
 
     // Config Modal State
@@ -62,7 +72,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         pageName: '',
         shippingCompany: '',
         staffName: '',
-        customerCare: customerCare[0] || '',
+        customerCare: defaultCustomerCare,
         salesman: defaultSalesman, // Use calculated default
         remark: '',
         city: '',
@@ -100,7 +110,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 pageName: orderToEdit.customer?.page || '',
                 shippingCompany: orderToEdit.shipping?.company || '',
                 staffName: orderToEdit.shipping?.staffName || '',
-                customerCare: orderToEdit.customerCare || customerCare[0] || '',
+                customerCare: orderToEdit.customerCare || defaultCustomerCare,
                 salesman: orderToEdit.salesman || '',
                 remark: orderToEdit.remark || '',
                 city: city, // uses updated local var city
@@ -120,7 +130,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setFormData({
                 ...initialFormState,
                 salesman: defaultSalesman, // Ensure default is applied
-                customerCare: customerCare[0] || '' // Ensure default is applied
+                customerCare: defaultCustomerCare // Ensure default is applied
             });
         }
     }, [orderToEdit, currentUser]); // Added currentUser dependency
@@ -435,11 +445,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.customerCare} onChange={e => setFormData({ ...formData, customerCare: e.target.value })}>
                                         <option value="">Select Customer Care...</option>
-                                        {customerCare.map(c => <option key={c} value={c}>{c}</option>)}
+                                        {availableCustomerCare.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                     </select>
-                                    {!isMobile && (
-                                        <button onClick={() => { setConfigType('customerCare'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
-                                    )}
                                 </div>
                             </div>
                             <div>
