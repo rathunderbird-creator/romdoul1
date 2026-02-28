@@ -310,7 +310,101 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
 
             // Config
-            if (configResult.data) {
+            if (configResult.error) {
+                console.error('Config fetch error:', configResult.error);
+                if (configResult.error.code === 'PGRST116') {
+                    // Initial if no config found in DB
+                    const defaultConfig = {
+                        shippingCompanies: ['J&T', 'VET', 'JS Express'],
+                        salesmen: ['Sokheng', 'Thida'],
+                        categories: ['Portable', 'PartyBox'],
+                        pages: ['Chantha Sound'],
+                        customerCare: ['Chantha'],
+                        paymentMethods: ['Cash', 'QR'],
+                        cities: [
+                            'រាជធានីភ្នំពេញ',
+                            'ខេត្តបន្ទាយមានជ័យ',
+                            'ខេត្តបាត់ដំបង',
+                            'ខេត្តកំពង់ចាម',
+                            'ខេត្តកំពង់ឆ្នាំង',
+                            'ខេត្តកំពង់ស្ពឺ',
+                            'ខេត្តកំពង់ធំ',
+                            'ខេត្តកំពត',
+                            'ខេត្តកណ្តាល',
+                            'ខេត្តកោះកុង',
+                            'ខេត្តក្រចេះ',
+                            'ខេត្តមណ្ឌលគិរី',
+                            'ខេត្តព្រះវិហារ',
+                            'ខេត្តព្រៃវែង',
+                            'ខេត្តពោធិ៍សាត់',
+                            'ខេត្តរតនគិរី',
+                            'ខេត្តសៀមរាប',
+                            'ខេត្តព្រះសីហនុ',
+                            'ខេត្តស្ទឹងត្រែង',
+                            'ខេត្តស្វាយរៀង',
+                            'ខេត្តតាកែវ',
+                            'ខេត្តឧត្តរមានជ័យ',
+                            'ខេត្តកែប',
+                            'ខេត្តប៉ៃលិន',
+                            'ខេត្តត្បូងឃ្មុំ'
+                        ],
+                        pinnedProducts: [],
+                        pinnedOrderColumns: [],
+                        salesOrder: [],
+                        users: [
+                            { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
+                        ],
+                        roles: [
+                            {
+                                id: 'admin',
+                                name: 'Administrator',
+                                description: 'Full system access',
+                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
+                            },
+                            {
+                                id: 'accountant',
+                                name: 'Accountant',
+                                description: 'Manage finances and records',
+                                permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'store_manager',
+                                name: 'Store Manager',
+                                description: 'Manage store operations',
+                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'cashier',
+                                name: 'Cashier',
+                                description: 'Process sales and payments',
+                                permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
+                            },
+                            {
+                                id: 'customer_care',
+                                name: 'Customer Care',
+                                description: 'Manage support and orders',
+                                permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] as any[]
+                            },
+                            {
+                                id: 'salesman',
+                                name: 'Salesman',
+                                description: 'Sales and order viewing',
+                                permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] as any[]
+                            }
+                        ],
+                        storeAddress: '123 Speaker Ave, Audio City',
+                        storeName: 'JBL Store Main',
+                        email: 'contact@jblstore.com',
+                        phone: '+1 (555) 123-4567',
+                        timezone: 'Asia/Phnom_Penh',
+                        taxRate: 0,
+                        currency: 'USD ($)'
+                    };
+                    setConfig(defaultConfig);
+                    await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
+                }
+                // If it's another error (e.g. network), do nothing to DB, retain current state fallback
+            } else if (configResult.data) {
                 const loadedConfig = configResult.data.data;
                 const needsMigration = !loadedConfig.cities ||
                     loadedConfig.cities.length === 0 ||
@@ -405,96 +499,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 } else {
                     setConfig(loadedConfig);
                 }
-            } else {
-                // Initial if no config found
-                const defaultConfig = {
-                    shippingCompanies: ['J&T', 'VET', 'JS Express'],
-                    salesmen: ['Sokheng', 'Thida'],
-                    categories: ['Portable', 'PartyBox'],
-                    pages: ['Chantha Sound'],
-                    customerCare: ['Chantha'],
-                    paymentMethods: ['Cash', 'QR'],
-                    cities: [
-                        'រាជធានីភ្នំពេញ',
-                        'ខេត្តបន្ទាយមានជ័យ',
-                        'ខេត្តបាត់ដំបង',
-                        'ខេត្តកំពង់ចាម',
-                        'ខេត្តកំពង់ឆ្នាំង',
-                        'ខេត្តកំពង់ស្ពឺ',
-                        'ខេត្តកំពង់ធំ',
-                        'ខេត្តកំពត',
-                        'ខេត្តកណ្តាល',
-                        'ខេត្តកោះកុង',
-                        'ខេត្តក្រចេះ',
-                        'ខេត្តមណ្ឌលគិរី',
-                        'ខេត្តព្រះវិហារ',
-                        'ខេត្តព្រៃវែង',
-                        'ខេត្តពោធិ៍សាត់',
-                        'ខេត្តរតនគិរី',
-                        'ខេត្តសៀមរាប',
-                        'ខេត្តព្រះសីហនុ',
-                        'ខេត្តស្ទឹងត្រែង',
-                        'ខេត្តស្វាយរៀង',
-                        'ខេត្តតាកែវ',
-                        'ខេត្តឧត្តរមានជ័យ',
-                        'ខេត្តកែប',
-                        'ខេត្តប៉ៃលិន',
-                        'ខេត្តត្បូងឃ្មុំ'
-                    ],
-                    pinnedProducts: [],
-                    pinnedOrderColumns: [],
-                    salesOrder: [],
-                    users: [
-                        { id: '1', name: 'Admin', email: 'admin@pos.com', roleId: 'admin', pin: '1234' }
-                    ],
-                    roles: [
-                        {
-                            id: 'admin',
-                            name: 'Administrator',
-                            description: 'Full system access',
-                            permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
-                        },
-                        {
-                            id: 'accountant',
-                            name: 'Accountant',
-                            description: 'Manage finances and records',
-                            permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'store_manager',
-                            name: 'Store Manager',
-                            description: 'Manage store operations',
-                            permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'cashier',
-                            name: 'Cashier',
-                            description: 'Process sales and payments',
-                            permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
-                        },
-                        {
-                            id: 'customer_care',
-                            name: 'Customer Care',
-                            description: 'Manage support and orders',
-                            permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] as any[]
-                        },
-                        {
-                            id: 'salesman',
-                            name: 'Salesman',
-                            description: 'Sales and order viewing',
-                            permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] as any[]
-                        }
-                    ],
-                    storeAddress: '123 Speaker Ave, Audio City',
-                    storeName: 'JBL Store Main',
-                    email: 'contact@jblstore.com',
-                    phone: '+1 (555) 123-4567',
-                    timezone: 'Asia/Phnom_Penh',
-                    taxRate: 0,
-                    currency: 'USD ($)'
-                };
-                setConfig(defaultConfig);
-                await supabase.from('app_config').upsert({ id: 1, data: defaultConfig });
             }
         } catch (error) {
             console.error("Error fetching data:", error);
