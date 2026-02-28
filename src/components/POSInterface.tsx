@@ -52,12 +52,15 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
     const allCategories = ['All', ...categories];
 
     const filteredProducts = products.filter(p => {
-        const productName = p.name || '';
-        const productModel = p.model || '';
+        const productName = (p.name || '').trim();
+        const productModel = (p.model || '').trim();
+        const searchQuery = searchTerm.trim().toLowerCase();
+
         return (selectedCategory === 'All' || p.category === selectedCategory) &&
-            (productName.toLowerCase().includes(searchTerm.toLowerCase()) || productModel.toLowerCase().includes(searchTerm.toLowerCase())) &&
+            (productName.toLowerCase().includes(searchQuery) || productModel.toLowerCase().includes(searchQuery)) &&
             p.stock > 0;
-    }).sort((a, b) => {
+    });
+    const sortedAndFilteredProducts = filteredProducts.sort((a, b) => {
         const indexA = pinnedProductIds.indexOf(a.id);
         const indexB = pinnedProductIds.indexOf(b.id);
         if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -165,7 +168,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                             paddingBottom: isMobile ? '80px' : '24px', // Extra padding for mobile cart fab
                             flex: 1
                         }}>
-                            {filteredProducts.map(product => {
+                            {sortedAndFilteredProducts.map(product => {
                                 const cartItem = cart.find(item => item.id === product.id);
                                 const quantityInCart = cartItem ? cartItem.quantity : 0;
                                 return (

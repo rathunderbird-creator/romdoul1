@@ -825,8 +825,27 @@ const Orders: React.FC = () => {
 
             if (searchTerm.trim()) {
                 const term = searchTerm.toLowerCase().trim();
+
+                // 1. Fetch matching sale_ids from sale_items (limit to 200 to prevent URL header too large error)
+                const { data: itemMatches } = await supabase
+                    .from('sale_items')
+                    .select('sale_id')
+                    .ilike('name', `%${term}%`)
+                    .limit(200);
+
+                let matchingSaleIds: string[] = [];
+                if (itemMatches && itemMatches.length > 0) {
+                    matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                }
+
+                let orFilter = `id.ilike.%${term}%,salesman.ilike.%${term}%,remark.ilike.%${term}%,customer_care.ilike.%${term}%,shipping_company.ilike.%${term}%,tracking_number.ilike.%${term}%,payment_method.ilike.%${term}%,customer_snapshot->>name.ilike.%${term}%,customer_snapshot->>phone.ilike.%${term}%,customer_snapshot->>city.ilike.%${term}%`;
+
+                if (matchingSaleIds.length > 0) {
+                    orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
+                }
+
                 // PostgREST fully supports OR across standard columns and JSONB paths.
-                query = query.or(`id.ilike.%${term}%,salesman.ilike.%${term}%,remark.ilike.%${term}%,customer_care.ilike.%${term}%,shipping_company.ilike.%${term}%,tracking_number.ilike.%${term}%,payment_method.ilike.%${term}%,customer_snapshot->>name.ilike.%${term}%,customer_snapshot->>phone.ilike.%${term}%,customer_snapshot->>city.ilike.%${term}%`);
+                query = query.or(orFilter);
             }
 
             let dbSortCol = 'date';
