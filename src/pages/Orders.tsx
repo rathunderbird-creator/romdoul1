@@ -827,11 +827,41 @@ const Orders: React.FC = () => {
                 const term = searchTerm.toLowerCase().trim();
 
                 // 1. Fetch matching sale_ids from sale_items (limit to 200 to prevent URL header too large error)
-                const { data: itemMatches } = await supabase
+                let itemQuery = supabase
                     .from('sale_items')
-                    .select('sale_id')
-                    .ilike('name', `%${term}%`)
-                    .limit(200);
+                    .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company)')
+                    .ilike('name', `%${term}%`);
+
+                // Mirror the sales filters onto the inner joined table
+                if (statusFilter.length > 0) {
+                    itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
+                } else {
+                    itemQuery = itemQuery.neq('sales.shipping_status', 'ReStock');
+                }
+                if (effectiveSalesmanFilter !== 'All') {
+                    itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
+                }
+                if (payStatusFilter.length > 0) {
+                    itemQuery = itemQuery.in('sales.payment_status', payStatusFilter);
+                }
+                if (shippingCoFilter.length > 0) {
+                    itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
+                }
+                if (dateRange.start) {
+                    const start = new Date(dateRange.start);
+                    start.setHours(0, 0, 0, 0);
+                    itemQuery = itemQuery.gte('sales.date', start.toISOString());
+                }
+                if (dateRange.end) {
+                    const end = new Date(dateRange.end);
+                    end.setHours(23, 59, 59, 999);
+                    itemQuery = itemQuery.lte('sales.date', end.toISOString());
+                }
+
+                // Order by sale_id descending to get newest first before the limit kicks in (since sale_ids are timestamps here)
+                itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+
+                const { data: itemMatches } = await itemQuery;
 
                 let matchingSaleIds: string[] = [];
                 if (itemMatches && itemMatches.length > 0) {
