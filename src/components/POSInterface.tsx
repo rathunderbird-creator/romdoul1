@@ -51,11 +51,13 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
 
     const allCategories = ['All', ...categories];
 
-    const filteredProducts = products.filter(p =>
-        (selectedCategory === 'All' || p.category === selectedCategory) &&
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        p.stock > 0
-    ).sort((a, b) => {
+    const filteredProducts = products.filter(p => {
+        const productName = p.name || '';
+        const productModel = p.model || '';
+        return (selectedCategory === 'All' || p.category === selectedCategory) &&
+            (productName.toLowerCase().includes(searchTerm.toLowerCase()) || productModel.toLowerCase().includes(searchTerm.toLowerCase())) &&
+            p.stock > 0;
+    }).sort((a, b) => {
         const indexA = pinnedProductIds.indexOf(a.id);
         const indexB = pinnedProductIds.indexOf(b.id);
         if (indexA !== -1 && indexB !== -1) return indexA - indexB;

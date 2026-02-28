@@ -173,8 +173,10 @@ const Inventory: React.FC = () => {
     // Derived State
     const filteredAndSortedProducts = useMemo(() => {
         let result = products.filter(product => {
-            const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                product.model.toLowerCase().includes(searchTerm.toLowerCase());
+            const productName = product.name || '';
+            const productModel = product.model || '';
+            const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                productModel.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesCategory = categoryFilter === 'All' || product.category === categoryFilter;
             return matchesSearch && matchesCategory;
         });
