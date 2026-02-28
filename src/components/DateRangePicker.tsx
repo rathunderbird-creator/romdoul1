@@ -379,13 +379,18 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     };
 
+    const isActive = Boolean(value.start || value.end);
+
     return (
         <div style={{ position: 'relative', ...style }} className={className} ref={pickerRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 style={{
-                    padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                    background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                    padding: '8px 12px', borderRadius: '8px',
+                    border: isActive ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                    background: isOpen ? 'var(--color-primary)' : (isActive ? 'var(--color-primary-light)' : 'var(--color-surface)'),
+                    color: isOpen ? 'white' : (isActive ? 'var(--color-primary)' : 'var(--color-text-main)'),
+                    cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '8px', minWidth: '42px',
                     height: '42px',
                     width: '100%',
