@@ -24,7 +24,7 @@ const PaymentTracking: React.FC = () => {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
-    const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending'>('All');
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Unpaid' | 'Paid' | 'Cancel'>('All');
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -74,7 +74,7 @@ const PaymentTracking: React.FC = () => {
     const [formData, setFormData] = useState({
         amountReceived: 0,
         settleDate: '',
-        paymentStatus: 'Paid' as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending'
+        paymentStatus: 'Paid' as 'Unpaid' | 'Paid' | 'Cancel'
     });
 
 
@@ -199,9 +199,7 @@ const PaymentTracking: React.FC = () => {
                         <option value="All">All Status</option>
                         <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Paid</option>
                         <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Unpaid</option>
-                        <option value="Partial" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Partial</option>
-                        <option value="Settled" style={{ backgroundColor: '#E0E7FF', color: '#4F46E5' }}>Settled</option>
-                        <option value="Not Settle" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Not Settle</option>
+                        <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>Cancel</option>
                     </select>
                     <DateRangePicker value={dateRange} onChange={setDateRange} />
 
@@ -334,7 +332,7 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('status') && <td>
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
-                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending', ...(newStatus === 'Paid' && order.shipping?.status !== 'Delivered' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
+                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Cancel', ...(newStatus === 'Paid' && order.shipping?.status !== 'Delivered' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
                                         readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
                                     />
                                 </td>}
@@ -445,11 +443,9 @@ const PaymentTracking: React.FC = () => {
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Paid' | 'Unpaid' | 'Settled' | 'Not Settle' | 'Cancel' | 'Pending' })} disabled={selectedOrder?.paymentStatus === 'Paid' || selectedOrder?.paymentStatus === 'Cancel'}>
-                                        <option value="Paid">Paid</option>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Unpaid' | 'Paid' | 'Cancel' })} disabled={selectedOrder?.paymentStatus === 'Paid' || selectedOrder?.paymentStatus === 'Cancel'}>
                                         <option value="Unpaid">Unpaid</option>
-                                        <option value="Settled">Settled</option>
-                                        <option value="Not Settle">Not Settle</option>
+                                        <option value="Paid">Paid</option>
                                         <option value="Cancel">Cancel</option>
                                     </select>
                                 </div>

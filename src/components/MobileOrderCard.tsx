@@ -58,7 +58,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
         }
     };
 
-    const isPaidOrSettle = order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled';
+    const isPaidOrSettle = order.paymentStatus === 'Paid';
     const isDelivered = order.shipping?.status === 'Delivered';
 
     let cardClass = 'mobile-order-card';

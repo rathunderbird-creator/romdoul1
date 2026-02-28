@@ -962,7 +962,7 @@ const Orders: React.FC = () => {
         if (shippingStatus === 'ReStock') return 'restock-row';
 
         // Secondary: Payment Status
-        if (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') return 'paid-settled-row';
+        if (order.paymentStatus === 'Paid') return 'paid-settled-row';
 
         return '';
     };
@@ -1341,9 +1341,9 @@ const Orders: React.FC = () => {
                                     style={{
                                         padding: '10px',
                                         borderRadius: '8px',
-                                        border: '1px solid var(--color-border)',
-                                        background: showFilters ? 'var(--color-primary)' : 'var(--color-surface)',
-                                        color: showFilters ? 'white' : 'var(--color-text-secondary)',
+                                        border: hasFilters ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                        background: showFilters ? 'var(--color-primary)' : (hasFilters ? 'var(--color-primary-light)' : 'var(--color-surface)'),
+                                        color: showFilters ? 'white' : (hasFilters ? 'var(--color-primary)' : 'var(--color-text-secondary)'),
                                         cursor: 'pointer',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -1628,10 +1628,10 @@ const Orders: React.FC = () => {
                                                 }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={payStatusFilter.length === 6}
+                                                        checked={payStatusFilter.length === 3}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setPayStatusFilter(['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel']);
+                                                                setPayStatusFilter(['Unpaid', 'Paid', 'Cancel']);
                                                             } else {
                                                                 setPayStatusFilter([]);
                                                             }
@@ -1640,7 +1640,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
                                                 </label>
-                                                {['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'].map(status => (
+                                                {['Unpaid', 'Paid', 'Cancel'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -2312,7 +2312,7 @@ const Orders: React.FC = () => {
                                                                     case 'received': return <td key={colId} style={{
                                                                         ...cellStyle,
                                                                         textAlign: 'right',
-                                                                        color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Settled') ? '#2563EB' : '#DC2626',
+                                                                        color: (order.paymentStatus === 'Paid') ? '#2563EB' : '#DC2626',
                                                                         fontWeight: 'bold'
                                                                     }}>${(order.amountReceived ?? order.total).toFixed(2)}</td>;
                                                                     case 'payStatus':
@@ -2329,7 +2329,7 @@ const Orders: React.FC = () => {
                                                                                     disabledOptions={[]}
                                                                                     onChange={(newStatus) => {
                                                                                         const updates: any = { paymentStatus: newStatus };
-                                                                                        if (newStatus === 'Paid' || newStatus === 'Settled') {
+                                                                                        if (newStatus === 'Paid') {
                                                                                             updates.amountReceived = order.total;
                                                                                             updates.settleDate = new Date().toISOString();
                                                                                             if (newStatus === 'Paid' && order.shipping?.status !== 'Delivered') {

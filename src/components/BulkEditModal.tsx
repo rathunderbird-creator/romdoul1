@@ -29,7 +29,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
     };
 
     const statusOptions = ['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
-    const paymentStatusOptions = ['Pending', 'Paid', 'Unpaid', 'Settled', 'Not Settle', 'Cancel'];
+    const paymentStatusOptions = ['Unpaid', 'Paid', 'Cancel'];
 
     return (
         <div style={{
