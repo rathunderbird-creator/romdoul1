@@ -34,9 +34,9 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                         />
                     )}
                     <div>
-                        <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'JBL STORE'}</h1>
-                        {storeAddress && <div style={{ fontSize: '12px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{storeAddress}</div>}
-                        {phone && <div style={{ fontSize: '12px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{phone}</div>}
+                        <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'JBL STORE'}</h1>
+                        {storeAddress && <div style={{ fontSize: '14px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{storeAddress}</div>}
+                        {phone && <div style={{ fontSize: '14px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{phone}</div>}
                     </div>
                 </div>
             ) : (
@@ -46,40 +46,34 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
             )}
 
             <div style={{ marginTop: '16px', borderTop: '1px dashed #ccc', borderBottom: '1px dashed #ccc', padding: '8px 0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                     <span>Date:</span>
                     <span>{new Date(sale.date).toLocaleDateString()}</span>
                 </div>
-                {variant === 'full' && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                        <span>Time:</span>
-                        <span>{new Date(sale.date).toLocaleTimeString()}</span>
-                    </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                     <span>Order No:</span>
                     <span>#{sale.id.slice(-6)}</span>
                 </div>
                 {sale.customer && (
                     <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                             <span>Customer:</span>
                             <span style={{ fontWeight: 'bold' }}>{sale.customer.name}</span>
                         </div>
                         {sale.customer.phone && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                                 <span>Phone:</span>
                                 <span style={{ fontWeight: 'bold' }}>{sale.customer.phone}</span>
                             </div>
                         )}
                         {variant === 'full' && sale.customer.address && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                                 <span>Address:</span>
                                 <span style={{ maxWidth: '60%', textAlign: 'right' }}>{sale.customer.address}</span>
                             </div>
                         )}
                         {variant === 'full' && sale.customer.city && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                                 <span>City:</span>
                                 <span>{sale.customer.city}</span>
                             </div>
@@ -87,14 +81,14 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                     </>
                 )}
                 {sale.salesman && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                         <span>Salesman:</span>
                         <span>{sale.salesman}</span>
                     </div>
                 )}
             </div>
 
-            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse', marginBottom: '16px', marginTop: '16px' }}>
+            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse', marginBottom: '16px', marginTop: '16px' }}>
                 <thead>
                     <tr style={{ borderBottom: '1px solid #eee' }}>
                         <th style={{ textAlign: 'left', padding: '8px 0' }}>Item</th>
@@ -124,7 +118,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                             <span>TOTAL KH(៛)</span>
                             <span>{(sale.total * 4100).toLocaleString()} ៛</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666', marginTop: '8px' }}>
                             <span>Payment Method</span>
                             <span>{sale.paymentMethod}</span>
                         </div>
@@ -287,10 +281,10 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
             }
 
             /* Adjust font sizes for thermal paper */
-            h1 { font-size: 14px !important; }
-            h3 { font-size: 12px !important; }
+            h1 { font-size: 18px !important; }
+            h3 { font-size: 16px !important; }
             .print-only div, .print-only span, .print-only p, .print-only td, .print-only th {
-                font-size: 10px !important;
+                font-size: 14px !important;
             }
         }
         
