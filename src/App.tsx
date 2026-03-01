@@ -15,6 +15,7 @@ const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const MobileOperators = lazy(() => import('./pages/MobileOperators'));
+const ShippingLocation = lazy(() => import('./pages/ShippingLocation'));
 
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
@@ -57,6 +58,7 @@ const ProtectedApp = () => {
           <Route path="/delivery-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
 
           <Route path="/mobile-operators" element={<ProtectedRoute requiredPermission="view_dashboard"><MobileOperators /></ProtectedRoute>} />
+          <Route path="/shipping-location" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingLocation /></ProtectedRoute>} />
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><Settings /></ProtectedRoute>} />
