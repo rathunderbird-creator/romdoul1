@@ -130,18 +130,42 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                         New Value
                     </label>
                     {field === 'date' && (
-                        <input
-                            type="date"
-                            value={value}
-                            onChange={(e) => setValue(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--color-border)',
-                                fontSize: '14px'
-                            }}
-                        />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="date"
+                                value={value}
+                                onChange={(e) => setValue(e.target.value)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-border)',
+                                    fontSize: '14px'
+                                }}
+                            />
+                            <button
+                                onClick={() => {
+                                    const now = new Date();
+                                    const yyyy = now.getFullYear();
+                                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                                    const dd = String(now.getDate()).padStart(2, '0');
+                                    setValue(`${yyyy}-${mm}-${dd}`);
+                                }}
+                                style={{
+                                    padding: '0 16px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-primary)',
+                                    background: 'var(--color-surface)',
+                                    color: 'var(--color-primary)',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                Now
+                            </button>
+                        </div>
                     )}
                     {field === 'status' && (
                         <select
