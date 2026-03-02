@@ -8,6 +8,7 @@ export default defineConfig({
     host: true, // Exposes the server to the network
   },
   build: {
+    target: 'es2022',
     rollupOptions: {
       output: {
         manualChunks: {

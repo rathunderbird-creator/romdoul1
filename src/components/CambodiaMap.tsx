@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+// OVERRIDE: Prevent "We is not defined" global crash in Vite production builds.
+// By loading the pre-minified worker from the CDN, Vite cannot mangle the internal `global` references.
+(maplibregl as any).workerUrl = "https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl-csp-worker.js";
+
 export interface ShippingRule {
     pcode: string;
     name: string;
