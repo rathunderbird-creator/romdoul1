@@ -21,8 +21,9 @@ interface CambodiaMapProps {
     selectedCommuneCode?: string;
     selectedVillageCode?: string;
     isEditing?: boolean;
+    isEditingRule?: boolean;
     editMarkerLatLng?: [number, number] | null;
-    onMapClick?: (lat: number, lng: number) => void;
+    onMapClick?: (lat: number, lng: number, autoSave?: boolean) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
     customLocations?: Array<{ pcode: string, name?: string, lat: number, lng: number }>;
     shippingRules?: ShippingRule[];
@@ -36,6 +37,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     selectedCommuneCode,
     selectedVillageCode,
     isEditing = false,
+    isEditingRule = false,
     editMarkerLatLng = null,
     onMapClick,
     onAreaSelect,
@@ -275,7 +277,12 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         const handleClick = (e: maplibregl.MapMouseEvent) => {
             // Handle Edit Mode clicking
             if (isEditing && onMapClick) {
-                onMapClick(e.lngLat.lat, e.lngLat.lng);
+                // If we are actively configuring a shipping rule, signal the parent to auto-save
+                if (isEditingRule) {
+                    onMapClick(e.lngLat.lat, e.lngLat.lng, true);
+                } else {
+                    onMapClick(e.lngLat.lat, e.lngLat.lng);
+                }
                 return;
             }
 

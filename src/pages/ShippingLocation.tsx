@@ -320,6 +320,38 @@ const ShippingLocation: React.FC = () => {
         }
     };
 
+    const handleMapClick = async (lat: number, lng: number, autoSave?: boolean) => {
+        setEditMarkerLatLng([lat, lng]);
+
+        if (autoSave && activeTarget) {
+            setIsSavingLocation(true);
+            try {
+                // Instantly upsert location based on active configuration target
+                const { error } = await supabase.from('custom_locations').upsert({
+                    pcode: activeTarget.code,
+                    name: activeTarget.name || activeTarget.code,
+                    lat: lat,
+                    lng: lng,
+                    type: activeTarget.type,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'pcode' });
+
+                if (error) throw error;
+
+                // Immediately disable map editing and refresh rules so the user can save the rule
+                setIsEditing(false);
+                setEditMarkerLatLng(null);
+                await loadCustomLocations();
+
+                // Optional: We can show a small transient toast, or just let the UI jump back seamlessly
+            } catch (e: any) {
+                alert('Error auto-saving map pin: ' + e.message);
+            } finally {
+                setIsSavingLocation(false);
+            }
+        }
+    };
+
     const handleSaveLocation = async () => {
         if (!editMarkerLatLng) return;
 
@@ -910,12 +942,34 @@ const ShippingLocation: React.FC = () => {
                                     </div>
 
                                     {editRuleData.is_shippable && !customLocations.some(l => l.pcode === activeTarget.code) && (
-                                        <div style={{ padding: '12px', background: 'var(--color-warning-light, #fef3c7)', border: '1px solid var(--color-warning, #f59e0b)', borderRadius: '8px', color: '#b45309', fontSize: '13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <MapPin size={16} style={{ flexShrink: 0 }} />
-                                            <span>
-                                                សូមចុចលើផែនទីដើម្បីកំណត់ទីតាំងភូមិសាស្ត្រជាមុនសិន។ /
-                                                <b> Please drop a pin on the map first to save a Shippable location.</b>
-                                            </span>
+                                        <div style={{ padding: '16px', background: 'var(--color-warning-light, #fef3c7)', border: '1px solid var(--color-warning, #f59e0b)', borderRadius: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                            <div style={{ display: 'flex', gap: '8px', color: '#b45309', fontSize: '13px' }}>
+                                                <MapPin size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                                                <span>
+                                                    សូមចុចលើផែនទីដើម្បីកំណត់ទីតាំងភូមិសាស្ត្រជាមុនសិន។ /
+                                                    <b> Please drop a pin on the map first to save a Shippable location.</b>
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => setIsEditing(true)}
+                                                style={{
+                                                    padding: '8px 16px',
+                                                    background: 'var(--color-warning)',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                    color: '#fff',
+                                                    fontSize: '14px',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '8px',
+                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                <MapPin size={16} /> ដាក់ទីតាំងលើផែនទីឥឡូវនេះ (Drop Pin Now)
+                                            </button>
                                         </div>
                                     )}
 
@@ -1175,8 +1229,9 @@ const ShippingLocation: React.FC = () => {
                         selectedCommuneCode={selectedCommuneCode}
                         selectedVillageCode={selectedVillageCode}
                         isEditing={isEditing}
+                        isEditingRule={isEditingRule} // Pass down the context
                         editMarkerLatLng={editMarkerLatLng}
-                        onMapClick={(lat, lng) => setEditMarkerLatLng([lat, lng])}
+                        onMapClick={handleMapClick}
                         onAreaSelect={handleAreaSelect}
                         customLocations={customLocations}
                         shippingRules={shippingRules}
