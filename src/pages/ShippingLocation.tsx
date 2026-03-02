@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation, Settings, Check, Package, Clock, Truck } from 'lucide-react';
+import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation, Settings, Check, Package, Clock, Truck, Trash2 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
@@ -369,6 +369,48 @@ const ShippingLocation: React.FC = () => {
             alert(`Location specifically mapped to ${targetName}!`);
         } catch (e: any) {
             alert('Error saving location: ' + e.message);
+        } finally {
+            setIsSavingLocation(false);
+        }
+    };
+
+    const handleRemoveLocation = async () => {
+        // Determine what target the user is currently focused on
+        let targetPcode = '';
+        let targetName = '';
+
+        if (selectedVillageCode) {
+            targetPcode = selectedVillageCode;
+            targetName = activeVillages.find(v => v.code === selectedVillageCode)?.khmer || selectedVillageCode;
+        } else if (selectedCommuneCode) {
+            targetPcode = selectedCommuneCode;
+            targetName = selectedCommune?.khmer || selectedCommuneCode;
+        } else if (selectedDistrictCode) {
+            targetPcode = selectedDistrictCode;
+            targetName = selectedDistrict?.khmer || selectedDistrictCode;
+        } else if (selectedProvinceCode) {
+            targetPcode = selectedProvinceCode;
+            targetName = selectedProvince?.khmer || selectedProvinceCode;
+        }
+
+        if (!targetPcode) {
+            alert('Please select a province, district, commune, or village first.');
+            return;
+        }
+
+        const confirmRemove = window.confirm(`តើអ្នកពិតជាចង់លុបទីតាំង "${targetName}" នេះមែនទេ? (Are you sure you want to remove the pin for ${targetName}?)`);
+        if (!confirmRemove) return;
+
+        setIsSavingLocation(true);
+        try {
+            const { error } = await supabase.from('custom_locations').delete().eq('pcode', targetPcode);
+            if (error) throw error;
+
+            setEditMarkerLatLng(null);
+            await loadCustomLocations();
+            alert(`Location pin removed for ${targetName}!`);
+        } catch (e: any) {
+            alert('Error removing location pin: ' + e.message);
         } finally {
             setIsSavingLocation(false);
         }
@@ -980,6 +1022,15 @@ const ShippingLocation: React.FC = () => {
                     <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
                         {isEditing ? (
                             <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                                {customLocations.some(l => l.pcode === (selectedVillageCode || selectedCommuneCode || selectedDistrictCode || selectedProvinceCode)) && (
+                                    <button
+                                        onClick={handleRemoveLocation}
+                                        disabled={isSavingLocation}
+                                        style={{ padding: '8px 16px', background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', color: 'var(--color-danger, #ef4444)', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                    >
+                                        <Trash2 size={16} /> លុបទីតាំង
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => { setIsEditing(false); setEditMarkerLatLng(null); }}
                                     style={{ padding: '8px 16px', background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
