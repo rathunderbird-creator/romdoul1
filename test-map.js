@@ -15,7 +15,7 @@ import { chromium } from 'playwright';
     });
 
     console.log("Setting up authentication...");
-    await page.goto('http://localhost:4173/');
+    await page.goto('http://localhost:5173/');
     await page.evaluate(() => {
         localStorage.setItem('currentUser', JSON.stringify({
             id: 'admin', name: 'Admin', roleId: 'admin', pin: '1234'
@@ -23,7 +23,7 @@ import { chromium } from 'playwright';
     });
 
     console.log("Navigating to shipping location...");
-    await page.goto('http://localhost:4173/shipping-location', { waitUntil: 'networkidle' });
+    await page.goto('http://localhost:5173/shipping-location', { waitUntil: 'networkidle' });
 
     await page.waitForTimeout(5000);
 

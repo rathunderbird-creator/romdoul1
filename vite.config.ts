@@ -7,6 +7,14 @@ export default defineConfig({
   server: {
     host: true, // Exposes the server to the network
   },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: 'es2022',
+    },
+  },
+  esbuild: {
+    target: 'es2022',
+  },
   build: {
     target: 'es2022',
     rollupOptions: {
