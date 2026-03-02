@@ -114,12 +114,13 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                         'raster-tiles': {
                             type: 'raster',
                             tiles: [
-                                'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                                'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                                'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'
+                                'https://mt0.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}',
+                                'https://mt1.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}',
+                                'https://mt2.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}',
+                                'https://mt3.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}'
                             ],
                             tileSize: 256,
-                            attribution: '&copy; CARTO'
+                            attribution: '&copy; Google Maps'
                         }
                     },
                     layers: [{
