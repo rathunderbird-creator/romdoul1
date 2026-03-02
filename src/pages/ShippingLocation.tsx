@@ -616,9 +616,19 @@ const ShippingLocation: React.FC = () => {
 
                             {activeShippingRule && !isEditingRule && (
                                 <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                                    <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)', padding: '4px 8px', borderRadius: '4px' }}>
                                             Applied rule from: <span style={{ fontWeight: 600, color: 'var(--color-primary)', textTransform: 'capitalize' }}>{activeShippingRule.source}</span>
+                                        </span>
+
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)', padding: '4px 8px', borderRadius: '4px' }}>
+                                            Admin Code: <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{activeTarget.code}</span>
+                                        </span>
+
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)', padding: '4px 8px', borderRadius: '4px' }}>
+                                            Postal Code: <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+                                                {activeTarget.type === 'village' ? activeTarget.code.substring(0, 6) : activeTarget.type === 'commune' ? activeTarget.code : activeTarget.type === 'district' ? activeTarget.code.padEnd(6, '0') : activeTarget.code.padEnd(6, '0')}
+                                            </span>
                                         </span>
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -653,7 +663,20 @@ const ShippingLocation: React.FC = () => {
 
                             {!activeShippingRule && !isEditingRule && (
                                 <div style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-secondary)', fontSize: '14px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px dashed var(--color-border)' }}>
-                                    ពុំមានច្បាប់ដឹកជញ្ជូនដែលបានកំណត់នៅឡើយទេ។ (No rules applied. Using global defaults.)
+                                    <div style={{ marginBottom: '12px' }}>
+                                        ពុំមានច្បាប់ដឹកជញ្ជូនដែលបានកំណត់នៅឡើយទេ។ (No rules applied. Using global defaults.)
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)', padding: '4px 8px', borderRadius: '4px' }}>
+                                            Admin Code: <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{activeTarget.code}</span>
+                                        </span>
+
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)', padding: '4px 8px', borderRadius: '4px' }}>
+                                            Postal Code: <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+                                                {activeTarget.type === 'village' ? activeTarget.code.substring(0, 6) : activeTarget.type === 'commune' ? activeTarget.code : activeTarget.type === 'district' ? activeTarget.code.padEnd(6, '0') : activeTarget.code.padEnd(6, '0')}
+                                            </span>
+                                        </span>
+                                    </div>
                                 </div>
                             )}
 
