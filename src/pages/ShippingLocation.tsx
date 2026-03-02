@@ -65,6 +65,7 @@ const ShippingLocation: React.FC = () => {
     const [editMarkerLatLng, setEditMarkerLatLng] = useState<[number, number] | null>(null);
     const [customLocations, setCustomLocations] = useState<Array<{ pcode: string, lat: number, lng: number }>>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
+    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
     // Shipping Rules States
     const [shippingRules, setShippingRules] = useState<ShippingRule[]>([]);
@@ -374,7 +375,13 @@ const ShippingLocation: React.FC = () => {
         }
     };
 
-    const handleRemoveLocation = async () => {
+    const handleRemoveLocation = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        console.log('handleRemoveLocation triggered!');
+
         // Determine what target the user is currently focused on
         let targetPcode = '';
         let targetName = '';
@@ -393,23 +400,34 @@ const ShippingLocation: React.FC = () => {
             targetName = selectedProvince?.khmer || selectedProvinceCode;
         }
 
+        console.log('Target to remove:', targetPcode, targetName);
+
         if (!targetPcode) {
             alert('Please select a province, district, commune, or village first.');
             return;
         }
 
-        const confirmRemove = window.confirm(`តើអ្នកពិតជាចង់លុបទីតាំង "${targetName}" នេះមែនទេ? (Are you sure you want to remove the pin for ${targetName}?)`);
-        if (!confirmRemove) return;
-
         setIsSavingLocation(true);
         try {
-            const { error } = await supabase.from('custom_locations').delete().eq('pcode', targetPcode);
-            if (error) throw error;
+            console.log('Sending delete request to supabase...');
+            const { error, data } = await supabase.from('custom_locations').delete().eq('pcode', targetPcode).select();
+            console.log('Delete response:', error, data);
 
-            setEditMarkerLatLng(null);
-            await loadCustomLocations();
-            alert(`Location pin removed for ${targetName}!`);
+            if (error) {
+                console.error('Delete error', error);
+                throw error;
+            }
+            if (!data || data.length === 0) {
+                console.warn('No rows deleted - RLS issue?');
+                alert('Warning: No map pin was deleted. This might be a database permission issue.');
+            } else {
+                setEditMarkerLatLng(null);
+                await loadCustomLocations();
+                setIsConfirmingDelete(false);
+                alert(`Location pin removed for ${targetName}!`);
+            }
         } catch (e: any) {
+            console.error('Exception during delete', e);
             alert('Error removing location pin: ' + e.message);
         } finally {
             setIsSavingLocation(false);
@@ -1038,41 +1056,61 @@ const ShippingLocation: React.FC = () => {
                             </div>
                         ) : (
                             <div style={{ display: 'flex', gap: '8px' }}>
-                                {customLocations.some(l => l.pcode === activeTarget?.code) && (
+                                {isConfirmingDelete ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-danger-light, #fee2e2)', padding: '4px 8px', borderRadius: '8px', border: '1px solid var(--color-danger, #ef4444)' }}>
+                                        <span style={{ fontSize: '13px', color: 'var(--color-danger, #ef4444)', fontWeight: 500 }}>លុបទីតាំងនេះ?</span>
+                                        <button
+                                            onClick={() => setIsConfirmingDelete(false)}
+                                            style={{ padding: '6px 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                                        >
+                                            ទេ (No)
+                                        </button>
+                                        <button
+                                            onClick={handleRemoveLocation}
+                                            disabled={isSavingLocation}
+                                            style={{ padding: '6px 12px', background: 'var(--color-danger, #ef4444)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', opacity: isSavingLocation ? 0.7 : 1 }}
+                                        >
+                                            {isSavingLocation ? '...' : 'យល់ព្រម (Yes)'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    customLocations.some(l => l.pcode === activeTarget?.code) && (
+                                        <button
+                                            onClick={() => setIsConfirmingDelete(true)}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                padding: '8px 16px',
+                                                background: 'var(--color-surface)',
+                                                border: '1px solid var(--color-danger, #ef4444)',
+                                                borderRadius: '8px',
+                                                color: 'var(--color-danger, #ef4444)',
+                                                fontWeight: 500,
+                                                cursor: 'pointer',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                            }}
+                                        >
+                                            <Trash2 size={16} /> លុបទីតាំង
+                                        </button>
+                                    )
+                                )}
+                                {!isConfirmingDelete && (
                                     <button
-                                        onClick={handleRemoveLocation}
-                                        disabled={isSavingLocation}
+                                        onClick={() => setIsEditing(true)}
                                         style={{
                                             display: 'flex', alignItems: 'center', gap: '8px',
                                             padding: '8px 16px',
                                             background: 'var(--color-surface)',
-                                            border: '1px solid var(--color-danger, #ef4444)',
+                                            border: '1px solid var(--color-border)',
                                             borderRadius: '8px',
-                                            color: 'var(--color-danger, #ef4444)',
+                                            color: 'var(--color-text-main)',
                                             fontWeight: 500,
-                                            cursor: isSavingLocation ? 'not-allowed' : 'pointer',
+                                            cursor: 'pointer',
                                             boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
                                         }}
                                     >
-                                        <Trash2 size={16} /> លុបទីតាំង
+                                        <Edit3 size={16} /> Edit Map
                                     </button>
                                 )}
-                                <button
-                                    onClick={() => setIsEditing(true)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: '8px',
-                                        padding: '8px 16px',
-                                        background: 'var(--color-surface)',
-                                        border: '1px solid var(--color-border)',
-                                        borderRadius: '8px',
-                                        color: 'var(--color-text-main)',
-                                        fontWeight: 500,
-                                        cursor: 'pointer',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-                                    }}
-                                >
-                                    <Edit3 size={16} /> Edit Map
-                                </button>
                             </div>
                         )}
                     </div>
