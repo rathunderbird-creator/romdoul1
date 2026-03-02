@@ -92,7 +92,7 @@ const ShippingLocation: React.FC = () => {
 
     const loadCustomLocations = async () => {
         try {
-            const { data, error } = await supabase.from('custom_locations').select('pcode, lat, lng');
+            const { data, error } = await supabase.from('custom_locations').select('pcode, name, lat, lng');
             if (!error && data) {
                 setCustomLocations(data);
             }

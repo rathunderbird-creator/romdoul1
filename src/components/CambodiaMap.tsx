@@ -20,7 +20,7 @@ interface CambodiaMapProps {
     editMarkerLatLng?: [number, number] | null;
     onMapClick?: (lat: number, lng: number) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
-    customLocations?: Array<{ pcode: string, lat: number, lng: number }>;
+    customLocations?: Array<{ pcode: string, name?: string, lat: number, lng: number }>;
     shippingRules?: ShippingRule[];
 }
 
@@ -334,6 +334,53 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
             });
         }
     }, [customLocations]);
+
+    // Render Custom Location Markers
+    const customMarkersRef = useRef<maplibregl.Marker[]>([]);
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || isLoading) return;
+
+        // Clean up previous custom markers
+        customMarkersRef.current.forEach(marker => marker.remove());
+        customMarkersRef.current = [];
+
+        // Only draw red pins for custom locations that aren't already covered by a green Shippable rule overlay
+        // to prevent overlapping markers for the exact same centroid point
+        const activeRuleCodes = new Set(shippingRules.filter(r => r.is_shippable).map(r => r.pcode));
+
+        customLocations.forEach(loc => {
+            if (activeRuleCodes.has(loc.pcode)) return; // Skip if it already has a green shippable pin
+
+            const el = document.createElement('div');
+            el.className = 'custom-location-marker';
+            // Simple small red dot mapping a custom location
+            el.style.width = '14px';
+            el.style.height = '14px';
+            el.style.backgroundColor = '#ef4444'; // Red
+            el.style.border = '2px solid white';
+            el.style.borderRadius = '50%';
+            el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
+            el.style.cursor = 'pointer';
+
+            const popupContent = `
+                <div style="padding: 4px; font-family: 'Battambang', system-ui, sans-serif;">
+                    <div style="font-size: 13px; color: var(--color-text-secondary);">ទីតាំងបានកំណត់:</div>
+                    <h4 style="margin: 4px 0 0 0; font-size: 15px; color: var(--color-text-main); font-weight: 600;">${loc.name || loc.pcode}</h4>
+                </div>
+            `;
+
+            const popup = new maplibregl.Popup({ offset: 10, closeButton: false })
+                .setHTML(popupContent);
+
+            const marker = new maplibregl.Marker({ element: el })
+                .setLngLat([loc.lng, loc.lat])
+                .setPopup(popup)
+                .addTo(map);
+
+            customMarkersRef.current.push(marker);
+        });
+    }, [customLocations, shippingRules, isLoading]);
 
     // Render Shipping Rule Markers
     useEffect(() => {
