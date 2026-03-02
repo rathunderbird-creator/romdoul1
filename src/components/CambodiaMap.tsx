@@ -77,9 +77,13 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
             return () => clearTimeout(timer);
         }
 
-        // Force root path to avoid SPA routing prefix issues in production
+        // Force full URL to avoid SPA routing prefix issues in production
+        const baseUrl = window.location.origin;
         const basePath = import.meta.env.BASE_URL || '/';
-        const buildPath = (p: string) => `${basePath}${p}`.replace('//', '/');
+        const buildPath = (p: string) => {
+            const path = `${basePath}${p}`.replace(/\/{2,}/g, '/');
+            return `${baseUrl}${path}`;
+        };
 
         // Fetch centroids data for zooming
         fetch(buildPath('data/geo/khm_admincentroids.geojson'))
@@ -134,8 +138,12 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
 
             map.on('load', () => {
                 // Add geojson sources using standard root path
+                const baseUrl = window.location.origin;
                 const basePath = import.meta.env.BASE_URL || '/';
-                const buildPath = (p: string) => `${basePath}${p}`.replace('//', '/');
+                const buildPath = (p: string) => {
+                    const path = `${basePath}${p}`.replace(/\/{2,}/g, '/');
+                    return `${baseUrl}${path}`;
+                };
 
                 map.addSource('provinces', { type: 'geojson', data: buildPath('data/geo/khm_admin1.geojson') });
                 map.addSource('districts', { type: 'geojson', data: buildPath('data/geo/khm_admin2.geojson') });
