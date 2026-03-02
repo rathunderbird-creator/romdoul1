@@ -105,9 +105,13 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                     sources: {
                         'raster-tiles': {
                             type: 'raster',
-                            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                            tiles: [
+                                'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                                'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                                'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'
+                            ],
                             tileSize: 256,
-                            attribution: '&copy; OpenStreetMap Contributors'
+                            attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>'
                         }
                     },
                     layers: [{
