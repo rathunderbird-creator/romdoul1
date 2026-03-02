@@ -1022,15 +1022,6 @@ const ShippingLocation: React.FC = () => {
                     <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
                         {isEditing ? (
                             <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                                {customLocations.some(l => l.pcode === (selectedVillageCode || selectedCommuneCode || selectedDistrictCode || selectedProvinceCode)) && (
-                                    <button
-                                        onClick={handleRemoveLocation}
-                                        disabled={isSavingLocation}
-                                        style={{ padding: '8px 16px', background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', color: 'var(--color-danger, #ef4444)', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                        <Trash2 size={16} /> លុបទីតាំង
-                                    </button>
-                                )}
                                 <button
                                     onClick={() => { setIsEditing(false); setEditMarkerLatLng(null); }}
                                     style={{ padding: '8px 16px', background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -1046,22 +1037,43 @@ const ShippingLocation: React.FC = () => {
                                 </button>
                             </div>
                         ) : (
-                            <button
-                                onClick={() => setIsEditing(true)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '8px 16px',
-                                    background: 'var(--color-surface)',
-                                    border: '1px solid var(--color-border)',
-                                    borderRadius: '8px',
-                                    color: 'var(--color-text-main)',
-                                    fontWeight: 500,
-                                    cursor: 'pointer',
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-                                }}
-                            >
-                                <Edit3 size={16} /> Edit Map
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {customLocations.some(l => l.pcode === activeTarget?.code) && (
+                                    <button
+                                        onClick={handleRemoveLocation}
+                                        disabled={isSavingLocation}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            padding: '8px 16px',
+                                            background: 'var(--color-surface)',
+                                            border: '1px solid var(--color-danger, #ef4444)',
+                                            borderRadius: '8px',
+                                            color: 'var(--color-danger, #ef4444)',
+                                            fontWeight: 500,
+                                            cursor: isSavingLocation ? 'not-allowed' : 'pointer',
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                        }}
+                                    >
+                                        <Trash2 size={16} /> លុបទីតាំង
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setIsEditing(true)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        padding: '8px 16px',
+                                        background: 'var(--color-surface)',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: '8px',
+                                        color: 'var(--color-text-main)',
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                    }}
+                                >
+                                    <Edit3 size={16} /> Edit Map
+                                </button>
+                            </div>
                         )}
                     </div>
                     {isEditing && (
