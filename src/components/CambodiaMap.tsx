@@ -104,28 +104,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         try {
             const map = new maplibregl.Map({
                 container: mapContainerRef.current,
-                style: {
-                    version: 8,
-                    sources: {
-                        'raster-tiles': {
-                            type: 'raster',
-                            tiles: [
-                                'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                                'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                                'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'
-                            ],
-                            tileSize: 256,
-                            attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>'
-                        }
-                    },
-                    layers: [{
-                        id: 'simple-tiles',
-                        type: 'raster',
-                        source: 'raster-tiles',
-                        minzoom: 0,
-                        maxzoom: 22
-                    }]
-                },
+                style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
                 center: CAMBODIA_CENTER,
                 zoom: 6.5,
                 dragRotate: false,

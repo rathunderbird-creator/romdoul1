@@ -224,7 +224,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
                 supabase.from('products').select('id, name, model, price, stock, category, low_stock_threshold, created_at'),
-                supabase.from('customers').select('id, name, phone, email, address, city'),
+                supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
