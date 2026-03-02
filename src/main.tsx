@@ -1,4 +1,4 @@
-(window as any).global ||= window;
+import './polyfill';
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
