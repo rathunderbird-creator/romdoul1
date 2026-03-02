@@ -241,9 +241,9 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 setIsLoading(false);
             });
 
-            map.on('error', (e) => {
-                console.error("Maplibre init error:", e);
-                setError("Failed to load map data");
+            map.on('error', (e: any) => {
+                console.error("Maplibre init error:", e.error?.message || e.message || JSON.stringify(e) || e);
+                setError("Failed to load map data: " + (e.error?.message || "Internal error"));
                 setIsLoading(false);
             });
 
