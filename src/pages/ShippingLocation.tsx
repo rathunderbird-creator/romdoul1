@@ -275,7 +275,7 @@ const ShippingLocation: React.FC = () => {
     };
 
     const handleSelectSearchResult = (pcode: string, dcode: string, ccode: string, vcode: string) => {
-        if (pcode) setSelectedProvinceCode(pcode);
+        if (pcode) setSelectedProvinceCode(pcode); else setSelectedProvinceCode('');
         if (dcode) setSelectedDistrictCode(dcode); else setSelectedDistrictCode('');
         if (ccode) setSelectedCommuneCode(ccode); else setSelectedCommuneCode('');
         if (vcode) setSelectedVillageCode(vcode); else setSelectedVillageCode('');
