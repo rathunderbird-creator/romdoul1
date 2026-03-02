@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation } from 'lucide-react';
+import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation, Settings, Check, Package, Clock, Truck } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
+
+interface ShippingRule {
+    pcode: string;
+    name: string;
+    is_shippable: boolean;
+    shipping_fee: number;
+    estimated_days: string;
+    supported_couriers: string[];
+}
 
 // Define the data types based on the JSON structure
 interface Village {
@@ -57,6 +66,12 @@ const ShippingLocation: React.FC = () => {
     const [customLocations, setCustomLocations] = useState<Array<{ pcode: string, lat: number, lng: number }>>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
 
+    // Shipping Rules States
+    const [shippingRules, setShippingRules] = useState<ShippingRule[]>([]);
+    const [isEditingRule, setIsEditingRule] = useState(false);
+    const [isSavingRule, setIsSavingRule] = useState(false);
+    const [editRuleData, setEditRuleData] = useState<Partial<ShippingRule>>({});
+
     // Fetch data dynamically so it doesn't block the main JS bundle
     useEffect(() => {
         setIsLoading(true);
@@ -72,6 +87,7 @@ const ShippingLocation: React.FC = () => {
             });
 
         loadCustomLocations();
+        loadShippingRules();
     }, []);
 
     const loadCustomLocations = async () => {
@@ -82,6 +98,17 @@ const ShippingLocation: React.FC = () => {
             }
         } catch (e) {
             console.error("Failed to fetch custom locations", e);
+        }
+    };
+
+    const loadShippingRules = async () => {
+        try {
+            const { data, error } = await supabase.from('shipping_rules').select('*');
+            if (!error && data) {
+                setShippingRules(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch shipping rules", e);
         }
     };
 
@@ -193,6 +220,33 @@ const ShippingLocation: React.FC = () => {
         return results;
     }, [data, globalSearchTerm]);
 
+    // Active Shipping Rule Logic
+    const activeTarget = useMemo(() => {
+        if (selectedVillageCode) return { code: selectedVillageCode, type: 'village' as const, name: activeVillages.find(v => v.code === selectedVillageCode)?.khmer };
+        if (selectedCommuneCode) return { code: selectedCommuneCode, type: 'commune' as const, name: selectedCommune?.khmer };
+        if (selectedDistrictCode) return { code: selectedDistrictCode, type: 'district' as const, name: selectedDistrict?.khmer };
+        if (selectedProvinceCode) return { code: selectedProvinceCode, type: 'province' as const, name: selectedProvince?.khmer };
+        return null;
+    }, [selectedVillageCode, selectedCommuneCode, selectedDistrictCode, selectedProvinceCode, activeVillages, selectedCommune, selectedDistrict, selectedProvince]);
+
+    const activeShippingRule = useMemo(() => {
+        if (!selectedProvinceCode) return null;
+
+        const villageRule = shippingRules.find(r => r.pcode === selectedVillageCode);
+        if (villageRule) return { rule: villageRule, source: 'village' as const };
+
+        const communeRule = shippingRules.find(r => r.pcode === selectedCommuneCode);
+        if (communeRule) return { rule: communeRule, source: 'commune' as const };
+
+        const districtRule = shippingRules.find(r => r.pcode === selectedDistrictCode);
+        if (districtRule) return { rule: districtRule, source: 'district' as const };
+
+        const provinceRule = shippingRules.find(r => r.pcode === selectedProvinceCode);
+        if (provinceRule) return { rule: provinceRule, source: 'province' as const };
+
+        return null;
+    }, [shippingRules, selectedProvinceCode, selectedDistrictCode, selectedCommuneCode, selectedVillageCode]);
+
     // Handlers
     const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setSelectedProvinceCode(e.target.value);
@@ -283,6 +337,33 @@ const ShippingLocation: React.FC = () => {
             alert('Error saving location: ' + e.message);
         } finally {
             setIsSavingLocation(false);
+        }
+    };
+
+    const handleSaveShippingRule = async () => {
+        if (!activeTarget) return;
+
+        setIsSavingRule(true);
+        try {
+            const ruleData = {
+                pcode: activeTarget.code,
+                name: activeTarget.name || activeTarget.code,
+                is_shippable: editRuleData.is_shippable ?? true,
+                shipping_fee: editRuleData.shipping_fee ?? 1.50,
+                estimated_days: editRuleData.estimated_days || '1-2 days',
+                supported_couriers: editRuleData.supported_couriers || [],
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase.from('shipping_rules').upsert(ruleData, { onConflict: 'pcode' });
+            if (error) throw error;
+
+            setIsEditingRule(false);
+            await loadShippingRules();
+        } catch (e: any) {
+            alert('Error saving shipping rule: ' + e.message);
+        } finally {
+            setIsSavingRule(false);
         }
     };
 
@@ -498,6 +579,153 @@ const ShippingLocation: React.FC = () => {
                             </select>
                         </div>
                     </div>
+
+                    {/* Shipping Rules Section */}
+                    {activeTarget && (
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            background: 'var(--color-surface)',
+                            padding: '24px',
+                            borderRadius: '16px',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Truck size={18} color="var(--color-primary)" />
+                                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>ព័ត៌មានដឹកជញ្ជូន</h3>
+                                </div>
+                                {!isEditingRule && (
+                                    <button
+                                        onClick={() => {
+                                            setEditRuleData(activeShippingRule?.rule || {
+                                                is_shippable: true,
+                                                shipping_fee: 1.50,
+                                                estimated_days: '1-2 days',
+                                                supported_couriers: []
+                                            });
+                                            setIsEditingRule(true);
+                                        }}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--color-primary-light)', border: 'none', borderRadius: '6px', color: 'var(--color-primary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                        <Settings size={14} /> កំណត់រចនាសម្ព័ន្ធ (Configure)
+                                    </button>
+                                )}
+                            </div>
+
+                            {activeShippingRule && !isEditingRule && (
+                                <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)', padding: '4px 8px', borderRadius: '4px' }}>
+                                            Applied rule from: <span style={{ fontWeight: 600, color: 'var(--color-primary)', textTransform: 'capitalize' }}>{activeShippingRule.source}</span>
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>ស្ថានភាព (Status)</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: activeShippingRule.rule.is_shippable ? '#10b981' : '#ef4444', fontWeight: 600, fontSize: '14px' }}>
+                                                {activeShippingRule.rule.is_shippable ? <Check size={16} /> : <X size={16} />}
+                                                {activeShippingRule.rule.is_shippable ? 'អាចដឹកជញ្ជូនបាន' : 'មិនអាចដឹកជញ្ជូនបាន'}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>តម្លៃសេវា (Fee)</div>
+                                            <div style={{ color: 'var(--color-text-main)', fontWeight: 600, fontSize: '14px' }}>
+                                                ${activeShippingRule.rule.shipping_fee.toFixed(2)}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>ការប៉ាន់ស្មាន (ETA)</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '14px' }}>
+                                                <Clock size={14} color="var(--color-text-secondary)" /> {activeShippingRule.rule.estimated_days}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>ក្រុមហ៊ុនដឹក (Couriers)</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '14px' }}>
+                                                <Package size={14} color="var(--color-text-secondary)" /> {activeShippingRule.rule.supported_couriers?.join(', ') || 'Any'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!activeShippingRule && !isEditingRule && (
+                                <div style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-secondary)', fontSize: '14px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px dashed var(--color-border)' }}>
+                                    ពុំមានច្បាប់ដឹកជញ្ជូនដែលបានកំណត់នៅឡើយទេ។ (No rules applied. Using global defaults.)
+                                </div>
+                            )}
+
+                            {isEditingRule && (
+                                <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '8px', border: '1px solid var(--color-primary)' }}>
+                                    <div style={{ fontSize: '13px', color: 'var(--color-primary)', fontWeight: 500, marginBottom: '16px' }}>
+                                        Setting rule for exact override on: {activeTarget.name} ({activeTarget.type})
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>អាចដឹកជញ្ជូនបាន (Shippable)</label>
+                                            <select
+                                                value={editRuleData.is_shippable ? 'yes' : 'no'}
+                                                onChange={e => setEditRuleData({ ...editRuleData, is_shippable: e.target.value === 'yes' })}
+                                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '14px', outline: 'none' }}
+                                            >
+                                                <option value="yes">Yes (អាចដឹកបាន)</option>
+                                                <option value="no">No (មិនអាចដឹកបាន)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>តម្លៃសេវា (Fee $)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={editRuleData.shipping_fee || ''}
+                                                onChange={e => setEditRuleData({ ...editRuleData, shipping_fee: parseFloat(e.target.value) || 0 })}
+                                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '14px', outline: 'none' }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>រយៈពេល (ETA)</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. 1-2 days"
+                                                value={editRuleData.estimated_days || ''}
+                                                onChange={e => setEditRuleData({ ...editRuleData, estimated_days: e.target.value })}
+                                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '14px', outline: 'none' }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ក្រុមហ៊ុន (Couriers, comma-separated)</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. J&T, VET"
+                                                value={editRuleData.supported_couriers?.join(', ') || ''}
+                                                onChange={e => setEditRuleData({ ...editRuleData, supported_couriers: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '14px', outline: 'none' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                        <button
+                                            onClick={() => setIsEditingRule(false)}
+                                            style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-secondary)', fontSize: '14px', cursor: 'pointer' }}
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveShippingRule}
+                                            disabled={isSavingRule}
+                                            style={{ padding: '8px 16px', background: 'var(--color-primary)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '14px', cursor: isSavingRule ? 'not-allowed' : 'pointer', fontWeight: 500 }}
+                                        >
+                                            {isSavingRule ? 'Saving...' : 'Save Rule'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Content Section */}
                     <div style={{
