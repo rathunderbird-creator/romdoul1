@@ -11,6 +11,7 @@ interface CambodiaMapProps {
     isEditing?: boolean;
     editMarkerLatLng?: [number, number] | null;
     onMapClick?: (lat: number, lng: number) => void;
+    onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
     customLocations?: Array<{ pcode: string, lat: number, lng: number }>;
 }
 
@@ -24,6 +25,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     isEditing = false,
     editMarkerLatLng = null,
     onMapClick,
+    onAreaSelect,
     customLocations = []
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -126,6 +128,22 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 });
 
                 map.addLayer({
+                    id: 'district-base',
+                    type: 'fill',
+                    source: 'districts',
+                    paint: { 'fill-color': 'transparent' },
+                    minzoom: 8
+                });
+
+                map.addLayer({
+                    id: 'commune-base',
+                    type: 'fill',
+                    source: 'communes',
+                    paint: { 'fill-color': 'transparent' },
+                    minzoom: 10
+                });
+
+                map.addLayer({
                     id: 'province-outline',
                     type: 'line',
                     source: 'provinces',
@@ -214,26 +232,67 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         };
     }, []);
 
-    // Click Handler for Editing
+    // Click Handler for Editing and Area Selection
     useEffect(() => {
         const map = mapRef.current;
         if (!map) return;
 
         const handleClick = (e: maplibregl.MapMouseEvent) => {
+            // Handle Edit Mode clicking
             if (isEditing && onMapClick) {
                 onMapClick(e.lngLat.lat, e.lngLat.lng);
+                return;
+            }
+
+            // Handle Region Selection
+            if (!isEditing && onAreaSelect) {
+                // Query rendered features in hierarchical order (smallest to largest)
+                const features = map.queryRenderedFeatures(e.point, {
+                    layers: ['commune-base', 'district-base', 'province-base']
+                });
+
+                if (features.length > 0) {
+                    const feature = features[0];
+                    const props = feature.properties;
+
+                    if (feature.layer.id === 'commune-base' && props.adm3_pcode) {
+                        onAreaSelect('commune', props.adm3_pcode.replace('KH', ''));
+                    } else if (feature.layer.id === 'district-base' && props.adm2_pcode) {
+                        onAreaSelect('district', props.adm2_pcode.replace('KH', ''));
+                    } else if (feature.layer.id === 'province-base' && props.adm1_pcode) {
+                        onAreaSelect('province', props.adm1_pcode.replace('KH', ''));
+                    }
+                }
             }
         };
 
         map.on('click', handleClick);
 
-        // Change cursor
+        // Change cursor to indicate interactiveness
+        const handleMouseMove = (e: maplibregl.MapMouseEvent) => {
+            if (isEditing) return; // Cursor is handled below for edit mode
+            const features = map.queryRenderedFeatures(e.point, {
+                layers: ['commune-base', 'district-base', 'province-base']
+            });
+            map.getCanvas().style.cursor = features.length ? 'pointer' : '';
+        };
+
+        const handleMouseLeave = () => {
+            if (!isEditing) map.getCanvas().style.cursor = '';
+        }
+
+        map.on('mousemove', handleMouseMove);
+        map.on('mouseleave', 'province-base', handleMouseLeave);
+
         map.getCanvas().style.cursor = isEditing ? 'crosshair' : '';
 
         return () => {
             map.off('click', handleClick);
+            map.off('mousemove', handleMouseMove);
+            map.off('mouseleave', 'province-base', handleMouseLeave);
+            map.getCanvas().style.cursor = '';
         };
-    }, [isEditing, onMapClick]);
+    }, [isEditing, onMapClick, onAreaSelect]);
 
     // Handle temporary edit marker rendering
     useEffect(() => {

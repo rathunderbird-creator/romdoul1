@@ -284,6 +284,40 @@ const ShippingLocation: React.FC = () => {
         setIsGlobalSearchFocused(false);
     };
 
+    const handleAreaSelect = (type: 'province' | 'district' | 'commune' | 'village', code: string) => {
+        // Find the matched item across our data hierarchy
+        for (const p of data) {
+            if (type === 'province' && p.code === code) {
+                handleSelectSearchResult(p.code, '', '', '');
+                return;
+            }
+            if (p.districts) {
+                for (const d of p.districts) {
+                    if (type === 'district' && d.code === code) {
+                        handleSelectSearchResult(p.code, d.code, '', '');
+                        return;
+                    }
+                    if (d.communes) {
+                        for (const c of d.communes) {
+                            if (type === 'commune' && c.code === code) {
+                                handleSelectSearchResult(p.code, d.code, c.code, '');
+                                return;
+                            }
+                            if (c.villages) {
+                                for (const v of c.villages) {
+                                    if (type === 'village' && v.code === code) {
+                                        handleSelectSearchResult(p.code, d.code, c.code, v.code);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     const handleSaveLocation = async () => {
         if (!editMarkerLatLng) return;
 
@@ -399,6 +433,38 @@ const ShippingLocation: React.FC = () => {
                         border: '1px solid var(--color-border)',
                         boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
                     }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '-4px' }}>
+                            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ជ្រើសរើសទីតាំង</div>
+                            {(selectedProvinceCode || selectedDistrictCode || selectedCommuneCode || selectedVillageCode) && (
+                                <button
+                                    onClick={() => handleSelectSearchResult('', '', '', '')}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 10px',
+                                        borderRadius: '6px',
+                                        border: '1px solid transparent',
+                                        background: 'var(--color-bg-secondary)',
+                                        color: 'var(--color-text-secondary)',
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseOver={e => {
+                                        e.currentTarget.style.color = 'var(--color-error)';
+                                        e.currentTarget.style.background = '#fee2e2'; // light red
+                                    }}
+                                    onMouseOut={e => {
+                                        e.currentTarget.style.color = 'var(--color-text-secondary)';
+                                        e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                                    }}
+                                >
+                                    <X size={14} /> បោះបង់ (Clear)
+                                </button>
+                            )}
+                        </div>
+
                         {/* Global Search */}
                         <div ref={searchRef} style={{ position: 'relative', marginBottom: '8px' }}>
                             <div style={{ position: 'relative' }}>
@@ -937,6 +1003,7 @@ const ShippingLocation: React.FC = () => {
                         isEditing={isEditing}
                         editMarkerLatLng={editMarkerLatLng}
                         onMapClick={(lat, lng) => setEditMarkerLatLng([lat, lng])}
+                        onAreaSelect={handleAreaSelect}
                         customLocations={customLocations}
                     />
                 </div>
