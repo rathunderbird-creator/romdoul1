@@ -757,7 +757,12 @@ const ShippingLocation: React.FC = () => {
                                             <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>អាចដឹកជញ្ជូនបាន (Shippable)</label>
                                             <select
                                                 value={editRuleData.is_shippable ? 'yes' : 'no'}
-                                                onChange={e => setEditRuleData({ ...editRuleData, is_shippable: e.target.value === 'yes' })}
+                                                onChange={e => {
+                                                    const isShippable = e.target.value === 'yes';
+                                                    setEditRuleData({ ...editRuleData, is_shippable: isShippable });
+                                                    // If turning ON shippable, auto-enable edit map mode to guide them
+                                                    if (isShippable) setIsEditing(true);
+                                                }}
                                                 style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '14px', outline: 'none' }}
                                             >
                                                 <option value="yes">Yes (អាចដឹកបាន)</option>
@@ -796,17 +801,37 @@ const ShippingLocation: React.FC = () => {
                                         </div>
                                     </div>
 
+                                    {editRuleData.is_shippable && !customLocations.some(l => l.pcode === activeTarget.code) && (
+                                        <div style={{ padding: '12px', background: 'var(--color-warning-light, #fef3c7)', border: '1px solid var(--color-warning, #f59e0b)', borderRadius: '8px', color: '#b45309', fontSize: '13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <MapPin size={16} style={{ flexShrink: 0 }} />
+                                            <span>
+                                                សូមចុចលើផែនទីដើម្បីកំណត់ទីតាំងភូមិសាស្ត្រជាមុនសិន។ /
+                                                <b> Please drop a pin on the map first to save a Shippable location.</b>
+                                            </span>
+                                        </div>
+                                    )}
+
                                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                         <button
-                                            onClick={() => setIsEditingRule(false)}
+                                            onClick={() => { setIsEditingRule(false); setIsEditing(false); }}
                                             style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-secondary)', fontSize: '14px', cursor: 'pointer' }}
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             onClick={handleSaveShippingRule}
-                                            disabled={isSavingRule}
-                                            style={{ padding: '8px 16px', background: 'var(--color-primary)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '14px', cursor: isSavingRule ? 'not-allowed' : 'pointer', fontWeight: 500 }}
+                                            disabled={isSavingRule || (editRuleData.is_shippable && !customLocations.some(l => l.pcode === activeTarget.code))}
+                                            style={{
+                                                padding: '8px 16px',
+                                                background: 'var(--color-primary)',
+                                                border: 'none',
+                                                borderRadius: '6px',
+                                                color: '#fff',
+                                                fontSize: '14px',
+                                                cursor: (isSavingRule || (editRuleData.is_shippable && !customLocations.some(l => l.pcode === activeTarget.code))) ? 'not-allowed' : 'pointer',
+                                                fontWeight: 500,
+                                                opacity: (isSavingRule || (editRuleData.is_shippable && !customLocations.some(l => l.pcode === activeTarget.code))) ? 0.5 : 1
+                                            }}
                                         >
                                             {isSavingRule ? 'Saving...' : 'Save Rule'}
                                         </button>
