@@ -369,12 +369,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         customMarkersRef.current.forEach(marker => marker.remove());
         customMarkersRef.current = [];
 
-        // Only draw red pins for custom locations that aren't already covered by a green Shippable rule overlay
-        // to prevent overlapping markers for the exact same centroid point
-        const activeRuleCodes = new Set(shippingRules.filter(r => r.is_shippable).map(r => r.pcode));
-
         customLocations.forEach(loc => {
-            if (activeRuleCodes.has(loc.pcode)) return; // Skip if it already has a green shippable pin
 
             const el = document.createElement('div');
             el.className = 'custom-location-marker';
@@ -425,12 +420,26 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
             // Create a custom HTML element for the marker to stand out
             const el = document.createElement('div');
             el.className = 'shippable-marker';
-            el.style.width = '20px';
-            el.style.height = '20px';
-            el.style.backgroundColor = 'var(--color-success)';
-            el.style.border = '2px solid white';
+            el.style.width = '24px';
+            el.style.height = '24px';
+            el.style.backgroundColor = 'rgba(16, 185, 129, 0.4)'; // Semi-transparent green
+            el.style.border = '2px solid var(--color-success)';
             el.style.borderRadius = '50%';
-            el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+            el.style.pointerEvents = 'none'; // Let clicks pass through to the red dot if it exists
+
+            // Inner dot for shippable rules without custom locations
+            const innerDot = document.createElement('div');
+            innerDot.style.width = '8px';
+            innerDot.style.height = '8px';
+            innerDot.style.backgroundColor = 'var(--color-success)';
+            innerDot.style.borderRadius = '50%';
+            innerDot.style.position = 'absolute';
+            innerDot.style.top = '50%';
+            innerDot.style.left = '50%';
+            innerDot.style.transform = 'translate(-50%, -50%)';
+            innerDot.style.pointerEvents = 'auto'; // Re-enable clicks on the dot for the popup
+            el.appendChild(innerDot);
+
             el.style.cursor = 'pointer';
 
             const couriersText = rule.supported_couriers?.length > 0
