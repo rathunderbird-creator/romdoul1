@@ -71,6 +71,7 @@ const ShippingLocation: React.FC = () => {
     const [shippingRules, setShippingRules] = useState<ShippingRule[]>([]);
     const [isEditingRule, setIsEditingRule] = useState(false);
     const [isSavingRule, setIsSavingRule] = useState(false);
+    const [isConfirmingDeleteRule, setIsConfirmingDeleteRule] = useState(false);
     const [editRuleData, setEditRuleData] = useState<Partial<ShippingRule>>({});
 
     // Fetch data dynamically so it doesn't block the main JS bundle
@@ -461,6 +462,23 @@ const ShippingLocation: React.FC = () => {
         }
     };
 
+    const handleDeleteShippingRule = async () => {
+        if (!activeTarget) return;
+
+        setIsSavingRule(true);
+        try {
+            const { error } = await supabase.from('shipping_rules').delete().eq('pcode', activeTarget.code);
+            if (error) throw error;
+
+            setIsConfirmingDeleteRule(false);
+            await loadShippingRules();
+        } catch (e: any) {
+            alert('Error deleting shipping rule: ' + e.message);
+        } finally {
+            setIsSavingRule(false);
+        }
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Header Description */}
@@ -723,20 +741,50 @@ const ShippingLocation: React.FC = () => {
                                     <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>ព័ត៌មានដឹកជញ្ជូន</h3>
                                 </div>
                                 {!isEditingRule && (
-                                    <button
-                                        onClick={() => {
-                                            setEditRuleData(activeShippingRule?.rule || {
-                                                is_shippable: true,
-                                                shipping_fee: 1.50,
-                                                estimated_days: '1-2 days',
-                                                supported_couriers: []
-                                            });
-                                            setIsEditingRule(true);
-                                        }}
-                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--color-primary-light)', border: 'none', borderRadius: '6px', color: 'var(--color-primary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-                                    >
-                                        <Settings size={14} /> កំណត់រចនាសម្ព័ន្ធ (Configure)
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        {isConfirmingDeleteRule ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-danger-light, #fee2e2)', padding: '4px 8px', borderRadius: '8px', border: '1px solid var(--color-danger, #ef4444)' }}>
+                                                <span style={{ fontSize: '13px', color: 'var(--color-danger, #ef4444)', fontWeight: 500 }}>លុបការកំណត់នេះ?</span>
+                                                <button
+                                                    onClick={() => setIsConfirmingDeleteRule(false)}
+                                                    style={{ padding: '4px 8px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-main)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
+                                                >
+                                                    ទេ
+                                                </button>
+                                                <button
+                                                    onClick={handleDeleteShippingRule}
+                                                    disabled={isSavingRule}
+                                                    style={{ padding: '4px 8px', background: 'var(--color-danger, #ef4444)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: 500, cursor: isSavingRule ? 'not-allowed' : 'pointer', opacity: isSavingRule ? 0.7 : 1 }}
+                                                >
+                                                    {isSavingRule ? '...' : 'យល់ព្រម'}
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            activeShippingRule && activeShippingRule.rule.pcode === activeTarget.code && (
+                                                <button
+                                                    onClick={() => setIsConfirmingDeleteRule(true)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'transparent', border: '1px solid var(--color-danger, #ef4444)', borderRadius: '6px', color: 'var(--color-danger, #ef4444)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                                >
+                                                    <Trash2 size={14} /> លុបការកំណត់
+                                                </button>
+                                            )
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                setEditRuleData(activeShippingRule?.rule || {
+                                                    is_shippable: true,
+                                                    shipping_fee: 1.50,
+                                                    estimated_days: '1-2 days',
+                                                    supported_couriers: []
+                                                });
+                                                setIsEditingRule(true);
+                                                setIsConfirmingDeleteRule(false);
+                                            }}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--color-primary-light)', border: 'none', borderRadius: '6px', color: 'var(--color-primary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                        >
+                                            <Settings size={14} /> កំណត់រចនាសម្ព័ន្ធ (Configure)
+                                        </button>
+                                    </div>
                                 )}
                             </div>
 
