@@ -2,7 +2,15 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-// Keep the code simple, just standard props for the component
+export interface ShippingRule {
+    pcode: string;
+    name: string;
+    is_shippable: boolean;
+    shipping_fee: number;
+    estimated_days: string;
+    supported_couriers: string[];
+}
+
 interface CambodiaMapProps {
     selectedProvinceCode?: string;
     selectedDistrictCode?: string;
@@ -13,6 +21,7 @@ interface CambodiaMapProps {
     onMapClick?: (lat: number, lng: number) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
     customLocations?: Array<{ pcode: string, lat: number, lng: number }>;
+    shippingRules?: ShippingRule[];
 }
 
 const CAMBODIA_CENTER: [number, number] = [104.9, 12.5];
@@ -26,11 +35,13 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     editMarkerLatLng = null,
     onMapClick,
     onAreaSelect,
-    customLocations = []
+    customLocations = [],
+    shippingRules = []
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<maplibregl.Map | null>(null);
     const markerRef = useRef<maplibregl.Marker | null>(null);
+    const ruleMarkersRef = useRef<maplibregl.Marker[]>([]);
     const centroidsRef = useRef<Record<string, [number, number]>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -323,6 +334,70 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
             });
         }
     }, [customLocations]);
+
+    // Render Shipping Rule Markers
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || isLoading) return;
+
+        // Clean up previous markers
+        ruleMarkersRef.current.forEach(marker => marker.remove());
+        ruleMarkersRef.current = [];
+
+        // Filter for shippable rules
+        const shippableRules = shippingRules.filter(r => r.is_shippable);
+
+        shippableRules.forEach(rule => {
+            const centroid = centroidsRef.current[rule.pcode];
+            if (!centroid) return;
+
+            // Create a custom HTML element for the marker to stand out
+            const el = document.createElement('div');
+            el.className = 'shippable-marker';
+            el.style.width = '20px';
+            el.style.height = '20px';
+            el.style.backgroundColor = 'var(--color-success)';
+            el.style.border = '2px solid white';
+            el.style.borderRadius = '50%';
+            el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+            el.style.cursor = 'pointer';
+
+            const couriersText = rule.supported_couriers?.length > 0
+                ? rule.supported_couriers.join(', ')
+                : 'គ្មានព័ត៌មាន';
+
+            const popupContent = `
+                <div style="padding: 4px; font-family: 'Battambang', system-ui, sans-serif;">
+                    <h4 style="margin: 0 0 8px 0; font-size: 15px; color: var(--color-text-main); font-weight: 600;">${rule.name}</h4>
+                    <div style="font-size: 13px; color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 4px;">
+                        <div style="display: flex; justify-content: space-between; gap: 12px;">
+                            <span>តម្លៃដឹកជញ្ជូន:</span>
+                            <span style="color: var(--color-primary); font-weight: 500;">$${rule.shipping_fee.toFixed(2)}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; gap: 12px;">
+                            <span>រយះពេល:</span>
+                            <span style="font-weight: 500; color: var(--color-text-main);">${rule.estimated_days || 'មិនបញ្ជាក់'}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--color-border);">
+                            <span>សេវា:</span>
+                            <span style="font-weight: 500; color: var(--color-text-main);">${couriersText}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const popup = new maplibregl.Popup({ offset: 15, closeButton: false })
+                .setHTML(popupContent);
+
+            const marker = new maplibregl.Marker({ element: el })
+                .setLngLat(centroid)
+                .setPopup(popup)
+                .addTo(map);
+
+            ruleMarkersRef.current.push(marker);
+        });
+
+    }, [shippingRules, isLoading]);
 
     // Filter Effect
     useEffect(() => {

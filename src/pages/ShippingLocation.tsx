@@ -1005,6 +1005,7 @@ const ShippingLocation: React.FC = () => {
                         onMapClick={(lat, lng) => setEditMarkerLatLng([lat, lng])}
                         onAreaSelect={handleAreaSelect}
                         customLocations={customLocations}
+                        shippingRules={shippingRules}
                     />
                 </div>
 
