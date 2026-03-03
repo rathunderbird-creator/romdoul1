@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation, Settings, Check, Package, Clock, Truck, Trash2 } from 'lucide-react';
+import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation, Settings, Check, Package, Clock, Truck, Trash2, Copy } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
@@ -250,6 +250,22 @@ const ShippingLocation: React.FC = () => {
     }, [shippingRules, selectedProvinceCode, selectedDistrictCode, selectedCommuneCode, selectedVillageCode]);
 
     // Handlers
+    const handleCopyLocation = () => {
+        const parts = [
+            selectedVillageCode ? activeVillages.find(v => v.code === selectedVillageCode)?.khmer : null,
+            selectedCommune?.khmer,
+            selectedDistrict?.khmer,
+            selectedProvince?.khmer
+        ].filter(Boolean);
+
+        const locationStr = parts.join(', ');
+        if (locationStr) {
+            navigator.clipboard.writeText(locationStr)
+                .then(() => alert('បានចម្លងអាសយដ្ឋាន៖ ' + locationStr))
+                .catch(err => alert('បរាជ័យក្នុងការចម្លង (Failed to copy)'));
+        }
+    };
+
     const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setSelectedProvinceCode(e.target.value);
         setSelectedDistrictCode('');
@@ -771,6 +787,32 @@ const ShippingLocation: React.FC = () => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <Truck size={18} color="var(--color-primary)" />
                                     <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>ព័ត៌មានដឹកជញ្ជូន</h3>
+
+                                    <button
+                                        title="ចម្លងអាសយដ្ឋាន (Copy location)"
+                                        onClick={handleCopyLocation}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            padding: '4px',
+                                            background: 'transparent',
+                                            border: 'none',
+                                            borderRadius: '6px',
+                                            color: 'var(--color-text-secondary)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                            marginLeft: '8px'
+                                        }}
+                                        onMouseOver={e => {
+                                            e.currentTarget.style.color = 'var(--color-primary)';
+                                            e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                                        }}
+                                        onMouseOut={e => {
+                                            e.currentTarget.style.color = 'var(--color-text-secondary)';
+                                            e.currentTarget.style.background = 'transparent';
+                                        }}
+                                    >
+                                        <Copy size={14} />
+                                    </button>
                                 </div>
                                 {!isEditingRule && (
                                     <div style={{ display: 'flex', gap: '8px' }}>
