@@ -514,7 +514,7 @@ const ShippingLocation: React.FC = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Header Description */}
-            <div style={{ padding: '24px 24px 16px', flexShrink: 0 }}>
+            <div className="shipping-header" style={{ padding: '24px 24px 16px', flexShrink: 0 }}>
                 <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>ភូមិសាស្ត្រកម្ពុជាពីទិន្នន័យក្នុងប្រព័ន្ធ</h1>
                 <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Map size={18} />
@@ -522,7 +522,7 @@ const ShippingLocation: React.FC = () => {
                 </p>
             </div>
 
-            <div style={{
+            <div className="shipping-layout" style={{
                 flex: 1,
                 padding: '0 24px 24px',
                 display: 'grid',
@@ -1125,7 +1125,7 @@ const ShippingLocation: React.FC = () => {
                 </div>
 
                 {/* Right Panel: Interactive Map */}
-                <div style={{
+                <div className="shipping-map-container" style={{
                     display: 'flex',
                     flexDirection: 'column',
                     background: 'var(--color-surface)',
@@ -1243,6 +1243,26 @@ const ShippingLocation: React.FC = () => {
 
             <style>{`
                 @keyframes spin { 100% { transform: rotate(360deg); } }
+                @media (max-width: 1024px) {
+                    .shipping-layout {
+                        grid-template-columns: 1fr !important;
+                    }
+                }
+                @media (max-width: 640px) {
+                    .shipping-layout {
+                        padding: 0 16px 16px !important;
+                        gap: 16px !important;
+                    }
+                    .shipping-header {
+                        padding: 16px 16px 12px !important;
+                    }
+                    .shipping-header h1 {
+                        font-size: 20px !important;
+                    }
+                    .shipping-map-container {
+                        min-height: 500px !important;
+                    }
+                }
             `}</style>
         </div>
     );
