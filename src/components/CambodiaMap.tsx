@@ -380,10 +380,10 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
 
             const el = document.createElement('div');
             el.className = 'custom-location-marker';
-            // Simple small red dot mapping a custom location
+            // Simple small orange dot mapping a custom location
             el.style.width = '14px';
             el.style.height = '14px';
-            el.style.backgroundColor = '#ef4444'; // Red
+            el.style.backgroundColor = '#f97316'; // Orange
             el.style.border = '2px solid white';
             el.style.borderRadius = '50%';
             el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
