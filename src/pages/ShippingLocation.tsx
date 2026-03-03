@@ -526,7 +526,7 @@ const ShippingLocation: React.FC = () => {
                 flex: 1,
                 padding: '0 24px 24px',
                 display: 'grid',
-                gridTemplateColumns: 'minmax(320px, 400px) 1fr',
+                gridTemplateColumns: 'minmax(380px, 500px) 1fr',
                 gap: '24px'
             }}>
 
