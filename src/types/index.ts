@@ -109,6 +109,10 @@ export interface StoreContextType {
     deleteOrders: (ids: string[]) => Promise<void>;
     reorderRows: (activeIds: string[], overId: string, leadId: string) => void;
 
+    // Product Ordering
+    productOrder: string[];
+    updateProductOrder: (order: string[]) => void;
+
     // Restock Management
     addStock: (productId: string, quantity: number, cost?: number, note?: string) => Promise<void>;
 

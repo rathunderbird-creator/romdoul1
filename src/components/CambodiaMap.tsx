@@ -377,17 +377,22 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         customMarkersRef.current = [];
 
         customLocations.forEach(loc => {
+            if (selectedProvinceCode && !loc.pcode.startsWith(selectedProvinceCode)) {
+                return;
+            }
 
             const el = document.createElement('div');
             el.className = 'custom-location-marker';
-            // Simple small orange dot mapping a custom location
-            el.style.width = '14px';
-            el.style.height = '14px';
-            el.style.backgroundColor = '#f97316'; // Orange
-            el.style.border = '2px solid white';
-            el.style.borderRadius = '50%';
-            el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
+            el.style.width = '28px';
+            el.style.height = '28px';
             el.style.cursor = 'pointer';
+            el.style.filter = 'drop-shadow(0px 2px 4px rgba(0,0,0,0.4))';
+            el.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#ef4444" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                    <circle cx="12" cy="10" r="3" fill="white"/>
+                </svg>
+            `;
 
             const popupContent = `
                 <div style="padding: 4px; font-family: 'Battambang', system-ui, sans-serif;">
@@ -396,17 +401,17 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 </div>
             `;
 
-            const popup = new maplibregl.Popup({ offset: 10, closeButton: false })
+            const popup = new maplibregl.Popup({ offset: [0, -28], closeButton: false })
                 .setHTML(popupContent);
 
-            const marker = new maplibregl.Marker({ element: el })
+            const marker = new maplibregl.Marker({ element: el, offset: [0, -14] })
                 .setLngLat([loc.lng, loc.lat])
                 .setPopup(popup)
                 .addTo(map);
 
             customMarkersRef.current.push(marker);
         });
-    }, [customLocations, shippingRules, isLoading]);
+    }, [customLocations, shippingRules, isLoading, selectedProvinceCode]);
 
     // Render Shipping Rule Markers
     useEffect(() => {
@@ -418,7 +423,10 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         ruleMarkersRef.current = [];
 
         // Filter for shippable rules
-        const shippableRules = shippingRules.filter(r => r.is_shippable);
+        let shippableRules = shippingRules.filter(r => r.is_shippable);
+        if (selectedProvinceCode) {
+            shippableRules = shippableRules.filter(r => r.pcode.startsWith(selectedProvinceCode));
+        }
 
         shippableRules.forEach(rule => {
             const centroid = centroidsRef.current[rule.pcode];
@@ -484,7 +492,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
             ruleMarkersRef.current.push(marker);
         });
 
-    }, [shippingRules, isLoading]);
+    }, [shippingRules, isLoading, selectedProvinceCode]);
 
     // Filter Effect
     useEffect(() => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Search, Map, AlignLeft, Edit3, X, Save, Navigation, Settings, Check, Package, Clock, Truck, Trash2, Copy } from 'lucide-react';
+import { MapPin, Search, Map, AlignLeft, X, Save, Navigation, Settings, Check, Package, Clock, Truck, Trash2, Copy } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
@@ -50,6 +50,7 @@ const ShippingLocation: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState(''); // Village list search
     const [globalSearchTerm, setGlobalSearchTerm] = useState(''); // New global search
     const [isGlobalSearchFocused, setIsGlobalSearchFocused] = useState(false);
+    const [searchPinnedTerm, setSearchPinnedTerm] = useState(''); // New search for pinned locations
 
     // Refs
     const searchRef = useRef<HTMLDivElement>(null);
@@ -63,7 +64,7 @@ const ShippingLocation: React.FC = () => {
     // Mapping states
     const [isEditing, setIsEditing] = useState(false);
     const [editMarkerLatLng, setEditMarkerLatLng] = useState<[number, number] | null>(null);
-    const [customLocations, setCustomLocations] = useState<Array<{ pcode: string, lat: number, lng: number }>>([]);
+    const [customLocations, setCustomLocations] = useState<Array<{ id: string, pcode: string, name: string, lat: number, lng: number }>>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
@@ -73,6 +74,7 @@ const ShippingLocation: React.FC = () => {
     const [isSavingRule, setIsSavingRule] = useState(false);
     const [isConfirmingDeleteRule, setIsConfirmingDeleteRule] = useState(false);
     const [editRuleData, setEditRuleData] = useState<Partial<ShippingRule>>({});
+    const [customAddressName, setCustomAddressName] = useState('');
 
     // Fetch data dynamically so it doesn't block the main JS bundle
     useEffect(() => {
@@ -94,7 +96,7 @@ const ShippingLocation: React.FC = () => {
 
     const loadCustomLocations = async () => {
         try {
-            const { data, error } = await supabase.from('custom_locations').select('pcode, name, lat, lng');
+            const { data, error } = await supabase.from('custom_locations').select('id, pcode, name, lat, lng');
             if (!error && data) {
                 setCustomLocations(data);
             }
@@ -249,6 +251,39 @@ const ShippingLocation: React.FC = () => {
         return null;
     }, [shippingRules, selectedProvinceCode, selectedDistrictCode, selectedCommuneCode, selectedVillageCode]);
 
+    // Group Pinned Locations by Province
+    const pinnedLocationsByProvince = useMemo(() => {
+        const groups: Record<string, { provinceName: string, provinceCode: string, locations: typeof customLocations }> = {};
+
+        // Helper to find province details
+        const getProvinceInfo = (pcode: string) => {
+            const provinceCode = pcode.substring(0, 2);
+            const province = data.find(p => p.code === provinceCode);
+            return province ? { name: province.khmer, code: province.code } : { name: 'Unknown', code: '' };
+        };
+
+        const filteredLocations = searchPinnedTerm.trim() === ''
+            ? customLocations
+            : customLocations.filter(loc => {
+                const { name: provinceName } = getProvinceInfo(loc.pcode);
+                const searchTerm = searchPinnedTerm.toLowerCase();
+                return loc.name.toLowerCase().includes(searchTerm) || provinceName.toLowerCase().includes(searchTerm);
+            });
+
+        filteredLocations.forEach(loc => {
+            const { name: provinceName, code: provinceCode } = getProvinceInfo(loc.pcode);
+            const key = provinceName;
+
+            if (!groups[key]) {
+                groups[key] = { provinceName, provinceCode, locations: [] };
+            }
+            groups[key].locations.push(loc);
+        });
+
+        // Sort keys alphabetically
+        return Object.keys(groups).sort().map(key => groups[key]);
+    }, [customLocations, data, searchPinnedTerm]);
+
     // Handlers
     const handleCopyLocation = () => {
         const parts = [
@@ -262,9 +297,10 @@ const ShippingLocation: React.FC = () => {
         if (locationStr) {
             navigator.clipboard.writeText(locationStr)
                 .then(() => alert('បានចម្លងអាសយដ្ឋាន៖ ' + locationStr))
-                .catch(err => alert('បរាជ័យក្នុងការចម្លង (Failed to copy)'));
+                .catch(() => alert('បរាជ័យក្នុងការចម្លង (Failed to copy)'));
         }
     };
+
 
     const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setSelectedProvinceCode(e.target.value);
@@ -395,6 +431,11 @@ const ShippingLocation: React.FC = () => {
             targetType = 'province';
         }
 
+        // Override generic name with the custom manual address if provided
+        if (customAddressName.trim()) {
+            targetName = customAddressName.trim();
+        }
+
         if (!targetPcode) {
             alert('Please select a province, district, commune, or village first.');
             return;
@@ -402,15 +443,15 @@ const ShippingLocation: React.FC = () => {
 
         setIsSavingLocation(true);
         try {
-            // Upsert location based on pcode
-            const { error } = await supabase.from('custom_locations').upsert({
+            // Insert new location instead of upserting by pcode
+            const { error } = await supabase.from('custom_locations').insert({
                 pcode: targetPcode,
                 name: targetName,
                 lat: editMarkerLatLng[0],
                 lng: editMarkerLatLng[1],
                 type: targetType,
                 updated_at: new Date().toISOString()
-            }, { onConflict: 'pcode' });
+            });
 
             if (error) throw error;
             setIsEditing(false);
@@ -419,6 +460,25 @@ const ShippingLocation: React.FC = () => {
             alert(`Location specifically mapped to ${targetName}!`);
         } catch (e: any) {
             alert('Error saving location: ' + e.message);
+        } finally {
+            setIsSavingLocation(false);
+        }
+    };
+
+    const handleRemovePinById = async (id: string, name: string) => {
+        if (!confirm(`តើអ្នកពិតជាចង់លុបទីតាំង "${name}" មែនទេ?`)) return;
+
+        setIsSavingLocation(true);
+        try {
+            const { error } = await supabase.from('custom_locations').delete().eq('id', id);
+            if (error) throw error;
+            setIsConfirmingDelete(false);
+            setEditMarkerLatLng(null);
+            await loadCustomLocations();
+            alert(`Location pin removed for ${name}!`);
+        } catch (e: any) {
+            console.error('Exception during delete', e);
+            alert('Error removing location pin: ' + e.message);
         } finally {
             setIsSavingLocation(false);
         }
@@ -488,9 +548,11 @@ const ShippingLocation: React.FC = () => {
 
         setIsSavingRule(true);
         try {
+            const finalName = customAddressName.trim() || activeTarget.name || activeTarget.code;
+
             const ruleData = {
                 pcode: activeTarget.code,
-                name: activeTarget.name || activeTarget.code,
+                name: finalName,
                 is_shippable: editRuleData.is_shippable ?? true,
                 shipping_fee: editRuleData.shipping_fee ?? 1.50,
                 estimated_days: editRuleData.estimated_days || '1-2 days',
@@ -559,6 +621,118 @@ const ShippingLocation: React.FC = () => {
                         border: '1px solid var(--color-border)',
                         boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
                     }}>
+                        {/* Saved Pins Panel - Moved to Top */}
+                        <div style={{ background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', padding: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', maxHeight: '400px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                <MapPin size={18} color="var(--color-primary)" />
+                                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ទីតាំងដែលបានកំណត់ ({customLocations.length})</h3>
+                            </div>
+
+                            <div style={{ position: 'relative', marginBottom: '16px', flexShrink: 0 }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="ស្វែងរកទីតាំងដែលបានកំណត់..."
+                                    value={searchPinnedTerm}
+                                    onChange={e => setSearchPinnedTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 12px 10px 36px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--color-bg)',
+                                        color: 'var(--color-text-main)',
+                                        fontSize: '14px',
+                                        outline: 'none',
+                                    }}
+                                />
+                                {searchPinnedTerm && (
+                                    <button
+                                        onClick={() => setSearchPinnedTerm('')}
+                                        style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex' }}
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+
+                            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+                                {pinnedLocationsByProvince.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                        មិនទាន់មានទីតាំងបានកំណត់ទេ
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        {pinnedLocationsByProvince.map(group => (
+                                            <div key={group.provinceName} style={{ border: '1px solid var(--color-border)', borderRadius: '12px', overflow: 'hidden' }}>
+                                                <div
+                                                    onClick={() => group.provinceCode && handleAreaSelect('province', group.provinceCode)}
+                                                    style={{
+                                                        background: 'var(--color-bg)',
+                                                        padding: '10px 14px',
+                                                        borderBottom: '1px solid var(--color-border)',
+                                                        fontSize: '14px',
+                                                        fontWeight: 600,
+                                                        color: 'var(--color-text-main)',
+                                                        cursor: group.provinceCode ? 'pointer' : 'default',
+                                                        transition: 'background 0.2s'
+                                                    }}
+                                                    onMouseEnter={(e) => { if (group.provinceCode) e.currentTarget.style.background = 'var(--color-bg-secondary)' }}
+                                                    onMouseLeave={(e) => { if (group.provinceCode) e.currentTarget.style.background = 'var(--color-bg)' }}
+                                                >
+                                                    {group.provinceName}
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    {group.locations.map((loc, idx) => {
+                                                        const pcodeType = loc.pcode.length === 2 ? 'province' : loc.pcode.length === 4 ? 'district' : loc.pcode.length === 6 ? 'commune' : 'village';
+                                                        return (
+                                                            <div
+                                                                key={loc.id || loc.pcode + idx}
+                                                                style={{
+                                                                    padding: '10px 14px',
+                                                                    borderBottom: idx < group.locations.length - 1 ? '1px solid var(--color-border)' : 'none',
+                                                                    background: 'var(--color-surface)',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'space-between',
+                                                                    transition: 'background 0.2s',
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = 'var(--color-surface)'}
+                                                            >
+                                                                <div
+                                                                    onClick={() => handleAreaSelect(pcodeType as any, loc.pcode)}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}
+                                                                >
+                                                                    <MapPin size={14} color="var(--color-text-secondary)" />
+                                                                    <span style={{ color: 'var(--color-text-main)' }}>{loc.name}</span>
+                                                                </div>
+                                                                {loc.id && (
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleRemovePinById(loc.id, loc.name);
+                                                                        }}
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
+                                                                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-danger)'}
+                                                                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+                                                                        title="លុបទីតាំងនេះ"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Hierarchy Selectors Block (Moved Below Saved Pins) */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '-4px' }}>
                             <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ជ្រើសរើសទីតាំង</div>
                             {(selectedProvinceCode || selectedDistrictCode || selectedCommuneCode || selectedVillageCode) && (
@@ -934,6 +1108,20 @@ const ShippingLocation: React.FC = () => {
                                         Setting rule for exact override on: {activeTarget.name} ({activeTarget.type})
                                     </div>
 
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-primary)', fontWeight: 600, marginBottom: '8px' }}>ឈ្មោះទីតាំងជាក់លាក់ (Custom Address / Name)</label>
+                                        <input
+                                            type="text"
+                                            placeholder={`Ex: បុរីប៉េងហួត (Defaults to ${activeTarget.name})`}
+                                            value={customAddressName}
+                                            onChange={e => setCustomAddressName(e.target.value)}
+                                            style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '2px solid var(--color-primary-light)', background: 'var(--color-surface)', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', color: 'var(--color-text-main)', fontWeight: 500 }}
+                                            onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                                            onBlur={(e) => e.target.style.borderColor = 'var(--color-primary-light)'}
+                                        />
+                                        <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--color-text-secondary)' }}>You can override the generic village/commune name with a specific address.</p>
+                                    </div>
+
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                         <div>
                                             <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>អាចដឹកជញ្ជូនបាន (Shippable)</label>
@@ -1164,6 +1352,8 @@ const ShippingLocation: React.FC = () => {
                             </div>
                         )}
                     </div>
+
+
                 </div>
 
                 {/* Right Panel: Interactive Map */}
@@ -1239,20 +1429,41 @@ const ShippingLocation: React.FC = () => {
                                 )}
                                 {!isConfirmingDelete && (
                                     <button
-                                        onClick={() => setIsEditing(true)}
+                                        onClick={() => {
+                                            if (!activeTarget) {
+                                                alert("សូមជ្រើសរើសទីតាំង (ខេត្ត/ស្រុក/ឃុំ/ភូមិ) ជាមុនសិន។ / Please select a location from the left side first.");
+                                                return;
+                                            }
+
+                                            // Initialize custom name from existing if present
+                                            const existingCustomLoc = customLocations.find(l => l.pcode === activeTarget.code);
+                                            setCustomAddressName(existingCustomLoc ? existingCustomLoc.name : '');
+
+                                            // Prepare configuration form data
+                                            setEditRuleData(activeShippingRule?.rule || {
+                                                is_shippable: true,
+                                                shipping_fee: 1.50,
+                                                estimated_days: '1-2 days',
+                                                supported_couriers: []
+                                            });
+
+                                            setIsEditingRule(true); // Open configuration panel
+                                            setIsConfirmingDeleteRule(false);
+                                            setIsEditing(true); // Activate Map Pin dropping
+                                        }}
                                         style={{
                                             display: 'flex', alignItems: 'center', gap: '8px',
                                             padding: '8px 16px',
-                                            background: 'var(--color-surface)',
-                                            border: '1px solid var(--color-border)',
+                                            background: 'var(--color-primary)',
+                                            border: 'none',
                                             borderRadius: '8px',
-                                            color: 'var(--color-text-main)',
+                                            color: '#fff',
                                             fontWeight: 500,
                                             cursor: 'pointer',
-                                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                                         }}
                                     >
-                                        <Edit3 size={16} /> Edit Map
+                                        <MapPin size={16} /> Add New Location
                                     </button>
                                 )}
                             </div>

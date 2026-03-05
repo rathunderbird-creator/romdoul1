@@ -1,6 +1,23 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical } from 'lucide-react';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+    useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -17,8 +34,32 @@ type SortConfig = {
     direction: 'asc' | 'desc';
 } | null;
 
+const SortableProductRow = ({ id, children, isDraggable, className }: { id: string, children: React.ReactNode, isDraggable: boolean, className?: string }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !isDraggable });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.8 : 1,
+        position: isDragging ? ('relative' as const) : undefined,
+        zIndex: isDragging ? 10 : undefined,
+        backgroundColor: isDragging ? 'var(--color-bg)' : undefined,
+    };
+
+    return (
+        <tr ref={setNodeRef} style={style} className={className}>
+            {children}
+            {isDraggable && (
+                <td style={{ width: '40px', textAlign: 'center', cursor: 'grab' }} {...attributes} {...listeners}>
+                    <GripVertical size={16} color="var(--color-text-secondary)" />
+                </td>
+            )}
+        </tr>
+    );
+};
+
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, restockOrder, updateOrder, currentUser, salesUpdatedAt } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, restockOrder, updateOrder, currentUser, salesUpdatedAt, productOrder, updateProductOrder } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -202,10 +243,24 @@ const Inventory: React.FC = () => {
                 }
                 return 0;
             });
+        } else {
+            // Unsorted: use productOrder
+            result.sort((a, b) => {
+                const aIndex = (productOrder || []).indexOf(a.id);
+                const bIndex = (productOrder || []).indexOf(b.id);
+
+                if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+                if (aIndex !== -1) return -1;
+                if (bIndex !== -1) return 1;
+
+                const aDate = new Date(a.createdAt || 0).getTime();
+                const bDate = new Date(b.createdAt || 0).getTime();
+                return bDate - aDate;
+            });
         }
 
         return result;
-    }, [products, searchTerm, categoryFilter, sortConfig]);
+    }, [products, searchTerm, categoryFilter, sortConfig, productOrder]);
 
     // Calculate Totals
     const stats = useMemo(() => {
@@ -223,6 +278,30 @@ const Inventory: React.FC = () => {
             totalAllStock
         };
     }, [products, categories]);
+
+    // DND Logic
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id || sortConfig) return;
+
+        let newOrder = [...(productOrder?.length ? productOrder : filteredAndSortedProducts.map(p => p.id))];
+
+        if (!newOrder.includes(active.id as string)) newOrder.push(active.id as string);
+        if (!newOrder.includes(over.id as string)) newOrder.push(over.id as string);
+
+        const oldIndex = newOrder.indexOf(active.id as string);
+        const newIndex = newOrder.indexOf(over.id as string);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+            newOrder = arrayMove(newOrder, oldIndex, newIndex);
+            updateProductOrder(newOrder);
+        }
+    };
 
     // Handlers
     const handleSort = (key: keyof Product | 'totalValue') => {
@@ -395,86 +474,93 @@ const Inventory: React.FC = () => {
                                     {renderHeader('Stock', 'stock')}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
                                     {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
+                                    {!sortConfig && <th style={{ width: '40px' }} />}
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
-                                    <tr
-                                        key={product.id}
-                                        className={selectedIds.has(product.id) ? 'selected' : ''}
-                                    >
-                                        <td style={{ textAlign: 'center' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.has(product.id)}
-                                                onChange={() => toggleSelection(product.id)}
-                                                style={{ cursor: 'pointer' }}
-                                            />
-                                        </td>
-                                        <td>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                <LazyAvatar productId={product.id} initialImage={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: 'white', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }} />
-                                                <div>
-                                                    <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
-                                                {product.category}
-                                            </span>
-                                        </td>
-                                        <td style={{ fontWeight: 600 }}>${product.price}</td>
-                                        <td>
-                                            {product.stock < (product.lowStockThreshold || 5) ? (
-                                                <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
-                                                    <AlertTriangle size={14} /> {product.stock}
-                                                </span>
-                                            ) : (
-                                                <span style={{ color: '#10B981', fontWeight: 500 }}>{product.stock}</span>
-                                            )}
-                                        </td>
-                                        {canViewFinancials && (
-                                            <td style={{ color: 'var(--color-text-secondary)' }}>
-                                                ${(product.price * product.stock).toLocaleString()}
-                                            </td>
-                                        )}
-                                        {canManageInventory && (
-                                            <td style={{ textAlign: 'right' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                    <button
-                                                        onClick={() => {
-                                                            setAddStockProduct(product);
-                                                            setAddStockAmount('');
-                                                        }}
-                                                        style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#10B981', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                        className="hover-primary"
-                                                        title="Add Stock"
-                                                    >
-                                                        <Plus size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => openEditModal(product)}
-                                                        style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                        className="hover-primary"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit2 size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => promptDelete(product.id)}
-                                                        style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                        className="hover-danger"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
+                                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                    <SortableContext items={filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(p => p.id)} strategy={verticalListSortingStrategy}>
+                                        {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
+                                            <SortableProductRow
+                                                key={product.id}
+                                                id={product.id}
+                                                isDraggable={!sortConfig}
+                                                className={selectedIds.has(product.id) ? 'selected' : ''}
+                                            >
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(product.id)}
+                                                        onChange={() => toggleSelection(product.id)}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                </td>
+                                                <td>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                        <LazyAvatar productId={product.id} initialImage={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: 'white', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }} />
+                                                        <div>
+                                                            <div style={{ fontWeight: 600 }}>{product.name}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
+                                                        {product.category}
+                                                    </span>
+                                                </td>
+                                                <td style={{ fontWeight: 600 }}>${product.price}</td>
+                                                <td>
+                                                    {product.stock < (product.lowStockThreshold || 5) ? (
+                                                        <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '14px' }}>
+                                                            <AlertTriangle size={14} /> {product.stock}
+                                                        </span>
+                                                    ) : (
+                                                        <span style={{ color: '#3B82F6', fontWeight: 'bold', fontSize: '14px' }}>{product.stock}</span>
+                                                    )}
+                                                </td>
+                                                {canViewFinancials && (
+                                                    <td style={{ color: 'var(--color-text-secondary)' }}>
+                                                        ${(product.price * product.stock).toLocaleString()}
+                                                    </td>
+                                                )}
+                                                {canManageInventory && (
+                                                    <td style={{ textAlign: 'right' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setAddStockProduct(product);
+                                                                    setAddStockAmount('');
+                                                                }}
+                                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#10B981', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                                className="hover-primary"
+                                                                title="Add Stock"
+                                                            >
+                                                                <Plus size={16} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => openEditModal(product)}
+                                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                                className="hover-primary"
+                                                                title="Edit"
+                                                            >
+                                                                <Edit2 size={16} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => promptDelete(product.id)}
+                                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                                className="hover-danger"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
+                                            </SortableProductRow>
+                                        ))}
+                                    </SortableContext>
+                                </DndContext>
                             </tbody>
                             <tfoot>
                                 <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
@@ -537,16 +623,21 @@ const Inventory: React.FC = () => {
                                                     <button
                                                         onClick={async () => {
                                                             if (confirm('Restock items from this order?')) {
-                                                                // 1. Update status to ReStock (Optimistic Remove from List)
-                                                                updateOrder(order.id, {
-                                                                    paymentStatus: 'Cancel',
-                                                                    shipping: { ...order.shipping, status: 'ReStock' } as any
-                                                                });
+                                                                try {
+                                                                    // 1. Update status to ReStock (Optimistic Remove from List)
+                                                                    await updateOrder(order.id, {
+                                                                        paymentStatus: 'Cancel',
+                                                                        shipping: { ...order.shipping, status: 'ReStock' } as any
+                                                                    });
 
-                                                                // 2. Restock Items (Updates Stock)
-                                                                await restockOrder(order.id);
+                                                                    // 2. Restock Items (Updates Stock)
+                                                                    await restockOrder(order.id);
 
-                                                                showToast('Items restocked & order updated', 'success');
+                                                                    showToast('Items restocked & order updated', 'success');
+                                                                } catch (error: any) {
+                                                                    console.error("Restock failed:", error);
+                                                                    alert("Failed to restock: " + error.message);
+                                                                }
                                                             }
                                                         }}
                                                         className="primary-button"
@@ -608,105 +699,110 @@ const Inventory: React.FC = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             {/* Mobile Summary Footer */}
-            {isMobile && (
-                <div style={{
-                    position: 'fixed',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    backgroundColor: 'white',
-                    borderTop: '1px solid var(--color-border)',
-                    padding: '12px 16px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    zIndex: 90,
-                    boxShadow: '0 -2px 10px rgba(0,0,0,0.05)'
-                }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Stock</span>
-                        <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--color-text-main)' }}>
-                            {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0).toLocaleString()}
-                        </span>
+            {
+                isMobile && (
+                    <div style={{
+                        position: 'fixed',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        backgroundColor: 'white',
+                        borderTop: '1px solid var(--color-border)',
+                        padding: '12px 16px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        zIndex: 90,
+                        boxShadow: '0 -2px 10px rgba(0,0,0,0.05)'
+                    }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Stock</span>
+                            <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--color-text-main)' }}>
+                                {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0).toLocaleString()}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Value</span>
+                            <span style={{ fontWeight: 600, fontSize: '15px', color: '#10B981' }}>
+                                ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
+                            </span>
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Value</span>
-                        <span style={{ fontWeight: 600, fontSize: '15px', color: '#10B981' }}>
-                            ${filteredAndSortedProducts.reduce((sum, p) => sum + (p.price * p.stock), 0).toLocaleString()}
-                        </span>
-                    </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Pagination */}
-            {filteredAndSortedProducts.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 4px' }}>
-                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredAndSortedProducts.length)} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length} products
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            <span>Rows per page:</span>
-                            <select
-                                value={itemsPerPage}
-                                onChange={(e) => {
-                                    setItemsPerPage(Number(e.target.value));
-                                    setCurrentPage(1);
-                                }}
-                                style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '6px',
-                                    border: '1px solid var(--color-border)',
-                                    background: 'var(--color-surface)',
-                                    color: 'var(--color-text-main)',
-                                    fontSize: '13px',
-                                    outline: 'none',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                            </select>
+            {
+                filteredAndSortedProducts.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 4px' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredAndSortedProducts.length)} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length} products
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button
-                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                disabled={currentPage === 1}
-                                style={{
-                                    padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                    background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
-                                    color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}
-                            >
-                                <ChevronLeft size={16} />
-                            </button>
-                            <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
-                            </span>
-                            <button
-                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
-                                disabled={currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
-                                style={{
-                                    padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                    background: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
-                                    color: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                    cursor: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}
-                            >
-                                <ChevronRight size={16} />
-                            </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                <span>Rows per page:</span>
+                                <select
+                                    value={itemsPerPage}
+                                    onChange={(e) => {
+                                        setItemsPerPage(Number(e.target.value));
+                                        setCurrentPage(1);
+                                    }}
+                                    style={{
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--color-surface)',
+                                        color: 'var(--color-text-main)',
+                                        fontSize: '13px',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                        background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
+                                    disabled={currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
+                                    style={{
+                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                        background: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage === Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
 
             {/* Bulk Actions Bar */}

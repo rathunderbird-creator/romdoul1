@@ -79,7 +79,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         address: '',
         amountReceived: 0,
         settleDate: '',
-        paymentMethod: 'COD',
+        paymentMethod: '' as any,
         paymentAfterDelivery: true,
         discount: 0,
         enableDiscount: false,
@@ -117,7 +117,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 address: addressDetails,
                 amountReceived: orderToEdit.amountReceived || 0,
                 settleDate: orderToEdit.settleDate || '',
-                paymentMethod: orderToEdit.paymentMethod || 'Cash',
+                paymentMethod: (orderToEdit.paymentMethod || '') as any,
                 paymentAfterDelivery: isCOD,
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
@@ -141,13 +141,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setFormData(prev => ({
                 ...prev,
                 amountReceived: 0,
-                paymentMethod: 'COD',
+                paymentMethod: '' as any,
                 paymentStatus: 'Unpaid'
             }));
         } else {
-            if (formData.paymentMethod === 'COD') {
-                setFormData(prev => ({ ...prev, paymentMethod: 'Cash', paymentStatus: 'Unpaid' }));
-            }
+            setFormData(prev => ({ ...prev, paymentMethod: '' as any, paymentStatus: 'Unpaid' }));
         }
     }, [formData.paymentAfterDelivery]);
 
@@ -497,7 +495,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({
                                         ...formData,
                                         paymentAfterDelivery: e.target.checked,
-                                        paymentMethod: e.target.checked ? 'COD' : formData.paymentMethod
+                                        paymentMethod: '' as any
                                     })}
                                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
@@ -511,10 +509,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select
                                         className="search-input"
-                                        style={{ flex: 1, padding: '10px 12px', background: formData.paymentAfterDelivery ? 'var(--color-bg)' : 'white' }}
-                                        value={formData.paymentMethod}
+                                        style={{ flex: 1, padding: '10px 12px', background: 'var(--color-bg)' }}
+                                        value={formData.paymentMethod || ''}
                                         onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
-                                        disabled={formData.paymentAfterDelivery}
+                                        disabled={true}
                                     >
                                         <option value="">Select Payment Method...</option>
                                         {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}

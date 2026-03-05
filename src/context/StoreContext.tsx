@@ -14,6 +14,7 @@ interface ConfigState {
     pinnedProducts?: string[];
     pinnedOrderColumns?: string[]; // Added pinned order columns
     salesOrder?: string[]; // Added sales custom order
+    productOrder?: string[]; // Custom order for the All Stock inventory table
     users?: User[];
     roles?: Role[];
     storeAddress?: string;
@@ -223,7 +224,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, price, stock, category, low_stock_threshold, created_at'),
+                supabase.from('products').select('id, name, model, price, stock, category, low_stock_threshold, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
@@ -452,6 +453,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         pinnedProducts: loadedConfig.pinnedProducts || [],
                         pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
                         salesOrder: loadedConfig.salesOrder || [],
+                        productOrder: loadedConfig.productOrder || [],
                         // users: REMOVED - Managed in own table now
                         roles: [
                             // Ensure Admin always has full permissions
@@ -604,6 +606,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } else {
             updateConfig({ ...config, pinnedOrderColumns: [...pinned, columnId] });
         }
+    };
+
+    const updateProductOrder = (order: string[]) => {
+        updateConfig({ ...config, productOrder: order });
     };
 
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -813,10 +819,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             throw new Error('Failed to insert items: ' + itemsError.message);
         }
 
-        // 3. Update Stock - REMOVED (Stock now deducted on 'Shipped' status)
+        // 3. Update Stock - REMOVED (As requested by user, skip POS auto deduct)
         /*
         newSale.items.forEach(async (item) => {
-            // ...
+            // Local update
+            setProducts(prev => prev.map(p => {
+                if (p.id === item.id) return { ...p, stock: p.stock - item.quantity };
+                return p;
+            }));
+            // DB update
+            const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
+            if (current) {
+                await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
+            }
         });
         */
 
@@ -1084,8 +1099,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
             }
             // Case 2: Changing FROM 'Shipped' (to non-shipped) -> RESTORE Stock
-            // EXCEPTION: If changing to 'Delivered', do NOT restore stock (it's still gone).
-            else if (oldStatus === 'Shipped' && status !== 'Shipped' && status !== 'Delivered') {
+            // EXCEPTION: If changing to 'Delivered' or 'Returned', do NOT restore stock automatically.
+            // 'Delivered' means the customer has it.
+            // 'Returned' means it's on the way back but hasn't arrived. (Restock button in Inventory will restore it).
+            else if (oldStatus === 'Shipped' && status !== 'Shipped' && status !== 'Delivered' && status !== 'Returned') {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1556,26 +1573,94 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setSalesUpdatedAt(Date.now());
         }
     };
+    const restockOrder = async (orderId: string): Promise<void> => {
+        setIsLoading(true);
+        try {
+            let orderItems = sales.find(s => s.id === orderId)?.items;
 
-    const restockOrder = async (orderId: string) => {
-        const order = sales.find(s => s.id === orderId);
-        if (!order) return;
-
-        // Sync Stock: Increment for each item
-        order.items.forEach(async (item) => {
-            // Local Update
-            setProducts(prev => prev.map(p => {
-                if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
-                return p;
-            }));
-
-            // DB Update (Increment)
-            const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-            if (current) {
-                await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+            if (!orderItems) {
+                const { data } = await supabase.from('sale_items').select('*').eq('sale_id', orderId);
+                if (data) {
+                    orderItems = data.map(dbItem => ({
+                        id: dbItem.product_id,
+                        name: dbItem.name,
+                        price: dbItem.price,
+                        quantity: dbItem.quantity
+                    })) as any;
+                }
             }
-        });
-        setSalesUpdatedAt(Date.now()); // Assuming restock is part of order management
+
+            if (!orderItems || orderItems.length === 0) {
+                console.error("No items found for order", orderId);
+                return;
+            }
+
+            const now = new Date().toISOString();
+            const restockRecords = [];
+
+            for (const item of orderItems) {
+                if (!item.id) {
+                    console.warn(`Skipping stock update for item '${item.name}' because product ID is missing (likely imported).`);
+                    continue;
+                }
+
+                const qty = Number(item.quantity);
+                if (isNaN(qty) || qty <= 0) continue;
+
+                // DB Update (Increment Stock)
+                const { data: originProduct, error: productErr } = await supabase.from('products').select('stock').eq('id', item.id).single();
+
+                if (productErr) {
+                    console.error(`Failed to find product ${item.id} for restock:`, productErr);
+                    continue;
+                }
+
+                if (originProduct) {
+                    const newStock = Number(originProduct.stock) + qty;
+                    await supabase.from('products').update({ stock: newStock }).eq('id', item.id);
+                    // Local State Update
+                    setProducts(prev => prev.map(p => p.id === item.id ? { ...p, stock: newStock } : p));
+                }
+
+                // Prepare restock record
+                const restockId = crypto.randomUUID();
+                restockRecords.push({
+                    id: restockId,
+                    product_id: item.id,
+                    quantity: qty,
+                    cost: 0,
+                    date: now,
+                    added_by: currentUser?.name || 'System',
+                    note: `Restocked from returned order #${orderId.slice(0, 8)}`
+                });
+
+                // Local restock history update
+                setRestocks(prev => [{
+                    id: restockId,
+                    productId: item.id,
+                    quantity: qty,
+                    cost: 0,
+                    date: now,
+                    addedBy: currentUser?.name || 'System',
+                    note: `Restocked from returned order #${orderId.slice(0, 8)}`
+                }, ...prev]);
+            }
+
+            if (restockRecords.length > 0) {
+                const { error: insertErr } = await supabase.from('restocks').insert(restockRecords);
+                if (insertErr) {
+                    console.error("Failed to insert restock records:", insertErr);
+                    throw insertErr;
+                }
+            }
+
+            setProductsUpdatedAt(Date.now());
+        } catch (error) {
+            console.error('Error restocking order:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const backupData = async () => {
@@ -1865,6 +1950,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             toggleProductPin,
             pinnedOrderColumns: config.pinnedOrderColumns || [],
             toggleOrderColumnPin,
+            productOrder: config.productOrder || [],
+            updateProductOrder,
             updateCart,
             importProducts,
             importOrders,
