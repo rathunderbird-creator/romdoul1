@@ -846,6 +846,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             ...productData,
             id: Date.now().toString()
         };
+        // Optimistic update
         setProducts(prev => [...prev, newProduct]);
 
         // Map to DB structure
@@ -859,8 +860,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             category: newProduct.category,
             model: newProduct.model
         };
-        await supabase.from('products').insert(dbProduct);
-        setProductsUpdatedAt(Date.now());
+
+        const { error } = await supabase.from('products').insert(dbProduct);
+        if (error) {
+            console.error('Error adding product:', error);
+            alert(`Failed to add product: ${error.message}\nPlease check database permissions (RLS) or connection.`);
+            // Rollback local state
+            setProducts(prev => prev.filter(p => p.id !== newProduct.id));
+        } else {
+            setProductsUpdatedAt(Date.now());
+        }
     };
 
     const updateProduct = async (id: string, updates: Partial<Product>) => {

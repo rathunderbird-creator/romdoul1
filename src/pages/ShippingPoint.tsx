@@ -1,0 +1,1188 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save } from 'lucide-react';
+import { useHeader } from '../context/HeaderContext';
+import { CambodiaMap } from '../components/CambodiaMap';
+import { supabase } from '../lib/supabase';
+
+
+
+// Define the data types based on the JSON structure
+interface Village {
+    code: string;
+    khmer: string;
+    latin: string;
+}
+
+interface Commune {
+    code: string;
+    khmer: string;
+    latin: string;
+    villages?: Village[];
+}
+
+interface District {
+    code: string;
+    khmer: string;
+    latin: string;
+    communes?: Commune[];
+}
+
+interface Province {
+    code: string;
+    khmer: string;
+    latin: string;
+    districts?: District[];
+}
+
+const ShippingPoint: React.FC = () => {
+    const { setHeaderContent } = useHeader();
+
+    // States
+    const [data, setData] = useState<Province[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    const [globalSearchTerm, setGlobalSearchTerm] = useState(''); // New global search
+    const [isGlobalSearchFocused, setIsGlobalSearchFocused] = useState(false);
+    const [searchPinnedTerm, setSearchPinnedTerm] = useState(''); // New search for pinned locations
+
+    // Refs
+    const searchRef = useRef<HTMLDivElement>(null);
+
+    // Selection states
+    const [selectedProvinceCode, setSelectedProvinceCode] = useState<string>('');
+    const [selectedDistrictCode, setSelectedDistrictCode] = useState<string>('');
+    const [selectedCommuneCode, setSelectedCommuneCode] = useState<string>('');
+    const [selectedVillageCode, setSelectedVillageCode] = useState<string>('');
+
+    // Mapping states
+    const [isEditing, setIsEditing] = useState(false);
+    const [editMarkerLatLng, setEditMarkerLatLng] = useState<[number, number] | null>(null);
+    const [focusedPinLatLng, setFocusedPinLatLng] = useState<[number, number] | null>(null);
+    const [customLocations, setCustomLocations] = useState<Array<{
+        id: string,
+        pcode: string,
+        name: string,
+        lat: number,
+        lng: number,
+        courier?: string | null,
+        province?: string | null,
+        district?: string | null,
+        commune?: string | null,
+        phone?: string | null,
+        contact_name?: string | null
+    }>>([]);
+    const [isSavingLocation, setIsSavingLocation] = useState(false);
+    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+    const [isPinnedListExpanded, setIsPinnedListExpanded] = useState(true);
+    const [isLocationSelectorsExpanded, setIsLocationSelectorsExpanded] = useState(true);
+
+    // Modal states
+    const [shippingCompanies, setShippingCompanies] = useState<string[]>([]);
+    const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+    const [savingError, setSavingError] = useState<string | null>(null);
+    const [modalData, setModalData] = useState({
+        name: '',
+        courier: '',
+        province: '',
+        district: '',
+        commune: '',
+        phone: '',
+        contactName: ''
+    });
+    // Fetch data dynamically so it doesn't block the main JS bundle
+    useEffect(() => {
+        setIsLoading(true);
+        import('../data/cambodia.json')
+            .then((module) => {
+                setData(module.default as Province[]);
+            })
+            .catch((error) => {
+                console.error("Failed to load gazetteer data:", error);
+            })
+            .finally(() => {
+                setIsLoading(false);
+            });
+
+        loadCustomLocations();
+        loadShippingCompanies();
+    }, []);
+
+    const loadShippingCompanies = async () => {
+        try {
+            const { data, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
+            if (!error && data?.data?.shippingCompanies) {
+                setShippingCompanies(data.data.shippingCompanies);
+            }
+        } catch (e) {
+            console.error("Failed to load shipping companies", e);
+        }
+    };
+
+    const loadCustomLocations = async () => {
+        try {
+            const { data, error } = await supabase.from('custom_locations').select('*');
+            if (!error && data) {
+                setCustomLocations(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch custom locations", e);
+        }
+    };
+
+
+
+    // Close search dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+                setIsGlobalSearchFocused(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    useEffect(() => {
+        setHeaderContent({
+            title: (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <MapPin size={20} />
+                    <span className="font-semibold text-color-text-main" style={{ fontSize: '18px' }}>កំណត់ទីតាំងដឹកជញ្ជូនកនែ្លងផ្សេងៗ (Shipping Points)</span>
+                </div>
+            )
+        });
+        return () => setHeaderContent(null);
+    }, [setHeaderContent]);
+
+    // Computed properties based on selection
+    const selectedProvince = useMemo(() =>
+        data.find(p => p.code === selectedProvinceCode), [data, selectedProvinceCode]
+    );
+
+    const activeDistricts = useMemo(() =>
+        selectedProvince?.districts || [], [selectedProvince]
+    );
+
+    const selectedDistrict = useMemo(() =>
+        activeDistricts.find(d => d.code === selectedDistrictCode), [activeDistricts, selectedDistrictCode]
+    );
+
+    const activeCommunes = useMemo(() =>
+        selectedDistrict?.communes || [], [selectedDistrict]
+    );
+
+    const selectedCommune = useMemo(() =>
+        activeCommunes.find(c => c.code === selectedCommuneCode), [activeCommunes, selectedCommuneCode]
+    );
+
+    const activeVillages = useMemo(() =>
+        selectedCommune?.villages || [], [selectedCommune]
+    );
+
+
+    // Global Search Logic
+    const globalSearchResults = useMemo(() => {
+        if (!globalSearchTerm || globalSearchTerm.trim().length === 0) return [];
+
+        const term = globalSearchTerm.toLowerCase();
+        let results: Array<{
+            type: 'province' | 'district' | 'commune' | 'village',
+            name: string,
+            path: string,
+            pcode: string,
+            dcode: string,
+            ccode: string,
+            vcode: string
+        }> = [];
+
+        for (const p of data) {
+            // Check Province
+            if (p.khmer.includes(term) || p.latin.toLowerCase().includes(term)) {
+                results.push({ type: 'province', name: p.khmer, path: 'រាជធានី/ខេត្ត', pcode: p.code, dcode: '', ccode: '', vcode: '' });
+            }
+            if (p.districts) {
+                for (const d of p.districts) {
+                    // Check District
+                    if (d.khmer.includes(term) || d.latin.toLowerCase().includes(term)) {
+                        results.push({ type: 'district', name: d.khmer, path: `${p.khmer}`, pcode: p.code, dcode: d.code, ccode: '', vcode: '' });
+                    }
+                    if (d.communes) {
+                        for (const c of d.communes) {
+                            // Check Commune
+                            if (c.khmer.includes(term) || c.latin.toLowerCase().includes(term)) {
+                                results.push({ type: 'commune', name: c.khmer, path: `${p.khmer} > ${d.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: '' });
+                            }
+                            if (c.villages) {
+                                for (const v of c.villages) {
+                                    // Check Village
+                                    if (v.khmer.includes(term) || v.latin.toLowerCase().includes(term)) {
+                                        results.push({ type: 'village', name: v.khmer, path: `${p.khmer} > ${d.khmer} > ${c.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: v.code });
+                                    }
+                                    if (results.length > 50) break; // Limit
+                                }
+                            }
+                            if (results.length > 50) break;
+                        }
+                    }
+                    if (results.length > 50) break;
+                }
+            }
+            if (results.length > 50) break;
+        }
+        return results;
+    }, [data, globalSearchTerm]);
+
+    // Active Shipping Rule Logic
+    const activeTarget = useMemo(() => {
+        if (selectedVillageCode) return { code: selectedVillageCode, type: 'village' as const, name: activeVillages.find(v => v.code === selectedVillageCode)?.khmer };
+        if (selectedCommuneCode) return { code: selectedCommuneCode, type: 'commune' as const, name: selectedCommune?.khmer };
+        if (selectedDistrictCode) return { code: selectedDistrictCode, type: 'district' as const, name: selectedDistrict?.khmer };
+        if (selectedProvinceCode) return { code: selectedProvinceCode, type: 'province' as const, name: selectedProvince?.khmer };
+        return null;
+    }, [selectedVillageCode, selectedCommuneCode, selectedDistrictCode, selectedProvinceCode, activeVillages, selectedCommune, selectedDistrict, selectedProvince]);
+
+
+
+    // Group Pinned Locations by Province
+    const pinnedLocationsByProvince = useMemo(() => {
+        const groups: Record<string, { provinceName: string, provinceCode: string, locations: typeof customLocations }> = {};
+
+        // Helper to find province details
+        const getProvinceInfo = (loc: typeof customLocations[0]) => {
+            // If the pin explicitly saved a province name, try to map it back to a code
+            if (loc.province) {
+                const province = data.find(p => p.khmer === loc.province || p.latin === loc.province);
+                if (province) return { name: province.khmer, code: province.code };
+                return { name: loc.province, code: '' }; // Fallback to raw string if code not found
+            }
+
+            // Fallback to legacy parsing for non-custom administrative targets
+            const provinceCode = loc.pcode.substring(0, 2);
+            const province = data.find(p => p.code === provinceCode);
+            return province ? { name: province.khmer, code: province.code } : { name: 'Unknown', code: '' };
+        };
+
+        const filteredLocations = searchPinnedTerm.trim() === ''
+            ? customLocations
+            : customLocations.filter(loc => {
+                const { name: provinceName } = getProvinceInfo(loc);
+                const searchTerm = searchPinnedTerm.toLowerCase();
+                return loc.name.toLowerCase().includes(searchTerm) || provinceName.toLowerCase().includes(searchTerm);
+            });
+
+        filteredLocations.forEach(loc => {
+            const { name: provinceName, code: provinceCode } = getProvinceInfo(loc);
+            const key = provinceName;
+
+            if (!groups[key]) {
+                groups[key] = { provinceName, provinceCode, locations: [] };
+            }
+            groups[key].locations.push(loc);
+        });
+
+        // Sort keys alphabetically
+        return Object.keys(groups).sort().map(key => groups[key]);
+    }, [customLocations, data, searchPinnedTerm]);
+
+
+
+
+    const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedProvinceCode(e.target.value);
+        setSelectedDistrictCode('');
+        setSelectedCommuneCode('');
+        setSelectedVillageCode('');
+        setEditMarkerLatLng(null);
+    };
+
+    const handleDistrictChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedDistrictCode(e.target.value);
+        setSelectedCommuneCode('');
+        setSelectedVillageCode('');
+        setEditMarkerLatLng(null);
+    };
+
+    const handleCommuneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedCommuneCode(e.target.value);
+        setSelectedVillageCode('');
+        setEditMarkerLatLng(null);
+    };
+
+    const handleVillageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedVillageCode(e.target.value);
+        setEditMarkerLatLng(null);
+    };
+
+    const handleSelectSearchResult = (pcode: string, dcode: string, ccode: string, vcode: string) => {
+        if (pcode) setSelectedProvinceCode(pcode); else setSelectedProvinceCode('');
+        if (dcode) setSelectedDistrictCode(dcode); else setSelectedDistrictCode('');
+        if (ccode) setSelectedCommuneCode(ccode); else setSelectedCommuneCode('');
+        if (vcode) setSelectedVillageCode(vcode); else setSelectedVillageCode('');
+        setEditMarkerLatLng(null);
+        setGlobalSearchTerm('');
+        setIsGlobalSearchFocused(false);
+    };
+
+    const handleAreaSelect = (type: 'province' | 'district' | 'commune' | 'village', code: string) => {
+        // Find the matched item across our data hierarchy
+        for (const p of data) {
+            if (type === 'province' && p.code === code) {
+                handleSelectSearchResult(p.code, '', '', '');
+                return;
+            }
+            if (p.districts) {
+                for (const d of p.districts) {
+                    if (type === 'district' && d.code === code) {
+                        handleSelectSearchResult(p.code, d.code, '', '');
+                        return;
+                    }
+                    if (d.communes) {
+                        for (const c of d.communes) {
+                            if (type === 'commune' && c.code === code) {
+                                handleSelectSearchResult(p.code, d.code, c.code, '');
+                                return;
+                            }
+                            if (c.villages) {
+                                for (const v of c.villages) {
+                                    if (type === 'village' && v.code === code) {
+                                        handleSelectSearchResult(p.code, d.code, c.code, v.code);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    const handleMapClick = async (lat: number, lng: number) => {
+        setIsEditing(true);
+        setEditMarkerLatLng([lat, lng]);
+    };
+
+    const modalActiveDistricts = useMemo(() =>
+        data.find(p => p.khmer === modalData.province)?.districts || [], [data, modalData.province]
+    );
+
+    const modalActiveCommunes = useMemo(() =>
+        modalActiveDistricts.find(d => d.khmer === modalData.district)?.communes || [], [modalActiveDistricts, modalData.district]
+    );
+
+    const handleSaveLocationClick = () => {
+        if (!editMarkerLatLng) return;
+
+        // Determine what target the user is currently focused on
+        let targetProvince = '';
+        let targetDistrict = '';
+        let targetCommune = '';
+        let targetName = '';
+
+        if (selectedProvinceCode) targetProvince = selectedProvince?.khmer || '';
+        if (selectedDistrictCode) targetDistrict = selectedDistrict?.khmer || '';
+        if (selectedCommuneCode) targetCommune = selectedCommune?.khmer || '';
+
+        if (selectedVillageCode) {
+            targetName = activeVillages.find(v => v.code === selectedVillageCode)?.khmer || '';
+        } else {
+            targetName = targetCommune || targetDistrict || targetProvince || '';
+        }
+
+        setSavingError(null);
+        setModalData({
+            name: targetName,
+            courier: shippingCompanies.length > 0 ? shippingCompanies[0] : '',
+            province: targetProvince,
+            district: targetDistrict,
+            commune: targetCommune,
+            phone: '',
+            contactName: ''
+        });
+        setIsSaveModalOpen(true);
+    };
+
+    const submitSaveLocation = async () => {
+        setSavingError(null);
+        if (!editMarkerLatLng) {
+            setSavingError("No marker location selected.");
+            return;
+        }
+
+        if (!modalData.name.trim()) {
+            setSavingError("សូមបញ្ចូលឈ្មោះទីតាំង (Enter custom location name)");
+            return;
+        }
+
+        const targetPcode = 'CUSTOM_' + Date.now().toString();
+
+        setIsSavingLocation(true);
+        try {
+            const { error: insertError } = await supabase.from('custom_locations').insert({
+                pcode: targetPcode,
+                name: modalData.name.trim(),
+                lat: editMarkerLatLng[0],
+                lng: editMarkerLatLng[1],
+                type: 'custom',
+                courier: modalData.courier || null,
+                province: modalData.province || null,
+                district: modalData.district || null,
+                commune: modalData.commune || null,
+                phone: modalData.phone || null,
+                contact_name: modalData.contactName || null,
+                updated_at: new Date().toISOString()
+            });
+
+            if (insertError) {
+                console.error("Supabase Insert Error:", insertError);
+                throw insertError;
+            }
+
+            setIsEditing(false);
+            setEditMarkerLatLng(null);
+            setIsSaveModalOpen(false);
+            await loadCustomLocations();
+            alert(`Location specifically mapped to ${modalData.name}!`);
+        } catch (e: any) {
+            console.error('Catch Block Error in submitSaveLocation API:', e);
+            setSavingError(e.message || JSON.stringify(e));
+        } finally {
+            setIsSavingLocation(false);
+        }
+    };
+
+    const handleRemovePinById = async (id: string, name: string) => {
+        if (!confirm(`តើអ្នកពិតជាចង់លុបទីតាំង "${name}" មែនទេ?`)) return;
+
+        setIsSavingLocation(true);
+        try {
+            const { error } = await supabase.from('custom_locations').delete().eq('id', id);
+            if (error) throw error;
+            setIsConfirmingDelete(false);
+            setEditMarkerLatLng(null);
+            await loadCustomLocations();
+            alert(`Location pin removed for ${name}!`);
+        } catch (e: any) {
+            console.error('Exception during delete', e);
+            alert('Error removing location pin: ' + e.message);
+        } finally {
+            setIsSavingLocation(false);
+        }
+    };
+
+    const handleRemoveLocation = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        console.log('handleRemoveLocation triggered!');
+
+        // Determine what target the user is currently focused on
+        let targetPcode = '';
+        let targetName = '';
+
+        if (selectedVillageCode) {
+            targetPcode = selectedVillageCode;
+            targetName = activeVillages.find(v => v.code === selectedVillageCode)?.khmer || selectedVillageCode;
+        } else if (selectedCommuneCode) {
+            targetPcode = selectedCommuneCode;
+            targetName = selectedCommune?.khmer || selectedCommuneCode;
+        } else if (selectedDistrictCode) {
+            targetPcode = selectedDistrictCode;
+            targetName = selectedDistrict?.khmer || selectedDistrictCode;
+        } else if (selectedProvinceCode) {
+            targetPcode = selectedProvinceCode;
+            targetName = selectedProvince?.khmer || selectedProvinceCode;
+        }
+
+        console.log('Target to remove:', targetPcode, targetName);
+
+        if (!targetPcode) {
+            alert('Please select a province, district, commune, or village first.');
+            return;
+        }
+
+        setIsSavingLocation(true);
+        try {
+            console.log('Sending delete request to supabase...');
+            const { error, data } = await supabase.from('custom_locations').delete().eq('pcode', targetPcode).select();
+            console.log('Delete response:', error, data);
+
+            if (error) {
+                console.error('Delete error', error);
+                throw error;
+            }
+            if (!data || data.length === 0) {
+                console.warn('No rows deleted - RLS issue?');
+                alert('Warning: No map pin was deleted. This might be a database permission issue.');
+            } else {
+                setEditMarkerLatLng(null);
+                await loadCustomLocations();
+                setIsConfirmingDelete(false);
+                alert(`Location pin removed for ${targetName}!`);
+            }
+        } catch (e: any) {
+            console.error('Exception during delete', e);
+            alert('Error removing location pin: ' + e.message);
+        } finally {
+            setIsSavingLocation(false);
+        }
+    };
+
+
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div className="shipping-header" style={{ padding: '24px 24px 16px', flexShrink: 0 }}>
+                <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)</h1>
+                <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Map size={18} />
+                    បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)
+                </p>
+            </div>
+
+            <div className="shipping-layout" style={{
+                flex: 1,
+                padding: '0 24px 24px',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(380px, 500px) 1fr',
+                gap: '24px'
+            }}>
+
+                {/* Left Panel: Filters & List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Filters Section */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '16px',
+                        background: 'var(--color-surface)',
+                        padding: '24px',
+                        borderRadius: '16px',
+                        border: '1px solid var(--color-border)',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
+                    }}>
+
+                        {/* Hierarchy Selectors Block */}
+                        <div
+                            onClick={() => setIsLocationSelectorsExpanded(!isLocationSelectorsExpanded)}
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isLocationSelectorsExpanded ? '8px' : '0', cursor: 'pointer' }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Navigation size={18} color="var(--color-primary)" />
+                                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ជ្រើសរើសទីតាំង</div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {(selectedProvinceCode || selectedDistrictCode || selectedCommuneCode || selectedVillageCode) && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleSelectSearchResult('', '', '', ''); }}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            border: '1px solid transparent',
+                                            background: 'var(--color-bg-secondary)',
+                                            color: 'var(--color-text-secondary)',
+                                            fontSize: '13px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseOver={e => {
+                                            e.currentTarget.style.color = 'var(--color-error)';
+                                            e.currentTarget.style.background = '#fee2e2'; // light red
+                                        }}
+                                        onMouseOut={e => {
+                                            e.currentTarget.style.color = 'var(--color-text-secondary)';
+                                            e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                                        }}
+                                    >
+                                        <X size={14} /> បោះបង់
+                                    </button>
+                                )}
+                                <div style={{ color: 'var(--color-text-secondary)' }}>
+                                    {isLocationSelectorsExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                </div>
+                            </div>
+                        </div>
+
+                        {isLocationSelectorsExpanded && (
+                            <>
+                                {/* Global Search */}
+                                <div ref={searchRef} style={{ position: 'relative', marginBottom: '8px' }}>
+                                    <div style={{ position: 'relative' }}>
+                                        <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                        <input
+                                            type="text"
+                                            placeholder="ស្វែងរកទីតាំងរហ័ស (ខេត្ត, ស្រុក, ឃុំ, ភូមិ)..."
+                                            value={globalSearchTerm}
+                                            onChange={e => setGlobalSearchTerm(e.target.value)}
+                                            onFocus={() => setIsGlobalSearchFocused(true)}
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px 16px 12px 42px',
+                                                borderRadius: '10px',
+                                                border: '1px solid var(--color-primary)',
+                                                background: 'var(--color-primary-light)',
+                                                color: 'var(--color-text-main)',
+                                                fontSize: '15px',
+                                                outline: 'none',
+                                                boxShadow: '0 2px 8px rgba(var(--color-primary-rgb), 0.1)'
+                                            }}
+                                        />
+                                        {globalSearchTerm && (
+                                            <button
+                                                onClick={() => setGlobalSearchTerm('')}
+                                                style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex' }}
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Dropdown Results */}
+                                    {isGlobalSearchFocused && globalSearchTerm && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            marginTop: '8px',
+                                            background: 'var(--color-surface)',
+                                            borderRadius: '12px',
+                                            border: '1px solid var(--color-border)',
+                                            boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+                                            zIndex: 50,
+                                            maxHeight: '400px',
+                                            overflowY: 'auto',
+                                            overflowX: 'hidden'
+                                        }}>
+                                            {globalSearchResults.length === 0 ? (
+                                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                                    គ្មានលទ្ធផលសម្រាប់ "{globalSearchTerm}"
+                                                </div>
+                                            ) : (
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    {globalSearchResults.map((res, idx) => (
+                                                        <div
+                                                            key={`${res.pcode}-${res.dcode}-${res.ccode}-${res.vcode}-${idx}`}
+                                                            onClick={() => handleSelectSearchResult(res.pcode, res.dcode, res.ccode, res.vcode)}
+                                                            style={{
+                                                                padding: '12px 16px',
+                                                                borderBottom: '1px solid var(--color-border)',
+                                                                cursor: 'pointer',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '12px',
+                                                                transition: 'background 0.2s'
+                                                            }}
+                                                            onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
+                                                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                                        >
+                                                            <div style={{
+                                                                background: 'var(--color-primary-light)',
+                                                                color: 'var(--color-primary)',
+                                                                padding: '8px',
+                                                                borderRadius: '8px',
+                                                                display: 'flex'
+                                                            }}>
+                                                                <Navigation size={18} />
+                                                            </div>
+                                                            <div>
+                                                                <div style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '15px' }}>
+                                                                    {res.name} <span style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 500, marginLeft: '6px' }}>({res.type})</span>
+                                                                </div>
+                                                                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                                                                    {res.path}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: '4px 0 8px' }} />
+
+                                {/* Province Select */}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>រាជធានី / ខេត្ត</label>
+                                    <select
+                                        value={selectedProvinceCode}
+                                        onChange={handleProvinceChange}
+                                        disabled={isLoading}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            background: 'var(--color-bg)',
+                                            color: 'var(--color-text-main)',
+                                            fontSize: '14px',
+                                            outline: 'none'
+                                        }}
+                                    >
+                                        <option value="">-- បង្ហាញរាជធានី និងខេត្ត --</option>
+                                        {data.map(province => (
+                                            <option key={province.code} value={province.code}>
+                                                {province.khmer} ({province.latin})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* District Select */}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ក្រុង / ស្រុក / ខណ្ឌ</label>
+                                    <select
+                                        value={selectedDistrictCode}
+                                        onChange={handleDistrictChange}
+                                        disabled={!selectedProvinceCode}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            background: !selectedProvinceCode ? 'var(--color-bg-secondary)' : 'var(--color-bg)',
+                                            color: 'var(--color-text-main)',
+                                            fontSize: '14px',
+                                            outline: 'none',
+                                            opacity: !selectedProvinceCode ? 0.6 : 1
+                                        }}
+                                    >
+                                        <option value="">-- ជ្រើសរើសស្រុក --</option>
+                                        {activeDistricts.map(district => (
+                                            <option key={district.code} value={district.code}>
+                                                {district.khmer} ({district.latin})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Commune Select */}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ឃុំ / សង្កាត់</label>
+                                    <select
+                                        value={selectedCommuneCode}
+                                        onChange={handleCommuneChange}
+                                        disabled={!selectedDistrictCode}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            background: !selectedDistrictCode ? 'var(--color-bg-secondary)' : 'var(--color-bg)',
+                                            color: 'var(--color-text-main)',
+                                            fontSize: '14px',
+                                            outline: 'none',
+                                            opacity: !selectedDistrictCode ? 0.6 : 1
+                                        }}
+                                    >
+                                        <option value="">-- ជ្រើសរើសឃុំ --</option>
+                                        {activeCommunes.map(commune => (
+                                            <option key={commune.code} value={commune.code}>
+                                                {commune.khmer} ({commune.latin})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Village Select */}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ភូមិ</label>
+                                    <select
+                                        value={selectedVillageCode}
+                                        onChange={handleVillageChange}
+                                        disabled={!selectedCommuneCode}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            background: !selectedCommuneCode ? 'var(--color-bg-secondary)' : 'var(--color-bg)',
+                                            color: 'var(--color-text-main)',
+                                            fontSize: '14px',
+                                            outline: 'none',
+                                            opacity: !selectedCommuneCode ? 0.6 : 1
+                                        }}
+                                    >
+                                        <option value="">-- បង្ហាញភូមិ --</option>
+                                        {activeVillages.map(village => (
+                                            <option key={village.code} value={village.code}>
+                                                {village.khmer} ({village.latin})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </>
+                        )}
+
+
+                        {/* Saved Pins Panel */}
+                        <div style={{ background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', padding: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', maxHeight: isPinnedListExpanded ? '400px' : 'auto' }}>
+                            <div
+                                onClick={() => setIsPinnedListExpanded(!isPinnedListExpanded)}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPinnedListExpanded ? '16px' : '0', cursor: 'pointer' }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <MapPin size={18} color="var(--color-primary)" />
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ទីតាំងដែលបានកំណត់ ({customLocations.length})</h3>
+                                </div>
+                                <div style={{ color: 'var(--color-text-secondary)' }}>
+                                    {isPinnedListExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                </div>
+                            </div>
+
+                            {isPinnedListExpanded && (
+                                <>
+                                    <div style={{ position: 'relative', marginBottom: '16px', flexShrink: 0 }}>
+                                        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                        <input
+                                            type="text"
+                                            placeholder="ស្វែងរកទីតាំងដែលបានកំណត់..."
+                                            value={searchPinnedTerm}
+                                            onChange={e => setSearchPinnedTerm(e.target.value)}
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px 12px 10px 36px',
+                                                borderRadius: '8px',
+                                                border: '1px solid var(--color-border)',
+                                                background: 'var(--color-bg)',
+                                                color: 'var(--color-text-main)',
+                                                fontSize: '14px',
+                                                outline: 'none',
+                                            }}
+                                        />
+                                        {searchPinnedTerm && (
+                                            <button
+                                                onClick={() => setSearchPinnedTerm('')}
+                                                style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex' }}
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+                                        {pinnedLocationsByProvince.length === 0 ? (
+                                            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                                មិនទាន់មានទីតាំងបានកំណត់ទេ
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                {pinnedLocationsByProvince.map(group => (
+                                                    <div key={group.provinceName} style={{ border: '1px solid var(--color-border)', borderRadius: '12px', overflow: 'hidden' }}>
+                                                        <div
+                                                            onClick={() => group.provinceCode && handleAreaSelect('province', group.provinceCode)}
+                                                            style={{
+                                                                background: 'var(--color-bg)',
+                                                                padding: '10px 14px',
+                                                                borderBottom: '1px solid var(--color-border)',
+                                                                fontSize: '14px',
+                                                                fontWeight: 600,
+                                                                color: 'var(--color-text-main)',
+                                                                cursor: group.provinceCode ? 'pointer' : 'default',
+                                                                transition: 'background 0.2s'
+                                                            }}
+                                                            onMouseEnter={(e) => { if (group.provinceCode) e.currentTarget.style.background = 'var(--color-bg-secondary)' }}
+                                                            onMouseLeave={(e) => { if (group.provinceCode) e.currentTarget.style.background = 'var(--color-bg)' }}
+                                                        >
+                                                            {group.provinceName}
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                            {group.locations.map((loc, idx) => {
+                                                                const pcodeType = loc.pcode.length === 2 ? 'province' : loc.pcode.length === 4 ? 'district' : loc.pcode.length === 6 ? 'commune' : 'village';
+                                                                return (
+                                                                    <div
+                                                                        key={loc.id || loc.pcode + idx}
+                                                                        style={{
+                                                                            padding: '10px 14px',
+                                                                            borderBottom: idx < group.locations.length - 1 ? '1px solid var(--color-border)' : 'none',
+                                                                            background: 'var(--color-surface)',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'space-between',
+                                                                            transition: 'background 0.2s',
+                                                                        }}
+                                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
+                                                                        onMouseLeave={(e) => e.currentTarget.style.background = 'var(--color-surface)'}
+                                                                    >
+                                                                        <div
+                                                                            onClick={() => {
+                                                                                if (loc.pcode.startsWith('CUSTOM_')) {
+                                                                                    setFocusedPinLatLng([loc.lat, loc.lng]);
+                                                                                } else {
+                                                                                    handleAreaSelect(pcodeType as any, loc.pcode);
+                                                                                    setFocusedPinLatLng([loc.lat, loc.lng]);
+                                                                                }
+                                                                            }}
+                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}
+                                                                        >
+                                                                            <MapPin size={14} color="var(--color-text-secondary)" />
+                                                                            <span style={{ color: 'var(--color-text-main)' }}>{loc.name}</span>
+                                                                        </div>
+                                                                        {loc.id && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handleRemovePinById(loc.id, loc.name);
+                                                                                }}
+                                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
+                                                                                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-danger)'}
+                                                                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+                                                                                title="លុបទីតាំងនេះ"
+                                                                            >
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                    </div>
+                </div>
+
+
+                {/* Right Panel: Interactive Map */}
+                <div className="shipping-map-container" style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: 'var(--color-surface)',
+                    borderRadius: '16px',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                    overflow: 'hidden',
+                    position: 'relative',
+                    minHeight: '400px',
+                    height: '100%'
+                }}>
+
+                    {/* Floating Controls */}
+                    <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
+                        {isEditing ? (
+                            <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                                <button
+                                    onClick={() => { setIsEditing(false); setEditMarkerLatLng(null); }}
+                                    style={{ padding: '8px 16px', background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                >
+                                    <X size={16} /> បោះបង់
+                                </button>
+                                <button
+                                    onClick={handleSaveLocationClick}
+                                    disabled={!editMarkerLatLng || isSavingLocation}
+                                    style={{ padding: '8px 16px', background: 'var(--color-primary)', border: 'none', color: '#fff', fontWeight: 500, cursor: (!editMarkerLatLng || isSavingLocation) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: (!editMarkerLatLng || isSavingLocation) ? 0.7 : 1 }}
+                                >
+                                    <Save size={16} /> រក្សាទុក
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {isConfirmingDelete ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-danger-light, #fee2e2)', padding: '4px 8px', borderRadius: '8px', border: '1px solid var(--color-danger, #ef4444)' }}>
+                                        <span style={{ fontSize: '13px', color: 'var(--color-danger, #ef4444)', fontWeight: 500 }}>លុបទីតាំងនេះ?</span>
+                                        <button
+                                            onClick={() => setIsConfirmingDelete(false)}
+                                            style={{ padding: '6px 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                                        >
+                                            ទេ (No)
+                                        </button>
+                                        <button
+                                            onClick={handleRemoveLocation}
+                                            disabled={isSavingLocation}
+                                            style={{ padding: '6px 12px', background: 'var(--color-danger, #ef4444)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', opacity: isSavingLocation ? 0.7 : 1 }}
+                                        >
+                                            {isSavingLocation ? '...' : 'យល់ព្រម (Yes)'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {customLocations.some(l => l.pcode === activeTarget?.code) && (
+                                            <button
+                                                onClick={() => setIsConfirmingDelete(true)}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    padding: '8px 16px',
+                                                    background: 'var(--color-surface)',
+                                                    border: '1px solid var(--color-danger, #ef4444)',
+                                                    borderRadius: '8px',
+                                                    color: 'var(--color-danger, #ef4444)',
+                                                    fontWeight: 500,
+                                                    cursor: 'pointer',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                                }}
+                                            >
+                                                <Trash2 size={16} /> លុបទីតាំង
+                                            </button>
+                                        )}
+                                        {!isConfirmingDelete && (
+                                            <button
+                                                onClick={() => {
+                                                    setIsEditing(true); // Activate Map Pin dropping directly
+                                                }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    padding: '8px 16px',
+                                                    background: 'var(--color-primary)',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    color: '#fff',
+                                                    fontWeight: 500,
+                                                    cursor: 'pointer',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                <MapPin size={16} /> Add New Location
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {isEditing && (
+                        <div style={{ position: 'absolute', top: 16, left: 16, right: 'auto', zIndex: 10, background: 'var(--color-primary-light)', color: 'var(--color-primary)', padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-primary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                            <MapPin size={18} /> សូមចុចលើផែនទីដើម្បីទម្លាក់ប៉ាល់, រួចទាញ (Tap on map to drop pin, drag to refine)
+                        </div>
+                    )}
+
+                    {isSaveModalOpen && (
+                        <div style={{
+                            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50,
+                            background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                width: '400px', background: 'var(--color-surface)', borderRadius: '16px', padding: '24px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                                display: 'flex', flexDirection: 'column', gap: '16px'
+                            }}>
+                                <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-main)', margin: 0 }}>Save Location</h3>
+
+                                {savingError && (
+                                    <div style={{ padding: '12px', background: '#ffebee', color: '#d32f2f', borderRadius: '8px', fontSize: '13px', fontWeight: 500 }}>
+                                        {savingError}
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Location Name / ឈ្មោះទីតាំង *</label>
+                                    <input
+                                        type="text" value={modalData.name} onChange={(e) => setModalData({ ...modalData, name: e.target.value })}
+                                        style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Courier / សេវាដឹកជញ្ជូន</label>
+                                    <select
+                                        value={modalData.courier} onChange={(e) => setModalData({ ...modalData, courier: e.target.value })}
+                                        style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}
+                                    >
+                                        <option value="">Select Courier</option>
+                                        {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Province / ខេត្ត</label>
+                                        <select value={modalData.province} onChange={(e) => setModalData({ ...modalData, province: e.target.value, district: '', commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
+                                            <option value="">Select Province</option>
+                                            {data.map(p => <option key={p.code} value={p.khmer}>{p.khmer}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>District / ស្រុក</label>
+                                        <select value={modalData.district} onChange={(e) => setModalData({ ...modalData, district: e.target.value, commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
+                                            <option value="">Select District</option>
+                                            {modalActiveDistricts.map(d => <option key={d.code} value={d.khmer}>{d.khmer}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Commune / ឃុំ</label>
+                                        <select value={modalData.commune} onChange={(e) => setModalData({ ...modalData, commune: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
+                                            <option value="">Select Commune</option>
+                                            {modalActiveCommunes.map(c => <option key={c.code} value={c.khmer}>{c.khmer}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Phone / លេខទូរស័ព្ទ</label>
+                                        <input type="text" value={modalData.phone} onChange={(e) => setModalData({ ...modalData, phone: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Contact Name / ឈ្មោះអ្នកទទួល</label>
+                                    <input type="text" value={modalData.contactName} onChange={(e) => setModalData({ ...modalData, contactName: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }} />
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                    <button
+                                        onClick={() => setIsSaveModalOpen(false)}
+                                        style={{ flex: 1, padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', fontWeight: 500, cursor: 'pointer' }}
+                                    >Cancel</button>
+                                    <button
+                                        onClick={submitSaveLocation}
+                                        disabled={isSavingLocation}
+                                        style={{ flex: 1, padding: '12px', background: 'var(--color-primary)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', opacity: isSavingLocation ? 0.7 : 1 }}
+                                    >{isSavingLocation ? 'Saving...' : 'Save Location'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+
+                    <CambodiaMap
+                        selectedProvinceCode={selectedProvinceCode}
+                        selectedDistrictCode={selectedDistrictCode}
+                        selectedCommuneCode={selectedCommuneCode}
+                        selectedVillageCode={selectedVillageCode}
+                        isEditing={isEditing}
+                        editMarkerLatLng={editMarkerLatLng}
+                        onMapClick={handleMapClick}
+                        customLocations={customLocations}
+                        focusedPinLatLng={focusedPinLatLng}
+                    />
+                </div>
+
+                {/* Grid container closes here */}
+            </div >
+
+            <style>{`
+                @keyframes spin { 100% { transform: rotate(360deg); } }
+                @media (max-width: 1024px) {
+                    .shipping-layout {
+                        grid-template-columns: 1fr !important;
+                    }
+                }
+                @media (max-width: 640px) {
+                    .shipping-layout {
+                        padding: 0 16px 16px !important;
+                        gap: 16px !important;
+                    }
+                    .shipping-header {
+                        padding: 16px 16px 12px !important;
+                    }
+                    .shipping-header h1 {
+                        font-size: 20px !important;
+                    }
+                    .shipping-map-container {
+                        min-height: 500px !important;
+                    }
+                }
+            `}</style>
+        </div >
+    );
+};
+
+export default ShippingPoint;

@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: Phone, label: 'ប្រតិបត្តិករទូរស័ព្ទ', path: '/mobile-operators' });
-        navItems.push({ icon: MapPin, label: 'ទីតាំងដឹកជញ្ជូន', path: '/shipping-location' });
+        navItems.push({ icon: MapPin, label: 'Shipping Point', path: '/shipping-point' });
     }
 
     if (canManageUsers) {

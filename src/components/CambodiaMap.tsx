@@ -25,8 +25,20 @@ interface CambodiaMapProps {
     editMarkerLatLng?: [number, number] | null;
     onMapClick?: (lat: number, lng: number, autoSave?: boolean) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
-    customLocations?: Array<{ pcode: string, name?: string, lat: number, lng: number }>;
+    customLocations?: Array<{
+        pcode: string,
+        name?: string,
+        lat: number,
+        lng: number,
+        courier?: string | null,
+        province?: string | null,
+        district?: string | null,
+        commune?: string | null,
+        phone?: string | null,
+        contact_name?: string | null
+    }>;
     shippingRules?: ShippingRule[];
+    focusedPinLatLng?: [number, number] | null;
 }
 
 const CAMBODIA_CENTER: [number, number] = [104.9, 12.5];
@@ -42,7 +54,8 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     onMapClick,
     onAreaSelect,
     customLocations = [],
-    shippingRules = []
+    shippingRules = [],
+    focusedPinLatLng = null
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<maplibregl.Map | null>(null);
@@ -357,6 +370,17 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         }
     }, [editMarkerLatLng]);
 
+    // Handle Pan to Focused Pin
+    useEffect(() => {
+        if (!mapRef.current || !focusedPinLatLng) return;
+        mapRef.current.flyTo({
+            center: [focusedPinLatLng[1], focusedPinLatLng[0]], // [lng, lat]
+            zoom: 13,
+            duration: 1500,
+            essential: true
+        });
+    }, [focusedPinLatLng]);
+
     // Merge custom locations into centroids lookup
     useEffect(() => {
         if (customLocations && customLocations.length > 0) {
@@ -377,7 +401,9 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         customMarkersRef.current = [];
 
         customLocations.forEach(loc => {
-            if (selectedProvinceCode && !loc.pcode.startsWith(selectedProvinceCode)) {
+            // Pass the filter if there's no selected province, if it matches the province code, 
+            // or if it's a completely free-form custom pin (which doesn't have an admin pcode)
+            if (selectedProvinceCode && !loc.pcode.startsWith(selectedProvinceCode) && !loc.pcode.startsWith('CUSTOM_')) {
                 return;
             }
 
@@ -396,8 +422,13 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
 
             const popupContent = `
                 <div style="padding: 4px; font-family: 'Battambang', system-ui, sans-serif;">
-                    <div style="font-size: 13px; color: var(--color-text-secondary);">ទីតាំងបានកំណត់:</div>
-                    <h4 style="margin: 4px 0 0 0; font-size: 15px; color: var(--color-text-main); font-weight: 600;">${loc.name || loc.pcode}</h4>
+                    <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 2px;">ទីតាំងបានកំណត់:</div>
+                    <div style="font-size: 15px; color: var(--color-text-main); font-weight: 600; margin-bottom: 6px;">${loc.name || loc.pcode}</div>
+                    
+                    ${loc.courier ? `<div style="font-size: 13px; color: var(--color-text-secondary);"><strong style="color:var(--color-primary)">សេវាកម្ម:</strong> ${loc.courier}</div>` : ''}
+                    ${loc.province || loc.district || loc.commune ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:2px;"><strong>តំបន់:</strong> ${[loc.province, loc.district, loc.commune].filter(Boolean).join(' > ')}</div>` : ''}
+                    ${loc.contact_name ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:6px;"><strong>ឈ្មោះ:</strong> ${loc.contact_name}</div>` : ''}
+                    ${loc.phone ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:2px;"><strong>លេខទូរស័ព្ទ:</strong> ${loc.phone}</div>` : ''}
                 </div>
             `;
 
