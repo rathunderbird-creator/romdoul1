@@ -429,11 +429,38 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                     ${loc.province || loc.district || loc.commune ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:2px;"><strong>តំបន់:</strong> ${[loc.province, loc.district, loc.commune].filter(Boolean).join(' > ')}</div>` : ''}
                     ${loc.contact_name ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:6px;"><strong>ឈ្មោះ:</strong> ${loc.contact_name}</div>` : ''}
                     ${loc.phone ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:2px;"><strong>លេខទូរស័ព្ទ:</strong> ${loc.phone}</div>` : ''}
+                    <button class="copy-pin-btn" data-address="${encodeURIComponent([loc.name, loc.commune, loc.district, loc.province].filter(Boolean).join(', '))}" style="margin-top: 8px; width: 100%; padding: 6px; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; color: var(--color-text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        Copy Location
+                    </button>
                 </div>
             `;
 
             const popup = new maplibregl.Popup({ offset: [0, -28], closeButton: false })
                 .setHTML(popupContent);
+
+            popup.on('open', () => {
+                const copyBtn = popup.getElement()?.querySelector('.copy-pin-btn');
+                if (copyBtn) {
+                    copyBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const address = decodeURIComponent(copyBtn.getAttribute('data-address') || '');
+                        navigator.clipboard.writeText(address);
+                        
+                        const ogHtml = copyBtn.innerHTML;
+                        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+                        copyBtn.setAttribute('style', 'margin-top: 8px; width: 100%; padding: 6px; background: var(--color-success); border: 1px solid var(--color-success); border-radius: 6px; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;');
+                        
+                        setTimeout(() => {
+                            if (popup.isOpen()) {
+                                copyBtn.innerHTML = ogHtml;
+                                copyBtn.setAttribute('style', 'margin-top: 8px; width: 100%; padding: 6px; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; color: var(--color-text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;');
+                            }
+                        }, 2000);
+                    });
+                }
+            });
 
             const marker = new maplibregl.Marker({ element: el, offset: [0, -14] })
                 .setLngLat([loc.lng, loc.lat])

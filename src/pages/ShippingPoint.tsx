@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save } from 'lucide-react';
+import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
+import { useToast } from '../context/ToastContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
 
@@ -36,6 +37,7 @@ interface Province {
 
 const ShippingPoint: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { showToast } = useToast();
 
     // States
     const [data, setData] = useState<Province[]>([]);
@@ -923,20 +925,36 @@ const ShippingPoint: React.FC = () => {
                                                                             <MapPin size={14} color="var(--color-text-secondary)" />
                                                                             <span style={{ color: 'var(--color-text-main)' }}>{loc.name}</span>
                                                                         </div>
-                                                                        {loc.id && (
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                                             <button
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
-                                                                                    handleRemovePinById(loc.id, loc.name);
+                                                                                    const addressString = [loc.name, loc.commune, loc.district, loc.province].filter(Boolean).join(', ');
+                                                                                    navigator.clipboard.writeText(addressString);
+                                                                                    showToast('Location copied to clipboard', 'success');
                                                                                 }}
                                                                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
-                                                                                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-danger)'}
+                                                                                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
                                                                                 onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-                                                                                title="លុបទីតាំងនេះ"
+                                                                                title="ចម្លងទីតាំង (Copy Location)"
                                                                             >
-                                                                                <Trash2 size={16} />
+                                                                                <Copy size={16} />
                                                                             </button>
-                                                                        )}
+                                                                            {loc.id && (
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleRemovePinById(loc.id, loc.name);
+                                                                                    }}
+                                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
+                                                                                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-danger)'}
+                                                                                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+                                                                                    title="លុបទីតាំងនេះ"
+                                                                                >
+                                                                                    <Trash2 size={16} />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 );
                                                             })}

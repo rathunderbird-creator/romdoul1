@@ -145,6 +145,8 @@ const Inventory: React.FC = () => {
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [selectedReturnedOrderIds, setSelectedReturnedOrderIds] = useState<Set<string>>(new Set());
+    const [isRestocking, setIsRestocking] = useState(false);
 
     const toggleSelection = (id: string) => {
         const newSet = new Set(selectedIds);
@@ -158,6 +160,47 @@ const Inventory: React.FC = () => {
             setSelectedIds(new Set());
         } else {
             setSelectedIds(new Set(filteredAndSortedProducts.map(p => p.id)));
+        }
+    };
+
+    const toggleReturnedOrderSelection = (id: string) => {
+        const newSet = new Set(selectedReturnedOrderIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedReturnedOrderIds(newSet);
+    };
+
+    const toggleSelectAllReturnedOrders = () => {
+        if (selectedReturnedOrderIds.size === returnedOrders.length && returnedOrders.length > 0) {
+            setSelectedReturnedOrderIds(new Set());
+        } else {
+            setSelectedReturnedOrderIds(new Set(returnedOrders.map(o => o.id)));
+        }
+    };
+
+    const handleBulkRestock = async () => {
+        if (selectedReturnedOrderIds.size === 0) return;
+        if (!confirm(`Are you sure you want to restock ${selectedReturnedOrderIds.size} orders?`)) return;
+        
+        setIsRestocking(true);
+        try {
+            for (const orderId of selectedReturnedOrderIds) {
+                const order = returnedOrders.find(o => o.id === orderId);
+                if (!order) continue;
+                
+                await updateOrder(order.id, {
+                    paymentStatus: 'Cancel',
+                    shipping: { ...order.shipping, status: 'ReStock' } as any
+                });
+                await restockOrder(order.id);
+            }
+            showToast(`Successfully restocked ${selectedReturnedOrderIds.size} orders`, 'success');
+            setSelectedReturnedOrderIds(new Set());
+        } catch (error: any) {
+             console.error("Bulk restock failed:", error);
+             alert("Failed to restock some orders: " + error.message);
+        } finally {
+            setIsRestocking(false);
         }
     };
 
@@ -597,6 +640,16 @@ const Inventory: React.FC = () => {
                         <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', flex: 1 }}>
                             <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '14px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
                                 <AlertTriangle size={16} /> Returned Orders
+                                {selectedReturnedOrderIds.size > 0 && (
+                                    <button 
+                                        onClick={handleBulkRestock}
+                                        disabled={isRestocking}
+                                        style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: '11px', backgroundColor: '#DC2626', color: 'white', border: 'none', borderRadius: '4px', cursor: isRestocking ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', opacity: isRestocking ? 0.7 : 1 }}
+                                    >
+                                        <ArrowDown size={12} />
+                                        {isRestocking ? 'Restocking...' : `Restock Selected (${selectedReturnedOrderIds.size})`}
+                                    </button>
+                                )}
                             </h3>
                             {returnedOrders.length === 0 ? (
                                 <div style={{ padding: '32px', textAlign: 'center', color: '#059669', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
@@ -609,6 +662,14 @@ const Inventory: React.FC = () => {
                                 <table className="spreadsheet-table">
                                     <thead style={{ background: '#FEF2F2' }}>
                                         <tr>
+                                            <th style={{ width: '40px', textAlign: 'center' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={returnedOrders.length > 0 && selectedReturnedOrderIds.size === returnedOrders.length}
+                                                    onChange={toggleSelectAllReturnedOrders}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                            </th>
                                             <th>Order / Customer</th>
                                             <th>Items</th>
                                             <th style={{ textAlign: 'right', width: '50px' }}></th>
@@ -616,7 +677,15 @@ const Inventory: React.FC = () => {
                                     </thead>
                                     <tbody>
                                         {returnedOrders.map(order => (
-                                            <tr key={order.id} style={{ background: '#FEF2F2' }}>
+                                            <tr key={order.id} style={{ background: '#FEF2F2' }} className={selectedReturnedOrderIds.has(order.id) ? 'selected' : ''}>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={selectedReturnedOrderIds.has(order.id)}
+                                                        onChange={() => toggleReturnedOrderSelection(order.id)}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                </td>
                                                 <td style={{ whiteSpace: 'normal' }}>
                                                     <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
                                                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
