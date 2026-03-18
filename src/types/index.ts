@@ -170,6 +170,7 @@ export interface StoreContextType {
     importProducts: (products: any[]) => Promise<void>;
     importOrders: (orders: any[]) => Promise<void>;
     restockOrder: (orderId: string) => Promise<void>;
+    bulkRestockOrders: (orderIds: string[]) => Promise<void>;
     backupData: () => Promise<void>;
     restoreData: (jsonData: any) => Promise<void>;
 

@@ -730,8 +730,6 @@ const Orders: React.FC = () => {
 
             if (statusFilter.length > 0) {
                 query = query.in('shipping_status', statusFilter);
-            } else {
-                query = query.neq('shipping_status', 'ReStock');
             }
 
             const isSalesman = currentUser?.roleId === 'salesman';
@@ -772,8 +770,6 @@ const Orders: React.FC = () => {
                 // Mirror the sales filters onto the inner joined table
                 if (statusFilter.length > 0) {
                     itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
-                } else {
-                    itemQuery = itemQuery.neq('sales.shipping_status', 'ReStock');
                 }
                 if (effectiveSalesmanFilter !== 'All') {
                     itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
@@ -929,8 +925,14 @@ const Orders: React.FC = () => {
 
     const stats = useMemo(() => {
         const totalOrders = totalCount;
-        const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.total, 0);
-        const totalReceived = filteredOrders.reduce((sum, order) => sum + (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)), 0);
+        const totalRevenue = filteredOrders.reduce((sum, order) => {
+            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
+            return sum + (isCancelled ? 0 : order.total);
+        }, 0);
+        const totalReceived = filteredOrders.reduce((sum, order) => {
+            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
+            return sum + (isCancelled ? 0 : (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)));
+        }, 0);
         const totalOutstanding = totalRevenue - totalReceived;
         return { totalOrders, totalRevenue, totalReceived, totalOutstanding };
     }, [filteredOrders, totalCount]);
@@ -1438,10 +1440,10 @@ const Orders: React.FC = () => {
                                                 }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={statusFilter.length === 5}
+                                                        checked={statusFilter.length === 6}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setStatusFilter(['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned']);
+                                                                setStatusFilter(['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock']);
                                                             } else {
                                                                 setStatusFilter([]);
                                                             }
@@ -1450,7 +1452,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
                                                 </label>
-                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned'].map(status => (
+                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -2246,12 +2248,15 @@ const Orders: React.FC = () => {
                                                                         />
                                                                     </td>
                                                                 );
-                                                            case 'balance':
+                                                            case 'balance': {
+                                                                const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
+                                                                const balance = isCancelled ? 0 : (order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)));
                                                                 return (
-                                                                    <td key={colId} style={{ ...cellStyle, color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
-                                                                        ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
+                                                                    <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
+                                                                        ${balance.toFixed(2)}
                                                                     </td>
                                                                 );
+                                                            }
                                                             case 'status':
                                                                 return (
                                                                     <td key={colId} style={{

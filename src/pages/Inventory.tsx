@@ -59,7 +59,7 @@ const SortableProductRow = ({ id, children, isDraggable, className }: { id: stri
 };
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, restockOrder, updateOrder, currentUser, salesUpdatedAt, productOrder, updateProductOrder, refreshData } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, restockOrder, bulkRestockOrders, updateOrder, currentUser, salesUpdatedAt, productOrder, updateProductOrder, refreshData } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -184,16 +184,7 @@ const Inventory: React.FC = () => {
         
         setIsRestocking(true);
         try {
-            for (const orderId of selectedReturnedOrderIds) {
-                const order = returnedOrders.find(o => o.id === orderId);
-                if (!order) continue;
-                
-                await updateOrder(order.id, {
-                    paymentStatus: 'Cancel',
-                    shipping: { ...order.shipping, status: 'ReStock' } as any
-                });
-                await restockOrder(order.id);
-            }
+            await bulkRestockOrders(Array.from(selectedReturnedOrderIds));
             showToast(`Successfully restocked ${selectedReturnedOrderIds.size} orders`, 'success');
             setSelectedReturnedOrderIds(new Set());
         } catch (error: any) {

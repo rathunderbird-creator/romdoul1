@@ -1672,6 +1672,95 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    const bulkRestockOrders = async (orderIds: string[]): Promise<void> => {
+        setIsLoading(true);
+        try {
+            // 1. Fetch DB items for all these orders
+            const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('product_id, quantity, sale_id').in('sale_id', orderIds);
+            if (itemsErr) throw itemsErr;
+
+            // 2. Aggregate quantities by product
+            const restockItems = dbItems || [];
+            const productUpdates: Record<string, number> = {};
+            
+            for (const item of restockItems) {
+                if (!item.product_id) continue;
+                const qty = Number(item.quantity);
+                if (isNaN(qty) || qty <= 0) continue;
+                productUpdates[item.product_id] = (productUpdates[item.product_id] || 0) + qty;
+            }
+
+            // 3. Update product stock in DB and Local
+            const now = new Date().toISOString();
+            const restockRecords: any[] = [];
+            const localProductUpdates: Record<string, number> = {};
+
+            for (const [productId, addQty] of Object.entries(productUpdates)) {
+                // Fetch current stock from DB to avoid race conditions
+                const { data: originProduct } = await supabase.from('products').select('stock').eq('id', productId).single();
+                if (originProduct) {
+                    const newStock = Number(originProduct.stock) + addQty;
+                    await supabase.from('products').update({ stock: newStock }).eq('id', productId);
+                    localProductUpdates[productId] = newStock;
+                }
+
+                // Add to restock history
+                const restockId = crypto.randomUUID();
+                restockRecords.push({
+                    id: restockId,
+                    product_id: productId,
+                    quantity: addQty,
+                    cost: 0,
+                    date: now,
+                    added_by: currentUser?.name || 'System',
+                    note: `Bulk restocked from returned orders (${orderIds.length})`
+                });
+            }
+
+            if (restockRecords.length > 0) {
+                await supabase.from('restocks').insert(restockRecords);
+                setRestocks(prev => [...restockRecords.map(r => ({
+                    id: r.id,
+                    productId: r.product_id,
+                    quantity: r.quantity,
+                    cost: r.cost,
+                    date: r.date,
+                    addedBy: r.added_by,
+                    note: r.note
+                })), ...prev]);
+            }
+
+            setProducts(prev => prev.map(p => 
+                localProductUpdates[p.id] !== undefined 
+                ? { ...p, stock: localProductUpdates[p.id] } 
+                : p
+            ));
+            
+            // 4. Update sales records to ReStock and Cancelled
+            // DB Update
+            await supabase.from('sales').update({
+                shipping_status: 'ReStock',
+                payment_status: 'Cancel'
+            }).in('id', orderIds);
+
+            // Local State Update
+            setSales(prev => prev.map(sale => 
+                orderIds.includes(sale.id)
+                ? { ...sale, paymentStatus: 'Cancel', shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any } }
+                : sale
+            ));
+
+            // Trigger single refresh event for UI listeners
+            setProductsUpdatedAt(Date.now());
+            setSalesUpdatedAt(Date.now());
+        } catch (error) {
+            console.error('Error bulk restocking orders:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const backupData = async () => {
         const data = {
             timestamp: new Date().toISOString(),
@@ -1965,6 +2054,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             importProducts,
             importOrders,
             restockOrder,
+            bulkRestockOrders,
             backupData,
             restoreData,
             // Authentication
