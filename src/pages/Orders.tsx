@@ -882,7 +882,10 @@ const Orders: React.FC = () => {
         if (selectedIds.has(order.id)) return 'selected';
         if (duplicateOrderIds.has(order.id)) return 'duplicate-row';
 
-        // Priority 1: Payment Status = Cancel
+        // Priority 1: Shipping Status = ReStock
+        if (order.shipping?.status === 'ReStock') return 'restock-row';
+
+        // Priority 2: Payment Status = Cancel
         if (order.paymentStatus === 'Cancel') return 'returned-row';
 
         // Priority 2: Shipping Status
@@ -892,7 +895,6 @@ const Orders: React.FC = () => {
         if (shippingStatus === 'Shipped') return 'shipped-row';
         if (shippingStatus === 'Delivered') return 'delivered-row';
         if (shippingStatus === 'Returned') return 'returned-row';
-        if (shippingStatus === 'ReStock') return 'restock-row';
 
         // Secondary: Payment Status
         if (order.paymentStatus === 'Paid') return 'paid-settled-row';
@@ -904,7 +906,10 @@ const Orders: React.FC = () => {
         if (isSelected) return 'var(--color-primary-light)';
         if (duplicateOrderIds.has(order.id)) return '#6B21A8';
 
-        // Priority 1: Payment Status = Cancel
+        // Priority 1: Shipping Status = ReStock
+        if (order.shipping?.status === 'ReStock') return '#2596be';
+
+        // Priority 2: Payment Status = Cancel
         if (order.paymentStatus === 'Cancel') return '#FCA5A5'; // Red 300
 
         // Priority 2: Shipping Status
@@ -914,7 +919,6 @@ const Orders: React.FC = () => {
         if (shippingStatus === 'Shipped') return '#EFF6FF';
         if (shippingStatus === 'Delivered') return '#ECFDF5';
         if (shippingStatus === 'Returned') return '#FCA5A5';
-        if (shippingStatus === 'ReStock') return '#F5F3FF';
         if (shippingStatus === 'Cancelled') return '#FCA5A5';
         return 'white';
     };
@@ -1482,6 +1486,93 @@ const Orders: React.FC = () => {
 
 
 
+                                {/* Shipping Co Filter */}
+                                <div ref={shippingCoFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <button
+                                        onClick={() => { setIsShippingCoOpen(!isShippingCoOpen); setIsStatusFilterOpen(false); setIsPayStatusOpen(false); }}
+                                        className="search-input"
+                                        style={{
+                                            minWidth: '160px',
+                                            width: isMobile ? '100%' : 'auto',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            cursor: 'pointer',
+                                            paddingRight: '12px',
+                                            background: 'white',
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Truck size={16} color="var(--color-primary)" />
+                                            <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                                {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
+                                            </span>
+                                        </div>
+                                        <ChevronDown size={14} color="var(--color-text-secondary)" />
+                                    </button>
+                                    {isShippingCoOpen && (
+                                        <>
+
+                                            <div className="glass-panel" style={{
+                                                position: 'absolute', top: '100%', left: 0, marginTop: '4px',
+                                                padding: '8px', width: '220px', zIndex: 100,
+                                                display: 'flex', flexDirection: 'column', gap: '2px',
+                                                background: 'white',
+                                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                                            }}>
+                                                {shippingCompanies.length > 0 && (
+                                                    <label style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '10px',
+                                                        padding: '8px 12px',
+                                                        cursor: 'pointer',
+                                                        borderRadius: '6px',
+                                                        borderBottom: '1px solid var(--color-border)',
+                                                        marginBottom: '4px'
+                                                    }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={shippingCoFilter.length === shippingCompanies.length && shippingCompanies.length > 0}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setShippingCoFilter([...shippingCompanies]);
+                                                                else setShippingCoFilter([]);
+                                                            }}
+                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                    </label>
+                                                )}
+                                                {shippingCompanies.map(co => (
+                                                    <label key={co} style={{
+                                                        display: 'flex', alignItems: 'center', gap: '10px',
+                                                        padding: '8px 12px', cursor: 'pointer', borderRadius: '6px',
+                                                        transition: 'background 0.2s',
+                                                        backgroundColor: shippingCoFilter.includes(co) ? 'var(--color-bg)' : 'transparent'
+                                                    }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={shippingCoFilter.includes(co)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setShippingCoFilter([...shippingCoFilter, co]);
+                                                                else setShippingCoFilter(shippingCoFilter.filter(s => s !== co));
+                                                            }}
+                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '13px' }}>{co}</span>
+                                                    </label>
+                                                ))}
+                                                {shippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No shipping companies found.</div>}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+
+
                                 <div ref={payStatusFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                     <button
                                         onClick={() => setIsPayStatusOpen(!isPayStatusOpen)}
@@ -1573,91 +1664,6 @@ const Orders: React.FC = () => {
                                                         <span style={{ fontSize: '13px' }}>{status}</span>
                                                     </label>
                                                 ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-
-                                {/* Shipping Co Filter */}
-                                <div ref={shippingCoFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                    <button
-                                        onClick={() => { setIsShippingCoOpen(!isShippingCoOpen); setIsStatusFilterOpen(false); setIsPayStatusOpen(false); }}
-                                        className="search-input"
-                                        style={{
-                                            minWidth: '160px',
-                                            width: isMobile ? '100%' : 'auto',
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            cursor: 'pointer',
-                                            paddingRight: '12px',
-                                            background: 'white',
-                                            height: '40px',
-                                            borderRadius: '8px',
-                                            border: '1px solid var(--color-border)'
-                                        }}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <Truck size={16} color="var(--color-primary)" />
-                                            <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
-                                            </span>
-                                        </div>
-                                        <ChevronDown size={14} color="var(--color-text-secondary)" />
-                                    </button>
-                                    {isShippingCoOpen && (
-                                        <>
-
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute', top: '100%', left: 0, marginTop: '4px',
-                                                padding: '8px', width: '220px', zIndex: 100,
-                                                display: 'flex', flexDirection: 'column', gap: '2px',
-                                                background: 'white',
-                                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                                            }}>
-                                                {shippingCompanies.length > 0 && (
-                                                    <label style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '10px',
-                                                        padding: '8px 12px',
-                                                        cursor: 'pointer',
-                                                        borderRadius: '6px',
-                                                        borderBottom: '1px solid var(--color-border)',
-                                                        marginBottom: '4px'
-                                                    }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={shippingCoFilter.length === shippingCompanies.length && shippingCompanies.length > 0}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) setShippingCoFilter([...shippingCompanies]);
-                                                                else setShippingCoFilter([]);
-                                                            }}
-                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                                                        />
-                                                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
-                                                    </label>
-                                                )}
-                                                {shippingCompanies.map(co => (
-                                                    <label key={co} style={{
-                                                        display: 'flex', alignItems: 'center', gap: '10px',
-                                                        padding: '8px 12px', cursor: 'pointer', borderRadius: '6px',
-                                                        transition: 'background 0.2s',
-                                                        backgroundColor: shippingCoFilter.includes(co) ? 'var(--color-bg)' : 'transparent'
-                                                    }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={shippingCoFilter.includes(co)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) setShippingCoFilter([...shippingCoFilter, co]);
-                                                                else setShippingCoFilter(shippingCoFilter.filter(s => s !== co));
-                                                            }}
-                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                                                        />
-                                                        <span style={{ fontSize: '13px' }}>{co}</span>
-                                                    </label>
-                                                ))}
-                                                {shippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No shipping companies found.</div>}
                                             </div>
                                         </>
                                     )}

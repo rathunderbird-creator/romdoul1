@@ -215,7 +215,12 @@ button {
 
 /* Gray 50 */
 .spreadsheet-table tbody tr.restock-row {
-  background-color: #F5F3FF;
+  background-color: #2596be !important;
+  color: white !important;
+}
+
+.spreadsheet-table tbody tr.restock-row td {
+  color: white !important;
 }
 
 /* Purple 50 */
@@ -273,7 +278,8 @@ button {
 
 .spreadsheet-table tbody tr.restock-row td.sticky-col-first,
 .spreadsheet-table tbody tr.restock-row td.sticky-col-second {
-  background-color: #F5F3FF;
+  background-color: #2596be !important;
+  color: white !important;
 }
 
 /* Compact Mode Overrides */
