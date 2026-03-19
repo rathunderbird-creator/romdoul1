@@ -92,6 +92,7 @@ const Inventory: React.FC = () => {
 
     // Historical Orders State
     const [returnedOrders, setReturnedOrders] = useState<Sale[]>([]);
+    const [returnedSearchTerm, setReturnedSearchTerm] = useState('');
     const [restockedHistory, setRestockedHistory] = useState<Sale[]>([]);
 
     React.useEffect(() => {
@@ -170,11 +171,21 @@ const Inventory: React.FC = () => {
         setSelectedReturnedOrderIds(newSet);
     };
 
+    const filteredReturnedOrders = useMemo(() => {
+        if (!returnedSearchTerm.trim()) return returnedOrders;
+        const query = returnedSearchTerm.trim().toLowerCase();
+        return returnedOrders.filter(order => 
+            order.id.toLowerCase().includes(query) || 
+            (order.customer?.name || '').toLowerCase().includes(query) ||
+            order.items.some(item => item.name.toLowerCase().includes(query))
+        );
+    }, [returnedOrders, returnedSearchTerm]);
+
     const toggleSelectAllReturnedOrders = () => {
-        if (selectedReturnedOrderIds.size === returnedOrders.length && returnedOrders.length > 0) {
+        if (selectedReturnedOrderIds.size === filteredReturnedOrders.length && filteredReturnedOrders.length > 0) {
             setSelectedReturnedOrderIds(new Set());
         } else {
-            setSelectedReturnedOrderIds(new Set(returnedOrders.map(o => o.id)));
+            setSelectedReturnedOrderIds(new Set(filteredReturnedOrders.map(o => o.id)));
         }
     };
 
@@ -454,32 +465,30 @@ const Inventory: React.FC = () => {
                 <StatsCard title="Categories" value={stats.categoryCount} icon={Layers} color="var(--color-purple)" />
             </div>
 
-            {/* Filters */}
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
-                <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
-                    <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                    <input
-                        type="text"
-                        placeholder="Search products..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="search-input"
-                        style={{ width: '100%', paddingLeft: '40px' }}
-                    />
-                </div>
-                <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="search-input"
-                    style={{ width: '180px' }}
-                >
-                    {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-            </div>
+            {/* Filters have been moved inside the All Stock container */}
 
             {/* Content: List or Table */}
             {isMobile ? (
-                <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', paddingBottom: '80px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', maxHeight: 'calc(100vh - 240px)', paddingBottom: '80px' }}>
+                    <div style={{ padding: '8px 16px', display: 'flex', gap: '12px', background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, zIndex: 10 }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search products..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)' }}
+                            />
+                        </div>
+                        <select
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)' }}
+                        >
+                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </div>
                     {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
                         <MobileInventoryCard
                             key={product.id}
@@ -498,10 +507,31 @@ const Inventory: React.FC = () => {
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', height: 'calc(100vh - 200px)' }}>
                     {/* Main Stock Table */}
-                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10 }}>
-                            All Stock ({filteredAndSortedProducts.length})
-                        </h3>
+                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+                        <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-surface)' }}>
+                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                All Stock ({filteredAndSortedProducts.length})
+                            </h3>
+                            <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: '12px' }}>
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search products..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
+                                    />
+                                </div>
+                                <select
+                                    value={categoryFilter}
+                                    onChange={(e) => setCategoryFilter(e.target.value)}
+                                    style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
+                                >
+                                    {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                        </div>
                         <table className="spreadsheet-table">
                             <thead>
                                 <tr>
@@ -642,12 +672,28 @@ const Inventory: React.FC = () => {
                                     </button>
                                 )}
                             </h3>
-                            {returnedOrders.length === 0 ? (
+                            {returnedOrders.length > 0 && (
+                                <div style={{ padding: '8px 16px', background: '#FEF2F2', borderBottom: '1px solid #FCA5A5' }}>
+                                    <div style={{ position: 'relative' }}>
+                                        <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#DC2626' }} />
+                                        <input
+                                            type="text"
+                                            placeholder="Search by ID, Customer, Item..."
+                                            value={returnedSearchTerm}
+                                            onChange={(e) => setReturnedSearchTerm(e.target.value)}
+                                            style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid #FCA5A5', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'white' }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            {filteredReturnedOrders.length === 0 ? (
                                 <div style={{ padding: '32px', textAlign: 'center', color: '#059669', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <Boxes size={20} />
                                     </div>
-                                    <p style={{ fontSize: '13px', fontWeight: 500 }}>No returned orders pending restock.</p>
+                                    <p style={{ fontSize: '13px', fontWeight: 500 }}>
+                                        {returnedOrders.length === 0 ? 'No returned orders pending restock.' : 'No matching orders found.'}
+                                    </p>
                                 </div>
                             ) : (
                                 <table className="spreadsheet-table">
@@ -656,7 +702,7 @@ const Inventory: React.FC = () => {
                                             <th style={{ width: '40px', textAlign: 'center' }}>
                                                 <input 
                                                     type="checkbox" 
-                                                    checked={returnedOrders.length > 0 && selectedReturnedOrderIds.size === returnedOrders.length}
+                                                    checked={filteredReturnedOrders.length > 0 && selectedReturnedOrderIds.size === filteredReturnedOrders.length}
                                                     onChange={toggleSelectAllReturnedOrders}
                                                     style={{ cursor: 'pointer' }}
                                                 />
@@ -667,7 +713,7 @@ const Inventory: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {returnedOrders.map(order => (
+                                        {filteredReturnedOrders.map(order => (
                                             <tr key={order.id} style={{ background: '#FEF2F2' }} className={selectedReturnedOrderIds.has(order.id) ? 'selected' : ''}>
                                                 <td style={{ textAlign: 'center' }}>
                                                     <input 
