@@ -130,7 +130,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
-    const [printTwoCopies, setPrintTwoCopies] = React.useState(true);
+    const [printTwoCopies, setPrintTwoCopies] = React.useState(false);
 
     const handlePrint = () => {
         window.print();

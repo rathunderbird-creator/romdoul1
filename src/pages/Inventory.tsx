@@ -22,7 +22,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import StatsCard from '../components/StatsCard';
+// import StatsCard from '../components/StatsCard';
 import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product, Sale } from '../types';
 import { supabase } from '../lib/supabase';
@@ -218,6 +218,7 @@ const Inventory: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('All');
     const [sortConfig, setSortConfig] = useState<SortConfig>(null);
+    const [activeTab, setActiveTab] = useState<'inventory' | 'returns'>('inventory');
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -426,113 +427,153 @@ const Inventory: React.FC = () => {
     );
 
     return (
-        <div>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <button
-                        onClick={() => {
-                            refreshData();
-                            showToast('Inventory refreshed', 'success');
-                        }}
-                        className="secondary-button"
-                        style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+        <div style={{ paddingBottom: isMobile ? '80px' : '0' }}>
+            {/* Premium Stats Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
+                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6' }}><Package size={18} /></div>
+                    </div>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
+                </div>
+                
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(16, 185, 129, 0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Stock Items</span>
+                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981' }}><Boxes size={18} /></div>
+                    </div>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalAllStock.toLocaleString()}</div>
+                </div>
+
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
+                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444' }}><AlertTriangle size={18} /></div>
+                    </div>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: '#EF4444' }}>{stats.lowStock}</div>
+                </div>
+
+                {canViewFinancials && (
+                    <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(245, 158, 11, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(245, 158, 11, 0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Value</span>
+                            <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}><DollarSign size={18} /></div>
+                        </div>
+                        <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString()}</div>
+                    </div>
+                )}
+
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(139, 92, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(139, 92, 246, 0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categories</span>
+                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Layers size={18} /></div>
+                    </div>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.categoryCount}</div>
+                </div>
+            </div>
+
+            {/* Unified Command Bar */}
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: '16px', padding: '16px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px', marginBottom: '24px', position: 'sticky', top: '10px', zIndex: 40, boxShadow: '0 4px 20px rgba(0,0,0,0.03)', backdropFilter: 'blur(10px)' }}>
+                <div style={{ display: 'flex', gap: '12px', flex: 1, flexDirection: isMobile ? 'column' : 'row' }}>
+                    <div style={{ position: 'relative', flex: 1, maxWidth: isMobile ? '100%' : '300px' }}>
+                        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                        <input
+                            type="text"
+                            placeholder="Search inventory..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="search-input"
+                            style={{ width: '100%', paddingLeft: '36px', height: '40px', background: 'var(--color-bg)' }}
+                        />
+                    </div>
+                    <select
+                        value={categoryFilter}
+                        onChange={(e) => setCategoryFilter(e.target.value)}
+                        className="search-input"
+                        style={{ height: '40px', background: 'var(--color-bg)', minWidth: '150px' }}
                     >
+                        {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <button onClick={() => { refreshData(); showToast('Inventory refreshed', 'success'); }} className="secondary-button" style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-bg)' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
-                        Refresh
+                        {!isMobile && 'Refresh'}
                     </button>
                     {canManageInventory && (
-                        <button
-                            onClick={openAddModal}
-                            className="primary-button"
-                            style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                        >
-                            <Plus size={20} />
+                        <button onClick={openAddModal} className="primary-button hover-lift" style={{ height: '40px', padding: '0 20px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)' }}>
+                            <Plus size={18} />
                             Add Product
                         </button>
                     )}
                 </div>
             </div>
 
-            {/* Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '12px' }}>
-                <StatsCard title="Total Products" value={stats.totalProducts} icon={Package} color="var(--color-primary)" />
-                <StatsCard title="Products in Stock" value={stats.totalAllStock} icon={Boxes} color="#3B82F6" />
-                <StatsCard title="Low Stock" value={stats.lowStock} icon={AlertTriangle} color="var(--color-red)" />
-                {canViewFinancials && (
-                    <StatsCard title="Total Value" value={`$${stats.totalValue.toLocaleString()} `} icon={DollarSign} color="var(--color-green)" />
-                )}
-                <StatsCard title="Categories" value={stats.categoryCount} icon={Layers} color="var(--color-purple)" />
+            {/* Tabbed Navigation */}
+            <div style={{ display: 'flex', gap: '24px', borderBottom: '1px solid var(--color-border)', marginBottom: '24px' }}>
+                <button 
+                    onClick={() => setActiveTab('inventory')}
+                    style={{ background: 'none', border: 'none', borderBottom: activeTab === 'inventory' ? '2px solid var(--color-primary)' : '2px solid transparent', color: activeTab === 'inventory' ? 'var(--color-primary)' : 'var(--color-text-secondary)', padding: '0 8px 12px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                    <Package size={18} /> Main Inventory
+                </button>
+                <button 
+                    onClick={() => setActiveTab('returns')}
+                    style={{ background: 'none', border: 'none', borderBottom: activeTab === 'returns' ? '2px solid var(--color-primary)' : '2px solid transparent', color: activeTab === 'returns' ? 'var(--color-primary)' : 'var(--color-text-secondary)', padding: '0 8px 12px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                    <ArrowDown size={18} /> Returns & Restocks
+                </button>
             </div>
 
             {/* Filters have been moved inside the All Stock container */}
 
             {/* Content: List or Table */}
-            {isMobile ? (
-                <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', maxHeight: 'calc(100vh - 240px)', paddingBottom: '80px' }}>
-                    <div style={{ padding: '8px 16px', display: 'flex', gap: '12px', background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, zIndex: 10 }}>
-                        <div style={{ position: 'relative', flex: 1 }}>
-                            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                            <input
-                                type="text"
-                                placeholder="Search products..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)' }}
-                            />
-                        </div>
-                        <select
-                            value={categoryFilter}
-                            onChange={(e) => setCategoryFilter(e.target.value)}
-                            style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)' }}
-                        >
-                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </div>
-                    {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
-                        <MobileInventoryCard
-                            key={product.id}
-                            product={product}
-                            isSelected={selectedIds.has(product.id)}
-                            onToggleSelect={() => toggleSelection(product.id)}
-                            isExpanded={expandedProductIds.has(product.id)}
-                            onToggleExpand={() => toggleProductExpansion(product.id)}
-                            onEdit={openEditModal}
-                            onDelete={promptDelete}
-                        // Pass permissions to Mobile Card if needed, or handle inside component
-                        // For now assuming mobile card might show price/actions, need to check MobileInventoryCard later if requested
-                        />
-                    ))}
-                </div>
-            ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', height: 'calc(100vh - 200px)' }}>
-                    {/* Main Stock Table */}
-                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
-                        <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-surface)' }}>
-                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                                All Stock ({filteredAndSortedProducts.length})
-                            </h3>
-                            <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: '12px' }}>
-                                <div style={{ position: 'relative', flex: 1 }}>
-                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                                    <input
-                                        type="text"
-                                        placeholder="Search products..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                                    />
+            {activeTab === 'inventory' ? (
+                isMobile ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', maxHeight: 'calc(100vh - 240px)', paddingBottom: '80px' }}>
+                        {filteredAndSortedProducts.length === 0 ? (
+                            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', background: 'var(--color-surface)', borderRadius: '16px', border: '1px dashed var(--color-border)', margin: '16px' }}>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--color-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
+                                    <Package size={24} />
                                 </div>
-                                <select
-                                    value={categoryFilter}
-                                    onChange={(e) => setCategoryFilter(e.target.value)}
-                                    style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
-                                >
-                                    {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
+                                <p style={{ fontSize: '14px', fontWeight: 500 }}>No products found matching your search.</p>
                             </div>
+                        ) : (
+                            filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
+                                <MobileInventoryCard
+                                    key={product.id}
+                                    product={product}
+                                    isSelected={selectedIds.has(product.id)}
+                                    onToggleSelect={() => toggleSelection(product.id)}
+                                    isExpanded={expandedProductIds.has(product.id)}
+                                    onToggleExpand={() => toggleProductExpansion(product.id)}
+                                    onEdit={openEditModal}
+                                    onDelete={promptDelete}
+                                />
+                            ))
+                        )}
+                    </div>
+                ) : (
+                    <div className="glass-panel hover-lift" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 350px)', position: 'relative' }}>
+                        <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-surface)' }}>
+                            <h3 style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border)', margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Package size={18} style={{ color: 'var(--color-primary)' }}/> All Stock ({filteredAndSortedProducts.length})
+                            </h3>
                         </div>
-                        <table className="spreadsheet-table">
+                        {filteredAndSortedProducts.length === 0 ? (
+                            <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--color-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
+                                    <Search size={32} />
+                                </div>
+                                <div>
+                                    <h4 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '4px' }}>No products found</h4>
+                                    <p style={{ fontSize: '14px' }}>Try adjusting your search or category filters.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <table className="spreadsheet-table">
                             <thead>
                                 <tr>
                                     <th style={{ width: '40px', textAlign: 'center' }}>
@@ -653,13 +694,14 @@ const Inventory: React.FC = () => {
                                 </tr>
                             </tfoot>
                         </table>
+                        )}
                     </div>
-
-                    {/* Right Column: Returned & Restocked */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', overflow: 'hidden' }}>
-                        {/* ReStock Table (Returned Orders) */}
-                        <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', flex: 1 }}>
-                            <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '14px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
+                )
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', height: isMobile ? 'auto' : 'calc(100vh - 350px)' }}>
+                    {/* ReStock Table (Returned Orders) */}
+                    <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', minHeight: isMobile ? '400px' : 'auto' }}>
+                        <h3 style={{ padding: '16px 20px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '15px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
                                 <AlertTriangle size={16} /> Returned Orders
                                 {selectedReturnedOrderIds.size > 0 && (
                                     <button 
@@ -815,9 +857,7 @@ const Inventory: React.FC = () => {
                             )}
                         </div>
                     </div>
-                </div>
-            )
-            }
+            )}
 
             {/* Mobile Summary Footer */}
             {

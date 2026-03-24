@@ -1,13 +1,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal } from '../components';
+import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 import { generateOrderCopyText } from '../utils/orderUtils';
@@ -47,6 +48,27 @@ const ShippingModalComponent: React.FC<{
     const [shippingRemark, setShippingRemark] = useState<string>('');
     const [shippingAddress, setShippingAddress] = useState<string>('');
     const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
+    const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
+
+    const handleShippingPointSelect = (data: any) => {
+        const parts = [data.addressDetail || data.customName, data.commune, data.district, data.province].filter(Boolean);
+        setShippingAddress(parts.join(', '));
+
+        if (data.courier) {
+            setSelectedCompany(data.courier);
+        }
+        
+        let newRemark = shippingRemark;
+        if (data.phone && !newRemark.includes(data.phone)) {
+            newRemark = newRemark ? `${newRemark} | Phone: ${data.phone}` : `Phone: ${data.phone}`;
+        }
+        if (data.contactName && !newRemark.includes(data.contactName)) {
+            newRemark = newRemark ? `${newRemark} | Name: ${data.contactName}` : `Name: ${data.contactName}`;
+        }
+        setShippingRemark(newRemark);
+
+        setIsShippingPointSelectorOpen(false);
+    };
 
     useEffect(() => {
         if (isOpen && order) {
@@ -60,6 +82,7 @@ const ShippingModalComponent: React.FC<{
     if (!order) return null;
 
     return (
+        <>
         <Modal isOpen={isOpen} onClose={onClose} title="Select Shipping Company">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
@@ -97,7 +120,15 @@ const ShippingModalComponent: React.FC<{
                     />
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Address</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>Address</label>
+                        <button 
+                            onClick={() => setIsShippingPointSelectorOpen(true)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)' }}
+                        >
+                            <MapPin size={12} /> ជ្រើសរើសទីតាំង
+                        </button>
+                    </div>
                     <input
                         type="text"
                         placeholder="Shipping address..."
@@ -178,6 +209,13 @@ const ShippingModalComponent: React.FC<{
                 </div>
             </div>
         </Modal>
+        <ShippingPointSelector 
+            isOpen={isShippingPointSelectorOpen}
+            onClose={() => setIsShippingPointSelectorOpen(false)}
+            onSelect={handleShippingPointSelect}
+            shippingCompanies={shippingCompanies}
+        />
+        </>
     );
 };
 

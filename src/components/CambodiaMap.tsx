@@ -24,6 +24,7 @@ interface CambodiaMapProps {
     isEditingRule?: boolean;
     editMarkerLatLng?: [number, number] | null;
     onMapClick?: (lat: number, lng: number, autoSave?: boolean) => void;
+    onMarkerClick?: (loc: any) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
     customLocations?: Array<{
         pcode: string,
@@ -52,6 +53,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     isEditingRule = false,
     editMarkerLatLng = null,
     onMapClick,
+    onMarkerClick,
     onAreaSelect,
     customLocations = [],
     shippingRules = [],
@@ -64,6 +66,12 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     const centroidsRef = useRef<Record<string, [number, number]>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Use a ref to store the latest onMarkerClick callback without triggering full map marker rebuilds
+    const onMarkerClickRef = useRef(onMarkerClick);
+    useEffect(() => {
+        onMarkerClickRef.current = onMarkerClick;
+    }, [onMarkerClick]);
 
     // Helper to get geometry bounds for zooming
     const getGeometryBounds = useCallback((geometry: maplibregl.MapGeoJSONFeature['geometry']): maplibregl.LngLatBounds | null => {
@@ -438,6 +446,11 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
 
             const popup = new maplibregl.Popup({ offset: [0, -28], closeButton: false })
                 .setHTML(popupContent);
+
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (onMarkerClickRef.current) onMarkerClickRef.current(loc);
+            });
 
             popup.on('open', () => {
                 const copyBtn = popup.getElement()?.querySelector('.copy-pin-btn');

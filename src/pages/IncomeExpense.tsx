@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, RefreshCw, Wallet } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -42,6 +42,7 @@ const IncomeExpense: React.FC = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
     const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>('All');
+    const [filterCategory, setFilterCategory] = useState<string>('All');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState(() => {
         const saved = localStorage.getItem('incomeExpenseDateRange');
@@ -150,6 +151,7 @@ const IncomeExpense: React.FC = () => {
     const filteredTransactions = useMemo(() => {
         return localTransactions.filter(t => {
             const matchesType = filterType === 'All' || t.type === filterType;
+            const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
             const matchesSearch = (t.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                 (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
@@ -172,7 +174,7 @@ const IncomeExpense: React.FC = () => {
                 matchesDate = itemDate <= endDate;
             }
 
-            return matchesType && matchesSearch && matchesDate;
+            return matchesType && matchesCategory && matchesSearch && matchesDate;
         }).sort((a, b) => {
             const dateA = parseDate(a.date);
             const dateB = parseDate(b.date);
@@ -193,7 +195,7 @@ const IncomeExpense: React.FC = () => {
             // If same type and day, newest time first
             return dateB.getTime() - dateA.getTime();
         });
-    }, [localTransactions, filterType, searchTerm, dateRange]);
+    }, [localTransactions, filterType, filterCategory, searchTerm, dateRange]);
 
     // Stats
     const stats = useMemo(() => {
@@ -321,80 +323,18 @@ const IncomeExpense: React.FC = () => {
     }
 
     return (
-        <div style={{ paddingBottom: '40px' }}>
-            {/* Filters (matching Dashboard layout) */}
-            <div className="glass-panel" style={{
-                marginBottom: '20px',
-                padding: '16px',
-                display: 'flex',
-                justifyContent: isMobile ? 'center' : 'flex-end',
-                alignItems: 'center',
-                position: 'relative',
-                zIndex: 50,
-                gap: '12px',
-                flexWrap: isMobile ? 'wrap' : 'nowrap'
-            }}>
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: isMobile ? '100%' : 'auto',
-                    flex: isMobile ? '1 1 100%' : 'none'
-                }}>
-                    <div style={{ flex: 1 }}>
-                        <DateRangePicker
-                            value={dateRange}
-                            onChange={setDateRange}
-                        />
-                    </div>
-                </div>
-                <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'center' : 'flex-end' }}>
-                    <button onClick={handleOpenAddModal} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? 1 : 'none', justifyContent: 'center' }}>
-                        <Plus size={20} />
-                        Add Transaction
-                    </button>
-                    <button
-                        disabled={isLoadingTransactions}
-                        onClick={() => {
-                            const btn = document.getElementById('ie-refresh-btn');
-                            if (btn) btn.style.animation = 'spin 1s linear infinite';
-                            Promise.all([
-                                refreshData(true),
-                                fetchTransactions()
-                            ]).finally(() => {
-                                if (btn) btn.style.animation = 'none';
-                            });
-                        }}
-                        className="secondary-button"
-                        style={{
-                            padding: '10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '42px',
-                            aspectRatio: '1/1'
-                        }}
-                        title="Refresh Transactions"
-                    >
-                        <RefreshCw id="ie-refresh-btn" size={20} />
-                    </button>
-                    <style>{`
-                        @keyframes spin { 
-                            100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
-                        }
-                    `}</style>
-                </div>
-            </div>
-
+        <div style={{ paddingBottom: '40px', maxWidth: '1400px', margin: '0 auto' }}>
+            {/* Premium Stats Grid */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
-                gap: '16px',
-                marginBottom: '24px'
+                gap: isMobile ? '16px' : '24px',
+                marginBottom: '32px',
+                marginTop: '12px'
             }}>
-                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%)', zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px', border: '1px solid rgba(16, 185, 129, 0.25)', boxShadow: '0 10px 30px -10px rgba(16, 185, 129, 0.15)', background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, transparent 100%)', zIndex: 0 }} />
+                    <div style={{ position: 'relative', zIndex: 1, padding: isMobile ? '8px' : '12px' }}>
                         <StatsCard
                             title="Total Income"
                             value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -404,9 +344,9 @@ const IncomeExpense: React.FC = () => {
                     </div>
                 </div>
 
-                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%)', zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px', border: '1px solid rgba(239, 68, 68, 0.25)', boxShadow: '0 10px 30px -10px rgba(239, 68, 68, 0.15)', background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, transparent 100%)', zIndex: 0 }} />
+                    <div style={{ position: 'relative', zIndex: 1, padding: isMobile ? '8px' : '12px' }}>
                         <StatsCard
                             title="Total Expense"
                             value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -416,9 +356,9 @@ const IncomeExpense: React.FC = () => {
                     </div>
                 </div>
 
-                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `linear-gradient(135deg, ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)'} 0%, transparent 100%)`, zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px', border: `1px solid ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`, boxShadow: `0 10px 30px -10px ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'}`, background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `linear-gradient(135deg, ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'} 0%, transparent 100%)`, zIndex: 0 }} />
+                    <div style={{ position: 'relative', zIndex: 1, padding: isMobile ? '8px' : '12px' }}>
                         <StatsCard
                             title="Net Balance"
                             value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -429,26 +369,68 @@ const IncomeExpense: React.FC = () => {
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className="glass-panel" style={{ padding: '16px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
-                <div style={{ display: 'flex', gap: '4px', flex: isMobile ? '1 1 100%' : 'none', background: 'var(--color-background)', padding: '4px', borderRadius: '10px' }}>
-                    <button
-                        onClick={() => setFilterType('All')}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 400, boxShadow: filterType === 'All' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                    >All</button>
-                    <button
-                        onClick={() => setFilterType('Income')}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-green)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 400, boxShadow: filterType === 'Income' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                    >Income</button>
-                    <button
-                        onClick={() => setFilterType('Expense')}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 400, boxShadow: filterType === 'Expense' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                    >Expense</button>
-                </div>
+            {/* Unified Command Bar */}
+            <div className="glass-panel" style={{ 
+                padding: isMobile ? '16px' : '20px', 
+                marginBottom: '24px', 
+                display: 'flex', 
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: '16px', 
+                alignItems: isMobile ? 'stretch' : 'center',
+                justifyContent: 'space-between',
+                backgroundColor: 'var(--color-surface)', 
+                border: '1px solid var(--color-border)', 
+                borderRadius: '16px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
+            }}>
+                {/* Left Side: Type Filters & Search */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', flex: 1 }}>
+                    <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                        <button
+                            onClick={() => setFilterType('All')}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 500, boxShadow: filterType === 'All' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                        >All</button>
+                        <button
+                            onClick={() => setFilterType('Income')}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-green)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                        >Income</button>
+                        <button
+                            onClick={() => setFilterType('Expense')}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 500, boxShadow: filterType === 'Expense' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                        >Expense</button>
+                    </div>
 
-                <div style={{ display: 'flex', gap: '8px', flex: '1 1 200px' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
+                        <Tag size={16} style={{ position: 'absolute', left: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '12px 36px 12px 40px',
+                                borderRadius: '12px',
+                                border: '1px solid var(--color-border)',
+                                background: 'var(--color-background)',
+                                color: 'var(--color-text-main)',
+                                fontSize: '14px',
+                                appearance: 'none',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                transition: 'all 0.2s'
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
+                        >
+                            <option value="All">All Categories</option>
+                            {uniqueCategories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    </div>
+
+                    <div style={{ position: 'relative', flex: '1 1 200px' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                         <input
                             type="text"
                             placeholder="Search category or description..."
@@ -456,42 +438,79 @@ const IncomeExpense: React.FC = () => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{
                                 width: '100%',
-                                padding: '10px 12px 10px 40px',
-                                borderRadius: '8px',
+                                padding: '12px 16px 12px 44px',
+                                borderRadius: '12px',
                                 border: '1px solid var(--color-border)',
                                 background: 'var(--color-background)',
                                 color: 'var(--color-text-main)',
-                                fontSize: '14px'
+                                fontSize: '14px',
+                                transition: 'all 0.2s',
+                                outline: 'none'
                             }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         />
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', flex: isMobile ? '1 1 100%' : 'none', alignItems: 'center' }}>
-                    {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All') && (
+                {/* Right Side: Actions (Date, Clear, Refresh, Add) */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
+                    <div style={{ flex: isMobile ? '1 1 100%' : 'none' }}>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
+                    
+                    {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All' || filterCategory !== 'All') && (
                         <button
                             onClick={() => {
                                 setDateRange({ start: '', end: '' });
                                 setSearchTerm('');
                                 setFilterType('All');
+                                setFilterCategory('All');
                             }}
                             className="secondary-button"
-                            style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '42px' }}
+                            style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '42px', borderRadius: '10px' }}
                             title="Clear Filters"
                         >
                             <FilterX size={16} />
                             {!isMobile && 'Clear'}
                         </button>
                     )}
+
+                    <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                        <button
+                            disabled={isLoadingTransactions}
+                            onClick={() => {
+                                const btn = document.getElementById('ie-refresh-btn');
+                                if (btn) btn.style.animation = 'spin 1s linear infinite';
+                                Promise.all([refreshData(true), fetchTransactions()]).finally(() => {
+                                    if (btn) btn.style.animation = 'none';
+                                });
+                            }}
+                            className="secondary-button"
+                            style={{ padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '44px', width: '44px', borderRadius: '10px', flexShrink: 0 }}
+                            title="Refresh Transactions"
+                        >
+                            <RefreshCw id="ie-refresh-btn" size={20} />
+                        </button>
+
+                        <button onClick={handleOpenAddModal} className="primary-button hover-lift" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', height: '44px', borderRadius: '10px', fontWeight: 600, boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)' }}>
+                            <Plus size={20} />
+                            Add Transaction
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* Transactions List / Table */}
             {isMobile ? (
-                <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                     {filteredTransactions.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                            No transactions found.
+                        <div style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                                <Wallet size={32} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
+                            </div>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '4px' }}>No transactions found</h3>
+                            <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>Try adjusting your filters or add a new record.</p>
                         </div>
                     ) : (
                         filteredTransactions.map(t => {
@@ -558,30 +577,36 @@ const IncomeExpense: React.FC = () => {
                     )}
                 </div>
             ) : (
-                <div className="glass-panel" style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
+                <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                         <thead>
-                            <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-background)' }}>
-                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Date</th>
-                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Type</th>
-                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Category</th>
-                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px' }}>Description</th>
-                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', textAlign: 'right' }}>Amount</th>
-                                <th style={{ padding: '16px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', textAlign: 'center' }}>Actions</th>
+                            <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-surface)' }}>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        No transactions found.
+                                    <td colSpan={6} style={{ padding: '80px 20px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                            <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                                                <Wallet size={36} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
+                                            </div>
+                                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No transactions found</h3>
+                                            <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>Try adjusting your filters or add a new record to see it here.</p>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
                                 filteredTransactions.map(t => (
-                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }} className="table-row-hover">
-                                        <td style={{ padding: '16px', fontSize: '14px' }}>
-                                            {parseDate(t.date).toLocaleDateString()}
+                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s' }} className="table-row-hover">
+                                        <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-main)' }}>
+                                            {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                         </td>
                                         <td style={{ padding: '16px' }}>
                                             <span style={{

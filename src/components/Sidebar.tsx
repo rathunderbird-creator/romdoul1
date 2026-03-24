@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet, Phone, MapPin } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet, Phone, MapPin, PieChart } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { NavLink } from 'react-router-dom';
 
@@ -33,6 +33,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('manage_income_expense')) {
         navItems.push({ icon: Wallet, label: 'Income & Expense', path: '/income-expense' });
+    }
+
+    if (hasPermission('view_reports')) {
+        navItems.push({ icon: PieChart, label: 'Reports Center', path: '/reports' });
     }
 
     if (hasPermission('view_dashboard')) {

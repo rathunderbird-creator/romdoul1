@@ -26,6 +26,16 @@ interface ConfigState {
     currency?: string;
     logo?: string;
 }
+const generateUUID = () => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+        return window.crypto.randomUUID();
+    }
+    // Fallback using Math.random for insecure environments (like local HTTP)
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
@@ -681,7 +691,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             const newTransaction = {
                 ...transaction,
-                id: crypto.randomUUID()
+                id: generateUUID()
             };
             const { data, error } = await supabase.from('transactions').insert([newTransaction]).select().single();
             if (error) throw error;
@@ -749,7 +759,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // If paying instantly (not COD), record the income transaction
         if (newSale.paymentStatus === 'Paid') {
-            const transactionId = crypto.randomUUID();
+            const transactionId = generateUUID();
             const newTransaction = {
                 id: transactionId,
                 date: new Date().toISOString(),
@@ -805,7 +815,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // 2. Insert Items
         const itemsPayload = newSale.items.map(item => ({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             sale_id: newSale.id,
             product_id: item.id,
             name: item.name,
@@ -918,7 +928,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const addStock = async (productId: string, quantity: number, cost?: number, note?: string) => {
         setIsLoading(true);
         try {
-            const id = crypto.randomUUID();
+            const id = generateUUID();
             const date = new Date().toISOString();
 
             // 1. Insert restock record
@@ -974,7 +984,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // If creating a new order as already paid, record the income transaction
         if (newSale.paymentStatus === 'Paid') {
-            const transactionId = crypto.randomUUID();
+            const transactionId = generateUUID();
             const newTransaction = {
                 id: transactionId,
                 date: new Date().toISOString(),
@@ -1032,7 +1042,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // Items
         const itemsPayload = newSale.items.map(item => ({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             sale_id: newSale.id,
             product_id: item.id,
             name: item.name,
@@ -1152,7 +1162,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // Sync Income/Expense: If changed to 'Paid' (and wasn't before)
         if (updates.paymentStatus === 'Paid' && existingOrder && existingOrder.paymentStatus !== 'Paid') {
-            const transactionId = crypto.randomUUID();
+            const transactionId = generateUUID();
             const amountToRecord = updates.amountReceived !== undefined
                 ? updates.amountReceived
                 : (existingOrder.amountReceived || existingOrder.total);
@@ -1237,7 +1247,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                 // B. Insert new items
                 const itemsPayload = updates.items.map(item => ({
-                    id: crypto.randomUUID(),
+                    id: generateUUID(),
                     sale_id: id,
                     product_id: item.id,
                     name: item.name,
@@ -1632,7 +1642,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
 
                 // Prepare restock record
-                const restockId = crypto.randomUUID();
+                const restockId = generateUUID();
                 restockRecords.push({
                     id: restockId,
                     product_id: item.id,
@@ -1705,7 +1715,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
 
                 // Add to restock history
-                const restockId = crypto.randomUUID();
+                const restockId = generateUUID();
                 restockRecords.push({
                     id: restockId,
                     product_id: productId,

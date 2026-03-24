@@ -17,6 +17,13 @@ const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const MobileOperators = lazy(() => import('./pages/MobileOperators'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
 
+const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
+const SalesSummary = lazy(() => import('./pages/reports/SalesSummary'));
+const InventoryAnalytics = lazy(() => import('./pages/reports/InventoryAnalytics'));
+const FinancialReport = lazy(() => import('./pages/reports/FinancialReport'));
+const StaffPerformance = lazy(() => import('./pages/reports/StaffPerformance'));
+const TopProducts = lazy(() => import('./pages/reports/TopProducts'));
+
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -59,6 +66,15 @@ const ProtectedApp = () => {
 
           <Route path="/mobile-operators" element={<ProtectedRoute requiredPermission="view_dashboard"><MobileOperators /></ProtectedRoute>} />
           <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
+
+          <Route path="/reports" element={<ProtectedRoute requiredPermission="view_reports"><ReportsLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="sales" replace />} />
+            <Route path="sales" element={<SalesSummary />} />
+            <Route path="products" element={<TopProducts />} />
+            <Route path="inventory" element={<InventoryAnalytics />} />
+            <Route path="financials" element={<FinancialReport />} />
+            <Route path="staff" element={<StaffPerformance />} />
+          </Route>
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><Settings /></ProtectedRoute>} />

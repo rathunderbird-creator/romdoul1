@@ -1,11 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, X, Plus, Calendar } from 'lucide-react';
+import { Settings, X, Plus, Calendar, MapPin } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import ConfigModal from './ConfigModal';
 import type { Sale, CartItem } from '../types';
 import LazyAvatar from './LazyAvatar';
+import ShippingPointSelector from './ShippingPointSelector';
+import cambodiaData from '../data/cambodia.json';
+
+interface LocationInfo {
+    code: string;
+    khmer: string;
+    latin: string;
+}
+interface Commune extends LocationInfo {
+    villages?: LocationInfo[];
+}
+interface District extends LocationInfo {
+    communes?: Commune[];
+}
+interface Province extends LocationInfo {
+    districts?: District[];
+}
+const locationData = cambodiaData as Province[];
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -14,6 +32,34 @@ interface CheckoutFormProps {
     onSuccess: () => void;
     onUpdateCart: (items: CartItem[]) => void;
 }
+
+export const PROVINCE_TRANSLATIONS: Record<string, string> = {
+    "ភ្នំពេញ": "Phnom Penh",
+    "បន្ទាយមានជ័យ": "Banteay Meanchey",
+    "បាត់ដំបង": "Battambang",
+    "កំពង់ចាម": "Kampong Cham",
+    "កំពង់ឆ្នាំង": "Kampong Chhnang",
+    "កំពង់ស្ពឺ": "Kampong Speu",
+    "កំពង់ធំ": "Kampong Thom",
+    "កំពត": "Kampot",
+    "កណ្តាល": "Kandal",
+    "កែប": "Kep",
+    "កោះកុង": "Koh Kong",
+    "ក្រចេះ": "Kratie",
+    "មណ្ឌលគិរី": "Mondulkiri",
+    "ឧត្តរមានជ័យ": "Oddar Meanchey",
+    "ប៉ៃលិន": "Pailin",
+    "ព្រះសីហនុ": "Preah Sihanouk",
+    "ព្រះវិហារ": "Preah Vihear",
+    "ព្រៃវែង": "Prey Veng",
+    "ពោធិ៍សាត់": "Pursat",
+    "រតនគិរី": "Ratanakiri",
+    "សៀមរាប": "Siem Reap",
+    "ស្ទឹងត្រែង": "Stung Treng",
+    "ស្វាយរៀង": "Svay Rieng",
+    "តាកែវ": "Takeo",
+    "ត្បូងឃ្មុំ": "Tboung Khmum"
+};
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
     const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users } = useStore();
@@ -56,6 +102,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         salesman: string;
         remark: string;
         city: string;
+        district: string;
+        commune: string;
+        village: string;
         address: string;
         amountReceived: number | string;
         settleDate: string;
@@ -67,40 +116,113 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         paymentStatus: 'Unpaid' | 'Paid' | 'Cancel';
         date: string;
     } = {
-        customerName: '',
-        customerPhone: '',
-        pageName: '',
-        shippingCompany: '',
-        staffName: '',
-        customerCare: defaultCustomerCare,
-        salesman: defaultSalesman, // Use calculated default
-        remark: '',
-        city: '',
-        address: '',
-        amountReceived: 0,
-        settleDate: '',
-        paymentMethod: '' as any,
-        paymentAfterDelivery: true,
-        discount: 0,
-        enableDiscount: false,
-        shippingStatus: 'Ordered',
-        paymentStatus: 'Unpaid',
-        date: ''
+        customerName: orderToEdit?.customer?.name || '',
+        customerPhone: orderToEdit?.customer?.phone || '',
+        pageName: orderToEdit?.customer?.page || '',
+        shippingCompany: orderToEdit?.shipping?.company || '',
+        staffName: orderToEdit?.shipping?.staffName || '',
+        customerCare: orderToEdit?.customerCare || defaultCustomerCare,
+        salesman: orderToEdit?.salesman || defaultSalesman,
+        remark: orderToEdit?.remark || '',
+        city: orderToEdit?.customer?.city || '',
+        district: orderToEdit?.customer?.district || '',
+        commune: orderToEdit?.customer?.commune || '',
+        village: orderToEdit?.customer?.village || '',
+        address: orderToEdit?.customer?.address || '',
+        amountReceived: orderToEdit?.amountReceived || '',
+        settleDate: orderToEdit?.settleDate || '',
+        paymentMethod: orderToEdit?.paymentMethod || 'Cash',
+        paymentAfterDelivery: orderToEdit?.paymentStatus === 'Unpaid',
+        discount: orderToEdit?.discount || '',
+        enableDiscount: (orderToEdit?.discount || 0) > 0,
+        shippingStatus: orderToEdit?.shipping?.status || 'Ordered',
+        paymentStatus: orderToEdit?.paymentStatus || 'Unpaid',
+        date: orderToEdit?.date || new Date().toISOString()
     };
 
     const [formData, setFormData] = useState(initialFormState);
     const [productSelection, setProductSelection] = useState({ id: '', quantity: 1 });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
+
+    const cleanCityPreview = formData.city ? formData.city.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim() : '';
+    const addressPreviewText = [formData.address, formData.commune, formData.district, cleanCityPreview].filter(Boolean).join(', ');
+
+    // Derived Location Hierarchy
+    const availableDistricts = React.useMemo(() => {
+        if (!formData.city) return [];
+        for (const p of locationData) {
+            if (formData.city.includes(p.khmer)) {
+                return p.districts || [];
+            }
+        }
+        return [];
+    }, [formData.city]);
+
+    const availableCommunes = React.useMemo(() => {
+        if (!formData.district || availableDistricts.length === 0) return [];
+        const dFound = availableDistricts.find(d => d.khmer === formData.district);
+        return dFound?.communes || [];
+    }, [formData.district, availableDistricts]);
+
+    const handleShippingPointSelect = (data: {
+        province: string;
+        provinceLatin?: string;
+        district?: string;
+        commune?: string;
+        village?: string;
+        addressDetail: string;
+        customName: string;
+        courier: string;
+        phone: string;
+        contactName: string;
+    }) => {
+        const translatedCity = (PROVINCE_TRANSLATIONS[data.province] || data.provinceLatin || data.province).trim();
+        const cleanProv = (data.province || '').trim();
+
+        let matchedCity = '';
+        if (translatedCity && cities.includes(translatedCity)) {
+            matchedCity = translatedCity;
+        } else if (cleanProv && cities.includes(cleanProv)) {
+            matchedCity = cleanProv;
+        } else if (translatedCity && cities.some(c => c.toLowerCase() === translatedCity.toLowerCase())) {
+            matchedCity = cities.find(c => c.toLowerCase() === translatedCity.toLowerCase()) || '';
+        } else if (cleanProv && cities.some(c => c.includes(cleanProv))) {
+            // Highly robust match for 'រាជធានីភ្នំពេញ' including 'ភ្នំពេញ'
+            matchedCity = cities.find(c => c.includes(cleanProv)) || '';
+        } else if (translatedCity && cities.some(c => c.toLowerCase().includes(translatedCity.toLowerCase()) || translatedCity.toLowerCase().includes(c.toLowerCase()))) {
+            matchedCity = cities.find(c => c.toLowerCase().includes(translatedCity.toLowerCase()) || translatedCity.toLowerCase().includes(c.toLowerCase())) || '';
+        }
+
+        setFormData(prev => ({
+            ...prev,
+            city: matchedCity || data.province || prev.city,
+            district: data.district || '',
+            commune: data.commune || '',
+            village: data.village || '',
+            address: data.addressDetail || '',
+            shippingCompany: data.courier || prev.shippingCompany,
+            customerPhone: data.phone || prev.customerPhone,
+            customerName: data.contactName || prev.customerName
+        }));
+    };
 
     useEffect(() => {
         if (orderToEdit) {
             const city = orderToEdit.customer?.city || '';
+            const district = orderToEdit.customer?.district || '';
+            const commune = orderToEdit.customer?.commune || '';
             let addressDetails = orderToEdit.customer?.address || '';
 
-            // Try to split address details if it starts with city
-            if (city && addressDetails.startsWith(city)) {
-                addressDetails = addressDetails.substring(city.length).replace(/^,\s*/, '');
-            }
+            // Clean up the address detail string by removing the structured components
+            const partsToRemove = [city, district, commune].filter(Boolean);
+            partsToRemove.forEach(part => {
+                if (addressDetails.includes(part)) {
+                    addressDetails = addressDetails.replace(part, '');
+                }
+            });
+            // Clean up any double commas and trimming
+            addressDetails = addressDetails.split(',').map(s => s.trim()).filter(Boolean).join(', ');
 
             const isCOD = orderToEdit.paymentMethod === 'COD';
 
@@ -114,6 +236,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 salesman: orderToEdit.salesman || '',
                 remark: orderToEdit.remark || '',
                 city: city, // uses updated local var city
+                district: orderToEdit.customer?.district || '',
+                commune: orderToEdit.customer?.commune || '',
+                village: orderToEdit.customer?.village || '',
                 address: addressDetails,
                 amountReceived: orderToEdit.amountReceived || 0,
                 settleDate: orderToEdit.settleDate || '',
@@ -121,7 +246,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 paymentAfterDelivery: isCOD,
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
-                shippingStatus: orderToEdit.shipping?.status || 'Pending',
+                shippingStatus: orderToEdit.shipping?.status || 'Ordered',
                 paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Paid' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || ''
             });
@@ -218,6 +343,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
             setIsSubmitting(true);
 
+            const cleanCity = formData.city ? formData.city.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim() : '';
+
             const orderData = {
                 items: cartItems,
                 total,
@@ -235,8 +362,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     phone: formData.customerPhone,
                     platform: 'Facebook' as const,
                     page: formData.pageName,
-                    city: formData.city,
-                    address: formData.city ? `${formData.city}, ${formData.address}` : formData.address
+                    city: cleanCity,
+                    district: formData.district,
+                    commune: formData.commune,
+                    village: formData.village,
+                    address: addressPreviewText
                 },
                 shipping: {
                     company: formData.shippingCompany,
@@ -295,15 +425,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 }}>
                     <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            Customer Information
+                            ព័ត៌មានអតិថិជន
                         </h3>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
-                            {(currentUser?.roleId === 'admin' || currentUser?.roleId === 'customer_care') && (
                                 <div style={{ marginBottom: '0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)' }}>Order Date</label>
-                                        <button
-                                            onClick={() => setFormData({ ...formData, date: new Date().toISOString() })}
+                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-primary)' }}>កាលបរិច្ឆេទកម្ម៉ង់</label>
+                                        {currentUser?.roleId !== 'salesman' && (
+                                            <button
+                                                onClick={() => setFormData({ ...formData, date: new Date().toISOString() })}
                                             style={{
                                                 fontSize: '11px',
                                                 padding: '2px 8px',
@@ -315,8 +445,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                                 fontWeight: 600
                                             }}
                                         >
-                                            Set Now
-                                        </button>
+                                            កំណត់ឥឡូវនេះ
+                                            </button>
+                                        )}
                                     </div>
                                     {isMobile ? (
                                         <div style={{ position: 'relative', width: '100%' }}>
@@ -335,12 +466,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                                 <span style={{ fontWeight: 500 }}>
                                                     {formData.date
                                                         ? new Date(formData.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                                                        : 'Select Date & Time...'}
+                                                        : 'ជ្រើសរើសកាលបរិច្ឆេទ...'}
                                                 </span>
                                                 <Calendar size={18} color="var(--color-primary)" />
                                             </div>
                                             <input
                                                 type="datetime-local"
+                                                disabled={currentUser?.roleId === 'salesman'}
                                                 style={{
                                                     position: 'absolute',
                                                     inset: 0,
@@ -360,6 +492,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     ) : (
                                         <input
                                             type="datetime-local"
+                                            disabled={currentUser?.roleId === 'salesman'}
                                             className="search-input"
                                             style={{ width: '100%', padding: '10px 12px', maxWidth: '100%', minWidth: '0' }}
                                             value={formData.date ? new Date(new Date(formData.date).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
@@ -371,58 +504,137 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         />
                                     )}
                                 </div>
-                            )}
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Name <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Enter name" />
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ឈ្មោះអតិថិជន <span style={{ color: '#EF4444' }}>*</span></label>
+                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="បញ្ចូលឈ្មោះ" />
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Phone Number <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value.replace(/\D/g, '') })} placeholder="012..." />
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>លេខទូរស័ព្ទ <span style={{ color: '#EF4444' }}>*</span></label>
+                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value.replace(/\D/g, '') })} placeholder="០១២..." />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ប្រភពទំព័រ <span style={{ color: '#EF4444' }}>*</span></label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.pageName} onChange={e => setFormData({ ...formData, pageName: e.target.value })}>
+                                        <option value="">ជ្រើសរើសទំព័រ...</option>
+                                        {pages.map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                    {!isMobile && (
+                                        <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                        <div style={{ marginBottom: isMobile ? '12px' : '20px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.5fr 1fr', gap: isMobile ? '12px' : '20px' }}>
+                        <div style={{ marginBottom: isMobile ? '12px' : '20px', background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)' }}>អាសយដ្ឋានដឹកជញ្ជូន</label>
+                                <button 
+                                    onClick={() => setIsShippingPointSelectorOpen(true)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 16px', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)' }}
+                                >
+                                    <MapPin size={14} /> ជ្រើសរើសទីតាំង
+                                </button>
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr', gap: isMobile ? '12px' : '16px', marginBottom: '16px' }}>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>City / Province <span style={{ color: '#EF4444' }}>*</span></label>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>រាជធានី / ខេត្ត <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })}>
-                                            <option value="">Select City...</option>
-                                            {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })}>
+                                            <option value="">-- បង្ហាញរាជធានី និងខេត្ត --</option>
+                                            {locationData.map(p => (
+                                                <option key={p.code} value={p.khmer}>
+                                                    {p.khmer} ({p.latin})
+                                                </option>
+                                            ))}
                                         </select>
                                         {!isMobile && (
-                                            <button onClick={() => { setConfigType('city'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                            <button onClick={() => { setConfigType('city'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                         )}
                                     </div>
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Address Details</label>
-                                    <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} placeholder="House, Street, etc..." />
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>ស្រុក / ខណ្ឌ</label>
+                                    {availableDistricts.length > 0 ? (
+                                        <select 
+                                            className="search-input" 
+                                            style={{ width: '100%', padding: '10px 12px', background: 'white' }} 
+                                            value={formData.district} 
+                                            onChange={e => setFormData({ ...formData, district: e.target.value, commune: '' })}
+                                        >
+                                            <option value="">ជ្រើសរើសស្រុក...</option>
+                                            {availableDistricts.map(d => <option key={d.code} value={d.khmer}>{d.khmer} ({d.latin})</option>)}
+                                        </select>
+                                    ) : (
+                                        <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'white' }} value={formData.district} onChange={e => setFormData({ ...formData, district: e.target.value })} placeholder="ស្រុក / ខណ្ឌ" disabled={!formData.city} />
+                                    )}
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Page Source <span style={{ color: '#EF4444' }}>*</span></label>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>ឃុំ / សង្កាត់</label>
+                                    {availableCommunes.length > 0 ? (
+                                        <select 
+                                            className="search-input" 
+                                            style={{ width: '100%', padding: '10px 12px', background: 'white' }} 
+                                            value={formData.commune} 
+                                            onChange={e => setFormData({ ...formData, commune: e.target.value })}
+                                        >
+                                            <option value="">ជ្រើសរើសឃុំ...</option>
+                                            {availableCommunes.map(c => <option key={c.code} value={c.khmer}>{c.khmer} ({c.latin})</option>)}
+                                        </select>
+                                    ) : (
+                                        <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'white' }} value={formData.commune} onChange={e => setFormData({ ...formData, commune: e.target.value })} placeholder="ឃុំ / សង្កាត់" disabled={!formData.district} />
+                                    )}
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: isMobile ? '12px' : '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>ផ្លូវ / លេខផ្ទះ</label>
+                                    <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'white' }} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} placeholder="ផ្ទះ, ផ្លូវ ។ល។" />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>ក្រុមហ៊ុនដឹកជញ្ជូន <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.pageName} onChange={e => setFormData({ ...formData, pageName: e.target.value })}>
-                                            <option value="">Select Page...</option>
-                                            {pages.map(p => <option key={p} value={p}>{p}</option>)}
+                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
+                                            <option value="">ជ្រើសរើសក្រុមហ៊ុនដឹកជញ្ជូន...</option>
+                                            {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                         {!isMobile && (
-                                            <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                            <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                         )}
                                     </div>
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '16px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)', marginBottom: '8px' }}>រូបរាងអាសយដ្ឋានពេញ (Address Preview)</label>
+                                <div style={{ 
+                                    padding: '12px 16px', 
+                                    background: 'var(--color-primary-light)', 
+                                    border: '1px solid var(--color-primary)', 
+                                    borderRadius: '8px', 
+                                    color: 'var(--color-primary-dark)', 
+                                    fontSize: '14px', 
+                                    fontWeight: 500,
+                                    minHeight: '44px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    wordBreak: 'break-word'
+                                }}>
+                                    {addressPreviewText || <span style={{ opacity: 0.5, fontStyle: 'italic' }}>មិនទាន់មានទិន្នន័យទីតាំងទេ...</span>}
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', border: '1px solid var(--color-border)' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)' }}>Order & Payment</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)' }}>ការកម្ម៉ង់ និងការទូទាត់</h3>
 
                         {/* Shipping & Staff Details */}
-                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
 
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Salesman <span style={{ color: '#EF4444' }}>*</span></label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>អ្នកលក់ <span style={{ color: '#EF4444' }}>*</span></label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select
                                         className="search-input"
@@ -431,7 +643,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         onChange={e => setFormData({ ...formData, salesman: e.target.value })}
                                         disabled={currentUser?.roleId === 'salesman'}
                                     >
-                                        <option value="">Select Salesman...</option>
+                                        <option value="">ជ្រើសរើសអ្នកលក់...</option>
                                         {availableSalesmen.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
 
@@ -439,29 +651,17 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                             {/* Customer Care */}
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Customer Care <span style={{ color: '#EF4444' }}>*</span></label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ផ្នែកថែទាំអតិថិជន <span style={{ color: '#EF4444' }}>*</span></label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.customerCare} onChange={e => setFormData({ ...formData, customerCare: e.target.value })}>
-                                        <option value="">Select Customer Care...</option>
+                                        <option value="">ជ្រើសរើសផ្នែកថែទាំអតិថិជន...</option>
                                         {availableCustomerCare.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                     </select>
                                 </div>
                             </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Company <span style={{ color: '#EF4444' }}>*</span></label>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
-                                        <option value="">Select Shipping Company...</option>
-                                        {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    {!isMobile && (
-                                        <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
-                                    )}
-                                </div>
-                            </div>
 
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Shipping Status</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Delivery Status</label>
                                 <select
                                     className="search-input"
                                     style={{ width: '100%', padding: '10px 12px', background: currentUser?.roleId === 'salesman' ? 'var(--color-bg)' : 'white', opacity: currentUser?.roleId === 'salesman' ? 0.7 : 1 }}
@@ -469,7 +669,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    {[{id: 'Ordered', name: 'Ordered'},{id: 'Pending', name: 'Pending'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -481,7 +681,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {['Unpaid', 'Paid', 'Cancel'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Paid', name: 'Paid'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -499,13 +699,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     })}
                                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
-                                Payment After Delivery (COD)
+                                ទូទាត់ប្រាក់ពេលទទួលទំនិញ (COD)
                             </label>
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Method</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>វិធីសាស្ត្រទូទាត់</label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select
                                         className="search-input"
@@ -514,7 +714,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
                                         disabled={true}
                                     >
-                                        <option value="">Select Payment Method...</option>
+                                        <option value="">ជ្រើសរើសវិធីសាស្ត្រទូទាត់...</option>
                                         {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                                     </select>
                                     {!isMobile && (
@@ -524,8 +724,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Amount Received ($)</label>
-                                    <span style={{ fontSize: '11px', color: 'var(--color-primary)', cursor: 'pointer', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }} onClick={() => !formData.paymentAfterDelivery && setFormData({ ...formData, amountReceived: cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) })}>Set Full</span>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ប្រាក់ទទួលបាន ($)</label>
+                                    <span style={{ fontSize: '11px', color: 'var(--color-primary)', cursor: 'pointer', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }} onClick={() => !formData.paymentAfterDelivery && setFormData({ ...formData, amountReceived: cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) })}>ដាក់ពេញ</span>
                                 </div>
                                 <input
                                     type="number"
@@ -541,8 +741,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                         </div>
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Remark / Note</label>
-                            <input className="search-input" style={{ width: '100%', padding: '10px 12px', fontFamily: 'Battambang' }} value={formData.remark} onChange={e => setFormData({ ...formData, remark: e.target.value })} placeholder="Add any special instructions..." />
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ចំណាំ / Note</label>
+                            <input className="search-input" style={{ width: '100%', padding: '10px 12px', fontFamily: 'Battambang' }} value={formData.remark} onChange={e => setFormData({ ...formData, remark: e.target.value })} placeholder="បញ្ចូលចំណាំបន្ថែម..." />
                         </div>
                     </div>
                 </div>
@@ -557,11 +757,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     flex: 1,
                     minHeight: isMobile ? '400px' : '0'
                 }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '16px', color: 'var(--color-primary)' }}>Order Items</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '16px', color: 'var(--color-primary)' }}>ទំនិញដែលបានកម្ម៉ង់</h3>
 
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
                         <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={productSelection.id} onChange={e => setProductSelection({ ...productSelection, id: e.target.value })}>
-                            <option value="">Quick Add Product...</option>
+                            <option value="">បន្ថែមទំនិញរហ័ស...</option>
                             {products.filter(p => p.stock > 0).map(p => <option key={p.id} value={p.id}>{p.name} - ${p.price}</option>)}
                         </select>
                         <input type="number" className="search-input" style={{ width: '70px', padding: '10px' }} value={productSelection.quantity} onChange={e => setProductSelection({ ...productSelection, quantity: Number(e.target.value) })} min={1} />
@@ -586,7 +786,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         ))}
                         {cartItems.length === 0 && (
                             <div style={{ height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', flexDirection: 'column', border: '2px dashed var(--color-border)', borderRadius: '12px' }}>
-                                <p style={{ fontSize: '14px' }}>No items in cart</p>
+                                <p style={{ fontSize: '14px' }}>មិនមានទំនិញក្នុងកន្ត្រកទេ</p>
                             </div>
                         )}
                     </div>
@@ -605,11 +805,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     })}
                                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
-                                Add Discount
+                                បន្ថែមការបញ្ចុះតម្លៃ
                             </label>
                             {formData.enableDiscount && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', width: '80px' }}>Amount ($):</span>
+                                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', width: '80px' }}>ចំនួន ($):</span>
                                     <input
                                         type="number"
                                         className="search-input"
@@ -627,17 +827,17 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                            <span>Subtotal</span>
+                            <span>សរុប (Subtotal)</span>
                             <span>${cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
                         </div>
                         {formData.enableDiscount && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: '#EF4444' }}>
-                                <span>Discount</span>
+                                <span>បញ្ចុះតម្លៃ</span>
                                 <span>-${(formData.discount === '' ? 0 : Number(formData.discount)).toFixed(2)}</span>
                             </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: '800', color: 'var(--color-primary)' }}>
-                            <span>Total Due</span>
+                            <span>សរុបទាំងអស់</span>
                             <span>${Math.max(0, cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) - (formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0)).toFixed(2)}</span>
                         </div>
                     </div>
@@ -646,9 +846,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
             {isMobile && (
                 <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
-                    <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
+                    <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>បោះបង់</button>
                     <button onClick={handleSubmit} disabled={isSubmitting} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)', opacity: isSubmitting ? 0.7 : 1 }}>
-                        {isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
+                        {isSubmitting ? 'កំពុងរក្សាទុក...' : (orderToEdit ? 'កែប្រែការកម្ម៉ង់' : 'បញ្ជាក់ការកម្ម៉ង់')}
                     </button>
                 </div>
             )}
@@ -657,6 +857,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 isOpen={isConfigModalOpen}
                 onClose={() => setIsConfigModalOpen(false)}
                 type={configType}
+            />
+
+            <ShippingPointSelector 
+                isOpen={isShippingPointSelectorOpen}
+                onClose={() => setIsShippingPointSelectorOpen(false)}
+                onSelect={handleShippingPointSelect}
+                shippingCompanies={shippingCompanies}
             />
         </div >
     );

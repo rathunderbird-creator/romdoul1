@@ -49,6 +49,9 @@ export interface Sale {
         name: string;
         phone: string;
         city?: string; // Added city
+        district?: string;
+        commune?: string;
+        village?: string;
         address?: string;
         platform?: 'Facebook' | 'TikTok' | 'Telegram' | 'Walk-in';
         page?: string;
