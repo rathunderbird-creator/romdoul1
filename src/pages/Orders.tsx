@@ -57,15 +57,6 @@ const ShippingModalComponent: React.FC<{
         if (data.courier) {
             setSelectedCompany(data.courier);
         }
-        
-        let newRemark = shippingRemark;
-        if (data.phone && !newRemark.includes(data.phone)) {
-            newRemark = newRemark ? `${newRemark} | Phone: ${data.phone}` : `Phone: ${data.phone}`;
-        }
-        if (data.contactName && !newRemark.includes(data.contactName)) {
-            newRemark = newRemark ? `${newRemark} | Name: ${data.contactName}` : `Name: ${data.contactName}`;
-        }
-        setShippingRemark(newRemark);
 
         setIsShippingPointSelectorOpen(false);
     };
