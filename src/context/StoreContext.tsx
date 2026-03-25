@@ -54,6 +54,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [hasMoreOrders, setHasMoreOrders] = useState(true);
     const [productsUpdatedAt, setProductsUpdatedAt] = useState<number>(Date.now());
     const [salesUpdatedAt, setSalesUpdatedAt] = useState<number>(Date.now());
+    const [pinnedOrderColumns, setPinnedOrderColumns] = useState<string[]>([]);
     const [config, setConfig] = useState<ConfigState>({
         shippingCompanies: ['J&T', 'VET', 'JS Express'],
         salesmen: ['Sokheng', 'Thida'],
@@ -609,13 +610,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
-    const toggleOrderColumnPin = (columnId: string) => {
-        const pinned = config.pinnedOrderColumns || [];
-        if (pinned.includes(columnId)) {
-            updateConfig({ ...config, pinnedOrderColumns: pinned.filter(id => id !== columnId) });
+    // Load pinned columns from localStorage on user change
+    useEffect(() => {
+        if (currentUser) {
+            const key = `pinnedOrderColumns_${currentUser.id || currentUser.name}`;
+            const stored = localStorage.getItem(key);
+            setPinnedOrderColumns(stored ? JSON.parse(stored) : []);
         } else {
-            updateConfig({ ...config, pinnedOrderColumns: [...pinned, columnId] });
+            setPinnedOrderColumns([]);
         }
+    }, [currentUser]);
+
+    const toggleOrderColumnPin = (columnId: string) => {
+        setPinnedOrderColumns(prev => {
+            const updated = prev.includes(columnId)
+                ? prev.filter(id => id !== columnId)
+                : [...prev, columnId];
+            if (currentUser) {
+                const key = `pinnedOrderColumns_${currentUser.id || currentUser.name}`;
+                localStorage.setItem(key, JSON.stringify(updated));
+            }
+            return updated;
+        });
     };
 
     const updateProductOrder = (order: string[]) => {
@@ -1270,13 +1286,73 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const updateOrders = async (ids: string[], updates: Partial<Sale>): Promise<void> => {
         try {
-            const promises = ids.map(id => {
-                const currentOrder = sales.find(s => s.id === id);
+            // Fetch missing orders from DB for accurate transaction logging
+            const missingIds = ids.filter(id => !sales.find(s => s.id === id));
+            if (missingIds.length > 0) {
+                const { data: dbOrders } = await supabase.from('sales').select('*').in('id', missingIds);
+                if (dbOrders && dbOrders.length > 0) {
+                    const mappedOrders = dbOrders.map(d => ({
+                        id: d.id,
+                        total: Number(d.total),
+                        discount: Number(d.discount) || 0,
+                        date: d.date,
+                        paymentMethod: d.payment_method as any,
+                        type: d.type as any,
+                        salesman: d.salesman,
+                        customerCare: d.customer_care,
+                        remark: d.remark,
+                        amountReceived: Number(d.amount_received) || 0,
+                        settleDate: d.settle_date,
+                        paymentStatus: d.payment_status as any,
+                        orderStatus: d.order_status as any,
+                        customer: d.customer_snapshot,
+                        items: [], // mock empty for existingOrder check
+                        shipping: {
+                            company: d.shipping_company || '',
+                            trackingNumber: d.tracking_number || '',
+                            status: d.shipping_status as any || 'Pending',
+                            cost: d.shipping_cost || 0
+                        }
+                    }));
+                    setSales(prev => [...prev, ...mappedOrders] as any);
+                    
+                    // Small delay to let React state update locally? 
+                    // No, setSales is async. Let's just pass the fetched DB order context to updateOrder.
+                    // Actually, updateOrder pulls from `sales` from the closure.
+                    // This is a common React ref issue. `sales` is stale.
+                }
+            }
+
+            const promises = ids.map(async id => {
+                let currentOrder = sales.find(s => s.id === id);
+                
+                // fallback to fetch it individually if not in stale cache
+                if (!currentOrder) {
+                    const { data } = await supabase.from('sales').select('*').eq('id', id).single();
+                    if (data) {
+                        currentOrder = {
+                            id: data.id,
+                            total: Number(data.total),
+                            paymentStatus: data.payment_status as any,
+                            amountReceived: Number(data.amount_received),
+                            customer: data.customer_snapshot,
+                            shipping: {
+                                company: data.shipping_company || '',
+                                trackingNumber: data.tracking_number || '',
+                                status: data.shipping_status as any || 'Pending',
+                                cost: data.shipping_cost || 0
+                            }
+                        } as any;
+                        // Temp inject into sales array reference for `updateOrder` closure trick
+                        sales.push(currentOrder as any);
+                    }
+                }
+
                 if (!currentOrder) return Promise.resolve();
 
                 const mergedUpdates = { ...updates };
                 // Handle deep merge for shipping if needed
-                if (updates.shipping && currentOrder.shipping) {
+                if (updates.shipping && currentOrder && currentOrder.shipping) {
                     mergedUpdates.shipping = { ...currentOrder.shipping, ...updates.shipping };
                 }
                 return updateOrder(id, mergedUpdates);
@@ -2056,7 +2132,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setEditingOrder,
             pinnedProductIds: config.pinnedProducts || [],
             toggleProductPin,
-            pinnedOrderColumns: config.pinnedOrderColumns || [],
+            pinnedOrderColumns,
             toggleOrderColumnPin,
             productOrder: config.productOrder || [],
             updateProductOrder,

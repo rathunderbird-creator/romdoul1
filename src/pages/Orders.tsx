@@ -1095,15 +1095,6 @@ const Orders: React.FC = () => {
             } else if (field === 'status') {
                 updates.shipping = { status: value } as any;
             } else if (field === 'paymentStatus') {
-                ids = ids.filter(id => {
-                    const order = sales.find(o => o.id === id);
-                    return order && order.paymentStatus !== 'Paid' && order.paymentStatus !== 'Cancel';
-                });
-                if (ids.length === 0) {
-                    showToast('Selected orders cannot have their Pay Status changed', 'error');
-                    setSelectedIds(new Set());
-                    return;
-                }
                 updates.paymentStatus = value;
                 if (value === 'Paid' || value === 'Settled') {
                     // if bulk updated, keeping it simple as it was
@@ -2449,7 +2440,8 @@ const Orders: React.FC = () => {
                                     <tfoot>
                                         <tr>
                                             <td className="sticky-col-first" style={{ background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', position: 'sticky', left: 0, zIndex: 20 }}></td>
-                                            {visibleColumns.map((colId) => {
+                                            {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
+                                                const colId = col.id;
                                                 const isPinned = (pinnedOrderColumns || []).includes(colId);
                                                 const stickyLeft = getStickyLeft(colId);
 
