@@ -761,12 +761,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const total = Math.max(0, subtotal - discount);
 
+        const today = new Date().toDateString();
+        const todaySales = sales.filter(s => new Date(s.date).toDateString() === today);
+        const maxDaily = todaySales.reduce((max, s) => Math.max(max, s.dailyNumber || 0), 0);
+        const dailyNumber = maxDaily + 1;
+
         const newSale: Sale = {
             id: Date.now().toString(),
             items: [...cart],
             total,
             discount,
             date: new Date().toISOString(),
+            dailyNumber,
             paymentMethod,
             type: 'POS',
             customer: customer || {
@@ -830,7 +836,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             payment_status: newSale.paymentStatus,
             customer_snapshot: newSale.customer,
             order_status: 'Closed', // POS sales usually closed? Or Open?
-            page_source: newSale.customer?.page || null
+            page_source: newSale.customer?.page || null,
+            daily_number: newSale.dailyNumber
         });
 
         if (saleError) console.error('Sale insert error', saleError);
@@ -998,10 +1005,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const addOnlineOrder = async (order: Omit<Sale, 'id' | 'date'>) => {
+        const today = new Date().toDateString();
+        const todaySales = sales.filter(s => new Date(s.date).toDateString() === today);
+        const maxDaily = todaySales.reduce((max, s) => Math.max(max, s.dailyNumber || 0), 0);
+        const dailyNumber = maxDaily + 1;
+
         const newSale: Sale = {
             ...order,
             id: Date.now().toString(),
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            dailyNumber
         };
 
         // If creating a new order as already paid, record the income transaction
@@ -1054,7 +1067,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             shipping_company: newSale.shipping?.company,
             tracking_number: newSale.shipping?.trackingNumber,
             shipping_status: newSale.shipping?.status,
-            remark: newSale.remark
+            remark: newSale.remark,
+            daily_number: newSale.dailyNumber
         });
 
         if (saleError) {

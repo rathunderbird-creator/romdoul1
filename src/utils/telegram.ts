@@ -21,10 +21,12 @@ export const sendTelegramOrderNotification = async (
             .replace(/>/g, '&gt;');
 
         const htmlMessage = `
-<b>🚀 New Order Confirmed!</b>
+🚀 <b>Order Information</b>
 
+#️⃣ <b>Order No:</b> ${String(order.dailyNumber || 0).padStart(2, '0')}
 👤 <b>Customer:</b> ${escapeHtml(order.customer.name)}
 📞 <b>Phone:</b> ${escapeHtml(order.customer.phone)}
+📄 <b>Page:</b> ${escapeHtml(order.customer.page || 'N/A')}
 📍 <b>Address:</b> ${escapeHtml(order.customer.address || 'N/A')}
 
 📦 <b>Items:</b>

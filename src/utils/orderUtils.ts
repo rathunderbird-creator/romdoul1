@@ -5,8 +5,10 @@ export const generateOrderCopyText = (order: Sale) => {
     const lines = [
         `🚀 Order Information`,
         ``,
+        `#️⃣ Order No: ${String(order.dailyNumber || 0).padStart(2, '0')}`,
         `👤 Customer: ${order.customer?.name || 'N/A'}`,
         `📞 Phone: ${order.customer?.phone || 'N/A'}`,
+        `📄 Page: ${order.customer?.page || 'N/A'}`,
         `📍 Address: ${order.customer?.address || 'N/A'}`,
         ``,
         `📦 Items:`,

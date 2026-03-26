@@ -43,6 +43,7 @@ export interface Sale {
     paymentStatus?: 'Unpaid' | 'Paid' | 'Cancel';
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;
+    dailyNumber?: number;
     pageSource?: string;
     customer?: {
         id?: string; // Added optional ID to link to Customer entity
