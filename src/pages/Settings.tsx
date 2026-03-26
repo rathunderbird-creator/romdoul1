@@ -13,7 +13,7 @@ import { processImageForUpload } from '../utils/imageUtils';
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, storeName, logo, email, phone, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency } = useStore();
+    const { storeAddress, storeName, logo, email, phone, telegramBotToken, telegramChatId, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -27,7 +27,9 @@ const Settings: React.FC = () => {
         timezone: '',
         taxRate: 0,
         currency: '',
-        logo: ''
+        logo: '',
+        telegramBotToken: '',
+        telegramChatId: ''
     });
 
     // PIN Protection State
@@ -52,7 +54,9 @@ const Settings: React.FC = () => {
                 timezone: currentData.timezone,
                 taxRate: currentData.taxRate,
                 currency: currentData.currency,
-                logo: currentData.logo
+                logo: currentData.logo,
+                telegramBotToken: currentData.telegramBotToken,
+                telegramChatId: currentData.telegramChatId
             });
             showToast('Settings saved successfully!', 'success');
         } catch (error) {
@@ -99,9 +103,11 @@ const Settings: React.FC = () => {
             timezone: timezone || 'Asia/Phnom_Penh',
             taxRate: taxRate || 0,
             currency: currency || 'USD ($)',
-            logo: logo || ''
+            logo: logo || '',
+            telegramBotToken: telegramBotToken || '',
+            telegramChatId: telegramChatId || ''
         });
-    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency, logo]);
+    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency, logo, telegramBotToken, telegramChatId]);
 
 
 
@@ -415,22 +421,69 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Notifications & Security (Placeholder) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                    <div className="glass-panel" style={{ padding: '24px', opacity: 0.7 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                            <Bell size={24} />
-                            <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Notifications</h3>
+                {/* Telegram Notifications Section */}
+                <div className="glass-panel" style={{ padding: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <Bell className="text-primary" size={24} />
+                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Telegram Notifications</h2>
                         </div>
-                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Manage email and push notification preferences.</p>
+                        <button
+                            onClick={async () => {
+                                if (!localState.telegramBotToken || !localState.telegramChatId) {
+                                    showToast('Please enter Bot Token and Chat ID first', 'error');
+                                    return;
+                                }
+                                try {
+                                    const { sendTelegramTestMessage } = await import('../utils/telegram');
+                                    await sendTelegramTestMessage(localState.telegramBotToken, localState.telegramChatId);
+                                    showToast('Test message sent!', 'success');
+                                } catch (err: any) {
+                                    showToast(err.message || 'Failed to send test message', 'error');
+                                }
+                            }}
+                            className="primary-button"
+                            style={{ padding: '8px 16px', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
+                        >
+                            Send Test
+                        </button>
                     </div>
-                    <div className="glass-panel" style={{ padding: '24px', opacity: 0.7 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                            <Shield size={24} />
-                            <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Security</h3>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
+                        Receive order alerts in your Telegram groups. Get your token from @BotFather. Separate Multiple Chat IDs with commas.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Telegram Bot Token</label>
+                            <input
+                                type="password"
+                                value={localState.telegramBotToken}
+                                onChange={(e) => setLocalState({ ...localState, telegramBotToken: e.target.value })}
+                                placeholder="123456789:ABCDefgh..."
+                                className="search-input"
+                                style={{ width: '100%', padding: '12px' }}
+                            />
                         </div>
-                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Update password and 2FA settings.</p>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Telegram Chat IDs</label>
+                            <input
+                                type="text"
+                                value={localState.telegramChatId}
+                                onChange={(e) => setLocalState({ ...localState, telegramChatId: e.target.value })}
+                                placeholder="-100123..., -45678..."
+                                className="search-input"
+                                style={{ width: '100%', padding: '12px' }}
+                            />
+                        </div>
                     </div>
+                </div>
+
+                {/* Security Section */}
+                <div className="glass-panel" style={{ padding: '24px', opacity: 0.7 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                        <Shield size={24} />
+                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Security</h3>
+                    </div>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Update password and 2FA settings.</p>
                 </div>
 
                 {/* Data Migration Section */}

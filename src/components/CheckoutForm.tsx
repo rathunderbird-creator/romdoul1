@@ -8,6 +8,7 @@ import type { Sale, CartItem } from '../types';
 import LazyAvatar from './LazyAvatar';
 import ShippingPointSelector from './ShippingPointSelector';
 import cambodiaData from '../data/cambodia.json';
+import { sendTelegramOrderNotification } from '../utils/telegram';
 
 interface LocationInfo {
     code: string;
@@ -62,7 +63,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -383,6 +384,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             } else {
                 await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
                 showToast('Order created', 'success');
+
+                // Send Telegram Notification
+                if (telegramBotToken && telegramChatId) {
+                    sendTelegramOrderNotification(telegramBotToken, telegramChatId, orderData).catch(err => {
+                        console.error('Failed to send Telegram notification:', err);
+                        showToast(`Telegram Error: ${err.message}`, 'error');
+                    });
+                }
             }
 
             onSuccess();

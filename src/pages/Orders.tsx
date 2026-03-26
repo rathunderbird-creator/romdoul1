@@ -1142,7 +1142,7 @@ const Orders: React.FC = () => {
     };
 
     const handleCopyOrder = (order: Sale) => {
-        const text = generateOrderCopyText(order, sales);
+        const text = generateOrderCopyText(order);
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text)
@@ -2605,7 +2605,7 @@ const Orders: React.FC = () => {
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button
                                         onClick={() => {
-                                            const textToCopy = generateOrderCopyText(selectedOrder, sales);
+                                            const textToCopy = generateOrderCopyText(selectedOrder);
                                             navigator.clipboard.writeText(textToCopy);
                                             showToast('Order info copied!', 'success');
                                         }}

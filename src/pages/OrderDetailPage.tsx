@@ -34,7 +34,7 @@ const OrderDetailPage: React.FC = () => {
     }
 
     const handleCopyInfo = () => {
-        const text = generateOrderCopyText(order, sales);
+        const text = generateOrderCopyText(order);
         navigator.clipboard.writeText(text).then(() => {
             showToast('Order info copied to clipboard', 'success');
         });

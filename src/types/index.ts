@@ -192,6 +192,8 @@ export interface StoreContextType {
     logo?: string;
     email: string;
     phone: string;
+    telegramBotToken?: string;
+    telegramChatId?: string;
     timezone: string;
     updateTimezone: (timezone: string) => void;
     taxRate: number;
@@ -199,7 +201,7 @@ export interface StoreContextType {
     currency: string;
     updateCurrency: (currency: string) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
-    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; logo?: string }) => void;
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => void;
 
     // User & Role Management
     users: User[];

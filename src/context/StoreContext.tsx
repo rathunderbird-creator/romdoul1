@@ -25,6 +25,8 @@ interface ConfigState {
     taxRate?: number;
     currency?: string;
     logo?: string;
+    telegramBotToken?: string;
+    telegramChatId?: string;
 }
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -100,7 +102,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         timezone: 'Asia/Phnom_Penh',
         taxRate: 0,
         currency: 'USD ($)',
-        logo: ''
+        logo: '',
+        telegramBotToken: '',
+        telegramChatId: ''
     });
 
 
@@ -411,7 +415,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         phone: '+1 (555) 123-4567',
                         timezone: 'Asia/Phnom_Penh',
                         taxRate: 0,
-                        currency: 'USD ($)'
+                        currency: 'USD ($)',
+                        telegramBotToken: '',
+                        telegramChatId: ''
                     };
                     setConfig(defaultConfig);
                     await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
@@ -422,7 +428,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const needsMigration = !loadedConfig.cities ||
                     loadedConfig.cities.length === 0 ||
                     loadedConfig.cities.includes('Phnom Penh') ||
-                    !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
+                    !loadedConfig.cities.includes('រាជធ្នីភ្នំពេញ') ||
                     !loadedConfig.pinnedProducts ||
                     // !loadedConfig.users || // Removed check for users in config
                     // !loadedConfig.users.length ||
@@ -2045,7 +2051,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, storeAddress: address });
     };
 
-    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string }) => {
+    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => {
         updateConfig({ ...config, ...data });
     };
 
@@ -2154,6 +2160,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             logo: config.logo || '',
             email: config.email || '',
             phone: config.phone || '',
+            telegramBotToken: config.telegramBotToken || '',
+            telegramChatId: config.telegramChatId || '',
             updateStoreAddress,
             updateStoreProfile,
             timezone: config.timezone || 'Asia/Phnom_Penh',
