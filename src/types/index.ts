@@ -101,8 +101,8 @@ export interface StoreContextType {
     updateCartQuantity: (productId: string, quantity: number) => void;
     updateCart: (items: CartItem[]) => void;
     clearCart: () => void;
-    processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => void; // Updated signature
-    addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<void>;
+    processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => Promise<Sale | undefined>;
+    addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<Sale>;
     updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => void;
     addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
     updateProduct: (id: string, product: Partial<Product>) => Promise<void>;

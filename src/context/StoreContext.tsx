@@ -755,7 +755,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     // Sales Actions
-    const processSale = async (paymentMethod: Sale['paymentMethod'], discount: number = 0, customer?: Sale['customer']) => {
+    const processSale = async (paymentMethod: Sale['paymentMethod'], discount: number = 0, customer?: Sale['customer']): Promise<Sale | undefined> => {
         if (cart.length === 0) return;
 
         const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -877,6 +877,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Update salesOrder config
         const currentSalesOrder = config.salesOrder || [];
         updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
+
+        return newSale;
     };
 
     // Inventory Actions
@@ -1004,7 +1006,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
-    const addOnlineOrder = async (order: Omit<Sale, 'id' | 'date'>) => {
+    const addOnlineOrder = async (order: Omit<Sale, 'id'>): Promise<Sale> => {
         const today = new Date().toDateString();
         const todaySales = sales.filter(s => new Date(s.date).toDateString() === today);
         const maxDaily = todaySales.reduce((max, s) => Math.max(max, s.dailyNumber || 0), 0);
@@ -1103,6 +1105,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const currentSalesOrder = config.salesOrder || [];
         updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
         setSalesUpdatedAt(Date.now());
+        return newSale;
     };
 
     const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => {
@@ -1311,29 +1314,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (missingIds.length > 0) {
                 const { data: dbOrders } = await supabase.from('sales').select('*').in('id', missingIds);
                 if (dbOrders && dbOrders.length > 0) {
-                    const mappedOrders = dbOrders.map(d => ({
-                        id: d.id,
-                        total: Number(d.total),
-                        discount: Number(d.discount) || 0,
-                        date: d.date,
-                        paymentMethod: d.payment_method as any,
-                        type: d.type as any,
-                        salesman: d.salesman,
-                        customerCare: d.customer_care,
-                        remark: d.remark,
-                        amountReceived: Number(d.amount_received) || 0,
-                        settleDate: d.settle_date,
-                        paymentStatus: d.payment_status as any,
-                        orderStatus: d.order_status as any,
-                        customer: d.customer_snapshot,
-                        items: [], // mock empty for existingOrder check
-                        shipping: {
-                            company: d.shipping_company || '',
-                            trackingNumber: d.tracking_number || '',
-                            status: d.shipping_status as any || 'Pending',
-                            cost: d.shipping_cost || 0
-                        }
-                    }));
+                    const mappedOrders = dbOrders.map(mapSaleEntity);
                     setSales(prev => [...prev, ...mappedOrders] as any);
                     
                     // Small delay to let React state update locally? 
@@ -1350,19 +1331,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (!currentOrder) {
                     const { data } = await supabase.from('sales').select('*').eq('id', id).single();
                     if (data) {
-                        currentOrder = {
-                            id: data.id,
-                            total: Number(data.total),
-                            paymentStatus: data.payment_status as any,
-                            amountReceived: Number(data.amount_received),
-                            customer: data.customer_snapshot,
-                            shipping: {
-                                company: data.shipping_company || '',
-                                trackingNumber: data.tracking_number || '',
-                                status: data.shipping_status as any || 'Pending',
-                                cost: data.shipping_cost || 0
-                            }
-                        } as any;
+                        currentOrder = mapSaleEntity(data);
                         // Temp inject into sales array reference for `updateOrder` closure trick
                         sales.push(currentOrder as any);
                     }

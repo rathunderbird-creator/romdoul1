@@ -382,12 +382,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
                 showToast('Order updated', 'success');
             } else {
-                await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
+                const createdSale = await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
                 showToast('Order created', 'success');
 
                 // Send Telegram Notification
                 if (telegramBotToken && telegramChatId) {
-                    sendTelegramOrderNotification(telegramBotToken, telegramChatId, orderData).catch(err => {
+                    sendTelegramOrderNotification(telegramBotToken, telegramChatId, createdSale).catch(err => {
                         console.error('Failed to send Telegram notification:', err);
                         showToast(`Telegram Error: ${err.message}`, 'error');
                     });

@@ -1,4 +1,3 @@
-
 import type { Sale } from '../types';
 
 export const generateOrderCopyText = (order: Sale) => {
@@ -12,12 +11,13 @@ export const generateOrderCopyText = (order: Sale) => {
         `📍 Address: ${order.customer?.address || 'N/A'}`,
         ``,
         `📦 Items:`,
-        ...order.items.map(i => `- ${i.name} x${i.quantity} ($${i.price.toFixed(2)})`),
+        ...order.items.map(item => `- ${item.name} x${item.quantity} ($${(item.price * item.quantity).toFixed(2)})`),
         ``,
         `💰 Total: $${order.total.toFixed(2)}`,
         `🚚 Shipping: ${order.shipping?.company || 'N/A'}`,
         `👤 Salesman: ${order.salesman || 'N/A'}`,
-        `📝 Remark: ${order.remark || 'None'}`
+        `📝 Remark: ${order.remark || 'None'}`,
+        `-------------------------`
     ];
 
     return lines.join('\n');

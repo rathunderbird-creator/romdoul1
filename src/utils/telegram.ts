@@ -33,31 +33,41 @@ export const sendTelegramOrderNotification = async (
 ${order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (<b>$${(item.price * item.quantity).toFixed(2)}</b>)`).join('\n')}
 
 💰 <b>Total:</b> <b>$${order.total.toFixed(2)}</b>
-🚚 <b>Shipping:</b> ${escapeHtml(order.shipping.company)}
-👤 <b>Salesman:</b> ${escapeHtml(order.salesman)}
+🚚 <b>Shipping:</b> ${escapeHtml(order.shipping?.company || 'N/A')}
+👤 <b>Salesman:</b> ${escapeHtml(order.salesman || 'N/A')}
 📝 <b>Remark:</b> ${escapeHtml(order.remark || 'None')}
+-------------------------
 `.trim();
         
-        const results = await Promise.allSettled(idList.map(async (chatId) => {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    text: htmlMessage,
-                    parse_mode: 'HTML',
-                }),
-            });
+        const results = [];
+        for (const chatId of idList) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: htmlMessage,
+                        parse_mode: 'HTML',
+                    }),
+                });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`${chatId}: ${errorData.description || 'Failed'}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    results.push({ status: 'rejected', reason: new Error(`${chatId}: ${errorData.description || 'Failed'}`) });
+                } else {
+                    results.push({ status: 'fulfilled', value: undefined });
+                }
+            } catch (err: any) {
+                results.push({ status: 'rejected', reason: new Error(`${chatId}: ${err.message || 'Network Error'}`) });
             }
-        }));
+            // Add a small delay between sends to avoid rate limits
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
 
-        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        const failures = results.filter((r): r is any => r.status === 'rejected');
         if (failures.length > 0) {
             const errorMsg = failures.map(f => f.reason.message).join(', ');
             throw new Error(`Failed for some groups: ${errorMsg}`);
@@ -77,26 +87,35 @@ export const sendTelegramTestMessage = async (botToken: string, chatIds: string)
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
     
-    const results = await Promise.allSettled(idList.map(async (chatId) => {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text: '<b>✅ Telegram Notification Test</b>\nYour POS system is now connected to this group!',
-                parse_mode: 'HTML',
-            }),
-        });
+    const results = [];
+    for (const chatId of idList) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: '<b>✅ Telegram Notification Test</b>\nYour POS system is now connected to this group!',
+                    parse_mode: 'HTML',
+                }),
+            });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`${chatId}: ${errorData.description || 'Failed'}`);
+            if (!response.ok) {
+                const errorData = await response.json();
+                results.push({ status: 'rejected', reason: new Error(`${chatId}: ${errorData.description || 'Failed'}`) });
+            } else {
+                results.push({ status: 'fulfilled', value: undefined });
+            }
+        } catch (err: any) {
+            results.push({ status: 'rejected', reason: new Error(`${chatId}: ${err.message || 'Network Error'}`) });
         }
-    }));
+        // Add a small delay between sends
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
 
-    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    const failures = results.filter((r): r is any => r.status === 'rejected');
     if (failures.length > 0) {
         const errorMsg = failures.map(f => f.reason.message).join(', ');
         throw new Error(`Failed for some groups: ${errorMsg}`);
