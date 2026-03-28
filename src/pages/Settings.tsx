@@ -13,7 +13,7 @@ import { processImageForUpload } from '../utils/imageUtils';
 
 
 const Settings: React.FC = () => {
-    const { storeAddress, storeName, logo, email, phone, telegramBotToken, telegramChatId, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency } = useStore();
+    const { storeAddress, storeName, logo, email, phone, telegramBotToken, telegramChatId, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency, khrExchangeRate } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -27,6 +27,7 @@ const Settings: React.FC = () => {
         timezone: '',
         taxRate: 0,
         currency: '',
+        khrExchangeRate: 4100,
         logo: '',
         telegramBotToken: '',
         telegramChatId: ''
@@ -54,6 +55,7 @@ const Settings: React.FC = () => {
                 timezone: currentData.timezone,
                 taxRate: currentData.taxRate,
                 currency: currentData.currency,
+                khrExchangeRate: currentData.khrExchangeRate,
                 logo: currentData.logo,
                 telegramBotToken: currentData.telegramBotToken,
                 telegramChatId: currentData.telegramChatId
@@ -103,6 +105,7 @@ const Settings: React.FC = () => {
             timezone: timezone || 'Asia/Phnom_Penh',
             taxRate: taxRate || 0,
             currency: currency || 'USD ($)',
+            khrExchangeRate: khrExchangeRate || 4100,
             logo: logo || '',
             telegramBotToken: telegramBotToken || '',
             telegramChatId: telegramChatId || ''
@@ -398,6 +401,21 @@ const Settings: React.FC = () => {
                                 className="search-input"
                                 style={{ width: '100%', padding: '12px' }}
                             />
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>KHR Exchange Rate (៛)</label>
+                            <input
+                                type="number"
+                                value={localState.khrExchangeRate}
+                                onChange={(e) => setLocalState({ ...localState, khrExchangeRate: Number(e.target.value) })}
+                                className="search-input"
+                                style={{ width: '100%', padding: '12px' }}
+                            />
+                            <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                                This rate is used to display totals in Khmer Riel.
+                            </p>
                         </div>
                     </div>
                     <div style={{ marginTop: '20px' }}>

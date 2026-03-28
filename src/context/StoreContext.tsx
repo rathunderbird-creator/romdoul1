@@ -24,6 +24,7 @@ interface ConfigState {
     timezone?: string;
     taxRate?: number;
     currency?: string;
+    khrExchangeRate?: number;
     logo?: string;
     telegramBotToken?: string;
     telegramChatId?: string;
@@ -102,6 +103,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         timezone: 'Asia/Phnom_Penh',
         taxRate: 0,
         currency: 'USD ($)',
+        khrExchangeRate: 4100,
         logo: '',
         telegramBotToken: '',
         telegramChatId: ''
@@ -1862,7 +1864,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 storeName: config.storeName,
                 storeAddress: config.storeAddress,
                 email: config.email,
-                phone: config.phone
+                phone: config.phone,
+                khrExchangeRate: config.khrExchangeRate || 4100
             }
         };
 
@@ -1973,7 +1976,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         storeName: jsonData.config.storeName,
                         storeAddress: jsonData.config.storeAddress,
                         email: jsonData.config.email,
-                        phone: jsonData.config.phone
+                        phone: jsonData.config.phone,
+                        khrExchangeRate: jsonData.config.khrExchangeRate || 4100
                     }
                 });
                 if (error) throw new Error("Failed to restore config: " + error.message);
@@ -2041,7 +2045,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, storeAddress: address });
     };
 
-    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => {
+    const updateKhrExchangeRate = async (rate: number) => {
+        updateConfig({ ...config, khrExchangeRate: rate });
+    };
+
+    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => {
         updateConfig({ ...config, ...data });
     };
 
@@ -2160,6 +2168,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateTaxRate,
             currency: config.currency || 'USD ($)',
             updateCurrency,
+            khrExchangeRate: config.khrExchangeRate || 4100,
+            updateKhrExchangeRate,
             refreshData
         }}>
             {children}

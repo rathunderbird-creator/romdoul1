@@ -15,7 +15,7 @@ interface POSInterfaceProps {
 }
 
 const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }) => {
-    const { products, addToCart, cart, updateCartQuantity, clearCart, categories, customers, updateCart, pinnedProductIds } = useStore();
+    const { products, addToCart, cart, updateCartQuantity, clearCart, categories, customers, updateCart, pinnedProductIds, khrExchangeRate } = useStore();
     const { showToast } = useToast();
     const isMobile = useMobile();
     const [searchTerm, setSearchTerm] = useState('');
@@ -382,7 +382,10 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                     <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>${cartTotal.toFixed(2)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'flex-end', paddingTop: '20px', borderTop: '2px dashed rgba(0,0,0,0.05)' }}>
-                                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-muted)' }}>TOTAL</span>
+                                    <div>
+                                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block' }}>TOTAL</span>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{(finalTotal * khrExchangeRate).toLocaleString()} ៛</span>
+                                    </div>
                                     <span style={{ fontSize: '32px', fontWeight: 900, color: 'var(--color-primary)', lineHeight: 1 }}>${finalTotal.toFixed(2)}</span>
                                 </div>
 

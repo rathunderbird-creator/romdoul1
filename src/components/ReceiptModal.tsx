@@ -15,7 +15,7 @@ interface ReceiptContentProps {
 }
 
 const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
-    const { storeAddress, storeName, phone, logo } = useStore();
+    const { storeAddress, storeName, phone, logo, khrExchangeRate } = useStore();
 
     return (
         <div className="receipt-content-wrapper" style={{ padding: '12px', overflowY: 'visible', width: '100%', boxSizing: 'border-box' }}>
@@ -116,7 +116,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                     <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '4px' }}>
                             <span>TOTAL KH(៛)</span>
-                            <span>{(sale.total * 4100).toLocaleString()} ៛</span>
+                            <span>{(sale.total * khrExchangeRate).toLocaleString()} ៛</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666', marginTop: '8px' }}>
                             <span>Payment Method</span>

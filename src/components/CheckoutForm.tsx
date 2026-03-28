@@ -63,7 +63,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, sales } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, sales, khrExchangeRate } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -274,6 +274,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setFormData(prev => ({ ...prev, paymentMethod: '' as any, paymentStatus: 'Unpaid' }));
         }
     }, [formData.paymentAfterDelivery]);
+
+    const subtotal = React.useMemo(() => cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cartItems]);
+    const discount = React.useMemo(() => formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0, [formData.enableDiscount, formData.discount]);
+    const total = React.useMemo(() => Math.max(0, subtotal - discount), [subtotal, discount]);
 
     const handleAddItem = () => {
         if (!productSelection.id) return;
@@ -840,17 +844,21 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
                             <span>សរុប (Subtotal)</span>
-                            <span>${cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
+                            <span>${subtotal.toFixed(2)}</span>
                         </div>
                         {formData.enableDiscount && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: '#EF4444' }}>
                                 <span>បញ្ចុះតម្លៃ</span>
-                                <span>-${(formData.discount === '' ? 0 : Number(formData.discount)).toFixed(2)}</span>
+                                <span>-${discount.toFixed(2)}</span>
                             </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: '800', color: 'var(--color-primary)' }}>
                             <span>សរុបទាំងអស់</span>
-                            <span>${Math.max(0, cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) - (formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0)).toFixed(2)}</span>
+                            <span>${total.toFixed(2)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '600', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                            <span>សរុបជាប្រាក់រៀល (KHR)</span>
+                            <span>{(total * khrExchangeRate).toLocaleString()} ៛</span>
                         </div>
                     </div>
                 </div>

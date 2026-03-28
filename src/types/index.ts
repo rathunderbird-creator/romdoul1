@@ -200,8 +200,10 @@ export interface StoreContextType {
     updateTaxRate: (rate: number) => void;
     currency: string;
     updateCurrency: (currency: string) => void;
+    khrExchangeRate: number;
+    updateKhrExchangeRate: (rate: number) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
-    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => void;
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => void;
 
     // User & Role Management
     users: User[];

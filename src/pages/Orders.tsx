@@ -830,13 +830,14 @@ const Orders: React.FC = () => {
                     matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
                 }
 
-                let orFilter = `id.ilike.%${term}%,salesman.ilike.%${term}%,remark.ilike.%${term}%,customer_care.ilike.%${term}%,shipping_company.ilike.%${term}%,tracking_number.ilike.%${term}%,payment_method.ilike.%${term}%,customer_snapshot->>name.ilike.%${term}%,customer_snapshot->>phone.ilike.%${term}%,customer_snapshot->>city.ilike.%${term}%,settle_date.ilike.%${term}%`;
+                // Escape characters that break PostgREST or() filter syntax
+                const escapedTerm = term.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                let orFilter = `id.ilike."%${escapedTerm}%",salesman.ilike."%${escapedTerm}%",remark.ilike."%${escapedTerm}%",customer_care.ilike."%${escapedTerm}%",shipping_company.ilike."%${escapedTerm}%",tracking_number.ilike."%${escapedTerm}%",payment_method.ilike."%${escapedTerm}%",customer_snapshot->>name.ilike."%${escapedTerm}%",customer_snapshot->>phone.ilike."%${escapedTerm}%",customer_snapshot->>city.ilike."%${escapedTerm}%"`;
 
                 if (matchingSaleIds.length > 0) {
                     orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
                 }
 
-                // PostgREST fully supports OR across standard columns and JSONB paths.
                 query = query.or(orFilter);
             }
 
