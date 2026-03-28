@@ -1018,7 +1018,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const transactionId = generateUUID();
             const newTransaction = {
                 id: transactionId,
-                date: new Date().toISOString(),
+                date: order.settleDate || new Date().toISOString(),
                 type: 'Income' as const,
                 category: 'លក់ឥវ៉ាន់',
                 amount: newSale.amountReceived || newSale.total,
@@ -1205,7 +1205,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             const newTransaction = {
                 id: transactionId,
-                date: new Date().toISOString(),
+                date: updates.settleDate || existingOrder.settleDate || new Date().toISOString(),
                 type: 'Income' as const,
                 category: 'លក់ឥវ៉ាន់',
                 amount: amountToRecord || 0,
