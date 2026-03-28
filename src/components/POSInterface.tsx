@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShoppingCart, Trash2, X, User as UserIcon, Banknote } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { useToast } from '../context/ToastContext';
 import ProductCard from './ProductCard';
 import ReceiptModal from './ReceiptModal';
 import CheckoutForm from './CheckoutForm';
@@ -16,7 +15,6 @@ interface POSInterfaceProps {
 
 const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }) => {
     const { products, addToCart, cart, updateCartQuantity, clearCart, categories, customers, updateCart, pinnedProductIds, khrExchangeRate } = useStore();
-    const { showToast } = useToast();
     const isMobile = useMobile();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -74,7 +72,6 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
 
     const handleAddToCart = (product: any) => {
         addToCart(product);
-        showToast(`Added ${product.name} `, 'success');
     };
 
     const handleProceedToCheckout = () => {

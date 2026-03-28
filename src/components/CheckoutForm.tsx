@@ -84,9 +84,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
     // Determine default customer care based on current user role
     const defaultCustomerCare = (() => {
-        if (!currentUser) return availableCustomerCare[0]?.name || '';
+        if (!currentUser) return '';
         if (currentUser.roleId === 'customer_care') return currentUser.name;
-        return availableCustomerCare[0]?.name || '';
+        return '';
     })();
 
     // Config Modal State
@@ -325,10 +325,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             showToast('Salesman is required', 'error');
             return;
         }
-        if (!formData.customerCare) {
-            showToast('Customer Care is required', 'error');
-            return;
-        }
+
         if (!formData.shippingCompany) {
             showToast('Shipping Company is required', 'error');
             return;
@@ -667,7 +664,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                             {/* Customer Care */}
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ផ្នែកថែទាំអតិថិជន <span style={{ color: '#EF4444' }}>*</span></label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ផ្នែកថែទាំអតិថិជន</label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select className="search-input" style={{ flex: 1, padding: '10px 12px' }} value={formData.customerCare} onChange={e => setFormData({ ...formData, customerCare: e.target.value })}>
                                         <option value="">ជ្រើសរើសផ្នែកថែទាំអតិថិជន...</option>

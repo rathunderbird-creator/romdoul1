@@ -483,7 +483,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
                             },
                             // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
-                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager' && r.id !== 'salesman' && r.id !== 'accountant'),
+                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager' && r.id !== 'salesman' && r.id !== 'accountant' && r.id !== 'cashier' && r.id !== 'customer_care'),
                             {
                                 id: 'accountant',
                                 name: 'Accountant',
