@@ -1013,12 +1013,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             date: order.date || new Date().toISOString()
         };
 
+        const isPaidStatus = (s: string | undefined) => ['Paid', 'Settled', 'Paid/Settled'].includes(s || '');
+
         // If creating a new order as already paid, record the income transaction
-        if (newSale.paymentStatus === 'Paid') {
+        if (isPaidStatus(newSale.paymentStatus)) {
             const transactionId = generateUUID();
+            const rawDate = order.settleDate || new Date().toISOString();
+            const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) 
+                ? new Date(rawDate).toISOString() 
+                : rawDate;
+
             const newTransaction = {
                 id: transactionId,
-                date: order.settleDate || new Date().toISOString(),
+                date: normalizedDate,
                 type: 'Income' as const,
                 category: 'លក់ឥវ៉ាន់',
                 amount: newSale.amountReceived || newSale.total,
@@ -1192,8 +1199,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             sale.id === id ? { ...sale, ...updates } : sale
         ));
 
-        // Sync Income/Expense: If changed to 'Paid' (and wasn't before)
-        if (updates.paymentStatus === 'Paid' && existingOrder && existingOrder.paymentStatus !== 'Paid') {
+        const isPaidStatus = (s: string | undefined) => ['Paid', 'Settled', 'Paid/Settled'].includes(s || '');
+
+        // Sync Income/Expense: If changed to 'Paid'/'Settled' (and wasn't before)
+        if (isPaidStatus(updates.paymentStatus) && existingOrder && !isPaidStatus(existingOrder.paymentStatus)) {
             const transactionId = generateUUID();
             const amountToRecord = updates.amountReceived !== undefined
                 ? updates.amountReceived
@@ -1203,9 +1212,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 || existingOrder.customer?.name
                 || 'Customer';
 
+            const rawDate = updates.settleDate || existingOrder.settleDate || new Date().toISOString();
+            const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) 
+                ? new Date(rawDate).toISOString() 
+                : rawDate;
+
             const newTransaction = {
                 id: transactionId,
-                date: updates.settleDate || existingOrder.settleDate || new Date().toISOString(),
+                date: normalizedDate,
                 type: 'Income' as const,
                 category: 'លក់ឥវ៉ាន់',
                 amount: amountToRecord || 0,
