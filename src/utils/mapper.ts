@@ -22,7 +22,6 @@ export const mapSaleEntity = (s: any): Sale => ({
         staffName: ''
     } : undefined,
     pageSource: s.page_source || s.customer_snapshot?.page, // Read from new column, fallback to snapshot
-    dailyNumber: s.daily_number,
     customer: s.customer_snapshot,
     lastEditedAt: s.last_edited_at,
     lastEditedBy: s.last_edited_by,

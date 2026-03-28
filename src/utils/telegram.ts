@@ -4,7 +4,8 @@
 export const sendTelegramOrderNotification = async (
     botToken: string,
     chatIds: string,
-    order: any
+    order: any,
+    sequenceNumber: number
 ) => {
     if (!botToken || !chatIds) return;
 
@@ -23,11 +24,11 @@ export const sendTelegramOrderNotification = async (
         const htmlMessage = `
 🚀 <b>Order Information</b>
 
-#️⃣ <b>Order No:</b> ${String(order.dailyNumber || 0).padStart(2, '0')}
-👤 <b>Customer:</b> ${escapeHtml(order.customer.name)}
-📞 <b>Phone:</b> ${escapeHtml(order.customer.phone)}
-📄 <b>Page:</b> ${escapeHtml(order.customer.page || 'N/A')}
-📍 <b>Address:</b> ${escapeHtml(order.customer.address || 'N/A')}
+#️⃣ <b>Order No:</b> ${String(sequenceNumber).padStart(2, '0')}
+👤 <b>Customer:</b> ${escapeHtml(order.customer?.name || 'Unknown')}
+📞 <b>Phone:</b> ${escapeHtml(order.customer?.phone || 'N/A')}
+📄 <b>Page:</b> ${escapeHtml(order.customer?.page || 'N/A')}
+📍 <b>Address:</b> ${escapeHtml(order.customer?.address || 'N/A')}
 
 📦 <b>Items:</b>
 ${order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (<b>$${(item.price * item.quantity).toFixed(2)}</b>)`).join('\n')}

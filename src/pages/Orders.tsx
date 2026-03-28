@@ -1142,7 +1142,7 @@ const Orders: React.FC = () => {
     };
 
     const handleCopyOrder = (order: Sale) => {
-        const text = generateOrderCopyText(order);
+        const text = generateOrderCopyText(order, sales);
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text)
@@ -2182,14 +2182,25 @@ const Orders: React.FC = () => {
                                                             backgroundColor: isPinned ? getRowBackgroundColor(order, isSelected) : undefined,
                                                             boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none'
                                                         };
-
                                                         switch (colId) {
                                                             case 'actions':
                                                                 return (
                                                                     <td key={colId} style={{ ...cellStyle, width: '100px', minWidth: '100px' }}>
                                                                         <div style={{ display: 'flex', gap: '8px' }}>
-                                                                            <button onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }} className="icon-button" title="Print Receipt" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                                <Printer size={16} color="var(--color-text-secondary)" />
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }}
+                                                                                className="icon-button"
+                                                                                title={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Shipped)"}
+                                                                                disabled={!['Shipped', 'Delivered'].includes(order.shipping?.status || '')}
+                                                                                style={{
+                                                                                    padding: '4px',
+                                                                                    background: 'transparent',
+                                                                                    border: 'none',
+                                                                                    cursor: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed',
+                                                                                    opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
+                                                                                }}
+                                                                            >
+                                                                                <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "var(--color-text-secondary)" : "#ccc"} />
                                                                             </button>
                                                                             <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                                 <Copy size={16} color="var(--color-text-secondary)" />
@@ -2605,7 +2616,7 @@ const Orders: React.FC = () => {
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button
                                         onClick={() => {
-                                            const textToCopy = generateOrderCopyText(selectedOrder);
+                                            const textToCopy = generateOrderCopyText(selectedOrder, sales);
                                             navigator.clipboard.writeText(textToCopy);
                                             showToast('Order info copied!', 'success');
                                         }}

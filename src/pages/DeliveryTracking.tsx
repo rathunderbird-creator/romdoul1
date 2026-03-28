@@ -374,8 +374,20 @@ const DeliveryTracking: React.FC = () => {
                                     {visibleColumns.includes('actions') &&
                                         <td className="sticky-col-second">
                                             <div style={{ display: 'flex', gap: '8px' }}>
-                                                <button onClick={() => setReceiptSale(order)} className="icon-button" title="Print Receipt" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                    <Printer size={16} color="var(--color-text-secondary)" />
+                                                <button 
+                                                    onClick={() => setReceiptSale(order)} 
+                                                    className="icon-button" 
+                                                    title={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Shipped)"}
+                                                    disabled={!['Shipped', 'Delivered'].includes(order.shipping?.status || '')}
+                                                    style={{ 
+                                                        padding: '4px', 
+                                                        background: 'transparent', 
+                                                        border: 'none', 
+                                                        cursor: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed',
+                                                        opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
+                                                    }}
+                                                >
+                                                    <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "var(--color-text-secondary)" : "#ccc"} />
                                                 </button>
                                                 <button onClick={() => { setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                     <Eye size={16} color="var(--color-text-secondary)" />

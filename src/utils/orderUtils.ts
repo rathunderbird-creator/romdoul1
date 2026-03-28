@@ -1,10 +1,21 @@
 import type { Sale } from '../types';
 
-export const generateOrderCopyText = (order: Sale) => {
+export const calculateDailySequence = (currentOrder: Sale, allSales: Sale[]) => {
+    const orderDate = new Date(currentOrder.date).toDateString();
+    const daySales = allSales
+        .filter(s => new Date(s.date).toDateString() === orderDate)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    const index = daySales.findIndex(s => s.id === currentOrder.id);
+    return index >= 0 ? index + 1 : daySales.length + 1;
+};
+
+export const generateOrderCopyText = (order: Sale, allSales: Sale[]) => {
+    const sequenceNumber = calculateDailySequence(order, allSales);
     const lines = [
         `🚀 Order Information`,
         ``,
-        `#️⃣ Order No: ${String(order.dailyNumber || 0).padStart(2, '0')}`,
+        `#️⃣ Order No: ${String(sequenceNumber).padStart(2, '0')}`,
         `👤 Customer: ${order.customer?.name || 'N/A'}`,
         `📞 Phone: ${order.customer?.phone || 'N/A'}`,
         `📄 Page: ${order.customer?.page || 'N/A'}`,

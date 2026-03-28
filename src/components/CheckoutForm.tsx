@@ -63,7 +63,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, sales } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -383,11 +383,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 showToast('Order updated', 'success');
             } else {
                 const createdSale = await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
+                // We need the current sales to calculate sequence
+                const sequenceNumber = (sales.filter(s => new Date(s.date).toDateString() === new Date(createdSale.date).toDateString()).length) + 1;
+                
                 showToast('Order created', 'success');
 
                 // Send Telegram Notification
                 if (telegramBotToken && telegramChatId) {
-                    sendTelegramOrderNotification(telegramBotToken, telegramChatId, createdSale).catch(err => {
+                    sendTelegramOrderNotification(telegramBotToken, telegramChatId, createdSale, sequenceNumber).catch(err => {
                         console.error('Failed to send Telegram notification:', err);
                         showToast(`Telegram Error: ${err.message}`, 'error');
                     });

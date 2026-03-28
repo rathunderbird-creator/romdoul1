@@ -204,7 +204,16 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
 
                     {/* Actions Bar */}
                     <div className="moc-actions">
-                        <button onClick={(e) => { e.stopPropagation(); onPrint(order); }} className="moc-action-btn">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onPrint(order); }} 
+                            className="moc-action-btn"
+                            disabled={!['Shipped', 'Delivered'].includes(order.shipping?.status || '')}
+                            style={{ 
+                                opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4,
+                                cursor: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed'
+                            }}
+                            title={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print" : "Status must be Shipped"}
+                        >
                             <Printer size={18} />
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); onCopy(order); }} className="moc-action-btn">

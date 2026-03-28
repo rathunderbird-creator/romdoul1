@@ -581,12 +581,12 @@ const IncomeExpense: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-surface)' }}>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>Actions</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Date</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Type</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Description</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Amount</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -658,6 +658,35 @@ const IncomeExpense: React.FC = () => {
                                 ))
                             )}
                         </tbody>
+                        <tfoot>
+                            <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold', borderTop: '2px solid var(--color-border)' }}>
+                                <td colSpan={4} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                    Total Income
+                                </td>
+                                <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-green)', fontSize: '14px' }}>
+                                    +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td></td>
+                            </tr>
+                            <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold' }}>
+                                <td colSpan={4} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                    Total Expense
+                                </td>
+                                <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-red)', fontSize: '14px' }}>
+                                    -${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td></td>
+                            </tr>
+                            <tr style={{ backgroundColor: 'var(--color-background)', fontWeight: '800', borderTop: '1px solid var(--color-border)' }}>
+                                <td colSpan={4} style={{ padding: '14px 20px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
+                                    Net Balance
+                                </td>
+                                <td style={{ padding: '14px 20px', textAlign: 'right', color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)', fontSize: '15px' }}>
+                                    ${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             )}
