@@ -830,7 +830,7 @@ const Orders: React.FC = () => {
                     matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
                 }
 
-                let orFilter = `id.ilike.%${term}%,salesman.ilike.%${term}%,remark.ilike.%${term}%,customer_care.ilike.%${term}%,shipping_company.ilike.%${term}%,tracking_number.ilike.%${term}%,payment_method.ilike.%${term}%,customer_snapshot->>name.ilike.%${term}%,customer_snapshot->>phone.ilike.%${term}%,customer_snapshot->>city.ilike.%${term}%`;
+                let orFilter = `id.ilike.%${term}%,salesman.ilike.%${term}%,remark.ilike.%${term}%,customer_care.ilike.%${term}%,shipping_company.ilike.%${term}%,tracking_number.ilike.%${term}%,payment_method.ilike.%${term}%,customer_snapshot->>name.ilike.%${term}%,customer_snapshot->>phone.ilike.%${term}%,customer_snapshot->>city.ilike.%${term}%,settle_date.ilike.%${term}%`;
 
                 if (matchingSaleIds.length > 0) {
                     orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
