@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { X, Printer } from 'lucide-react';
 import type { Sale } from '../types';
 import { useStore } from '../context/StoreContext';
+import { markOrderAsPrintedLocal } from '../utils/mapper';
 
 interface ReceiptModalProps {
     sale: Sale;
@@ -131,8 +132,11 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
     const [printTwoCopies, setPrintTwoCopies] = React.useState(false);
+    const { updateOrder } = useStore();
 
     const handlePrint = () => {
+        updateOrder(sale.id, { isPrinted: true });
+        markOrderAsPrintedLocal(sale.id);
         window.print();
     };
 

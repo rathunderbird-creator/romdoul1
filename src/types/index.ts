@@ -44,6 +44,7 @@ export interface Sale {
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;
     pageSource?: string;
+    isPrinted?: boolean;
     customer?: {
         id?: string; // Added optional ID to link to Customer entity
         name: string;

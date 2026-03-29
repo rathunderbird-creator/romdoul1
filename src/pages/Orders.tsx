@@ -40,7 +40,8 @@ const ShippingModalComponent: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     order: Sale | null;
-}> = ({ isOpen, onClose, order }) => {
+    onConfirm?: (order: Sale) => void;
+}> = ({ isOpen, onClose, order, onConfirm }) => {
     const { shippingCompanies, customerCare, updateOrder, updateOrderStatus } = useStore();
     const { showToast } = useToast();
 
@@ -179,6 +180,17 @@ const ShippingModalComponent: React.FC<{
                                 }
                                 await updateOrderStatus(order.id, 'Shipped', order.shipping?.trackingNumber, selectedCompany);
                                 showToast('Order marked as shipped', 'success');
+                                if (onConfirm) {
+                                    onConfirm({
+                                        ...order,
+                                        ...updates,
+                                        shipping: {
+                                            ...(order.shipping || { trackingNumber: '', cost: 0, status: 'Pending' as const, company: '' }),
+                                            company: selectedCompany,
+                                            status: 'Shipped' as const
+                                        }
+                                    });
+                                }
                             } catch (e: any) {
                                 console.error('Failed to update shipping status:', e);
                                 showToast('Update failed. Please try again.', 'error');
@@ -2201,7 +2213,7 @@ const Orders: React.FC = () => {
                                                                                     opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
                                                                                 }}
                                                                             >
-                                                                                <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "var(--color-text-secondary)" : "#ccc"} />
+                                                                                <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                                                             </button>
                                                                             <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                                 <Copy size={16} color="var(--color-text-secondary)" />
@@ -2696,6 +2708,7 @@ const Orders: React.FC = () => {
                 isOpen={isShippingModalOpen}
                 onClose={() => { setIsShippingModalOpen(false); setShippingOrderToUpdate(null); }}
                 order={shippingOrderToUpdate}
+                onConfirm={(updatedOrder) => setReceiptSale(updatedOrder)}
             />
             {/* Pending Remark Modal */}
             <PendingRemarkModalComponent

@@ -214,7 +214,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             }}
                             title={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print" : "Status must be Shipped"}
                         >
-                            <Printer size={18} />
+                            <Printer size={18} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); onCopy(order); }} className="moc-action-btn">
                             <Copy size={18} />

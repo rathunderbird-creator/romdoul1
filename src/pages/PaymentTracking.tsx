@@ -315,7 +315,7 @@ const PaymentTracking: React.FC = () => {
                                                     opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
                                                 }}
                                             >
-                                                <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "var(--color-text-secondary)" : "#ccc"} />
+                                                <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                             </button>
                                             <button onClick={() => { setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                 <Eye size={16} color="var(--color-text-secondary)" />

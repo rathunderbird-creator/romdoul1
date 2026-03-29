@@ -1,7 +1,26 @@
 import type { Sale } from '../types';
 
+let _printedCache: Set<string> | null = null;
+const getPrintedSet = () => {
+    if (!_printedCache) {
+        try {
+            _printedCache = new Set(JSON.parse(localStorage.getItem('jbl_pos_printed_orders') || '[]'));
+        } catch {
+            _printedCache = new Set();
+        }
+    }
+    return _printedCache;
+};
+
+export const markOrderAsPrintedLocal = (id: string) => {
+    const set = getPrintedSet();
+    set.add(id);
+    localStorage.setItem('jbl_pos_printed_orders', JSON.stringify(Array.from(set)));
+};
+
 export const mapSaleEntity = (s: any): Sale => ({
     id: s.id,
+    isPrinted: getPrintedSet().has(s.id),
     total: Number(s.total),
     discount: Number(s.discount),
     date: s.date,
