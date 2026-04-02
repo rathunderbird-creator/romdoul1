@@ -16,6 +16,7 @@ const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const MobileOperators = lazy(() => import('./pages/MobileOperators'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
+const Attendance = lazy(() => import('./pages/Attendance'));
 
 const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
 const SalesSummary = lazy(() => import('./pages/reports/SalesSummary'));
@@ -66,6 +67,7 @@ const ProtectedApp = () => {
 
           <Route path="/mobile-operators" element={<ProtectedRoute requiredPermission="view_dashboard"><MobileOperators /></ProtectedRoute>} />
           <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
+          <Route path="/attendance" element={<ProtectedRoute requiredPermissions={['manage_attendance']}><Attendance /></ProtectedRoute>} />
 
           <Route path="/reports" element={<ProtectedRoute requiredPermission="view_reports"><ReportsLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="sales" replace />} />

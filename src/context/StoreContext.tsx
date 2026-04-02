@@ -324,7 +324,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     name: u.name,
                     email: u.email,
                     roleId: u.role_id, // Map snake_case to camelCase
-                    pin: u.pin
+                    pin: u.pin,
+                    baseSalary: Number(u.base_salary) || 0
                 })));
             }
 
@@ -378,7 +379,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 id: 'admin',
                                 name: 'Administrator',
                                 description: 'Full system access',
-                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
+                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense', 'manage_attendance'] as any[]
                             },
                             {
                                 id: 'accountant',
@@ -390,7 +391,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 id: 'store_manager',
                                 name: 'Store Manager',
                                 description: 'Manage store operations',
-                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
+                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders', 'manage_attendance'] as any[]
                             },
                             {
                                 id: 'cashier',
@@ -430,16 +431,45 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const needsMigration = !loadedConfig.cities ||
                     loadedConfig.cities.length === 0 ||
                     loadedConfig.cities.includes('Phnom Penh') ||
-                    !loadedConfig.cities.includes('រាជធ្នីភ្នំពេញ') ||
+                    !loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ||
                     !loadedConfig.pinnedProducts ||
-                    // !loadedConfig.users || // Removed check for users in config
-                    // !loadedConfig.users.length ||
                     !loadedConfig.roles ||
-                    // Force update if Admin role is missing permissions (Repair)
                     !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders')) ||
-                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_inventory_stock'));
+                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_inventory_stock')) ||
+                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('manage_attendance'));
 
                 if (needsMigration) {
+                    // Re-inject missing cities, but PRESERVE all existing custom roles or custom permissions
+                    // Only update the Admin role to ensure it never loses access
+                    const updatedRoles = (loadedConfig.roles || []).map((r: Role) => {
+                        if (r.id === 'admin') {
+                            return {
+                                ...r,
+                                permissions: Array.from(new Set([
+                                    ...r.permissions, 
+                                    'view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense', 'manage_attendance', 'manage_payroll'
+                                ]))
+                            };
+                        }
+                        return r;
+                    });
+
+                    // Add base roles only if they completely don't exist yet
+                    const baseRoles = [
+                        { id: 'admin', name: 'Administrator', description: 'Full system access', permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense', 'manage_attendance', 'manage_payroll'] },
+                        { id: 'accountant', name: 'Accountant', description: 'Manage finances and records', permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] },
+                        { id: 'store_manager', name: 'Store Manager', description: 'Manage store operations', permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders', 'manage_attendance'] },
+                        { id: 'salesman', name: 'Salesman', description: 'Sales and order viewing', permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] },
+                        { id: 'cashier', name: 'Cashier', description: 'Process sales and payments', permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] },
+                        { id: 'customer_care', name: 'Customer Care', description: 'Manage support and orders', permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] }
+                    ];
+
+                    baseRoles.forEach(br => {
+                        if (!updatedRoles.find((ur: Role) => ur.id === br.id)) {
+                            updatedRoles.push(br as any);
+                        }
+                    });
+
                     const updatedConfig = {
                         ...loadedConfig,
                         cities: loadedConfig.cities && loadedConfig.cities.includes('រាជធានីភ្នំពេញ') ? loadedConfig.cities : [
@@ -473,48 +503,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
                         salesOrder: loadedConfig.salesOrder || [],
                         productOrder: loadedConfig.productOrder || [],
-                        // users: REMOVED - Managed in own table now
-                        roles: [
-                            // Ensure Admin always has full permissions
-                            {
-                                id: 'admin',
-                                name: 'Administrator',
-                                description: 'Full system access',
-                                permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense'] as any[]
-                            },
-                            // Merge other roles, preventing duplicates (Reset Store Manager too to enforce new defaults)
-                            ...(loadedConfig.roles || []).filter((r: Role) => r.id !== 'admin' && r.id !== 'store_manager' && r.id !== 'salesman' && r.id !== 'accountant' && r.id !== 'cashier' && r.id !== 'customer_care'),
-                            {
-                                id: 'accountant',
-                                name: 'Accountant',
-                                description: 'Manage finances and records',
-                                permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] as any[]
-                            },
-                            {
-                                id: 'store_manager',
-                                name: 'Store Manager',
-                                description: 'Manage store operations',
-                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders'] as any[]
-                            },
-                            {
-                                id: 'salesman',
-                                name: 'Salesman',
-                                description: 'Sales and order viewing',
-                                permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] as any[]
-                            },
-                            {
-                                id: 'cashier',
-                                name: 'Cashier',
-                                description: 'Process sales and payments',
-                                permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] as any[]
-                            },
-                            {
-                                id: 'customer_care',
-                                name: 'Customer Care',
-                                description: 'Manage support and orders',
-                                permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] as any[]
-                            }
-                        ]
+                        roles: updatedRoles
                     };
                     setConfig(updatedConfig);
                     await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
@@ -2004,7 +1993,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             name: newUser.name,
             email: newUser.email,
             role_id: newUser.roleId,
-            pin: newUser.pin
+            pin: newUser.pin,
+            base_salary: newUser.baseSalary || 0
         });
     };
 
@@ -2015,7 +2005,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.name) dbUpdates.name = updates.name;
         if (updates.email) dbUpdates.email = updates.email;
         if (updates.roleId) dbUpdates.role_id = updates.roleId;
-        if (updates.pin) dbUpdates.pin = updates.pin;
+        if (updates.pin !== undefined) dbUpdates.pin = updates.pin; // allow empty pin
+        if (updates.baseSalary !== undefined) dbUpdates.base_salary = updates.baseSalary;
 
         await supabase.from('users').update(dbUpdates).eq('id', id);
     };

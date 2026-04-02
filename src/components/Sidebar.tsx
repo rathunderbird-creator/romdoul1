@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet, Phone, MapPin, PieChart } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, ChevronLeft, ChevronRight, X, Wallet, Phone, MapPin, PieChart, CalendarClock } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { NavLink } from 'react-router-dom';
 
@@ -42,6 +42,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: Phone, label: 'ប្រតិបត្តិករទូរស័ព្ទ', path: '/mobile-operators' });
         navItems.push({ icon: MapPin, label: 'Shipping Point', path: '/shipping-point' });
+    }
+
+    if (hasPermission('manage_attendance')) {
+        navItems.push({ icon: CalendarClock, label: 'Attendance', path: '/attendance' });
     }
 
     if (canManageUsers) {

@@ -40,8 +40,7 @@ const ShippingModalComponent: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     order: Sale | null;
-    onConfirm?: (order: Sale) => void;
-}> = ({ isOpen, onClose, order, onConfirm }) => {
+}> = ({ isOpen, onClose, order }) => {
     const { shippingCompanies, customerCare, updateOrder, updateOrderStatus } = useStore();
     const { showToast } = useToast();
 
@@ -180,17 +179,6 @@ const ShippingModalComponent: React.FC<{
                                 }
                                 await updateOrderStatus(order.id, 'Shipped', order.shipping?.trackingNumber, selectedCompany);
                                 showToast('Order marked as shipped', 'success');
-                                if (onConfirm) {
-                                    onConfirm({
-                                        ...order,
-                                        ...updates,
-                                        shipping: {
-                                            ...(order.shipping || { trackingNumber: '', cost: 0, status: 'Pending' as const, company: '' }),
-                                            company: selectedCompany,
-                                            status: 'Shipped' as const
-                                        }
-                                    });
-                                }
                             } catch (e: any) {
                                 console.error('Failed to update shipping status:', e);
                                 showToast('Update failed. Please try again.', 'error');
@@ -2708,7 +2696,6 @@ const Orders: React.FC = () => {
                 isOpen={isShippingModalOpen}
                 onClose={() => { setIsShippingModalOpen(false); setShippingOrderToUpdate(null); }}
                 order={shippingOrderToUpdate}
-                onConfirm={(updatedOrder) => setReceiptSale(updatedOrder)}
             />
             {/* Pending Remark Modal */}
             <PendingRemarkModalComponent

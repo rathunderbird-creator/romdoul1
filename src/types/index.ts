@@ -87,6 +87,16 @@ export interface Transaction {
     created_at?: string;
 }
 
+export interface StaffAttendance {
+    id: string;
+    userId: string;
+    date: string;
+    status: 'Present' | 'Absent' | 'Late' | 'Half Day' | 'Leave';
+    clockIn?: string;
+    clockOut?: string;
+    notes?: string;
+}
+
 export interface StoreContextType {
     products: Product[];
     cart: CartItem[];
@@ -220,6 +230,7 @@ export interface StoreContextType {
 
 export type Permission =
     | 'view_dashboard'
+    | 'process_sales'
     | 'manage_inventory'
     | 'view_reports'
     | 'manage_settings'
@@ -228,7 +239,9 @@ export type Permission =
     | 'create_orders'
     | 'view_orders'
     | 'view_inventory_stock'
-    | 'manage_income_expense';
+    | 'manage_income_expense'
+    | 'manage_attendance'
+    | 'manage_payroll';
 
 export interface Role {
     id: string;
@@ -244,4 +257,5 @@ export interface User {
     roleId: string;
     pin?: string; // Optional numeric PIN for quick login
     avatar?: string;
+    baseSalary?: number;
 }

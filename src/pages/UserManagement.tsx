@@ -36,14 +36,18 @@ const UserManagement: React.FC = () => {
 
     const allPermissions: Permission[] = [
         'view_dashboard',
+        'process_sales',
         'manage_inventory',
-        'view_reports',
-        'manage_settings',
-        'manage_users',
+        'view_inventory_stock',
         'manage_orders',
         'create_orders',
         'view_orders',
-        'view_inventory_stock'
+        'manage_income_expense',
+        'view_reports',
+        'manage_attendance',
+        'manage_payroll',
+        'manage_users',
+        'manage_settings'
     ];
 
     // User Handlers
