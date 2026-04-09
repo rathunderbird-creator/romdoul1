@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { usePayroll } from '../hooks/usePayroll';
-import { AlertCircle, Edit2, CalendarDays } from 'lucide-react';
+import { AlertCircle, Edit2, CalendarDays, Check } from 'lucide-react';
 import type { User } from '../types';
 import { useToast } from '../context/ToastContext';
 
@@ -23,6 +23,26 @@ const Payroll: React.FC = () => {
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [tempBaseSalary, setTempBaseSalary] = useState<string>('');
     const [savingId, setSavingId] = useState<string | null>(null);
+    
+    // Manual deductions tracking (Local Storage per month)
+    const [manualDeductions, setManualDeductions] = useState<Record<string, number>>({});
+    const [editingDeductions, setEditingDeductions] = useState<Record<string, string>>({});
+
+    // Incentives tracking (Local Storage per month)
+    const [incentives, setIncentives] = useState<Record<string, number>>({});
+    const [editingIncentives, setEditingIncentives] = useState<Record<string, string>>({});
+
+    // Late deduction rate tracking
+    const [lateDeductionRate, setLateDeductionRate] = useState<number>(0);
+    const [tempLateRate, setTempLateRate] = useState<string | null>(null);
+
+    // Initial load for global rate
+    useEffect(() => {
+        const savedRate = localStorage.getItem('payroll_late_deduction_rate');
+        if (savedRate) {
+            setLateDeductionRate(Number(savedRate));
+        }
+    }, []);
 
     // Fetch data when month changes
     useEffect(() => {
@@ -36,6 +56,48 @@ const Payroll: React.FC = () => {
         
         // This will trigger the fetch in the custom hook
         fetchAttendanceForPeriod(startDate, endDate);
+        
+        // Load manual deductions from localStorage for this month
+        const savedManDeds = localStorage.getItem(`payroll_deductions_${selectedMonth}`);
+        if (savedManDeds) {
+            try {
+                const parsed = JSON.parse(savedManDeds);
+                setManualDeductions(parsed);
+                
+                const strMap: Record<string, string> = {};
+                for (const k in parsed) {
+                    if (parsed[k]) strMap[k] = parsed[k].toString();
+                }
+                setEditingDeductions(strMap);
+            } catch (e) {
+                setManualDeductions({});
+                setEditingDeductions({});
+            }
+        } else {
+            setManualDeductions({});
+            setEditingDeductions({});
+        }
+
+        // Load incentives from localStorage for this month
+        const savedIncs = localStorage.getItem(`payroll_incentives_${selectedMonth}`);
+        if (savedIncs) {
+            try {
+                const parsed = JSON.parse(savedIncs);
+                setIncentives(parsed);
+                
+                const strMap: Record<string, string> = {};
+                for (const k in parsed) {
+                    if (parsed[k]) strMap[k] = parsed[k].toString();
+                }
+                setEditingIncentives(strMap);
+            } catch (e) {
+                setIncentives({});
+                setEditingIncentives({});
+            }
+        } else {
+            setIncentives({});
+            setEditingIncentives({});
+        }
         
     }, [selectedMonth, fetchAttendanceForPeriod]);
 
@@ -56,6 +118,42 @@ const Payroll: React.FC = () => {
         } finally {
             setSavingId(null);
         }
+    };
+
+    const handleManualDeductionChange = (userId: string, value: string) => {
+        setEditingDeductions(prev => ({ ...prev, [userId]: value }));
+    };
+
+    const handleManualDeductionBlur = (userId: string) => {
+        const val = Number(editingDeductions[userId] || 0);
+        setManualDeductions(prev => {
+            const next = { ...prev, [userId]: val };
+            localStorage.setItem(`payroll_deductions_${selectedMonth}`, JSON.stringify(next));
+            return next;
+        });
+    };
+
+    const handleIncentiveChange = (userId: string, value: string) => {
+        setEditingIncentives(prev => ({ ...prev, [userId]: value }));
+    };
+
+    const handleIncentiveBlur = (userId: string) => {
+        const val = Number(editingIncentives[userId] || 0);
+        setIncentives(prev => {
+            const next = { ...prev, [userId]: val };
+            localStorage.setItem(`payroll_incentives_${selectedMonth}`, JSON.stringify(next));
+            return next;
+        });
+    };
+
+    const handleLateRateSave = () => {
+        if (tempLateRate === null) return;
+        const amount = Number(tempLateRate);
+        const rate = isNaN(amount) ? 0 : amount;
+        setLateDeductionRate(rate);
+        localStorage.setItem('payroll_late_deduction_rate', rate.toString());
+        setTempLateRate(null);
+        showToast('Late penalty saved', 'success');
     };
 
     // Derived Payroll Calculations (Computed directly in React to reflect any instant DB updates to user or attendance)
@@ -91,28 +189,67 @@ const Payroll: React.FC = () => {
             // Simple business logic calculation (You can tune these deductions later!):
             const absentDeduction = stats.Absent * dailyRate;
             const halfDayDeduction = stats.HalfDay * (dailyRate * 0.5);
-            // No deduction for Late or Leave by default, purely tracked administratively right now
-            const totalDeductions = absentDeduction + halfDayDeduction;
+            const manualDeduction = manualDeductions[user.id] || 0;
+            const incentiveAmount = incentives[user.id] || 0;
+            const lateDeduction = stats.Late * lateDeductionRate;
             
-            const netSalary = Math.max(0, baseSalary - totalDeductions);
+            const totalDeductions = absentDeduction + halfDayDeduction + lateDeduction + manualDeduction;
+            
+            const netSalary = Math.max(0, baseSalary - totalDeductions) + incentiveAmount;
 
             return {
                 user,
                 stats,
                 baseSalary,
                 dailyRate,
+                absentDeduction,
+                halfDayDeduction,
+                lateDeduction,
+                manualDeduction,
+                incentiveAmount,
                 totalDeductions,
                 netSalary
             };
         });
-    }, [users, attendances, selectedMonth]);
+    }, [users, attendances, selectedMonth, manualDeductions, lateDeductionRate, incentives]);
 
     const currencySymbol = currency || '$';
 
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
              {/* Header */}
-             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>                
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>                
+                {/* Late Penalty Setup */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--color-surface)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Late Penalty:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-text-muted)' }}>{currencySymbol}</span>
+                        <input 
+                            type="number"
+                            min="0" step="0.5"
+                            value={tempLateRate !== null ? tempLateRate : (lateDeductionRate || '')} 
+                            onChange={(e) => setTempLateRate(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleLateRateSave(); }}
+                            style={{ 
+                                width: '60px', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--color-border)', 
+                                background: 'var(--color-background)', color: 'var(--color-text)', textAlign: 'left', fontWeight: 'bold' 
+                            }}
+                        />
+                        <button 
+                            onClick={handleLateRateSave}
+                            disabled={tempLateRate === null}
+                            style={{ 
+                                padding: '4px 10px', background: tempLateRate !== null ? 'var(--color-primary)' : 'var(--color-surface)', 
+                                color: tempLateRate !== null ? 'white' : 'var(--color-text-muted)', borderRadius: '6px', border: '1px solid var(--color-border)', 
+                                cursor: tempLateRate !== null ? 'pointer' : 'default', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', height: '28px',
+                                transition: 'all 0.2s'
+                            }}
+                        >Save</button>
+                    </div>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>per day</span>
+                </div>
+
+                {/* Month Picker */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--color-surface)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                     <CalendarDays size={22} color="var(--color-primary)" />
                     <input 
@@ -157,6 +294,8 @@ const Payroll: React.FC = () => {
                                     <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Absent</th>
                                     <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Late / Half</th>
                                     <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Leaves</th>
+                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Extra Deduct ($)</th>
+                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Incentive ($)</th>
                                     <th style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Base Salary</th>
                                     <th style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text)', borderBottom: '1px solid var(--color-border)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>Net Salary</th>
                                 </tr>
@@ -169,7 +308,7 @@ const Payroll: React.FC = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    payrollData.map(({ user, stats, baseSalary, netSalary, totalDeductions }) => {
+                                    payrollData.map(({ user, stats, baseSalary, netSalary, totalDeductions, incentiveAmount }) => {
                                         return (
                                             <tr key={user.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--color-background)'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                                                 
@@ -209,6 +348,54 @@ const Payroll: React.FC = () => {
                                                 </td>
                                                 <td style={{ padding: '16px', textAlign: 'right', fontWeight: '500', color: stats.Leave > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
                                                     {stats.Leave}
+                                                </td>
+
+                                                {/* Manual Deduction Column */}
+                                                <td style={{ padding: '16px', textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                                                        <input
+                                                            type="number"
+                                                            value={editingDeductions[user.id] ?? ''}
+                                                            onChange={(e) => handleManualDeductionChange(user.id, e.target.value)}
+                                                            onBlur={() => handleManualDeductionBlur(user.id)}
+                                                            onKeyDown={(e) => { if (e.key === 'Enter') handleManualDeductionBlur(user.id); }}
+                                                            placeholder="0.00"
+                                                            style={{
+                                                                width: '60px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                                                background: 'var(--color-background)', color: 'var(--color-danger)', textAlign: 'right', fontWeight: '600',
+                                                                fontSize: '13px'
+                                                            }}
+                                                        />
+                                                        <button 
+                                                            onClick={() => handleManualDeductionBlur(user.id)}
+                                                            style={{ padding: '4px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '4px', color: 'var(--color-success)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                            title="Save Deduction"
+                                                        ><Check size={14} /></button>
+                                                    </div>
+                                                </td>
+
+                                                {/* Incentive Column */}
+                                                <td style={{ padding: '16px', textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                                                        <input
+                                                            type="number"
+                                                            value={editingIncentives[user.id] ?? ''}
+                                                            onChange={(e) => handleIncentiveChange(user.id, e.target.value)}
+                                                            onBlur={() => handleIncentiveBlur(user.id)}
+                                                            onKeyDown={(e) => { if (e.key === 'Enter') handleIncentiveBlur(user.id); }}
+                                                            placeholder="0.00"
+                                                            style={{
+                                                                width: '60px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                                                background: 'var(--color-background)', color: 'var(--color-success)', textAlign: 'right', fontWeight: '600',
+                                                                fontSize: '13px'
+                                                            }}
+                                                        />
+                                                        <button 
+                                                            onClick={() => handleIncentiveBlur(user.id)}
+                                                            style={{ padding: '4px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '4px', color: 'var(--color-success)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                            title="Save Incentive"
+                                                        ><Check size={14} /></button>
+                                                    </div>
                                                 </td>
 
                                                 {/* Edit Base Salary Column */}
@@ -257,6 +444,11 @@ const Payroll: React.FC = () => {
                                                         {totalDeductions > 0 && (
                                                             <span style={{ fontSize: '12px', color: 'var(--color-danger)', fontWeight: 'bold' }}>
                                                                 -{Number(totalDeductions).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).replace('$', currencySymbol)} deductions
+                                                            </span>
+                                                        )}
+                                                        {incentiveAmount > 0 && (
+                                                            <span style={{ fontSize: '12px', color: 'var(--color-success)', fontWeight: 'bold' }}>
+                                                                +{Number(incentiveAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).replace('$', currencySymbol)} incentives
                                                             </span>
                                                         )}
                                                     </div>

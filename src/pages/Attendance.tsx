@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAttendance } from '../hooks/useAttendance';
 import type { StaffAttendance } from '../types';
-import { Calendar, CheckCircle2, AlertCircle, UserCheck, Play, Square, Edit2, User, DollarSign } from 'lucide-react';
+import { Calendar, CheckCircle2, AlertCircle, UserCheck, Play, Square, Edit2, User, DollarSign, Check, X } from 'lucide-react';
 import Payroll from './Payroll';
 
 // Helper to get initials
@@ -37,7 +37,7 @@ const Attendance: React.FC = () => {
     const [savingId, setSavingId] = useState<string | null>(null);
 
     // State to toggle manual edit mode for times
-    const [editingTime, setEditingTime] = useState<{ userId: string, field: 'clockIn' | 'clockOut' } | null>(null);
+    const [editingTime, setEditingTime] = useState<{ userId: string, field: 'clockIn' | 'clockOut', value: string } | null>(null);
 
     useEffect(() => {
         fetchAttendanceData(selectedDate);
@@ -131,17 +131,19 @@ const Attendance: React.FC = () => {
             </div>
 
             {/* Tab Navigation */}
-            <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid var(--color-border)', marginBottom: '32px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', width: 'fit-content', border: '1px solid var(--color-border)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                 <button
                     onClick={() => setActiveTab('daily')}
                     style={{
-                        padding: '12px 24px',
-                        borderBottom: activeTab === 'daily' ? '3px solid var(--color-primary)' : 'none',
-                        color: activeTab === 'daily' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                        fontWeight: activeTab === 'daily' ? 'bold' : '500',
-                        background: 'none', border: 'none', cursor: 'pointer',
+                        padding: '10px 24px',
+                        backgroundColor: activeTab === 'daily' ? 'var(--color-primary)' : 'transparent',
+                        color: activeTab === 'daily' ? 'white' : 'var(--color-text-secondary)',
+                        fontWeight: '600',
+                        borderRadius: '8px',
+                        border: 'none', cursor: 'pointer',
                         display: 'flex', alignItems: 'center', gap: '8px',
-                        transition: 'border-color 0.2s, color 0.2s'
+                        transition: 'all 0.2s ease',
+                        boxShadow: activeTab === 'daily' ? '0 2px 6px rgba(0,0,0,0.15)' : 'none'
                     }}
                 >
                     <UserCheck size={18} /> Daily Log
@@ -150,13 +152,15 @@ const Attendance: React.FC = () => {
                     <button
                         onClick={() => setActiveTab('payroll')}
                         style={{
-                            padding: '12px 24px',
-                            borderBottom: activeTab === 'payroll' ? '3px solid var(--color-primary)' : 'none',
-                            color: activeTab === 'payroll' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                            fontWeight: activeTab === 'payroll' ? 'bold' : '500',
-                            background: 'none', border: 'none', cursor: 'pointer',
+                            padding: '10px 24px',
+                            backgroundColor: activeTab === 'payroll' ? 'var(--color-primary)' : 'transparent',
+                            color: activeTab === 'payroll' ? 'white' : 'var(--color-text-secondary)',
+                            fontWeight: '600',
+                            borderRadius: '8px',
+                            border: 'none', cursor: 'pointer',
                             display: 'flex', alignItems: 'center', gap: '8px',
-                            transition: 'border-color 0.2s, color 0.2s'
+                            transition: 'all 0.2s ease',
+                            boxShadow: activeTab === 'payroll' ? '0 2px 6px rgba(0,0,0,0.15)' : 'none'
                         }}
                     >
                         <DollarSign size={18} /> Monthly Payroll
@@ -197,7 +201,7 @@ const Attendance: React.FC = () => {
 
             {/* Top Summary Stats */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                <div style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                <div className="stat-card" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(156, 163, 175, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <User size={24} color="var(--color-text-muted)" />
                     </div>
@@ -206,18 +210,18 @@ const Attendance: React.FC = () => {
                         <p style={{ fontSize: '24px', fontWeight: '800' }}>{staff.length}</p>
                     </div>
                 </div>
-                <div style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                <div className="stat-card" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <CheckCircle2 size={24} color="var(--color-success)" />
                     </div>
                     <div>
                         <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>Present Today</h3>
                         <p style={{ fontSize: '24px', fontWeight: '800', color: 'var(--color-success)' }}>
-                            {attendances.filter(a => a.status === 'Present').length}
+                            {attendances.filter(a => a.status === 'Present').length} <span style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontWeight: 600 }}>/ {staff.length}</span>
                         </p>
                     </div>
                 </div>
-                <div style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                <div className="stat-card" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <AlertCircle size={24} color="var(--color-danger)" />
                     </div>
@@ -263,7 +267,12 @@ const Attendance: React.FC = () => {
                                     const statusBg = attRecord ? getStatusBg(attRecord.status) : 'var(--color-surface)';
 
                                     return (
-                                        <tr key={user.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s', backgroundColor: isSaving ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+                                        <tr 
+                                            key={user.id} 
+                                            style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s', backgroundColor: isSaving ? 'rgba(0,0,0,0.02)' : 'transparent' }}
+                                            onMouseOver={e => { if (!isSaving) e.currentTarget.style.backgroundColor = 'var(--color-background)'; }}
+                                            onMouseOut={e => { if (!isSaving) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                        >
                                             {/* User Info */}
                                             <td style={{ padding: '16px 24px', verticalAlign: 'middle' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -320,20 +329,35 @@ const Attendance: React.FC = () => {
                                             <td style={{ padding: '16px 24px', verticalAlign: 'middle' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {editingTime?.userId === user.id && editingTime.field === 'clockIn' ? (
-                                                        <input
-                                                            type="time"
-                                                            autoFocus
-                                                            value={attRecord?.clockIn || ''}
-                                                            onChange={(e) => handleTimeChange(user.id, 'clockIn', e.target.value)}
-                                                            onBlur={() => setEditingTime(null)}
-                                                            style={{ width: '110px', border: '1px solid var(--color-primary)', background: 'transparent', outline: 'none', color: 'var(--color-text)', fontSize: '14px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px' }}
-                                                        />
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <input
+                                                                type="time"
+                                                                autoFocus
+                                                                value={editingTime.value}
+                                                                onChange={(e) => setEditingTime({ ...editingTime, value: e.target.value })}
+                                                                style={{ width: '105px', border: '1px solid var(--color-primary)', background: 'transparent', outline: 'none', color: 'var(--color-text)', fontSize: '14px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px' }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleTimeChange(user.id, 'clockIn', editingTime.value);
+                                                                    if (e.key === 'Escape') setEditingTime(null);
+                                                                }}
+                                                            />
+                                                            <button 
+                                                                onClick={() => handleTimeChange(user.id, 'clockIn', editingTime.value)}
+                                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', background: 'var(--color-success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                                                title="Save"
+                                                            ><Check size={16} /></button>
+                                                            <button 
+                                                                onClick={() => setEditingTime(null)}
+                                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '4px', cursor: 'pointer' }}
+                                                                title="Cancel"
+                                                            ><X size={16} /></button>
+                                                        </div>
                                                     ) : attRecord?.clockIn ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                             <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>
                                                                 {formatTime(attRecord.clockIn)}
                                                             </div>
-                                                            <Edit2 size={12} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setEditingTime({ userId: user.id, field: 'clockIn'})} />
+                                                            <Edit2 size={12} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setEditingTime({ userId: user.id, field: 'clockIn', value: attRecord.clockIn || ''})} />
                                                         </div>
                                                     ) : (
                                                         <button 
@@ -350,20 +374,35 @@ const Attendance: React.FC = () => {
                                             <td style={{ padding: '16px 24px', verticalAlign: 'middle' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {editingTime?.userId === user.id && editingTime.field === 'clockOut' ? (
-                                                        <input
-                                                            type="time"
-                                                            autoFocus
-                                                            value={attRecord?.clockOut || ''}
-                                                            onChange={(e) => handleTimeChange(user.id, 'clockOut', e.target.value)}
-                                                            onBlur={() => setEditingTime(null)}
-                                                            style={{ width: '110px', border: '1px solid var(--color-primary)', background: 'transparent', outline: 'none', color: 'var(--color-text)', fontSize: '14px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px' }}
-                                                        />
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <input
+                                                                type="time"
+                                                                autoFocus
+                                                                value={editingTime.value}
+                                                                onChange={(e) => setEditingTime({ ...editingTime, value: e.target.value })}
+                                                                style={{ width: '105px', border: '1px solid var(--color-primary)', background: 'transparent', outline: 'none', color: 'var(--color-text)', fontSize: '14px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px' }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleTimeChange(user.id, 'clockOut', editingTime.value);
+                                                                    if (e.key === 'Escape') setEditingTime(null);
+                                                                }}
+                                                            />
+                                                            <button 
+                                                                onClick={() => handleTimeChange(user.id, 'clockOut', editingTime.value)}
+                                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', background: 'var(--color-success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                                                title="Save"
+                                                            ><Check size={16} /></button>
+                                                            <button 
+                                                                onClick={() => setEditingTime(null)}
+                                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '4px', cursor: 'pointer' }}
+                                                                title="Cancel"
+                                                            ><X size={16} /></button>
+                                                        </div>
                                                     ) : attRecord?.clockOut ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                             <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>
                                                                 {formatTime(attRecord.clockOut)}
                                                             </div>
-                                                            <Edit2 size={12} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setEditingTime({ userId: user.id, field: 'clockOut'})} />
+                                                            <Edit2 size={12} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setEditingTime({ userId: user.id, field: 'clockOut', value: attRecord.clockOut || ''})} />
                                                         </div>
                                                     ) : (
                                                         <button 
@@ -434,6 +473,16 @@ const Attendance: React.FC = () => {
             {activeTab === 'payroll' && (
                 <Payroll />
             )}
+
+            {/* Injected Styles for Hover FX */}
+            <style>
+                {`
+                    .stat-card:hover {
+                        transform: translateY(-4px) !important;
+                        box-shadow: 0 10px 20px rgba(0,0,0,0.06) !important;
+                    }
+                `}
+            </style>
         </div>
     );
 };

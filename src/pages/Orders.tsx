@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -475,6 +475,14 @@ const Orders: React.FC = () => {
         localStorage.getItem('orders_searchTerm') || ''
     );
 
+    const [columnFilters, setColumnFilters] = useState<Record<string, string>>(() => {
+        const saved = localStorage.getItem('orders_columnFilters');
+        return saved ? JSON.parse(saved) : {};
+    });
+    const [activeColFilter, setActiveColFilter] = useState<string | null>(null);
+
+    useEffect(() => { localStorage.setItem('orders_columnFilters', JSON.stringify(columnFilters)); }, [columnFilters]);
+
     const [showFilters, setShowFilters] = useState(false);
 
     // Shipping Modal State
@@ -750,7 +758,7 @@ const Orders: React.FC = () => {
     // Reset pagination when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, itemsPerPage]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, columnFilters, itemsPerPage]);
 
     const fetchOrders = React.useCallback(async () => {
         setIsLoadingOrders(true);
@@ -841,6 +849,108 @@ const Orders: React.FC = () => {
                 query = query.or(orFilter);
             }
 
+            for (const [key, val] of Object.entries(columnFilters)) {
+                if (!val || typeof val !== 'string' || !val.trim()) continue;
+                const v = val.trim();
+                const esc = v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                
+                switch (key) {
+                    case 'date': {
+                        const parts = v.split('|');
+                        const startStr = parts[0];
+                        const endStr = parts.length > 1 ? parts[1] : '';
+                        
+                        if (startStr) {
+                            const start = new Date(startStr);
+                            start.setHours(0, 0, 0, 0);
+                            query = query.gte('date', start.toISOString());
+                        }
+                        const actualEndStr = endStr || startStr;
+                        if (actualEndStr) {
+                            const end = new Date(actualEndStr);
+                            end.setHours(23, 59, 59, 999);
+                            query = query.lte('date', end.toISOString());
+                        }
+                        break;
+                    }
+                    case 'settleDate': {
+                        const parts = v.split('|');
+                        const startStr = parts[0];
+                        const endStr = parts.length > 1 ? parts[1] : '';
+                        
+                        if (startStr) {
+                            const start = new Date(startStr);
+                            start.setHours(0, 0, 0, 0);
+                            query = query.gte('settle_date', start.toISOString());
+                        }
+                        const actualEndStr = endStr || startStr;
+                        if (actualEndStr) {
+                            const end = new Date(actualEndStr);
+                            end.setHours(23, 59, 59, 999);
+                            query = query.lte('settle_date', end.toISOString());
+                        }
+                        break;
+                    }
+                    case 'customer':
+                        query = query.ilike('customer_snapshot->>name', `%${esc}%`);
+                        break;
+                    case 'phone':
+                        query = query.ilike('customer_snapshot->>phone', `%${esc}%`);
+                        break;
+                    case 'address':
+                        query = query.ilike('customer_snapshot->>address', `%${esc}%`);
+                        break;
+                    case 'page':
+                        query = query.ilike('customer_snapshot->>page', `%${esc}%`);
+                        break;
+                    case 'salesman':
+                        query = query.ilike('salesman', `%${esc}%`);
+                        break;
+                    case 'customerCare':
+                        query = query.ilike('customer_care', `%${esc}%`);
+                        break;
+                    case 'payBy':
+                        query = query.ilike('payment_method', `%${esc}%`);
+                        break;
+                    case 'status':
+                        query = query.ilike('shipping_status', `%${esc}%`);
+                        break;
+                    case 'payStatus':
+                        query = query.ilike('payment_status', `%${esc}%`);
+                        break;
+                    case 'shippingCo':
+                        query = query.ilike('shipping_company', `%${esc}%`);
+                        break;
+                    case 'remark':
+                        query = query.ilike('remark', `%${esc}%`);
+                        break;
+                    case 'tracking':
+                        query = query.ilike('tracking_number', `%${esc}%`);
+                        break;
+                    case 'items': {
+                        const { data: colItemMatches } = await supabase
+                            .from('sale_items')
+                            .select('sale_id')
+                            .ilike('name', `%${esc}%`)
+                            .limit(200);
+                        
+                        if (colItemMatches && colItemMatches.length > 0) {
+                            const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id)));
+                            query = query.in('id', ids);
+                        } else {
+                            query = query.eq('id', 'NO_MATCH');
+                        }
+                        break;
+                    }
+                    case 'total':
+                        if (!isNaN(Number(v))) query = query.eq('total', Number(v));
+                        break;
+                    case 'balance':
+                        if (!isNaN(Number(v))) query = query.eq('total', Number(v));
+                        break;
+                }
+            }
+
             let dbSortCol = 'date';
             if (sortConfig) {
                 const map: Record<string, string> = {
@@ -875,7 +985,7 @@ const Orders: React.FC = () => {
         } finally {
             setIsLoadingOrders(false);
         }
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt, columnFilters]);
 
     useEffect(() => {
         fetchOrders();
@@ -1205,7 +1315,7 @@ const Orders: React.FC = () => {
         document.body.removeChild(textArea);
     };
 
-    const hasFilters = statusFilter.length > 0 || salesmanFilter !== 'All' || searchTerm !== '' || payStatusFilter.length > 0 || shippingCoFilter.length > 0 || (dateRange.start && dateRange.end);
+    const hasFilters = statusFilter.length > 0 || salesmanFilter !== 'All' || searchTerm !== '' || payStatusFilter.length > 0 || shippingCoFilter.length > 0 || (dateRange.start && dateRange.end) || Object.keys(columnFilters).length > 0;
 
     return (
         <div>
@@ -1699,27 +1809,27 @@ const Orders: React.FC = () => {
                                         setSalesmanFilter('All');
                                         setPayStatusFilter([]);
                                         setShippingCoFilter([]);
-
-
+                                        setColumnFilters({});
                                         setDateRange({ start: '', end: '' });
                                     }}
                                     disabled={!hasFilters}
                                     style={{
                                         padding: '10px 16px', borderRadius: '8px',
-                                        border: hasFilters ? '1px solid #FECACA' : '1px solid var(--color-border)',
-                                        background: hasFilters ? '#FEE2E2' : 'var(--color-surface)',
-                                        color: hasFilters ? '#DC2626' : 'var(--color-text-secondary)',
+                                        border: 'none',
+                                        background: hasFilters ? '#EF4444' : 'var(--color-surface)',
+                                        color: hasFilters ? 'white' : 'var(--color-text-secondary)',
                                         cursor: hasFilters ? 'pointer' : 'not-allowed',
                                         opacity: hasFilters ? 1 : 0.5,
                                         fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
                                         transition: 'all 0.2s',
                                         width: isMobile ? '100%' : 'auto',
                                         justifyContent: 'center',
-                                        height: '40px'
+                                        height: '40px',
+                                        boxShadow: hasFilters ? '0 2px 4px rgba(239, 68, 68, 0.3)' : 'none'
                                     }}
                                     title="Clear All Filters"
                                 >
-                                    <X size={16} /> Clear
+                                    <Filter size={16} /> Clear Filters
                                 </button>
 
                                 {!isMobile && (
@@ -2046,7 +2156,7 @@ const Orders: React.FC = () => {
                                     }}>
                                     <thead>
                                         <tr>
-                                            <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: '#F9FAFB' }} className="sticky-col-first">
+                                            <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: '#e5e7eb' }} className="sticky-col-first">
                                                 {isAdmin && (
                                                     <input
                                                         type="checkbox"
@@ -2076,7 +2186,7 @@ const Orders: React.FC = () => {
                                                             position: 'sticky',
                                                             left: isPinned ? stickyLeft : undefined,
                                                             zIndex: isPinned ? 40 : 30,
-                                                            background: '#F9FAFB',
+                                                            background: '#e5e7eb',
                                                             boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none',
                                                             top: 0
                                                         }}
@@ -2089,14 +2199,103 @@ const Orders: React.FC = () => {
                                                                 justifyContent: 'space-between',
                                                                 height: '100%',
                                                                 padding: 'var(--table-padding, 8px 12px)',
-                                                                overflow: 'hidden',
+                                                                overflow: 'visible',
                                                                 width: '100%',
                                                                 cursor: 'pointer',
                                                                 userSelect: 'none'
                                                             }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'visible', color: 'var(--color-text-main)' }}>
                                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{colDef?.label || colId}</span>
                                                                 <SortIcon columnKey={colId} />
+                                                                {colId !== 'actions' && (
+                                                                    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                                                                        <button
+                                                                            onClick={() => setActiveColFilter(activeColFilter === colId ? null : colId)}
+                                                                            style={{
+                                                                                background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px',
+                                                                                color: columnFilters[colId] ? 'white' : 'var(--color-text-main)',
+                                                                                backgroundColor: columnFilters[colId] ? '#ef4444' : 'transparent',
+                                                                                borderRadius: '4px',
+                                                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                                            }}
+                                                                            title="Filter Column"
+                                                                        >
+                                                                            <Filter size={14} />
+                                                                        </button>
+                                                                        {activeColFilter === colId && (
+                                                                            <div className="glass-panel" style={{
+                                                                                position: 'absolute', top: '100%', left: 0, marginTop: '8px',
+                                                                                padding: '12px', zIndex: 100, background: 'white',
+                                                                                boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                                                                                width: '220px',
+                                                                                display: 'flex', flexDirection: 'column', gap: '8px',
+                                                                                borderRadius: '8px', border: '1px solid var(--color-border)'
+                                                                            }}>
+                                                                                {colId === 'date' || colId === 'settleDate' ? (
+                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                                                            <span style={{ fontSize: '12px', width: '35px', color: 'var(--color-text-secondary)' }}>From:</span>
+                                                                                            <input
+                                                                                                type="date"
+                                                                                                value={(columnFilters[colId] || '').split('|')[0] || ''}
+                                                                                                onChange={(e) => {
+                                                                                                    const current = columnFilters[colId] || '';
+                                                                                                    const [_, end] = current.includes('|') ? current.split('|') : [current, ''];
+                                                                                                    const newStart = e.target.value;
+                                                                                                    setColumnFilters({...columnFilters, [colId]: newStart || end ? `${newStart}|${end}` : ''});
+                                                                                                }}
+                                                                                                className="search-input"
+                                                                                                style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                                                            <span style={{ fontSize: '12px', width: '35px', color: 'var(--color-text-secondary)' }}>To:</span>
+                                                                                            <input
+                                                                                                type="date"
+                                                                                                value={(columnFilters[colId] || '').split('|')[1] || ''}
+                                                                                                onChange={(e) => {
+                                                                                                    const current = columnFilters[colId] || '';
+                                                                                                    const [start, _] = current.includes('|') ? current.split('|') : [current, ''];
+                                                                                                    const newEnd = e.target.value;
+                                                                                                    setColumnFilters({...columnFilters, [colId]: start || newEnd ? `${start}|${newEnd}` : ''});
+                                                                                                }}
+                                                                                                className="search-input"
+                                                                                                style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div style={{ position: 'relative' }}>
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            autoFocus
+                                                                                            placeholder={`Filter ${colDef?.label}...`}
+                                                                                            value={columnFilters[colId] || ''}
+                                                                                            onChange={(e) => setColumnFilters({...columnFilters, [colId]: e.target.value})}
+                                                                                            onKeyDown={(e) => { if (e.key === 'Enter') setActiveColFilter(null); }}
+                                                                                            className="search-input"
+                                                                                            style={{ width: '100%', padding: '8px 28px 8px 8px', borderRadius: '4px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
+                                                                                        />
+                                                                                        <ChevronDown size={14} color="#9CA3AF" style={{ position: 'absolute', right: '8px', top: '10px', pointerEvents: 'none' }} />
+                                                                                    </div>
+                                                                                )}
+                                                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
+                                                                                    <button onClick={() => {
+                                                                                        const newFilters = {...columnFilters};
+                                                                                        delete newFilters[colId];
+                                                                                        setColumnFilters(newFilters);
+                                                                                        setActiveColFilter(null);
+                                                                                    }} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#6B7280', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 500 }}>
+                                                                                        <X size={14} /> Clear
+                                                                                    </button>
+                                                                                    <button onClick={() => setActiveColFilter(null)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 500 }}>
+                                                                                        <Check size={14} /> Apply
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                             <button
                                                                 onClick={(e) => {

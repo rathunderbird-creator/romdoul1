@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Filter, Download } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -22,6 +22,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
+import { useClickOutside } from '../hooks/useClickOutside';
 // import StatsCard from '../components/StatsCard';
 import MobileInventoryCard from '../components/MobileInventoryCard';
 import type { Product, Sale } from '../types';
@@ -55,6 +56,88 @@ const SortableProductRow = ({ id, children, isDraggable, className }: { id: stri
                 </td>
             )}
         </tr>
+    );
+};
+
+const InlineEditCell = ({
+    value,
+    type,
+    onSave,
+    isLowStock,
+    canEdit
+}: {
+    value: number;
+    type: 'price' | 'stock';
+    onSave: (val: number) => void;
+    isLowStock?: boolean;
+    canEdit?: boolean;
+}) => {
+    const [isEditing, setIsEditing] = React.useState(false);
+    const [tempValue, setTempValue] = React.useState(value.toString());
+    const inputRef = React.useRef<HTMLInputElement>(null);
+
+    React.useEffect(() => {
+        if (isEditing) {
+            inputRef.current?.focus();
+            inputRef.current?.select();
+        }
+    }, [isEditing]);
+
+    const handleSave = () => {
+        if (tempValue.trim() === '') {
+            setTempValue(value.toString()); // revert
+            setIsEditing(false);
+            return;
+        }
+        const num = Number(tempValue);
+        if (!isNaN(num) && num >= 0) {
+            if (num !== value) onSave(num);
+        } else {
+            setTempValue(value.toString()); // revert
+        }
+        setIsEditing(false);
+    };
+
+    if (isEditing) {
+        return (
+            <input
+                ref={inputRef}
+                type="number"
+                value={tempValue}
+                onChange={e => setTempValue(e.target.value)}
+                onBlur={handleSave}
+                onKeyDown={e => {
+                    if (e.key === 'Enter') handleSave();
+                    if (e.key === 'Escape') {
+                        setTempValue(value.toString());
+                        setIsEditing(false);
+                    }
+                }}
+                style={{ width: type === 'price' ? '70px' : '60px', padding: '4px', fontSize: '13px', borderRadius: '4px', border: '1px solid var(--color-primary)', textAlign: type === 'price' ? 'left' : 'center', outline: 'none' }}
+            />
+        );
+    }
+
+    return (
+        <div 
+            onClick={() => { if (canEdit) { setIsEditing(true); setTempValue(value.toString()); } }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: canEdit ? 'text' : 'default', minHeight: '24px', padding: '2px 4px', borderRadius: '4px', margin: '-2px -4px' }}
+            className={canEdit ? "hover-bg-subtle" : ""}
+            title={canEdit ? "Click to edit" : undefined}
+        >
+            {type === 'price' ? (
+                <span style={{ fontWeight: 600 }}>${value}</span>
+            ) : (
+                isLowStock ? (
+                    <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '14px' }}>
+                        <AlertTriangle size={14} /> {value}
+                    </span>
+                ) : (
+                    <span style={{ color: '#3B82F6', fontWeight: 'bold', fontSize: '14px' }}>{value}</span>
+                )
+            )}
+            {canEdit && <Edit2 size={12} style={{ opacity: 0.3 }} />}
+        </div>
     );
 };
 
@@ -214,9 +297,37 @@ const Inventory: React.FC = () => {
         }
     };
 
+    const handleBulkCategoryUpdate = (newCategory: string) => {
+        if (confirm(`Change category for ${selectedIds.size} items to "${newCategory}"?`)) {
+            Array.from(selectedIds).forEach(id => {
+                updateProduct(id, { category: newCategory });
+            });
+            showToast(`Category updated to ${newCategory}`, 'success');
+            setSelectedIds(new Set());
+        }
+    };
+
+    const handleBulkStockUpdate = (newStock: number) => {
+        Array.from(selectedIds).forEach(id => {
+            updateProduct(id, { stock: newStock });
+        });
+        showToast(`Stock updated to ${newStock} for selected items`, 'success');
+        setSelectedIds(new Set());
+    };
+
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState<string>('All');
+    
+    // Column Filters
+    const [activeFilterColumn, setActiveFilterColumn] = useState<string | null>(null);
+    const filterMenuRef = useClickOutside<HTMLDivElement>(() => setActiveFilterColumn(null));
+    const [columnFilters, setColumnFilters] = useState({
+        categories: new Set<string>(),
+        priceMin: '',
+        priceMax: '',
+        stockMin: '',
+        stockMax: ''
+    });
     const [sortConfig, setSortConfig] = useState<SortConfig>(null);
     const [activeTab, setActiveTab] = useState<'inventory' | 'returns'>('inventory');
 
@@ -266,8 +377,18 @@ const Inventory: React.FC = () => {
 
             const matchesSearch = productName.toLowerCase().includes(searchQuery) ||
                 productModel.toLowerCase().includes(searchQuery);
-            const matchesCategory = categoryFilter === 'All' || product.category === categoryFilter;
-            return matchesSearch && matchesCategory;
+            
+            const matchesCategory = columnFilters.categories.size === 0 || columnFilters.categories.has(product.category);
+            
+            const pMin = columnFilters.priceMin ? Number(columnFilters.priceMin) : -Infinity;
+            const pMax = columnFilters.priceMax ? Number(columnFilters.priceMax) : Infinity;
+            const matchesPrice = product.price >= pMin && product.price <= pMax;
+
+            const sMin = columnFilters.stockMin ? Number(columnFilters.stockMin) : -Infinity;
+            const sMax = columnFilters.stockMax ? Number(columnFilters.stockMax) : Infinity;
+            const matchesStock = product.stock >= sMin && product.stock <= sMax;
+
+            return matchesSearch && matchesCategory && matchesPrice && matchesStock;
         });
 
         if (sortConfig) {
@@ -306,7 +427,7 @@ const Inventory: React.FC = () => {
         }
 
         return result;
-    }, [products, searchTerm, categoryFilter, sortConfig, productOrder]);
+    }, [products, searchTerm, columnFilters, sortConfig, productOrder]);
 
     // Calculate Totals
     const stats = useMemo(() => {
@@ -414,17 +535,144 @@ const Inventory: React.FC = () => {
         return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
     };
 
-    const renderHeader = (label: string, key: keyof Product | 'totalValue', width?: string) => (
-        <th
-            onClick={() => handleSort(key)}
-            style={{ width, cursor: 'pointer' }}
-        >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {label}
-                <SortIcon columnKey={key} />
-            </div>
-        </th>
-    );
+    const handleExportCSV = () => {
+        if (filteredAndSortedProducts.length === 0) {
+            showToast('No products to export', 'error');
+            return;
+        }
+
+        const csvRows = [];
+        const headers = ['ID', 'Name', 'Model', 'Category', 'Price', 'Stock', 'Low Stock Alert', 'Total Value'];
+        csvRows.push(headers.join(','));
+
+        for (const product of filteredAndSortedProducts) {
+            const values = [
+                product.id,
+                `"${(product.name || '').replace(/"/g, '""')}"`,
+                `"${(product.model || '').replace(/"/g, '""')}"`,
+                `"${(product.category || '').replace(/"/g, '""')}"`,
+                product.price,
+                product.stock,
+                product.lowStockThreshold || 5,
+                product.price * product.stock
+            ];
+            csvRows.push(values.join(','));
+        }
+
+        const csvString = "\uFEFF" + csvRows.join('\n'); // Add BOM for UTF-8 Excel support
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        link.href = url;
+        link.setAttribute('download', `inventory_export_${timestamp}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const renderHeader = (label: string, key: keyof Product | 'totalValue', width?: string, filterable?: boolean) => {
+        const isFilterActive = activeFilterColumn === key;
+        const hasActiveFilter = (key === 'category' && columnFilters.categories.size > 0) ||
+                                (key === 'price' && (columnFilters.priceMin || columnFilters.priceMax)) ||
+                                (key === 'stock' && (columnFilters.stockMin || columnFilters.stockMax));
+
+        return (
+            <th style={{ width, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div onClick={() => handleSort(key)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}>
+                        {label}
+                        <SortIcon columnKey={key} />
+                    </div>
+                    {filterable && (
+                        <div style={{ position: 'relative' }} ref={isFilterActive ? (filterMenuRef as any) : null}>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveFilterColumn(activeFilterColumn === key ? null : key);
+                                }}
+                                style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: hasActiveFilter ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                    padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    borderRadius: '4px', backgroundColor: isFilterActive ? 'var(--color-bg)' : 'transparent'
+                                }}
+                            >
+                                <Filter size={14} />
+                            </button>
+                            {isFilterActive && (
+                                <div className="glass-panel" style={{
+                                    position: 'absolute', top: '100%', left: 0, marginTop: '8px',
+                                    padding: '12px', minWidth: '200px', zIndex: 100, display: 'flex', flexDirection: 'column', gap: '8px',
+                                    boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
+                                }}>
+                                    {key === 'category' && (
+                                        <>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Filter Categories</div>
+                                            <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                {allCategories.filter(c => c !== 'All').map(cat => (
+                                                    <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={columnFilters.categories.has(cat)}
+                                                            onChange={() => {
+                                                                const newSet = new Set(columnFilters.categories);
+                                                                if (newSet.has(cat)) newSet.delete(cat);
+                                                                else newSet.add(cat);
+                                                                setColumnFilters(prev => ({ ...prev, categories: newSet }));
+                                                            }}
+                                                            style={{ cursor: 'pointer' }}
+                                                        />
+                                                        {cat}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            <button 
+                                                onClick={() => setColumnFilters(prev => ({ ...prev, categories: new Set() }))}
+                                                style={{ fontSize: '12px', color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', marginTop: '4px', padding: 0 }}
+                                            >
+                                                Clear all
+                                            </button>
+                                        </>
+                                    )}
+                                    {(key === 'price' || key === 'stock') && (
+                                        <>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
+                                                Filter {key === 'price' ? 'Price' : 'Stock'}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                <input
+                                                    type="number"
+                                                    placeholder="Min"
+                                                    value={key === 'price' ? columnFilters.priceMin : columnFilters.stockMin}
+                                                    onChange={(e) => setColumnFilters(prev => ({ ...prev, [key === 'price' ? 'priceMin' : 'stockMin']: e.target.value }))}
+                                                    style={{ width: '80px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--color-border)', outline: 'none' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>-</span>
+                                                <input
+                                                    type="number"
+                                                    placeholder="Max"
+                                                    value={key === 'price' ? columnFilters.priceMax : columnFilters.stockMax}
+                                                    onChange={(e) => setColumnFilters(prev => ({ ...prev, [key === 'price' ? 'priceMax' : 'stockMax']: e.target.value }))}
+                                                    style={{ width: '80px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--color-border)', outline: 'none' }}
+                                                />
+                                            </div>
+                                            <button 
+                                                onClick={() => setColumnFilters(prev => ({ ...prev, [key === 'price' ? 'priceMin' : 'stockMin']: '', [key === 'price' ? 'priceMax' : 'stockMax']: '' }))}
+                                                style={{ fontSize: '12px', color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', marginTop: '4px', padding: 0 }}
+                                            >
+                                                Clear
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </th>
+        );
+    };
 
     return (
         <div style={{ paddingBottom: isMobile ? '80px' : '0' }}>
@@ -487,20 +735,16 @@ const Inventory: React.FC = () => {
                             style={{ width: '100%', paddingLeft: '36px', height: '40px', background: 'var(--color-bg)' }}
                         />
                     </div>
-                    <select
-                        value={categoryFilter}
-                        onChange={(e) => setCategoryFilter(e.target.value)}
-                        className="search-input"
-                        style={{ height: '40px', background: 'var(--color-bg)', minWidth: '150px' }}
-                    >
-                        {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    {/* Category filter moved to column header */}
                 </div>
-                
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <button onClick={() => { refreshData(); showToast('Inventory refreshed', 'success'); }} className="secondary-button" style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-bg)' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <button onClick={() => { refreshData(); showToast('Inventory refreshed', 'success'); }} className="secondary-button hover-lift" style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-bg)' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
                         {!isMobile && 'Refresh'}
+                    </button>
+                    <button onClick={handleExportCSV} className="secondary-button hover-lift" style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-bg)' }}>
+                        <Download size={16} />
+                        {!isMobile && 'Export'}
                     </button>
                     {canManageInventory && (
                         <button onClick={openAddModal} className="primary-button hover-lift" style={{ height: '40px', padding: '0 20px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)' }}>
@@ -585,9 +829,9 @@ const Inventory: React.FC = () => {
                                         />
                                     </th>
                                     {renderHeader('Product', 'name')}
-                                    {renderHeader('Category', 'category')}
-                                    {renderHeader('Price', 'price')}
-                                    {renderHeader('Stock', 'stock')}
+                                    {renderHeader('Category', 'category', undefined, true)}
+                                    {renderHeader('Price', 'price', undefined, true)}
+                                    {renderHeader('Stock', 'stock', undefined, true)}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
                                     {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
                                     {!sortConfig && <th style={{ width: '40px' }} />}
@@ -625,15 +869,28 @@ const Inventory: React.FC = () => {
                                                         {product.category}
                                                     </span>
                                                 </td>
-                                                <td style={{ fontWeight: 600 }}>${product.price}</td>
                                                 <td>
-                                                    {product.stock < (product.lowStockThreshold || 5) ? (
-                                                        <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '14px' }}>
-                                                            <AlertTriangle size={14} /> {product.stock}
-                                                        </span>
-                                                    ) : (
-                                                        <span style={{ color: '#3B82F6', fontWeight: 'bold', fontSize: '14px' }}>{product.stock}</span>
-                                                    )}
+                                                    <InlineEditCell 
+                                                        value={product.price} 
+                                                        type="price" 
+                                                        onSave={(val) => {
+                                                            updateProduct(product.id, { price: val });
+                                                            showToast(`Updated price for ${product.name}`, 'success');
+                                                        }} 
+                                                        canEdit={canManageInventory} 
+                                                    />
+                                                </td>
+                                                <td>
+                                                    <InlineEditCell 
+                                                        value={product.stock} 
+                                                        type="stock" 
+                                                        isLowStock={product.stock < (product.lowStockThreshold || 5)}
+                                                        onSave={(val) => {
+                                                            updateProduct(product.id, { stock: val });
+                                                            showToast(`Updated stock for ${product.name}`, 'success');
+                                                        }} 
+                                                        canEdit={canManageInventory} 
+                                                    />
                                                 </td>
                                                 {canViewFinancials && (
                                                     <td style={{ color: 'var(--color-text-secondary)' }}>
@@ -968,6 +1225,33 @@ const Inventory: React.FC = () => {
                     <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
                         <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
                         <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
+                        <select
+                            onChange={(e) => {
+                                if (e.target.value) {
+                                    handleBulkCategoryUpdate(e.target.value);
+                                    e.target.value = '';
+                                }
+                            }}
+                            className="search-input"
+                            style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--color-border)', outline: 'none' }}
+                            defaultValue=""
+                        >
+                            <option value="" disabled>Set Category...</option>
+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <button onClick={() => {
+                            const newStock = prompt(`Enter new stock value for ${selectedIds.size} selected items:`);
+                            if (newStock !== null) {
+                                const num = Number(newStock);
+                                if (!isNaN(num) && num >= 0) {
+                                    handleBulkStockUpdate(num);
+                                } else {
+                                    alert('Invalid stock amount. Please enter a positive number.');
+                                }
+                            }
+                        }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'var(--color-bg)', color: 'var(--color-text-main)', borderRadius: '8px', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>
+                            <Package size={18} /> Set Stock
+                        </button>
                         <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#EF4444', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                             <Trash2 size={18} /> Delete
                         </button>
