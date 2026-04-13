@@ -749,7 +749,7 @@ const Orders: React.FC = () => {
 
     // Derived State (filteredOrders, paginatedOrders, stats) -> kept same essentially
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(100);
+    const [itemsPerPage, setItemsPerPage] = useState(200);
     const [totalCount, setTotalCount] = useState(0);
 
     const [serverOrders, setServerOrders] = useState<Sale[]>([]);
@@ -796,57 +796,83 @@ const Orders: React.FC = () => {
             }
 
             if (searchTerm.trim()) {
-                const term = searchTerm.toLowerCase().trim();
+                const terms = searchTerm.split(/[\s,]+/).filter(t => t.trim().length > 0);
 
-                // 1. Fetch matching sale_ids from sale_items (limit to 200 to prevent URL header too large error)
-                let itemQuery = supabase
-                    .from('sale_items')
-                    .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company)')
-                    .ilike('name', `%${term}%`);
+                if (terms.length > 0) {
+                    // Bulk target detection: If there are many terms, the user is pasting a list of IDs/Phones.
+                    // Doing comprehensive ilike searching across 10 columns for > 15 terms breaks URL limits on PostgREST.
+                    const isBulk = terms.length > 10;
+                    
+                    let matchingSaleIds: string[] = [];
 
-                // Mirror the sales filters onto the inner joined table
-                if (statusFilter.length > 0) {
-                    itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
-                }
-                if (effectiveSalesmanFilter !== 'All') {
-                    itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
-                }
-                if (payStatusFilter.length > 0) {
-                    itemQuery = itemQuery.in('sales.payment_status', payStatusFilter);
-                }
-                if (shippingCoFilter.length > 0) {
-                    itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
-                }
-                if (dateRange.start) {
-                    const start = new Date(dateRange.start);
-                    start.setHours(0, 0, 0, 0);
-                    itemQuery = itemQuery.gte('sales.date', start.toISOString());
-                }
-                if (dateRange.end) {
-                    const end = new Date(dateRange.end);
-                    end.setHours(23, 59, 59, 999);
-                    itemQuery = itemQuery.lte('sales.date', end.toISOString());
-                }
+                    if (!isBulk) {
+                        // Combine item matching into one query using OR
+                        let itemQuery = supabase
+                            .from('sale_items')
+                            .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company)');
 
-                // Order by sale_id descending to get newest first before the limit kicks in (since sale_ids are timestamps here)
-                itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+                        const itemOrFilters = terms.map(t => {
+                            const escaped = t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                            return `name.ilike."%${escaped}%"`;
+                        }).join(',');
+                        itemQuery = itemQuery.or(itemOrFilters);
 
-                const { data: itemMatches } = await itemQuery;
+                        // Mirror the sales filters onto the inner joined table
+                        if (statusFilter.length > 0) {
+                            itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
+                        }
+                        if (effectiveSalesmanFilter !== 'All') {
+                            itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
+                        }
+                        if (payStatusFilter.length > 0) {
+                            itemQuery = itemQuery.in('sales.payment_status', payStatusFilter);
+                        }
+                        if (shippingCoFilter.length > 0) {
+                            itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
+                        }
+                        if (dateRange.start) {
+                            const start = new Date(dateRange.start);
+                            start.setHours(0, 0, 0, 0);
+                            itemQuery = itemQuery.gte('sales.date', start.toISOString());
+                        }
+                        if (dateRange.end) {
+                            const end = new Date(dateRange.end);
+                            end.setHours(23, 59, 59, 999);
+                            itemQuery = itemQuery.lte('sales.date', end.toISOString());
+                        }
 
-                let matchingSaleIds: string[] = [];
-                if (itemMatches && itemMatches.length > 0) {
-                    matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                        // Order by sale_id descending to get newest first before the limit kicks in
+                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+
+                        const { data: itemMatches } = await itemQuery;
+
+                        if (itemMatches && itemMatches.length > 0) {
+                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                        }
+                    }
+
+                    if (isBulk) {
+                        // Safely map values into an 'in' string, e.g. "term1","term2"
+                        const inList = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(',');
+                        query = query.or(`id.in.(${inList}),tracking_number.in.(${inList}),customer_snapshot->>phone.in.(${inList})`);
+                    } else {
+                        // Build the comprehensive OR string combining all terms for complex partial text searches
+                        let finalOrFilters: string[] = [];
+                        
+                        for (const term of terms) {
+                            const escapedTerm = term.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                            finalOrFilters.push(`id.ilike."%${escapedTerm}%",salesman.ilike."%${escapedTerm}%",remark.ilike."%${escapedTerm}%",customer_care.ilike."%${escapedTerm}%",shipping_company.ilike."%${escapedTerm}%",tracking_number.ilike."%${escapedTerm}%",payment_method.ilike."%${escapedTerm}%",customer_snapshot->>name.ilike."%${escapedTerm}%",customer_snapshot->>phone.ilike."%${escapedTerm}%",customer_snapshot->>city.ilike."%${escapedTerm}%"`);
+                        }
+
+                        let orFilter = finalOrFilters.join(',');
+
+                        if (matchingSaleIds.length > 0) {
+                            orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
+                        }
+
+                        query = query.or(orFilter);
+                    }
                 }
-
-                // Escape characters that break PostgREST or() filter syntax
-                const escapedTerm = term.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                let orFilter = `id.ilike."%${escapedTerm}%",salesman.ilike."%${escapedTerm}%",remark.ilike."%${escapedTerm}%",customer_care.ilike."%${escapedTerm}%",shipping_company.ilike."%${escapedTerm}%",tracking_number.ilike."%${escapedTerm}%",payment_method.ilike."%${escapedTerm}%",customer_snapshot->>name.ilike."%${escapedTerm}%",customer_snapshot->>phone.ilike."%${escapedTerm}%",customer_snapshot->>city.ilike."%${escapedTerm}%"`;
-
-                if (matchingSaleIds.length > 0) {
-                    orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
-                }
-
-                query = query.or(orFilter);
             }
 
             for (const [key, val] of Object.entries(columnFilters)) {
@@ -1343,9 +1369,23 @@ const Orders: React.FC = () => {
                                 <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                 <input
                                     type="text"
-                                    placeholder="Search..."
+                                    placeholder="Search (space/comma separated)..."
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
+                                    // Handle pasted multiline text gracefully by splitting it with spaces
+                                    onPaste={e => {
+                                        const pasted = e.clipboardData.getData('text');
+                                        if (pasted.includes('\n') || pasted.includes('\r')) {
+                                            e.preventDefault();
+                                            const cleaned = pasted.split(/[\r\n]+/).filter(t => t.trim()).join(' ');
+                                            const el = e.target as HTMLInputElement;
+                                            const start = el.selectionStart || 0;
+                                            const end = el.selectionEnd || 0;
+                                            const newVal = searchTerm.slice(0, start) + cleaned + (searchTerm.slice(end) || (searchTerm.length ? '' : ''));
+                                            setSearchTerm(newVal);
+                                            // The controlled state update will handle rendering.
+                                        }
+                                    }}
                                     className="search-input"
                                     style={{ paddingLeft: '36px', width: '100%', height: '40px', borderRadius: '8px', border: '1px solid var(--color-border)' }}
                                 />
