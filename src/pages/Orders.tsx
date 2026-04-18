@@ -2521,7 +2521,7 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 updateOrder(order.id, updates);
                                                                             }}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
+                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Ordered' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
                                                                         />
                                                                     </td>
                                                                 );
@@ -2747,8 +2747,7 @@ const Orders: React.FC = () => {
                         setActiveTab('list');
                     }}
                 />
-            )
-            }
+            )}
 
             {
                 activeTab === 'list' && filteredOrders.length > 0 && (

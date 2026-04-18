@@ -461,3 +461,54 @@ div:has(> svg) .search-input {
   background-color: var(--color-text-muted);
   cursor: not-allowed;
 }
+
+/* Sidebar Item UX Improvements */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  background-color: transparent;
+}
+
+.sidebar-item:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-item.active-parent {
+  background-color: #6B7280 !important;
+  color: white !important;
+  font-weight: 600;
+}
+
+.sidebar-item.active-link {
+  background-color: rgba(255, 102, 0, 0.1) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600;
+}
+
+.sidebar-subitem {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.sidebar-subitem:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-subitem.active-sublink {
+  background-color: #10B981 !important;
+  color: white !important;
+  font-weight: 500;
+}

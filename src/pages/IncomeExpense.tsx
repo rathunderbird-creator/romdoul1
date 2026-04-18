@@ -5,6 +5,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { DateRangePicker } from '../components';
+import { useLocation } from 'react-router-dom';
 import '../components/MobileOrderCard.css';
 import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
@@ -23,6 +24,14 @@ const IncomeExpense: React.FC = () => {
     const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+    const location = useLocation();
+
+    // Derive filter type from URL path
+    const getFilterFromPath = (): 'All' | 'Income' | 'Expense' => {
+        if (location.pathname === '/income-expense/income') return 'Income';
+        if (location.pathname === '/income-expense/expense') return 'Expense';
+        return 'All';
+    };
 
     const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
@@ -41,7 +50,7 @@ const IncomeExpense: React.FC = () => {
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-    const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>('All');
+    const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>(getFilterFromPath());
     const [filterCategory, setFilterCategory] = useState<string>('All');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState(() => {
@@ -51,6 +60,11 @@ const IncomeExpense: React.FC = () => {
         }
         return { start: '', end: '' };
     });
+
+    // Sync filter type when navigating between sub-routes
+    useEffect(() => {
+        setFilterType(getFilterFromPath());
+    }, [location.pathname]);
 
     useEffect(() => {
         localStorage.setItem('incomeExpenseDateRange', JSON.stringify(dateRange));

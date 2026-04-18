@@ -1178,6 +1178,61 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
 
         await supabase.from('sales').update(updates).eq('id', id);
+
+        // Log stock-out movement when status changes to Shipped or Delivered
+        if (salesOrder && (status === 'Shipped' || status === 'Delivered')) {
+            const oldStatus = salesOrder.shipping?.status || 'Pending';
+            // Only log if this is a new transition (not Shipped→Shipped or Delivered→Delivered)
+            if (oldStatus !== status) {
+                // Check if stock-out records already exist for this order
+                const { data: existingMovements } = await supabase.from('stock_movements')
+                    .select('id')
+                    .eq('reference_id', id)
+                    .eq('type', 'out');
+
+                if (existingMovements && existingMovements.length > 0) {
+                    // Update existing records (e.g., Shipped → Delivered)
+                    await supabase.from('stock_movements')
+                        .update({
+                            reason: status,
+                            source: status === 'Shipped' ? 'Order Shipped' : 'Order Delivered'
+                        })
+                        .eq('reference_id', id)
+                        .eq('type', 'out')
+                        .then(({ error }) => {
+                            if (error) console.error('Failed to update stock-out movements:', error);
+                        });
+                } else {
+                    // Insert new records
+                    const customerName = salesOrder.customer?.name || '';
+                    const customerPhone = salesOrder.customer?.phone || '';
+                    const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+
+                    const stockOutMovements = salesOrder.items
+                        .filter(item => item.id)
+                        .map(item => ({
+                            product_id: item.id,
+                            product_name: item.name || 'Unknown',
+                            type: 'out',
+                            quantity: item.quantity,
+                            unit_price: item.price || 0,
+                            reason: status,
+                            reference_id: id,
+                            source: status === 'Shipped' ? 'Order Shipped' : 'Order Delivered',
+                            note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
+                            movement_date: new Date().toISOString().slice(0, 10),
+                            created_by: currentUser?.id || 'unknown'
+                        }));
+
+                    if (stockOutMovements.length > 0) {
+                        supabase.from('stock_movements').insert(stockOutMovements).then(({ error }) => {
+                            if (error) console.error('Failed to log stock-out movements:', error);
+                        });
+                    }
+                }
+            }
+        }
+
         setSalesUpdatedAt(Date.now());
     };
 
@@ -1297,6 +1352,61 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (insertError) throw insertError;
             }
             setSalesUpdatedAt(Date.now());
+
+            // 5. Log stock-out movement when shipping status changes to Shipped or Delivered
+            if (updates.shipping?.status && existingOrder) {
+                const newStatus = updates.shipping.status;
+                const oldStatus = existingOrder.shipping?.status || 'Pending';
+                if ((newStatus === 'Shipped' || newStatus === 'Delivered') && oldStatus !== newStatus) {
+                    // Check if stock-out records already exist for this order
+                    const { data: existingMovements } = await supabase.from('stock_movements')
+                        .select('id')
+                        .eq('reference_id', id)
+                        .eq('type', 'out');
+
+                    if (existingMovements && existingMovements.length > 0) {
+                        // Update existing records (e.g., Shipped → Delivered)
+                        await supabase.from('stock_movements')
+                            .update({
+                                reason: newStatus,
+                                source: newStatus === 'Shipped' ? 'Order Shipped' : 'Order Delivered'
+                            })
+                            .eq('reference_id', id)
+                            .eq('type', 'out')
+                            .then(({ error }) => {
+                                if (error) console.error('Failed to update stock-out movements:', error);
+                            });
+                    } else {
+                        // Insert new records
+                        const orderItems = updates.items || existingOrder.items || [];
+                        const customerName = updates.customer?.name || existingOrder.customer?.name || '';
+                        const customerPhone = updates.customer?.phone || existingOrder.customer?.phone || '';
+                        const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+
+                        const stockOutMovements = orderItems
+                            .filter(item => item.id)
+                            .map(item => ({
+                                product_id: item.id,
+                                product_name: item.name || 'Unknown',
+                                type: 'out',
+                                quantity: item.quantity,
+                                unit_price: item.price || 0,
+                                reason: newStatus,
+                                reference_id: id,
+                                source: newStatus === 'Shipped' ? 'Order Shipped' : 'Order Delivered',
+                                note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
+                                movement_date: new Date().toISOString().slice(0, 10),
+                                created_by: currentUser?.id || 'unknown'
+                            }));
+
+                        if (stockOutMovements.length > 0) {
+                            supabase.from('stock_movements').insert(stockOutMovements).then(({ error }) => {
+                                if (error) console.error('Failed to log stock-out movements:', error);
+                            });
+                        }
+                    }
+                }
+            }
 
         } catch (error: any) {
             console.error('Error updating order:', error);
@@ -1658,7 +1768,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const restockOrder = async (orderId: string): Promise<void> => {
         setIsLoading(true);
         try {
-            let orderItems = sales.find(s => s.id === orderId)?.items;
+            const localOrder = sales.find(s => s.id === orderId);
+            let orderItems = localOrder?.items;
+            let customerName = localOrder?.customer?.name || '';
+            let customerPhone = localOrder?.customer?.phone || '';
 
             if (!orderItems) {
                 const { data } = await supabase.from('sale_items').select('*').eq('sale_id', orderId);
@@ -1669,6 +1782,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         price: dbItem.price,
                         quantity: dbItem.quantity
                     })) as any;
+                }
+            }
+
+            // Fetch customer info from DB if not available locally
+            if (!customerName) {
+                const { data: orderData } = await supabase.from('sales').select('customer_snapshot').eq('id', orderId).single();
+                if (orderData?.customer_snapshot) {
+                    customerName = orderData.customer_snapshot.name || '';
+                    customerPhone = orderData.customer_snapshot.phone || '';
                 }
             }
 
@@ -1706,6 +1828,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                 // Prepare restock record
                 const restockId = generateUUID();
+                // Build note with customer info
+                const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+                const noteText = `Restocked from order #${orderId.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`;
+
                 restockRecords.push({
                     id: restockId,
                     product_id: item.id,
@@ -1713,7 +1839,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     cost: 0,
                     date: now,
                     added_by: currentUser?.name || 'System',
-                    note: `Restocked from returned order #${orderId.slice(0, 8)}`
+                    note: noteText
                 });
 
                 // Local restock history update
@@ -1724,7 +1850,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     cost: 0,
                     date: now,
                     addedBy: currentUser?.name || 'System',
-                    note: `Restocked from returned order #${orderId.slice(0, 8)}`
+                    note: noteText
                 }, ...prev]);
             }
 
@@ -1734,6 +1860,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     console.error("Failed to insert restock records:", insertErr);
                     throw insertErr;
                 }
+
+                // Also log to stock_movements for Stock-In tracking
+                const stockMovements = restockRecords.map(r => ({
+                    product_id: r.product_id,
+                    product_name: orderItems?.find(i => i.id === r.product_id)?.name || 'Unknown',
+                    type: 'in',
+                    quantity: r.quantity,
+                    unit_price: 0,
+                    source: 'Customer Return',
+                    note: r.note,
+                    movement_date: new Date().toISOString().slice(0, 10),
+                    created_by: currentUser?.id || 'unknown'
+                }));
+                await supabase.from('stock_movements').insert(stockMovements).then(({ error }) => {
+                    if (error) console.error('Failed to log stock movements for restock:', error);
+                });
             }
 
             setProductsUpdatedAt(Date.now());
@@ -1752,15 +1894,29 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('product_id, quantity, sale_id').in('sale_id', orderIds);
             if (itemsErr) throw itemsErr;
 
-            // 2. Aggregate quantities by product
+            // Fetch customer info for all orders
+            const { data: orderDataList } = await supabase.from('sales').select('id, customer_snapshot').in('id', orderIds);
+            const orderCustomerMap: Record<string, { name: string; phone: string }> = {};
+            (orderDataList || []).forEach(o => {
+                orderCustomerMap[o.id] = {
+                    name: o.customer_snapshot?.name || '',
+                    phone: o.customer_snapshot?.phone || ''
+                };
+            });
+
+            // 2. Aggregate quantities by product, track which orders contributed
             const restockItems = dbItems || [];
             const productUpdates: Record<string, number> = {};
+            // Track order-to-product mapping for notes
+            const productOrderSources: Record<string, Set<string>> = {};
             
             for (const item of restockItems) {
                 if (!item.product_id) continue;
                 const qty = Number(item.quantity);
                 if (isNaN(qty) || qty <= 0) continue;
                 productUpdates[item.product_id] = (productUpdates[item.product_id] || 0) + qty;
+                if (!productOrderSources[item.product_id]) productOrderSources[item.product_id] = new Set();
+                productOrderSources[item.product_id].add(item.sale_id);
             }
 
             // 3. Update product stock in DB and Local
@@ -1777,7 +1933,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     localProductUpdates[productId] = newStock;
                 }
 
-                // Add to restock history
+                // Build note with customer info from contributing orders
+                const sourceOrderIds = productOrderSources[productId] ? [...productOrderSources[productId]] : [];
+                const customerInfoParts = sourceOrderIds.map(oid => {
+                    const c = orderCustomerMap[oid];
+                    const info = [c?.name, c?.phone].filter(Boolean).join(' ');
+                    return `#${oid.slice(0, 8)}${info ? ' (' + info + ')' : ''}`;
+                });
+                const noteText = `Bulk restocked from ${customerInfoParts.join(', ')}`;
+
                 const restockId = generateUUID();
                 restockRecords.push({
                     id: restockId,
@@ -1786,7 +1950,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     cost: 0,
                     date: now,
                     added_by: currentUser?.name || 'System',
-                    note: `Bulk restocked from returned orders (${orderIds.length})`
+                    note: noteText
                 });
             }
 
@@ -1801,6 +1965,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     addedBy: r.added_by,
                     note: r.note
                 })), ...prev]);
+
+                // Also log to stock_movements for Stock-In tracking
+                const stockMovements = restockRecords.map(r => ({
+                    product_id: r.product_id,
+                    product_name: restockItems.find(i => i.product_id === r.product_id)?.product_id || r.product_id,
+                    type: 'in',
+                    quantity: r.quantity,
+                    unit_price: 0,
+                    source: 'Customer Return',
+                    note: r.note,
+                    movement_date: new Date().toISOString().slice(0, 10),
+                    created_by: currentUser?.id || 'unknown'
+                }));
+
+                // Fetch product names for the movements
+                const productIds = [...new Set(stockMovements.map(m => m.product_id))];
+                const { data: productData } = await supabase.from('products').select('id, name').in('id', productIds);
+                const nameMap: Record<string, string> = {};
+                (productData || []).forEach(p => { nameMap[p.id] = p.name; });
+                stockMovements.forEach(m => { m.product_name = nameMap[m.product_id] || m.product_id; });
+
+                await supabase.from('stock_movements').insert(stockMovements).then(({ error }) => {
+                    if (error) console.error('Failed to log stock movements for bulk restock:', error);
+                });
             }
 
             setProducts(prev => prev.map(p => 

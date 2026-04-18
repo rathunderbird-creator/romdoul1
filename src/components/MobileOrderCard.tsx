@@ -195,7 +195,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     status={order.paymentStatus || 'Paid'}
                                     onChange={(newStatus) => onUpdatePaymentStatus(order.id, newStatus)}
                                     // simplified readOnly logic for mobile
-                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
+                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Ordered' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
                                     disabledOptions={[]}
                                 />
                             </div>

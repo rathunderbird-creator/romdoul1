@@ -17,6 +17,10 @@ const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const MobileOperators = lazy(() => import('./pages/MobileOperators'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
 const Attendance = lazy(() => import('./pages/Attendance'));
+const ReturnsRestocks = lazy(() => import('./pages/ReturnsRestocks'));
+const StockIn = lazy(() => import('./pages/StockIn'));
+const StockOut = lazy(() => import('./pages/StockOut'));
+const Revenue = lazy(() => import('./pages/Revenue'));
 
 const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
 const SalesSummary = lazy(() => import('./pages/reports/SalesSummary'));
@@ -24,6 +28,7 @@ const InventoryAnalytics = lazy(() => import('./pages/reports/InventoryAnalytics
 const FinancialReport = lazy(() => import('./pages/reports/FinancialReport'));
 const StaffPerformance = lazy(() => import('./pages/reports/StaffPerformance'));
 const TopProducts = lazy(() => import('./pages/reports/TopProducts'));
+const ShippingReport = lazy(() => import('./pages/reports/ShippingReport'));
 
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
@@ -55,7 +60,13 @@ const ProtectedApp = () => {
           <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
           <Route path="/inventory" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><Inventory /></ProtectedRoute>} />
+          <Route path="/inventory/stock-in" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockIn /></ProtectedRoute>} />
+          <Route path="/inventory/stock-out" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockOut /></ProtectedRoute>} />
+          <Route path="/inventory/returns" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><ReturnsRestocks /></ProtectedRoute>} />
           <Route path="/income-expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
+          <Route path="/income-expense/income" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
+          <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
+          <Route path="/income-expense/revenue" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><Revenue /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
           <Route path="/orders/:id" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrderDetailPage /></ProtectedRoute>} />
 
@@ -76,6 +87,7 @@ const ProtectedApp = () => {
             <Route path="inventory" element={<InventoryAnalytics />} />
             <Route path="financials" element={<FinancialReport />} />
             <Route path="staff" element={<StaffPerformance />} />
+            <Route path="shipping" element={<ShippingReport />} />
           </Route>
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />

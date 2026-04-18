@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BarChart3, Package, Wallet, Users, ShoppingBag } from 'lucide-react';
+import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck } from 'lucide-react';
 import { DateRangePicker } from '../../components';
 import { supabase } from '../../lib/supabase';
 import { mapSaleEntity } from '../../utils/mapper';
@@ -71,6 +71,7 @@ const ReportsLayout: React.FC = () => {
         { path: '/reports/inventory', label: 'Inventory', icon: Package },
         { path: '/reports/financials', label: 'Financials', icon: Wallet },
         { path: '/reports/staff', label: 'Staff Performance', icon: Users },
+        { path: '/reports/shipping', label: 'Shipping Companies', icon: Truck },
     ];
 
     return (
