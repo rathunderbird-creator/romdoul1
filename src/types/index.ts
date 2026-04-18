@@ -40,7 +40,7 @@ export interface Sale {
     settleDate?: string;
     lastEditedAt?: string; // ISO string
     lastEditedBy?: string;
-    paymentStatus?: 'Unpaid' | 'Paid' | 'Cancel';
+    paymentStatus?: 'Unpaid' | 'Paid' | 'Get File' | 'Cancel';
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;
     pageSource?: string;

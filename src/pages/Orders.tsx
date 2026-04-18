@@ -1800,10 +1800,10 @@ const Orders: React.FC = () => {
                                                 }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={payStatusFilter.length === 3}
+                                                        checked={payStatusFilter.length === 4}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setPayStatusFilter(['Unpaid', 'Paid', 'Cancel']);
+                                                                setPayStatusFilter(['Unpaid', 'Get File', 'Paid', 'Cancel']);
                                                             } else {
                                                                 setPayStatusFilter([]);
                                                             }
@@ -1812,7 +1812,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
                                                 </label>
-                                                {['Unpaid', 'Paid', 'Cancel'].map(status => (
+                                                {['Unpaid', 'Get File', 'Paid', 'Cancel'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',

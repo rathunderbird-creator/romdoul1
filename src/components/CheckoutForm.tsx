@@ -114,7 +114,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         discount: number | string;
         enableDiscount: boolean;
         shippingStatus: NonNullable<Sale['shipping']>['status'];
-        paymentStatus: 'Unpaid' | 'Paid' | 'Cancel';
+        paymentStatus: 'Unpaid' | 'Paid' | 'Get File' | 'Cancel';
         date: string;
     } = {
         customerName: orderToEdit?.customer?.name || '',
@@ -248,7 +248,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
                 shippingStatus: orderToEdit.shipping?.status || 'Ordered',
-                paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Paid' | 'Cancel') || 'Unpaid',
+                paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || ''
             });
         } else {
@@ -694,7 +694,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Paid', name: 'Paid'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                         </div>
