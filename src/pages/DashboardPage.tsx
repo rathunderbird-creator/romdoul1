@@ -300,10 +300,8 @@ const Dashboard: React.FC = () => {
                             title={stat.status}
                             value={stat.count}
                             icon={Package}
-                            trend={`$${stat.total.toLocaleString()}`}
                             color={color}
                             bgColor={bgColor}
-                            textColor={color}
                             onClick={() => {
                                 localStorage.setItem('orders_statusFilter', JSON.stringify([stat.status]));
                                 localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
@@ -337,10 +335,8 @@ const Dashboard: React.FC = () => {
                             title={stat.status + " Orders"}
                             value={stat.count}
                             icon={CreditCard}
-                            trend={`$${stat.total.toLocaleString()} Revenue`}
                             color={color}
                             bgColor={bgColor}
-                            textColor={color}
                             onClick={() => {
                                 localStorage.setItem('orders_payStatusFilter', JSON.stringify([stat.status]));
                                 localStorage.setItem('orders_statusFilter', JSON.stringify([]));
@@ -472,7 +468,6 @@ const Dashboard: React.FC = () => {
                                     title={s.name}
                                     value={`${s.count} Orders`}
                                     icon={User}
-                                    trend={`$${s.total.toLocaleString()} Revenue`}
                                     color="var(--color-primary)"
                                 />
                             ))}
