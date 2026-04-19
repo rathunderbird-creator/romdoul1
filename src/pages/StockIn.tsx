@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
+import { dispatchActivity } from '../utils/activityLogger';
 import StatsCard from '../components/StatsCard';
 import DateRangePicker from '../components/DateRangePicker';
 import Modal from '../components/Modal';
@@ -168,6 +169,7 @@ const StockIn: React.FC = () => {
             }
 
             showToast(`Added ${quantity} units of ${product.name}. New stock: ${newStock}`, 'success');
+            dispatchActivity({ action: 'stock_in', description: `Stock-In: ${quantity} × ${product.name}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: product.id, quantity: Number(quantity) } });
             setSelectedProductId('');
             setQuantity('');
             setUnitPrice('');

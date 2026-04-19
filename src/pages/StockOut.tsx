@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
+import { dispatchActivity } from '../utils/activityLogger';
 import StatsCard from '../components/StatsCard';
 import DateRangePicker from '../components/DateRangePicker';
 import Modal from '../components/Modal';
@@ -189,6 +190,7 @@ const StockOut: React.FC = () => {
             }
 
             showToast(`Removed ${quantity} units from ${product.name}. New stock: ${newStock}`, 'success');
+            dispatchActivity({ action: 'stock_out', description: `Stock-Out: ${quantity} × ${product.name}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: product.id, quantity: Number(quantity) } });
             setSelectedProductId('');
             setQuantity('');
             setReason('Shipped');

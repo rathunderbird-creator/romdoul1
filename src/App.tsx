@@ -33,6 +33,7 @@ const ShippingReport = lazy(() => import('./pages/reports/ShippingReport'));
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { ActivityLogProvider } from './context/ActivityLogContext';
 
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -105,9 +106,11 @@ function App() {
       <StoreProvider>
         <ToastProvider>
           <HeaderProvider>
-            <Router>
-              <ProtectedApp />
-            </Router>
+            <ActivityLogProvider>
+              <Router>
+                <ProtectedApp />
+              </Router>
+            </ActivityLogProvider>
           </HeaderProvider>
         </ToastProvider>
       </StoreProvider>

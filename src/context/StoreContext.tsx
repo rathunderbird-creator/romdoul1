@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
+import { dispatchActivity } from '../utils/activityLogger';
 import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction } from '../types';
 
 interface ConfigState {
@@ -168,6 +169,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             console.log('User found:', user);
             setCurrentUser(user);
             localStorage.setItem('currentUser', JSON.stringify(user));
+            dispatchActivity({ action: 'user_login', description: `${user.name} logged in`, userId: user.id, userName: user.name });
             return true;
         }
         console.log('User not found or PIN incorrect');
@@ -901,6 +903,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setProducts(prev => prev.filter(p => p.id !== newProduct.id));
         } else {
             setProductsUpdatedAt(Date.now());
+            dispatchActivity({ action: 'product_added', description: `Product "${newProduct.name}" added`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: newProduct.id } });
         }
     };
 
@@ -933,6 +936,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } else {
             setProducts(prev => prev.filter(p => p.id !== id));
             setProductsUpdatedAt(Date.now());
+            dispatchActivity({ action: 'product_deleted', description: `Product deleted`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: id } });
         }
     };
 
@@ -1096,6 +1100,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const currentSalesOrder = config.salesOrder || [];
         updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
         setSalesUpdatedAt(Date.now());
+        dispatchActivity({ action: 'order_created', description: `New order #${newSale.id.slice(0, 8)} created — $${newSale.total}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: newSale.id, total: newSale.total } });
         return newSale;
     };
 
@@ -1235,6 +1240,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
 
         setSalesUpdatedAt(Date.now());
+        dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} status → ${status}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id, status } });
     };
 
     const updateOrder = async (id: string, updates: Partial<Sale>): Promise<void> => {
@@ -1353,6 +1359,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (insertError) throw insertError;
             }
             setSalesUpdatedAt(Date.now());
+            dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} updated`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id } });
 
             // 5. Log stock-out movement only when shipping status changes to Shipped
             if (updates.shipping?.status && existingOrder) {
@@ -1514,6 +1521,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // 4. Trigger UI Updates
             setProductsUpdatedAt(Date.now());
             setSalesUpdatedAt(Date.now());
+            dispatchActivity({ action: 'order_deleted', description: `${ids.length} order(s) deleted`, userId: currentUser?.id, userName: currentUser?.name, metadata: { count: ids.length } });
         } catch (error) {
             console.error('Error deleting orders:', error);
             throw error;
