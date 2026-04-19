@@ -123,6 +123,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     // isCollapsed = false -> Overlay Open
 
     const [isHovered, setIsHovered] = useState(false);
+    const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const visualCollapsed = isCollapsed && !isHovered;
 
     const sidebarWidth = isMobile ? '280px' : (visualCollapsed ? '80px' : 'var(--sidebar-width)');
@@ -145,8 +146,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             )}
 
             <aside 
-                onMouseEnter={() => !isMobile && setIsHovered(true)}
-                onMouseLeave={() => !isMobile && setIsHovered(false)}
+                onMouseEnter={() => {
+                    if (!isMobile) {
+                        hoverTimerRef.current = setTimeout(() => setIsHovered(true), 500);
+                    }
+                }}
+                onMouseLeave={() => {
+                    if (!isMobile) {
+                        if (hoverTimerRef.current) {
+                            clearTimeout(hoverTimerRef.current);
+                            hoverTimerRef.current = null;
+                        }
+                        setIsHovered(false);
+                    }
+                }}
                 style={{
                 width: sidebarWidth,
                 height: '100vh',
