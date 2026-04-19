@@ -1,16 +1,16 @@
 import React, { useMemo } from 'react';
-import { DollarSign, ShoppingBag, AlertTriangle, TrendingUp, RefreshCw } from 'lucide-react';
+import { DollarSign, ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import { DateRangePicker } from '../components';
-import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
+
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import type { Sale } from '../types';
 
-const COLORS = ['var(--color-blue)', 'var(--color-green)', 'var(--color-primary)', 'var(--color-purple)', 'var(--color-red)'];
+
 
 const Dashboard: React.FC = () => {
     const { products, refreshData } = useStore();
@@ -32,7 +32,9 @@ const Dashboard: React.FC = () => {
     const [dateRange, setDateRange] = React.useState(() => {
         const now = new Date();
         const today = now.toISOString().split('T')[0];
-        return { start: today, end: today };
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(now.getDate() - 30);
+        return { start: thirtyDaysAgo.toISOString().split('T')[0], end: today };
     });
 
     const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
@@ -120,13 +122,21 @@ const Dashboard: React.FC = () => {
         })).sort((a, b) => b.total - a.total);
     }, [filteredSales]);
 
-    const shippingStatusStats = useMemo(() => {
-        const data: Record<string, number> = {};
+    const orderStatusStats = useMemo(() => {
+        const stats: Record<string, { count: number; total: number }> = {};
         filteredSales.forEach(sale => {
             const status = sale.shipping?.status || 'Pending';
-            data[status] = (data[status] || 0) + 1;
+            if (!stats[status]) {
+                stats[status] = { count: 0, total: 0 };
+            }
+            stats[status].count += 1;
+            stats[status].total += sale.total;
         });
-        return Object.entries(data).map(([name, value]) => ({ name, value }));
+        return Object.entries(stats).map(([status, data]) => ({
+            status,
+            count: data.count,
+            total: data.total
+        })).sort((a, b) => b.total - a.total);
     }, [filteredSales]);
 
 
@@ -272,10 +282,64 @@ const Dashboard: React.FC = () => {
 
 
 
-            {/* Reports Grid: 3 Columns */}
+            {/* Pay Status Cards */}
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Payment Status</h3>
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
+                gap: '16px',
+                marginBottom: '24px'
+            }}>
+                {paymentStatusStats.map((stat, idx) => {
+                    let color = 'var(--color-primary)';
+                    if (stat.status === 'Paid') color = 'var(--color-green)';
+                    else if (stat.status === 'Unpaid') color = 'var(--color-red)';
+                    
+                    return (
+                        <StatsCard
+                            key={idx}
+                            title={stat.status + " Orders"}
+                            value={stat.count}
+                            icon={CreditCard}
+                            trend={`$${stat.total.toLocaleString()} Revenue`}
+                            color={color}
+                        />
+                    );
+                })}
+            </div>
+
+            {/* Order Status Cards */}
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Order Status</h3>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
+                gap: '16px',
+                marginBottom: '24px'
+            }}>
+                {orderStatusStats.map((stat, idx) => {
+                    let color = 'var(--color-primary)'; // default blue
+                    if (stat.status === 'Delivered') color = 'var(--color-green)';
+                    else if (stat.status === 'Cancelled' || stat.status === 'Returned') color = 'var(--color-red)';
+                    else if (stat.status === 'ReStock') color = 'var(--color-purple)';
+                    else if (stat.status === 'Ordered') color = 'var(--color-yellow)';
+
+                    return (
+                        <StatsCard
+                            key={idx}
+                            title={stat.status}
+                            value={stat.count}
+                            icon={Package}
+                            trend={`$${stat.total.toLocaleString()} Revenue`}
+                            color={color}
+                        />
+                    );
+                })}
+            </div>
+
+            {/* Reports Grid: Remaining Panels */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1fr',
                 gap: '16px'
             }}>
 
@@ -283,9 +347,8 @@ const Dashboard: React.FC = () => {
                 {/* 3. Top Selling Products */}
                 <div className="glass-panel" style={{
                     padding: '20px',
-                    height: isMobile ? '300px' : '616px',
+                    height: isMobile ? '300px' : 'auto',
                     overflowY: 'auto',
-                    gridRow: isMobile ? 'auto' : 'span 2'
                 }}>
                     <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Top Selling Products</h3>
                     <div style={{ overflowX: 'auto' }}>
@@ -328,73 +391,6 @@ const Dashboard: React.FC = () => {
                         </table>
                     </div>
                 </div>
-
-                {/* 4. Payment Status Summary */}
-                <div className="glass-panel" style={{ padding: '20px', height: '300px', overflowY: 'auto' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Payment Status</h3>
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</th>
-                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Cnt</th>
-                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {paymentStatusStats.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No data.</td>
-                                    </tr>
-                                ) : (
-                                    paymentStatusStats.map((stat, index) => (
-                                        <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '8px', fontWeight: 500 }}>
-                                                <span style={{
-                                                    padding: '2px 6px', borderRadius: '12px', fontSize: '11px',
-                                                    background: stat.status === 'Paid' ? '#D1FAE5' : (stat.status === 'Unpaid' ? '#FEE2E2' : '#EFF6FF'),
-                                                    color: stat.status === 'Paid' ? '#059669' : (stat.status === 'Unpaid' ? '#DC2626' : '#1D4ED8')
-                                                }}>
-                                                    {stat.status}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '8px', textAlign: 'center' }}>{stat.count}</td>
-                                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>${stat.total.toLocaleString()}</td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* 5. Shipping Status */}
-                <div className="glass-panel" style={{ padding: '20px', height: '300px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Shipping Status</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={shippingStatusStats}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={50}
-                                outerRadius={70}
-                                fill="#8884d8"
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {shippingStatusStats.map((_entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                contentStyle={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-main)', borderRadius: '8px', boxShadow: 'var(--shadow-md)' }}
-                            />
-                            <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '12px' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-
 
             </div>
 
