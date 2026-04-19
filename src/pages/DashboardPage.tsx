@@ -5,7 +5,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import { DateRangePicker } from '../components';
-
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import type { Sale } from '../types';
@@ -16,6 +16,7 @@ const Dashboard: React.FC = () => {
     const { products, refreshData } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+    const navigate = useNavigate();
 
     React.useEffect(() => {
         setHeaderContent({
@@ -306,6 +307,14 @@ const Dashboard: React.FC = () => {
                             color={color}
                             bgColor={bgColor}
                             textColor={color}
+                            onClick={() => {
+                                localStorage.setItem('orders_payStatusFilter', JSON.stringify([stat.status]));
+                                localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                localStorage.setItem('orders_salesmanFilter', 'All');
+                                localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                navigate('/orders');
+                            }}
                         />
                     );
                 })}
@@ -336,6 +345,14 @@ const Dashboard: React.FC = () => {
                             color={color}
                             bgColor={bgColor}
                             textColor={color}
+                            onClick={() => {
+                                localStorage.setItem('orders_statusFilter', JSON.stringify([stat.status]));
+                                localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                localStorage.setItem('orders_salesmanFilter', 'All');
+                                localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                navigate('/orders');
+                            }}
                         />
                     );
                 })}
