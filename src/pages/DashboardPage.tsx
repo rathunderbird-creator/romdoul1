@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package } from 'lucide-react';
+import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -40,6 +40,7 @@ const Dashboard: React.FC = () => {
 
     const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
     const [isLoadingSales, setIsLoadingSales] = React.useState(false);
+    const [salesmanStatusFilter, setSalesmanStatusFilter] = React.useState<string>('All');
 
     const fetchDashboardSales = React.useCallback(async () => {
         setIsLoadingSales(true);
@@ -137,6 +138,27 @@ const Dashboard: React.FC = () => {
             total: data.total
         })).sort((a, b) => b.total - a.total);
     }, [filteredSales]);
+
+    const salesmanStats = useMemo(() => {
+        const stats: Record<string, { count: number; total: number }> = {};
+        filteredSales.forEach(sale => {
+            const salesman = sale.salesman || 'Unassigned';
+            const status = sale.shipping?.status || 'Pending';
+            
+            if (salesmanStatusFilter !== 'All' && status !== salesmanStatusFilter) return;
+
+            if (!stats[salesman]) {
+                stats[salesman] = { count: 0, total: 0 };
+            }
+            stats[salesman].count += 1;
+            stats[salesman].total += sale.total;
+        });
+        return Object.entries(stats).map(([name, data]) => ({
+            name,
+            count: data.count,
+            total: data.total
+        })).sort((a, b) => b.total - a.total);
+    }, [filteredSales, salesmanStatusFilter]);
 
 
 
@@ -362,7 +384,7 @@ const Dashboard: React.FC = () => {
             {/* Reports Grid: Remaining Panels */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : '1fr',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))',
                 gap: '16px'
             }}>
 
@@ -417,82 +439,71 @@ const Dashboard: React.FC = () => {
 
             </div>
 
-            {/* Pivot Tables Section */}
-            <div style={{
-                marginTop: '20px',
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : '1fr',
-                gap: '20px'
-            }}>
-                <PivotTable title="Product Report" data={pivotStats.product} />
-            </div>
-        </div>
-    );
-};
+                {/* 4. Salesman Performance */}
+                <div style={{ marginBottom: '32px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>Salesman Performance</h3>
+                        <select 
+                            className="text-input" 
+                            style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
+                            value={salesmanStatusFilter}
+                            onChange={(e) => setSalesmanStatusFilter(e.target.value)}
+                        >
+                            <option value="All">All Statuses</option>
+                            <option value="Delivered">Delivered</option>
+                            <option value="Shipped">Shipped</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Ordered">Ordered</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="Returned">Returned</option>
+                        </select>
+                    </div>
+                    {salesmanStats.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
+                    ) : (
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                            gap: '16px'
+                        }}>
+                            {salesmanStats.map((s, index) => (
+                                <StatsCard
+                                    key={index}
+                                    title={s.name}
+                                    value={`${s.count} Orders`}
+                                    icon={User}
+                                    trend={`$${s.total.toLocaleString()} Revenue`}
+                                    color="var(--color-primary)"
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
 
-// Pivot Table Component
-const PivotTable: React.FC<{
-    title: string;
-    data: { name: string; ordered: number; pending: number; shipped: number; delivered: number; cancelled: number; returned: number; restock: number; total: number }[]
-}> = ({ title, data }) => {
-    const totals = data.reduce((acc, curr) => ({
-        ordered: acc.ordered + curr.ordered,
-        pending: acc.pending + curr.pending,
-        shipped: acc.shipped + curr.shipped,
-        delivered: acc.delivered + curr.delivered,
-        cancelled: acc.cancelled + curr.cancelled,
-        returned: acc.returned + curr.returned,
-        restock: acc.restock + curr.restock,
-        total: acc.total + curr.total
-    }), { ordered: 0, pending: 0, shipped: 0, delivered: 0, cancelled: 0, returned: 0, restock: 0, total: 0 });
-
-    return (
-        <div className="glass-panel" style={{ padding: '20px', overflowX: 'auto' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{title}</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '800px' }}>
-                <thead>
-                    <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Name</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Ordered</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Pending</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Shipped</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Delivered</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Returned</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>ReStock</th>
-                        <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.length === 0 ? (
-                        <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No data</td></tr>
-                    ) : (data.map((row, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                            <td style={{ padding: '8px', fontWeight: 500 }}>{row.name}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.ordered || ''}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.pending || ''}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.shipped || ''}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.delivered || ''}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.returned || ''}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{row.restock || ''}</td>
-                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>{row.total}</td>
-                        </tr>
-                    )))}
-                </tbody>
-                {data.length > 0 && (
-                    <tfoot>
-                        <tr style={{ borderTop: '2px solid var(--color-border)' }}>
-                            <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>Total Summary</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.ordered}</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.pending}</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.shipped}</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.delivered}</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.returned}</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>{totals.restock}</td>
-                            <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 'bold' }}>{totals.total}</td>
-                        </tr>
-                    </tfoot>
+            {/* Product Report Cards */}
+            <div style={{ marginBottom: '32px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Product Report</h3>
+                {pivotStats.product.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
+                ) : (
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: '16px'
+                    }}>
+                        {pivotStats.product.map((p, idx) => (
+                            <StatsCard
+                                key={idx}
+                                title={p.name}
+                                value={`${p.total} Units`}
+                                icon={Package}
+                                trend={`${p.delivered} Delivered`}
+                                color="var(--color-purple)"
+                            />
+                        ))}
+                    </div>
                 )}
-            </table>
+            </div>
         </div>
     );
 };

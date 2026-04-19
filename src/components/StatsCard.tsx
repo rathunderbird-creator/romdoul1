@@ -13,42 +13,51 @@ interface StatsCardProps {
     onClick?: () => void;
 }
 
-const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color = 'var(--color-primary)', bgColor, textColor, onClick }) => {
+const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color = 'var(--color-primary)', bgColor, onClick }) => {
     const isMobile = useMobile();
 
     return (
         <div 
             className={`glass-panel ${onClick ? 'clickable-card' : ''}`} 
             style={{ 
-                padding: isMobile ? '8px 10px' : '12px 14px', 
+                padding: isMobile ? '12px' : '16px', 
                 display: 'flex', 
-                flexDirection: 'column', 
-                gap: isMobile ? '2px' : '4px', 
-                backgroundColor: bgColor,
+                flexDirection: 'row', 
+                alignItems: 'center',
+                gap: '16px', 
+                backgroundColor: 'var(--color-surface)', // ensures clean card look
                 cursor: onClick ? 'pointer' : 'default',
                 transition: 'transform 0.2s ease, box-shadow 0.2s ease'
             }}
             onClick={onClick}
         >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                    <div style={{ color: textColor || 'var(--color-text-secondary)', fontSize: isMobile ? '10px' : '12px', marginBottom: '2px', fontWeight: textColor ? 600 : 'normal' }}>{title}</div>
-                    <div style={{ fontSize: isMobile ? '14px' : '18px', fontWeight: 'bold', color: textColor || 'var(--color-text-main)' }}>{value}</div>
-                </div>
-                <div style={{
-                    padding: isMobile ? '4px' : '6px',
-                    borderRadius: '6px',
-                    backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)`,
-                    color: color
-                }}>
-                    <Icon size={isMobile ? 12 : 16} />
-                </div>
+            <div style={{
+                padding: isMobile ? '10px' : '12px',
+                borderRadius: '12px',
+                backgroundColor: bgColor || `color-mix(in srgb, ${color} 15%, transparent)`,
+                color: color,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+            }}>
+                <Icon size={isMobile ? 20 : 24} />
             </div>
-            {trend && (
-                <div style={{ fontSize: isMobile ? '9px' : '11px', marginTop: '2px', color: textColor || 'var(--color-text-muted)', fontWeight: textColor ? 500 : 'normal', opacity: textColor ? 0.9 : 1 }}>
-                    {trend}
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ color: 'var(--color-text-main)', fontSize: isMobile ? '14px' : '15px', fontWeight: 600 }}>
+                    {title}
                 </div>
-            )}
+                {trend && (
+                    <div style={{ fontSize: isMobile ? '11px' : '12px', marginTop: '2px', color: 'var(--color-text-secondary)', fontWeight: 400 }}>
+                        {trend}
+                    </div>
+                )}
+            </div>
+
+            <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: 'bold', color: 'var(--color-text-main)' }}>
+                {value}
+            </div>
         </div>
     );
 };
