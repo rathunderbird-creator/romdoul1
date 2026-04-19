@@ -1179,10 +1179,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         await supabase.from('sales').update(updates).eq('id', id);
 
-        // Log stock-out movement when status changes to Shipped or Delivered
-        if (salesOrder && (status === 'Shipped' || status === 'Delivered')) {
+        // Log stock-out movement only when status changes to Shipped
+        if (salesOrder && status === 'Shipped') {
             const oldStatus = salesOrder.shipping?.status || 'Pending';
-            // Only log if this is a new transition (not Shipped→Shipped or Delivered→Delivered)
+            // Only log if this is a new transition
             if (oldStatus !== status) {
                 // Check if stock-out records already exist for this order
                 const { data: existingMovements } = await supabase.from('stock_movements')
@@ -1191,11 +1191,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     .eq('type', 'out');
 
                 if (existingMovements && existingMovements.length > 0) {
-                    // Update existing records (e.g., Shipped → Delivered)
+                    // Update existing records 
                     await supabase.from('stock_movements')
                         .update({
                             reason: status,
-                            source: status === 'Shipped' ? 'Order Shipped' : 'Order Delivered'
+                            source: 'Order Shipped'
                         })
                         .eq('reference_id', id)
                         .eq('type', 'out')
@@ -1218,7 +1218,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             unit_price: item.price || 0,
                             reason: status,
                             reference_id: id,
-                            source: status === 'Shipped' ? 'Order Shipped' : 'Order Delivered',
+                            source: 'Order Shipped',
                             note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                             movement_date: new Date().toISOString().slice(0, 10),
                             created_by: currentUser?.id || 'unknown'
@@ -1353,11 +1353,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             setSalesUpdatedAt(Date.now());
 
-            // 5. Log stock-out movement when shipping status changes to Shipped or Delivered
+            // 5. Log stock-out movement only when shipping status changes to Shipped
             if (updates.shipping?.status && existingOrder) {
                 const newStatus = updates.shipping.status;
                 const oldStatus = existingOrder.shipping?.status || 'Pending';
-                if ((newStatus === 'Shipped' || newStatus === 'Delivered') && oldStatus !== newStatus) {
+                if (newStatus === 'Shipped' && oldStatus !== newStatus) {
                     // Check if stock-out records already exist for this order
                     const { data: existingMovements } = await supabase.from('stock_movements')
                         .select('id')
@@ -1365,11 +1365,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         .eq('type', 'out');
 
                     if (existingMovements && existingMovements.length > 0) {
-                        // Update existing records (e.g., Shipped → Delivered)
+                        // Update existing records
                         await supabase.from('stock_movements')
                             .update({
                                 reason: newStatus,
-                                source: newStatus === 'Shipped' ? 'Order Shipped' : 'Order Delivered'
+                                source: 'Order Shipped'
                             })
                             .eq('reference_id', id)
                             .eq('type', 'out')
@@ -1393,7 +1393,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 unit_price: item.price || 0,
                                 reason: newStatus,
                                 reference_id: id,
-                                source: newStatus === 'Shipped' ? 'Order Shipped' : 'Order Delivered',
+                                source: 'Order Shipped',
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                                 movement_date: new Date().toISOString().slice(0, 10),
                                 created_by: currentUser?.id || 'unknown'

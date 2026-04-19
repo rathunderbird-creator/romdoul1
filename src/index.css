@@ -512,3 +512,15 @@ div:has(> svg) .search-input {
   color: white !important;
   font-weight: 500;
 }
+
+/* Image Hover Preview Animation */
+@keyframes fadeInPreview {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

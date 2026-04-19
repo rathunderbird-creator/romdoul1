@@ -18,6 +18,7 @@ CREATE TABLE stock_movements (
     reference_id TEXT DEFAULT '',            -- optional order ID or reference
     
     -- Common fields
+    shipping_co TEXT DEFAULT '',
     note TEXT DEFAULT '',
     movement_date DATE DEFAULT CURRENT_DATE, -- user-specified date of movement
     created_by TEXT DEFAULT 'unknown',

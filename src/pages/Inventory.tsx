@@ -167,6 +167,24 @@ const Inventory: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
+    const [hoverPreview, setHoverPreview] = useState<{ src: string; x: number; y: number } | null>(null);
+
+    const handleImageHover = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const anchor = e.currentTarget;
+        const img = anchor.querySelector('img') as HTMLImageElement | null;
+        if (img && img.src) {
+            const rect = anchor.getBoundingClientRect();
+            setHoverPreview({
+                src: img.src,
+                x: rect.right + 12,
+                y: rect.top - 80,
+            });
+        }
+    }, []);
+
+    const handleImageLeave = React.useCallback(() => {
+        setHoverPreview(null);
+    }, []);
 
     // Add Stock State
     const [addStockProduct, setAddStockProduct] = useState<Product | null>(null);
@@ -575,48 +593,73 @@ const Inventory: React.FC = () => {
 
     return (
         <div style={{ paddingBottom: isMobile ? '80px' : '0' }}>
+            {/* Fixed Image Hover Preview */}
+            {hoverPreview && (
+                <div style={{
+                    position: 'fixed',
+                    left: hoverPreview.x,
+                    top: hoverPreview.y - 210,
+                    width: '200px',
+                    height: '200px',
+                    borderRadius: '12px',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+                    padding: '8px',
+                    zIndex: 9999,
+                    pointerEvents: 'none',
+                    animation: 'fadeInPreview 0.15s ease',
+                    overflow: 'hidden',
+                }}>
+                    <img
+                        src={hoverPreview.src}
+                        alt="Preview"
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }}
+                    />
+                </div>
+            )}
             {/* Premium Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.05)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
-                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6' }}><Package size={18} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
+                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6' }}><Package size={15} /></div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
                 </div>
                 
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(16, 185, 129, 0.05)' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(16, 185, 129, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Stock Items</span>
-                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981' }}><Boxes size={18} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Stock Items</span>
+                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981' }}><Boxes size={15} /></div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalAllStock.toLocaleString()}</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalAllStock.toLocaleString()}</div>
                 </div>
 
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
-                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444' }}><AlertTriangle size={18} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
+                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444' }}><AlertTriangle size={15} /></div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: '#EF4444' }}>{stats.lowStock}</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#EF4444' }}>{stats.lowStock}</div>
                 </div>
 
                 {canViewFinancials && (
-                    <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(245, 158, 11, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(245, 158, 11, 0.05)' }}>
+                    <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(245, 158, 11, 0.05)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Value</span>
-                            <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}><DollarSign size={18} /></div>
+                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Value</span>
+                            <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}><DollarSign size={15} /></div>
                         </div>
-                        <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString()}</div>
+                        <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString()}</div>
                     </div>
                 )}
 
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(139, 92, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(139, 92, 246, 0.05)' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(139, 92, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(139, 92, 246, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categories</span>
-                        <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Layers size={18} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categories</span>
+                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Layers size={15} /></div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.categoryCount}</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.categoryCount}</div>
                 </div>
             </div>
 
@@ -659,6 +702,8 @@ const Inventory: React.FC = () => {
             {/* Filters have been moved inside the All Stock container */}
 
             {/* Content: List or Table */}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(p => p.id)} strategy={verticalListSortingStrategy}>
             {isMobile ? (
                     <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', maxHeight: 'calc(100vh - 240px)', paddingBottom: '80px' }}>
                         {filteredAndSortedProducts.length === 0 ? (
@@ -722,8 +767,6 @@ const Inventory: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                    <SortableContext items={filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(p => p.id)} strategy={verticalListSortingStrategy}>
                                         {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
                                             <SortableProductRow
                                                 key={product.id}
@@ -741,7 +784,9 @@ const Inventory: React.FC = () => {
                                                 </td>
                                                 <td>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                        <LazyAvatar productId={product.id} initialImage={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: 'white', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }} />
+                                                        <div data-preview-anchor onMouseEnter={handleImageHover} onMouseLeave={handleImageLeave} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                                                            <LazyAvatar productId={product.id} initialImage={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: 'white', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }} />
+                                                        </div>
                                                         <div>
                                                             <div style={{ fontWeight: 600 }}>{product.name}</div>
                                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
@@ -816,8 +861,6 @@ const Inventory: React.FC = () => {
                                                 )}
                                             </SortableProductRow>
                                         ))}
-                                    </SortableContext>
-                                </DndContext>
                             </tbody>
                             <tfoot>
                                 <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
@@ -838,6 +881,8 @@ const Inventory: React.FC = () => {
                         )}
                     </div>
                 )}
+            </SortableContext>
+            </DndContext>
             {/* Mobile Summary Footer */}
             {
                 isMobile && (

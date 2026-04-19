@@ -17,6 +17,7 @@ interface StockOutRecord {
     reason: string;
     reference_id: string;
     note: string;
+    shipping_co: string;
     movement_date: string;
     created_at: string;
     created_by: string;
@@ -34,7 +35,7 @@ const REASON_OPTIONS = [
 ];
 
 const StockOut: React.FC = () => {
-    const { products, updateProduct, currentUser } = useStore();
+    const { products, updateProduct, currentUser, shippingCompanies } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -53,6 +54,7 @@ const StockOut: React.FC = () => {
     const [reason, setReason] = useState('Shipped');
     const [referenceId, setReferenceId] = useState('');
     const [note, setNote] = useState('');
+    const [shippingCo, setShippingCo] = useState('');
     const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
     const [productSearch, setProductSearch] = useState('');
 
@@ -62,6 +64,7 @@ const StockOut: React.FC = () => {
     const [editReason, setEditReason] = useState('');
     const [editReferenceId, setEditReferenceId] = useState('');
     const [editNote, setEditNote] = useState('');
+    const [editShippingCo, setEditShippingCo] = useState('');
     const [editDate, setEditDate] = useState('');
 
     useEffect(() => {
@@ -117,6 +120,7 @@ const StockOut: React.FC = () => {
             r.product_name.toLowerCase().includes(q) ||
             (r.reason || '').toLowerCase().includes(q) ||
             (r.reference_id || '').toLowerCase().includes(q) ||
+            (r.shipping_co || '').toLowerCase().includes(q) ||
             (r.note || '').toLowerCase().includes(q)
         );
     }, [records, searchTerm]);
@@ -174,6 +178,7 @@ const StockOut: React.FC = () => {
                 reason: reason,
                 reference_id: referenceId.trim(),
                 note: note.trim(),
+                shipping_co: shippingCo.trim(),
                 movement_date: movementDate,
                 created_by: currentUser?.id || 'unknown'
             });
@@ -188,6 +193,7 @@ const StockOut: React.FC = () => {
             setReason('Shipped');
             setReferenceId('');
             setNote('');
+            setShippingCo('');
             setMovementDate(new Date().toISOString().slice(0, 10));
             setProductSearch('');
             setShowForm(false);
@@ -203,6 +209,7 @@ const StockOut: React.FC = () => {
         setEditReason(record.reason || 'Other');
         setEditReferenceId(record.reference_id || '');
         setEditNote(record.note || '');
+        setEditShippingCo(record.shipping_co || '');
         setEditDate(record.movement_date);
     };
 
@@ -219,6 +226,7 @@ const StockOut: React.FC = () => {
                 reason: editReason,
                 reference_id: editReferenceId.trim(),
                 note: editNote.trim(),
+                shipping_co: editShippingCo.trim(),
                 movement_date: editDate
             };
 
@@ -393,7 +401,7 @@ const StockOut: React.FC = () => {
                             </select>
                         </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                         {/* Date */}
                         <div>
                             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Date</label>
@@ -403,6 +411,22 @@ const StockOut: React.FC = () => {
                                 onChange={(e) => setMovementDate(e.target.value)}
                                 style={inputStyle}
                             />
+                        </div>
+
+                        {/* Shipping Co */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
+                            <input
+                                type="text"
+                                list="shipping-companies"
+                                placeholder="e.g., J&T, VET"
+                                value={shippingCo}
+                                onChange={(e) => setShippingCo(e.target.value)}
+                                style={inputStyle}
+                            />
+                            <datalist id="shipping-companies">
+                                {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                            </datalist>
                         </div>
 
                         {/* Reference ID */}
@@ -479,6 +503,7 @@ const StockOut: React.FC = () => {
                                 <th>Product</th>
                                 <th style={{ textAlign: 'center' }}>Qty</th>
                                 <th>Reason</th>
+                                <th>Shipping Co</th>
                                 <th>Reference</th>
                                 <th>Note</th>
                                 {isAdmin && <th style={{ textAlign: 'center' }}>Actions</th>}
@@ -495,6 +520,9 @@ const StockOut: React.FC = () => {
                                         <span style={{ color: '#EF4444', fontWeight: 700, fontSize: '14px' }}>-{record.quantity}</span>
                                     </td>
                                     <td>{getReasonBadge(record.reason || 'Other')}</td>
+                                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        {record.shipping_co || '-'}
+                                    </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
                                         {record.reference_id || '-'}
                                     </td>
@@ -550,6 +578,13 @@ const StockOut: React.FC = () => {
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Reference / Order ID</label>
                         <input type="text" value={editReferenceId} onChange={(e) => setEditReferenceId(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
+                        <input type="text" list="shipping-companies-edit" value={editShippingCo} onChange={(e) => setEditShippingCo(e.target.value)} style={inputStyle} />
+                        <datalist id="shipping-companies-edit">
+                            {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                        </datalist>
                     </div>
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Note</label>

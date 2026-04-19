@@ -17,13 +17,14 @@ interface StockInRecord {
     unit_price: number;
     source: string;
     note: string;
+    shipping_co: string;
     movement_date: string;
     created_at: string;
     created_by: string;
 }
 
 const StockIn: React.FC = () => {
-    const { products, updateProduct, currentUser } = useStore();
+    const { products, updateProduct, currentUser, shippingCompanies } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -42,6 +43,7 @@ const StockIn: React.FC = () => {
     const [unitPrice, setUnitPrice] = useState<number | string>('');
     const [source, setSource] = useState('');
     const [note, setNote] = useState('');
+    const [shippingCo, setShippingCo] = useState('');
     const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
     const [productSearch, setProductSearch] = useState('');
 
@@ -51,6 +53,7 @@ const StockIn: React.FC = () => {
     const [editUnitPrice, setEditUnitPrice] = useState<number | string>('');
     const [editSource, setEditSource] = useState('');
     const [editNote, setEditNote] = useState('');
+    const [editShippingCo, setEditShippingCo] = useState('');
     const [editDate, setEditDate] = useState('');
 
     useEffect(() => {
@@ -105,6 +108,7 @@ const StockIn: React.FC = () => {
         return records.filter(r =>
             r.product_name.toLowerCase().includes(q) ||
             (r.source || '').toLowerCase().includes(q) ||
+            (r.shipping_co || '').toLowerCase().includes(q) ||
             (r.note || '').toLowerCase().includes(q)
         );
     }, [records, searchTerm]);
@@ -153,6 +157,7 @@ const StockIn: React.FC = () => {
                 unit_price: Number(unitPrice) || 0,
                 source: source.trim(),
                 note: note.trim(),
+                shipping_co: shippingCo.trim(),
                 movement_date: movementDate,
                 created_by: currentUser?.id || 'unknown'
             });
@@ -167,6 +172,7 @@ const StockIn: React.FC = () => {
             setUnitPrice('');
             setSource('');
             setNote('');
+            setShippingCo('');
             setMovementDate(new Date().toISOString().slice(0, 10));
             setProductSearch('');
             setShowForm(false);
@@ -182,6 +188,7 @@ const StockIn: React.FC = () => {
         setEditUnitPrice(record.unit_price || '');
         setEditSource(record.source || '');
         setEditNote(record.note || '');
+        setEditShippingCo(record.shipping_co || '');
         setEditDate(record.movement_date);
     };
 
@@ -198,6 +205,7 @@ const StockIn: React.FC = () => {
                 unit_price: Number(editUnitPrice) || 0,
                 source: editSource.trim(),
                 note: editNote.trim(),
+                shipping_co: editShippingCo.trim(),
                 movement_date: editDate
             };
 
@@ -350,7 +358,7 @@ const StockIn: React.FC = () => {
                             />
                         </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                         {/* Date */}
                         <div>
                             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Date</label>
@@ -360,6 +368,22 @@ const StockIn: React.FC = () => {
                                 onChange={(e) => setMovementDate(e.target.value)}
                                 style={inputStyle}
                             />
+                        </div>
+
+                        {/* Shipping Co */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
+                            <input
+                                type="text"
+                                list="shipping-companies-in"
+                                placeholder="e.g., J&T, VET"
+                                value={shippingCo}
+                                onChange={(e) => setShippingCo(e.target.value)}
+                                style={inputStyle}
+                            />
+                            <datalist id="shipping-companies-in">
+                                {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                            </datalist>
                         </div>
 
                         {/* Source / Where from */}
@@ -445,6 +469,7 @@ const StockIn: React.FC = () => {
                                 <th style={{ textAlign: 'right' }}>Unit Price</th>
                                 <th style={{ textAlign: 'right' }}>Total</th>
                                 <th>Source / Supplier</th>
+                                <th>Shipping Co</th>
                                 <th>Note</th>
                                 {isAdmin && <th style={{ textAlign: 'center' }}>Actions</th>}
                             </tr>
@@ -467,6 +492,9 @@ const StockIn: React.FC = () => {
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                         {record.source || '-'}
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        {record.shipping_co || '-'}
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{record.note || '-'}</td>
                                     {isAdmin && (
@@ -516,6 +544,13 @@ const StockIn: React.FC = () => {
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Source / Supplier</label>
                         <input type="text" value={editSource} onChange={(e) => setEditSource(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
+                        <input type="text" list="shipping-companies-edit-in" value={editShippingCo} onChange={(e) => setEditShippingCo(e.target.value)} style={inputStyle} />
+                        <datalist id="shipping-companies-edit-in">
+                            {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                        </datalist>
                     </div>
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Note</label>
