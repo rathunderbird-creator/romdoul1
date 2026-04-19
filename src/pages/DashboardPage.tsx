@@ -291,9 +291,9 @@ const Dashboard: React.FC = () => {
                 marginBottom: '24px'
             }}>
                 {paymentStatusStats.map((stat, idx) => {
-                    let color = 'var(--color-primary)';
-                    if (stat.status === 'Paid') color = 'var(--color-green)';
-                    else if (stat.status === 'Unpaid') color = 'var(--color-red)';
+                    let color = '#1D4ED8', bgColor = '#EFF6FF';
+                    if (stat.status === 'Paid') { color = '#059669'; bgColor = '#D1FAE5'; }
+                    else if (stat.status === 'Unpaid') { color = '#DC2626'; bgColor = '#FEE2E2'; }
                     
                     return (
                         <StatsCard
@@ -303,6 +303,8 @@ const Dashboard: React.FC = () => {
                             icon={CreditCard}
                             trend={`$${stat.total.toLocaleString()} Revenue`}
                             color={color}
+                            bgColor={bgColor}
+                            textColor={color}
                         />
                     );
                 })}
@@ -317,11 +319,11 @@ const Dashboard: React.FC = () => {
                 marginBottom: '24px'
             }}>
                 {orderStatusStats.map((stat, idx) => {
-                    let color = 'var(--color-primary)'; // default blue
-                    if (stat.status === 'Delivered') color = 'var(--color-green)';
-                    else if (stat.status === 'Cancelled' || stat.status === 'Returned') color = 'var(--color-red)';
-                    else if (stat.status === 'ReStock') color = 'var(--color-purple)';
-                    else if (stat.status === 'Ordered') color = 'var(--color-yellow)';
+                    let color = '#1D4ED8', bgColor = '#EFF6FF'; // default blue
+                    if (stat.status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; } // green
+                    else if (stat.status === 'Cancelled' || stat.status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; } // red
+                    else if (stat.status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; } // purple
+                    else if (stat.status === 'Ordered') { color = '#D97706'; bgColor = '#FEF3C7'; } // yellow
 
                     return (
                         <StatsCard
@@ -331,6 +333,8 @@ const Dashboard: React.FC = () => {
                             icon={Package}
                             trend={`$${stat.total.toLocaleString()} Revenue`}
                             color={color}
+                            bgColor={bgColor}
+                            textColor={color}
                         />
                     );
                 })}

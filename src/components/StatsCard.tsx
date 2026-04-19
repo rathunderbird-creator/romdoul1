@@ -7,15 +7,17 @@ interface StatsCardProps {
     icon: LucideIcon;
     trend?: string;
     color?: string;
+    bgColor?: string;
+    textColor?: string;
 }
 
-const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color = 'var(--color-primary)' }) => {
+const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color = 'var(--color-primary)', bgColor, textColor }) => {
     return (
-        <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: bgColor }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px', marginBottom: '4px' }}>{title}</div>
-                    <div style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{value}</div>
+                    <div style={{ color: textColor || 'var(--color-text-secondary)', fontSize: '13px', marginBottom: '4px', fontWeight: textColor ? 600 : 'normal' }}>{title}</div>
+                    <div style={{ fontSize: '22px', fontWeight: 'bold', color: textColor || 'var(--color-text-main)' }}>{value}</div>
                 </div>
                 <div style={{
                     padding: '8px',
@@ -27,7 +29,7 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, 
                 </div>
             </div>
             {trend && (
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <div style={{ fontSize: '12px', color: textColor || 'var(--color-text-muted)', fontWeight: textColor ? 500 : 'normal', opacity: textColor ? 0.9 : 1 }}>
                     {trend}
                 </div>
             )}
