@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck } from 'lucide-react';
 import { DateRangePicker } from '../../components';
 import { supabase } from '../../lib/supabase';
@@ -74,50 +74,24 @@ const ReportsLayout: React.FC = () => {
         { path: '/reports/shipping', label: 'Shipping Companies', icon: Truck },
     ];
 
+    // Find current tab label
+    const currentTab = tabs.find(t => location.pathname.includes(t.path));
+
     return (
         <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Header Area */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
-                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px 0', color: 'var(--color-primary)' }}>Reports Center</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>Analyze your business metrics, sales, inventory, and financials.</p>
+                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 4px 0', color: 'var(--color-primary)' }}>
+                        {currentTab ? currentTab.label : 'Reports Center'}
+                    </h1>
+                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '13px' }}>Analyze your business metrics, sales, inventory, and financials.</p>
                 </div>
                 
                 {/* Global Date Filter */}
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <DateRangePicker value={dateRange} onChange={setDateRange} />
                 </div>
-            </div>
-
-            {/* Navigation Tabs */}
-            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--color-border)', overflowX: 'auto', paddingBottom: '12px' }}>
-                {tabs.map(tab => {
-                    const isActive = location.pathname.includes(tab.path);
-                    return (
-                        <NavLink
-                            key={tab.path}
-                            to={tab.path}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '10px 16px',
-                                borderRadius: '12px',
-                                textDecoration: 'none',
-                                fontWeight: 600,
-                                fontSize: '14px',
-                                whiteSpace: 'nowrap',
-                                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                backgroundColor: isActive ? 'var(--color-bg)' : 'transparent',
-                                transition: 'all 0.2s ease',
-                                border: isActive ? '1px solid var(--color-border)' : '1px solid transparent'
-                            }}
-                        >
-                            <tab.icon size={18} />
-                            {tab.label}
-                        </NavLink>
-                    );
-                })}
             </div>
 
             {/* Content Area */}

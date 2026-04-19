@@ -65,7 +65,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     }
 
     if (hasPermission('view_reports')) {
-        navItems.push({ icon: PieChart, label: 'Reports Center', path: '/reports' });
+        navItems.push({ 
+            icon: PieChart, 
+            label: 'Reports Center', 
+            path: '/reports',
+            subItems: [
+                { label: 'Sales Overview', path: '/reports/sales' },
+                { label: 'Top Products', path: '/reports/products' },
+                { label: 'Inventory', path: '/reports/inventory' },
+                { label: 'Financials', path: '/reports/financials' },
+                { label: 'Staff Performance', path: '/reports/staff' },
+                { label: 'Shipping Companies', path: '/reports/shipping' },
+            ]
+        });
     }
 
     if (hasPermission('view_dashboard')) {
