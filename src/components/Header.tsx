@@ -1,7 +1,7 @@
 import React from 'react';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
-import { Bell, User, Menu, LogOut } from 'lucide-react';
+import { Bell, User, Menu, LogOut, RefreshCw } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 
@@ -13,13 +13,25 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const { headerContent } = useHeader();
-    const { currentUser, roles, logout } = useStore();
+    const { currentUser, roles, logout, refreshData } = useStore();
     const isMobile = useMobile();
     const navigate = useNavigate();
+    const [isRefreshing, setIsRefreshing] = React.useState(false);
 
     const handleLogout = () => {
         logout();
         navigate('/');
+    };
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await refreshData(false);
+        } catch (error) {
+            console.error('Refresh failed:', error);
+        } finally {
+            setIsRefreshing(false);
+        }
     };
 
     return (
@@ -65,6 +77,25 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                         </div>
                     )}
+
+                    {/* Refresh Button */}
+                    <button
+                        onClick={handleRefresh}
+                        title="Refresh Data"
+                        className="hover-opacity"
+                        style={{
+                            background: 'none',
+                            color: 'var(--color-text-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '4px',
+                            cursor: 'pointer',
+                            border: 'none',
+                        }}
+                    >
+                        <RefreshCw size={18} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+                    </button>
 
                     {/* Notification Bell */}
                     <button style={{

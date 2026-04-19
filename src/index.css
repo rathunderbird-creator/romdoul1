@@ -524,3 +524,9 @@ div:has(> svg) .search-input {
     transform: scale(1) translateY(0);
   }
 }
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
