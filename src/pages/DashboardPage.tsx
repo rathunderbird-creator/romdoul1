@@ -245,43 +245,49 @@ const Dashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* Stats Row */}
+            {/* Sales & Orders Overview */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
                 gap: '16px',
-                marginBottom: '20px'
+                marginBottom: '24px'
             }}>
-                <StatsCard
-                    title="Total Revenue"
-                    value={`$${stats.totalRevenue.toLocaleString()}`}
-                    icon={DollarSign}
-                    trend="+12.5% from last month"
-                    color="var(--color-green)"
-                />
                 <StatsCard
                     title="Total Sales"
                     value={stats.totalProperSales}
                     icon={ShoppingBag}
-                    trend="+5 new today"
+                    trend="Completed orders"
                     color="var(--color-blue)"
                 />
-                <StatsCard
-                    title="Products in Stock"
-                    value={stats.totalProducts}
-                    icon={TrendingUp}
-                    color="var(--color-primary)"
-                />
-                <StatsCard
-                    title="Low Stock Alert"
-                    value={stats.lowStockCount}
-                    icon={AlertTriangle}
-                    trend="Items require attention"
-                    color="var(--color-red)"
-                />
+                {orderStatusStats.map((stat, idx) => {
+                    let color = '#1D4ED8', bgColor = '#EFF6FF'; // default blue (Shipped, etc)
+                    if (stat.status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; } // green
+                    else if (stat.status === 'Cancelled' || stat.status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; } // red
+                    else if (stat.status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; } // purple
+                    else if (stat.status === 'Ordered' || stat.status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; } // yellow
+
+                    return (
+                        <StatsCard
+                            key={idx}
+                            title={stat.status}
+                            value={stat.count}
+                            icon={Package}
+                            trend={`$${stat.total.toLocaleString()}`}
+                            color={color}
+                            bgColor={bgColor}
+                            textColor={color}
+                            onClick={() => {
+                                localStorage.setItem('orders_statusFilter', JSON.stringify([stat.status]));
+                                localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                localStorage.setItem('orders_salesmanFilter', 'All');
+                                localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                navigate('/orders');
+                            }}
+                        />
+                    );
+                })}
             </div>
-
-
 
             {/* Pay Status Cards */}
             <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Payment Status</h3>
@@ -320,43 +326,30 @@ const Dashboard: React.FC = () => {
                 })}
             </div>
 
-            {/* Order Status Cards */}
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Order Status</h3>
+            {/* Inventory Overview */}
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Inventory</h3>
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
                 gap: '16px',
                 marginBottom: '24px'
             }}>
-                {orderStatusStats.map((stat, idx) => {
-                    let color = '#1D4ED8', bgColor = '#EFF6FF'; // default blue (Shipped, etc)
-                    if (stat.status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; } // green
-                    else if (stat.status === 'Cancelled' || stat.status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; } // red
-                    else if (stat.status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; } // purple
-                    else if (stat.status === 'Ordered' || stat.status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; } // yellow
-
-                    return (
-                        <StatsCard
-                            key={idx}
-                            title={stat.status}
-                            value={stat.count}
-                            icon={Package}
-                            trend={`$${stat.total.toLocaleString()} Revenue`}
-                            color={color}
-                            bgColor={bgColor}
-                            textColor={color}
-                            onClick={() => {
-                                localStorage.setItem('orders_statusFilter', JSON.stringify([stat.status]));
-                                localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                localStorage.setItem('orders_salesmanFilter', 'All');
-                                localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                navigate('/orders');
-                            }}
-                        />
-                    );
-                })}
+                <StatsCard
+                    title="Products in Stock"
+                    value={stats.totalProducts}
+                    icon={TrendingUp}
+                    color="var(--color-primary)"
+                />
+                <StatsCard
+                    title="Low Stock Alert"
+                    value={stats.lowStockCount}
+                    icon={AlertTriangle}
+                    trend="Items require attention"
+                    color="var(--color-red)"
+                />
             </div>
+
+
 
             {/* Reports Grid: Remaining Panels */}
             <div style={{
