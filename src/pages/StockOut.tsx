@@ -87,7 +87,8 @@ const StockOut: React.FC = () => {
                 .from('stock_movements')
                 .select('*')
                 .eq('type', 'out')
-                .order('movement_date', { ascending: false });
+                .order('movement_date', { ascending: false })
+                .order('created_at', { ascending: false });
 
             if (dateRange.start) {
                 query = query.gte('movement_date', dateRange.start);
