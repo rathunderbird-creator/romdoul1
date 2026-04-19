@@ -256,6 +256,14 @@ const Dashboard: React.FC = () => {
                     icon={ShoppingBag}
                     trend="All orders"
                     color="var(--color-blue)"
+                    onClick={() => {
+                        localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                        localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                        localStorage.setItem('orders_salesmanFilter', 'All');
+                        localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                        navigate('/orders');
+                    }}
                 />
                 {orderStatusStats.map((stat, idx) => {
                     let color = '#1D4ED8', bgColor = '#EFF6FF'; // default blue (Shipped, etc)
@@ -337,6 +345,7 @@ const Dashboard: React.FC = () => {
                     value={stats.totalProducts}
                     icon={TrendingUp}
                     color="var(--color-primary)"
+                    onClick={() => navigate('/inventory')}
                 />
                 <StatsCard
                     title="Low Stock Alert"
@@ -344,6 +353,7 @@ const Dashboard: React.FC = () => {
                     icon={AlertTriangle}
                     trend="Items require attention"
                     color="var(--color-red)"
+                    onClick={() => navigate('/inventory')}
                 />
             </div>
 
