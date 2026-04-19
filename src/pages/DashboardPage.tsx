@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { DollarSign, ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package } from 'lucide-react';
+import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
