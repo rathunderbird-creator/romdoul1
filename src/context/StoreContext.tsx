@@ -1219,6 +1219,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             reason: status,
                             reference_id: id,
                             source: 'Order Shipped',
+                            shipping_co: shippingCompany ?? (salesOrder.shipping?.company || ''),
                             note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                             movement_date: new Date().toISOString().slice(0, 10),
                             created_by: currentUser?.id || 'unknown'
@@ -1394,6 +1395,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 reason: newStatus,
                                 reference_id: id,
                                 source: 'Order Shipped',
+                                shipping_co: updates.shipping?.company || existingOrder.shipping?.company || '',
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                                 movement_date: new Date().toISOString().slice(0, 10),
                                 created_by: currentUser?.id || 'unknown'
@@ -1869,6 +1871,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     quantity: r.quantity,
                     unit_price: 0,
                     source: 'Customer Return',
+                    shipping_co: localOrder?.shipping?.company || '',
                     note: r.note,
                     movement_date: new Date().toISOString().slice(0, 10),
                     created_by: currentUser?.id || 'unknown'
@@ -1974,6 +1977,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     quantity: r.quantity,
                     unit_price: 0,
                     source: 'Customer Return',
+                    shipping_co: '', // Bulk order returns mixed shipping companies
                     note: r.note,
                     movement_date: new Date().toISOString().slice(0, 10),
                     created_by: currentUser?.id || 'unknown'
