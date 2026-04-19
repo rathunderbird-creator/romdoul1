@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Delete, LogIn, RefreshCw } from 'lucide-react';
+import { Lock, LogIn, RefreshCw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 const Login: React.FC = () => {
@@ -25,23 +25,7 @@ const Login: React.FC = () => {
         }
     }, [users, selectedUserId]);
 
-    const handleNumberClick = (num: number) => {
-        if (!selectedUserId) {
-            showToast('Please select a user first', 'error');
-            return;
-        }
-        if (pin.length < 4) {
-            setPin(prev => prev + num);
-        }
-    };
 
-    const handleClear = () => {
-        setPin('');
-    };
-
-    const handleBackspace = () => {
-        setPin(prev => prev.slice(0, -1));
-    };
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
@@ -60,8 +44,8 @@ const Login: React.FC = () => {
             showToast('Please select a user', 'error');
             return;
         }
-        if (pin.length === 0) {
-            showToast('Please enter PIN', 'error');
+        if (!pin) {
+            showToast('Please enter password', 'error');
             return;
         }
 
@@ -73,7 +57,7 @@ const Login: React.FC = () => {
                 navigate('/');
                 showToast('Welcome back!', 'success');
             } else {
-                showToast('Invalid PIN', 'error');
+                showToast('Invalid password', 'error');
                 setPin('');
             }
         } catch (error) {
@@ -119,7 +103,7 @@ const Login: React.FC = () => {
                         <Lock size={24} /> {/* Reduced icon size */}
                     </div>
                     <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px' }}>POS Login</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>Select user and enter PIN</p>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>Select user and enter password</p>
                 </div>
 
                 {/* User Selection */}
@@ -177,116 +161,42 @@ const Login: React.FC = () => {
                     </div>
                 </div>
 
-                {/* PIN Display */}
-                <div style={{
-                    background: 'var(--color-surface)',
-                    padding: '12px', // Reduced padding
-                    borderRadius: '10px',
-                    textAlign: 'center',
-                    height: '48px', // Reduced height
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    // marginBottom: '16px' // Handled by flex gap
-                }}>
-                    {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} style={{
-                            width: '10px',
-                            height: '10px',
-                            borderRadius: '50%',
-                            background: i < pin.length ? 'var(--color-primary)' : 'var(--color-border)',
-                            transition: 'all 0.2s',
-                            transform: i < pin.length ? 'scale(1.2)' : 'scale(1)'
-                        }} />
-                    ))}
-                </div>
-
-                {/* Numpad */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                        <button
-                            key={num}
-                            onClick={() => handleNumberClick(num)}
-                            style={{
-                                height: '48px', // Reduced height
-                                borderRadius: '10px',
-                                border: '1px solid var(--color-border)',
-                                background: 'transparent',
-                                fontSize: '20px', // Reduced font size
-                                fontWeight: '500',
-                                color: 'var(--color-text-main)',
-                                cursor: 'pointer'
-                            }}
-                            className="hover-card"
-                        >
-                            {num}
-                        </button>
-                    ))}
-                    <button
-                        onClick={handleClear}
+                {/* Password Input */}
+                <div style={{ position: 'relative', marginTop: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Password</label>
+                    <input
+                        type="password"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && selectedUserId && pin && handleLogin()}
+                        placeholder="Enter password"
                         style={{
-                            height: '48px',
-                            borderRadius: '10px',
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--color-text-secondary)',
-                            cursor: 'pointer',
-                            fontSize: '13px',
-                            textTransform: 'uppercase',
-                            fontWeight: 600
-                        }}
-                    >
-                        Clear
-                    </button>
-                    <button
-                        onClick={() => handleNumberClick(0)}
-                        style={{
-                            height: '48px',
-                            borderRadius: '10px',
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
                             border: '1px solid var(--color-border)',
-                            background: 'transparent',
-                            fontSize: '20px',
-                            fontWeight: '500',
+                            background: 'var(--color-surface)',
                             color: 'var(--color-text-main)',
-                            cursor: 'pointer'
+                            fontSize: '15px',
+                            outline: 'none',
                         }}
-                        className="hover-card"
-                    >
-                        0
-                    </button>
-                    <button
-                        onClick={handleBackspace}
-                        style={{
-                            height: '48px',
-                            borderRadius: '10px',
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--color-text-secondary)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        <Delete size={20} />
-                    </button>
+                    />
                 </div>
 
                 <button
                     onClick={handleLogin}
-                    disabled={isLoading || !selectedUserId || pin.length < 4}
+                    disabled={isLoading || !selectedUserId || !pin}
                     className="primary-button"
                     style={{
                         width: '100%',
-                        padding: '14px', // Reduced padding
+                        padding: '14px',
                         fontSize: '15px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '8px',
-                        opacity: (!selectedUserId || pin.length < 4) ? 0.5 : 1,
-                        marginTop: '8px'
+                        opacity: (!selectedUserId || !pin) ? 0.5 : 1,
+                        marginTop: '16px'
                     }}
                 >
                     {isLoading ? 'Verifying...' : (

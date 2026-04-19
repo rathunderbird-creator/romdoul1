@@ -15,8 +15,8 @@ const PinPrompt: React.FC<PinPromptProps> = ({
     isOpen,
     onClose,
     onSuccess,
-    title = "Enter PIN",
-    description = "Please enter your PIN to continue"
+    title = "Enter Password",
+    description = "Please enter your password to continue"
 }) => {
     const { currentUser } = useStore();
     const { showToast } = useToast();
@@ -37,7 +37,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
         e?.preventDefault();
 
         if (!currentUser?.pin) {
-            showToast('No PIN set for your account. Please set a PIN first.', 'error');
+            showToast('No password set for your account. Please set a password first.', 'error');
             return;
         }
 
@@ -45,7 +45,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
             onSuccess();
             onClose();
         } else {
-            showToast('Incorrect PIN', 'error');
+            showToast('Incorrect password', 'error');
             setPin('');
             inputRef.current?.focus();
         }
@@ -124,14 +124,12 @@ const PinPrompt: React.FC<PinPromptProps> = ({
                         value={pin}
                         onChange={(e) => setPin(e.target.value)}
                         className="search-input"
-                        placeholder="Enter PIN"
-                        maxLength={6}
+                        placeholder="Enter Password"
                         style={{
                             width: '100%',
                             padding: '16px',
                             textAlign: 'center',
                             fontSize: '24px',
-                            letterSpacing: '8px',
                             marginBottom: '24px',
                             fontFamily: 'monospace'
                         }}

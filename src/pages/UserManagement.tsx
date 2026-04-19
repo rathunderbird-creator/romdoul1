@@ -210,7 +210,7 @@ const UserManagement: React.FC = () => {
                                 <tr>
                                     <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>User</th>
                                     <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Role</th>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>PIN</th>
+                                    <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Password</th>
                                     <th style={{ padding: '16px', textAlign: 'right', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Actions</th>
                                 </tr>
                             </thead>
@@ -362,13 +362,12 @@ const UserManagement: React.FC = () => {
                                 </select>
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>PIN (Optional)</label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Password <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span></label>
                                 <input
                                     type="text"
                                     value={userFormData.pin}
                                     onChange={e => setUserFormData({ ...userFormData, pin: e.target.value })}
-                                    placeholder="e.g. 1234"
-                                    maxLength={4}
+                                    placeholder="Enter password"
                                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
                                 />
                             </div>
