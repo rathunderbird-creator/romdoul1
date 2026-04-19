@@ -75,12 +75,10 @@ const Dashboard: React.FC = () => {
     }, [fetchDashboardSales]);
 
     const stats = useMemo(() => {
-        const properSales = filteredSales.filter(sale => sale.paymentStatus !== 'Cancel' && sale.shipping?.status !== 'ReStock');
-        const totalRevenue = properSales.reduce((sum, sale) => sum + sale.total, 0);
-        const totalProperSales = properSales.length;
+        const totalSalesCount = filteredSales.length;
         const lowStockCount = products.filter(p => p.stock < (p.lowStockThreshold || 5)).length;
         const totalProducts = products.reduce((sum, p) => sum + p.stock, 0);
-        return { totalRevenue, totalProperSales, lowStockCount, totalProducts };
+        return { totalSalesCount, lowStockCount, totalProducts };
     }, [filteredSales, products]);
 
     const topProducts = useMemo(() => {
@@ -254,9 +252,9 @@ const Dashboard: React.FC = () => {
             }}>
                 <StatsCard
                     title="Total Sales"
-                    value={stats.totalProperSales}
+                    value={stats.totalSalesCount}
                     icon={ShoppingBag}
-                    trend="Completed orders"
+                    trend="All orders"
                     color="var(--color-blue)"
                 />
                 {orderStatusStats.map((stat, idx) => {
