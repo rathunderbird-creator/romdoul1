@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useActivityLog } from '../context/ActivityLogContext';
@@ -83,7 +84,100 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         }
     };
 
+    const renderActivityLogContent = () => (
+        <>
+            {/* Panel Header */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 16px',
+                borderBottom: '1px solid var(--color-border)',
+            }}>
+                <div>
+                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Activity Log</h3>
+                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                        Recent actions across the system
+                    </p>
+                </div>
+                <button
+                    onClick={closePanel}
+                    style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--color-text-muted)', display: 'flex', padding: '4px'
+                    }}
+                >
+                    <X size={16} />
+                </button>
+            </div>
+
+            {/* Log List */}
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '4px 0',
+            }}>
+                {isLoading && logs.length === 0 ? (
+                    <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                        Loading activity...
+                    </div>
+                ) : logs.length === 0 ? (
+                    <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                        No recent activity
+                    </div>
+                ) : (
+                    logs.map((log) => (
+                        <div
+                            key={log.id}
+                            style={{
+                                display: 'flex',
+                                gap: '10px',
+                                padding: '10px 16px',
+                                borderBottom: '1px solid var(--color-border)',
+                                cursor: 'default',
+                            }}
+                        >
+                            {/* Icon */}
+                            <div style={{
+                                width: '28px', height: '28px', borderRadius: '8px',
+                                backgroundColor: 'var(--color-bg)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0, marginTop: '2px',
+                            }}>
+                                {ACTION_ICONS[log.action] || <Bell size={14} style={{ color: 'var(--color-text-muted)' }} />}
+                            </div>
+
+                            {/* Content */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                    fontSize: '12px',
+                                    color: 'var(--color-text-main)',
+                                    lineHeight: 1.4,
+                                    wordBreak: 'break-word',
+                                }}>
+                                    {log.description}
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    gap: '8px',
+                                    marginTop: '3px',
+                                    fontSize: '10px',
+                                    color: 'var(--color-text-muted)',
+                                }}>
+                                    <span>{log.user_name}</span>
+                                    <span>·</span>
+                                    <span>{getTimeAgo(log.created_at)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </>
+    );
+
     return (
+        <>
         <header style={{
             height: isMobile ? 'auto' : 'var(--header-height)',
             minHeight: 'var(--header-height)',
@@ -183,120 +277,29 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                 }}>{unreadCount > 9 ? '9+' : unreadCount}</span>
                             )}
                         </button>
-
-                        {/* Activity Log Panel */}
-                        {isOpen && (
-                            <div style={{
-                                position: isMobile ? 'fixed' : 'absolute',
-                                top: isMobile ? 0 : '100%',
-                                left: isMobile ? 0 : 'auto',
-                                right: isMobile ? 0 : 0,
-                                bottom: isMobile ? 0 : 'auto',
-                                marginTop: isMobile ? 0 : '8px',
-                                width: isMobile ? '100vw' : '380px',
-                                maxHeight: isMobile ? '100vh' : '480px',
-                                backgroundColor: 'var(--color-surface)',
-                                border: isMobile ? 'none' : '1px solid var(--color-border)',
-                                borderRadius: isMobile ? 0 : '12px',
-                                boxShadow: isMobile ? 'none' : '0 12px 40px rgba(0,0,0,0.15)',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                zIndex: 200,
-                                overflow: 'hidden',
-                            }}>
-                                {/* Panel Header */}
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '14px 16px',
-                                    borderBottom: '1px solid var(--color-border)',
-                                }}>
-                                    <div>
-                                        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Activity Log</h3>
-                                        <p style={{ margin: 0, fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                            Recent actions across the system
-                                        </p>
-                                    </div>
-                                    <button
-                                        onClick={closePanel}
-                                        style={{
-                                            background: 'none', border: 'none', cursor: 'pointer',
-                                            color: 'var(--color-text-muted)', display: 'flex', padding: '4px'
-                                        }}
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                </div>
-
-                                {/* Log List */}
-                                <div style={{
-                                    flex: 1,
-                                    overflowY: 'auto',
-                                    padding: '4px 0',
-                                }}>
-                                    {isLoading && logs.length === 0 ? (
-                                        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                                            Loading activity...
-                                        </div>
-                                    ) : logs.length === 0 ? (
-                                        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                                            No recent activity
-                                        </div>
-                                    ) : (
-                                        logs.map((log) => (
-                                            <div
-                                                key={log.id}
-                                                style={{
-                                                    display: 'flex',
-                                                    gap: '10px',
-                                                    padding: '10px 16px',
-                                                    borderBottom: '1px solid var(--color-border)',
-                                                    transition: 'background 0.15s',
-                                                    cursor: 'default',
-                                                }}
-                                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface-hover)')}
-                                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                            >
-                                                {/* Icon */}
-                                                <div style={{
-                                                    width: '28px', height: '28px', borderRadius: '8px',
-                                                    backgroundColor: 'var(--color-bg)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    flexShrink: 0, marginTop: '2px',
-                                                }}>
-                                                    {ACTION_ICONS[log.action] || <Bell size={14} style={{ color: 'var(--color-text-muted)' }} />}
-                                                </div>
-
-                                                {/* Content */}
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{
-                                                        fontSize: '12px',
-                                                        color: 'var(--color-text-main)',
-                                                        lineHeight: 1.4,
-                                                        wordBreak: 'break-word',
-                                                    }}>
-                                                        {log.description}
-                                                    </div>
-                                                    <div style={{
-                                                        display: 'flex',
-                                                        gap: '8px',
-                                                        marginTop: '3px',
-                                                        fontSize: '10px',
-                                                        color: 'var(--color-text-muted)',
-                                                    }}>
-                                                        <span>{log.user_name}</span>
-                                                        <span>·</span>
-                                                        <span>{getTimeAgo(log.created_at)}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        )}
                     </div>
+
+                    {/* Activity Log Panel - Desktop: inline dropdown, Mobile: portal overlay */}
+                    {isOpen && !isMobile && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            marginTop: '8px',
+                            width: '380px',
+                            maxHeight: '480px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: '12px',
+                            boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            zIndex: 200,
+                            overflow: 'hidden',
+                        }}>
+                            {renderActivityLogContent()}
+                        </div>
+                    )}
 
                     {/* User Profile */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -375,6 +378,47 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                 </div>
             )}
         </header>
+
+            {/* Mobile Activity Log Portal */}
+            {isOpen && isMobile && ReactDOM.createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 9999,
+                    display: 'flex',
+                    flexDirection: 'column',
+                }}>
+                    {/* Backdrop */}
+                    <div
+                        onClick={closePanel}
+                        style={{
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundColor: 'rgba(0,0,0,0.5)',
+                        }}
+                    />
+                    {/* Panel */}
+                    <div style={{
+                        position: 'relative',
+                        marginTop: '56px',
+                        flex: 1,
+                        backgroundColor: 'var(--color-surface)',
+                        borderTopLeftRadius: '16px',
+                        borderTopRightRadius: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        boxShadow: '0 -4px 24px rgba(0,0,0,0.15)',
+                    }}>
+                        {renderActivityLogContent()}
+                    </div>
+                </div>,
+                document.body
+            )}
+        </>
     );
 };
 
