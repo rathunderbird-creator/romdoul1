@@ -279,7 +279,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                 {hasSubItems && isExpanded && !visualCollapsed && (
                                     <div style={{ display: 'flex', flexDirection: 'column', marginTop: '4px', marginLeft: '32px', gap: '4px' }}>
                                         {item.subItems.map((subItem: any) => {
-                                            const isSubActive = location.pathname === subItem.path || location.pathname.startsWith(subItem.path + '/');
+                                            const isSubActive = location.pathname === subItem.path || (subItem.path !== item.path && location.pathname.startsWith(subItem.path + '/'));
                                             return (
                                                 <NavLink
                                                     key={subItem.path}

@@ -19,6 +19,8 @@ interface StockInRecord {
     source: string;
     note: string;
     shipping_co: string;
+    customer_name: string;
+    customer_phone: string;
     movement_date: string;
     created_at: string;
     created_by: string;
@@ -47,6 +49,8 @@ const StockIn: React.FC = () => {
     const [shippingCo, setShippingCo] = useState('');
     const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
     const [productSearch, setProductSearch] = useState('');
+    const [customerName, setCustomerName] = useState('');
+    const [customerPhone, setCustomerPhone] = useState('');
 
     // Edit modal state
     const [editRecord, setEditRecord] = useState<StockInRecord | null>(null);
@@ -56,6 +60,8 @@ const StockIn: React.FC = () => {
     const [editNote, setEditNote] = useState('');
     const [editShippingCo, setEditShippingCo] = useState('');
     const [editDate, setEditDate] = useState('');
+    const [editCustomerName, setEditCustomerName] = useState('');
+    const [editCustomerPhone, setEditCustomerPhone] = useState('');
 
     useEffect(() => {
         setHeaderContent({
@@ -111,7 +117,9 @@ const StockIn: React.FC = () => {
             r.product_name.toLowerCase().includes(q) ||
             (r.source || '').toLowerCase().includes(q) ||
             (r.shipping_co || '').toLowerCase().includes(q) ||
-            (r.note || '').toLowerCase().includes(q)
+            (r.note || '').toLowerCase().includes(q) ||
+            (r.customer_name || '').toLowerCase().includes(q) ||
+            (r.customer_phone || '').toLowerCase().includes(q)
         );
     }, [records, searchTerm]);
 
@@ -160,12 +168,15 @@ const StockIn: React.FC = () => {
                 source: source.trim(),
                 note: note.trim(),
                 shipping_co: shippingCo.trim(),
+                customer_name: customerName.trim(),
+                customer_phone: customerPhone.trim(),
                 movement_date: movementDate,
                 created_by: currentUser?.id || 'unknown'
             });
 
             if (error) {
                 console.error('Failed to log stock movement:', error);
+                throw new Error(error.message);
             }
 
             showToast(`Added ${quantity} units of ${product.name}. New stock: ${newStock}`, 'success');
@@ -176,6 +187,8 @@ const StockIn: React.FC = () => {
             setSource('');
             setNote('');
             setShippingCo('');
+            setCustomerName('');
+            setCustomerPhone('');
             setMovementDate(new Date().toISOString().slice(0, 10));
             setProductSearch('');
             setShowForm(false);
@@ -193,6 +206,8 @@ const StockIn: React.FC = () => {
         setEditNote(record.note || '');
         setEditShippingCo(record.shipping_co || '');
         setEditDate(record.movement_date);
+        setEditCustomerName(record.customer_name || '');
+        setEditCustomerPhone(record.customer_phone || '');
     };
 
     const handleEditSave = async () => {
@@ -209,6 +224,8 @@ const StockIn: React.FC = () => {
                 source: editSource.trim(),
                 note: editNote.trim(),
                 shipping_co: editShippingCo.trim(),
+                customer_name: editCustomerName.trim(),
+                customer_phone: editCustomerPhone.trim(),
                 movement_date: editDate
             };
 
@@ -251,7 +268,7 @@ const StockIn: React.FC = () => {
     const inputStyle: React.CSSProperties = { width: '100%', height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '14px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' };
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+        <div style={{ padding: '24px' }}>
             {/* Header */}
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'flex-end', marginBottom: '24px', gap: '16px' }}>
                 <div>
@@ -361,7 +378,7 @@ const StockIn: React.FC = () => {
                             />
                         </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                         {/* Date */}
                         <div>
                             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Date</label>
@@ -373,6 +390,31 @@ const StockIn: React.FC = () => {
                             />
                         </div>
 
+                        {/* Customer */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Customer</label>
+                            <input
+                                type="text"
+                                placeholder="Customer name"
+                                value={customerName}
+                                onChange={(e) => setCustomerName(e.target.value)}
+                                style={inputStyle}
+                            />
+                        </div>
+
+                        {/* Phone */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Phone</label>
+                            <input
+                                type="text"
+                                placeholder="Phone number"
+                                value={customerPhone}
+                                onChange={(e) => setCustomerPhone(e.target.value)}
+                                style={inputStyle}
+                            />
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                         {/* Shipping Co */}
                         <div>
                             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
@@ -471,6 +513,8 @@ const StockIn: React.FC = () => {
                                 <th style={{ textAlign: 'center' }}>Qty</th>
                                 <th style={{ textAlign: 'right' }}>Unit Price</th>
                                 <th style={{ textAlign: 'right' }}>Total</th>
+                                <th>Customer</th>
+                                <th>Phone</th>
                                 <th>Source / Supplier</th>
                                 <th>Shipping Co</th>
                                 <th>Note</th>
@@ -492,6 +536,12 @@ const StockIn: React.FC = () => {
                                     </td>
                                     <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>
                                         {record.unit_price ? `$${(Number(record.unit_price) * record.quantity).toLocaleString()}` : '-'}
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 500 }}>
+                                        {record.customer_name || '-'}
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        {record.customer_phone || '-'}
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                         {record.source || '-'}
@@ -554,6 +604,14 @@ const StockIn: React.FC = () => {
                         <datalist id="shipping-companies-edit-in">
                             {shippingCompanies?.map(c => <option key={c} value={c} />)}
                         </datalist>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Customer</label>
+                        <input type="text" value={editCustomerName} onChange={(e) => setEditCustomerName(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Phone</label>
+                        <input type="text" value={editCustomerPhone} onChange={(e) => setEditCustomerPhone(e.target.value)} style={inputStyle} />
                     </div>
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Note</label>

@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Layers, ArrowDown, Boxes, AlertTriangle, ArchiveRestore } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { useToast } from '../context/ToastContext';
 import { supabase } from '../lib/supabase';
 import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
@@ -9,8 +8,7 @@ import DateRangePicker from '../components/DateRangePicker';
 import type { Sale } from '../types';
 
 const ReturnsRestocks: React.FC = () => {
-    const { restockOrder, bulkRestockOrders, updateOrder, salesUpdatedAt, refreshData } = useStore();
-    const { showToast } = useToast();
+    const { restockOrder, bulkRestockOrders, updateOrder, salesUpdatedAt } = useStore();
     const isMobile = useMobile();
 
     // Historical Orders State
@@ -25,65 +23,65 @@ const ReturnsRestocks: React.FC = () => {
     // Filter State
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-    useEffect(() => {
-        const fetchHistoricalOrders = async () => {
-            try {
-                // Fetch Returned Orders
-                let retQuery = supabase
-                    .from('sales')
-                    .select('*, items:sale_items(*)')
-                    .eq('shipping_status', 'Returned')
-                    .order('date', { ascending: false });
+    const fetchHistoricalOrders = async () => {
+        try {
+            // Fetch Returned Orders
+            let retQuery = supabase
+                .from('sales')
+                .select('*, items:sale_items(*)')
+                .eq('shipping_status', 'Returned')
+                .order('date', { ascending: false });
 
-                // Fetch Restocked History
-                let resQuery = supabase
-                    .from('sales')
-                    .select('*, items:sale_items(*)')
-                    .eq('shipping_status', 'ReStock')
-                    .order('date', { ascending: false });
+            // Fetch Restocked History
+            let resQuery = supabase
+                .from('sales')
+                .select('*, items:sale_items(*)')
+                .eq('shipping_status', 'ReStock')
+                .order('date', { ascending: false });
 
-                if (dateRange.start) {
-                    retQuery = retQuery.gte('date', dateRange.start + 'T00:00:00');
-                    resQuery = resQuery.gte('date', dateRange.start + 'T00:00:00');
-                }
-                if (dateRange.end) {
-                    retQuery = retQuery.lte('date', dateRange.end + 'T23:59:59.999Z');
-                    resQuery = resQuery.lte('date', dateRange.end + 'T23:59:59.999Z');
-                } else {
-                    resQuery = resQuery.limit(100);
-                }
-
-                const [retRes, resRes] = await Promise.all([retQuery, resQuery]);
-                if (retRes.error) throw retRes.error;
-                if (resRes.error) throw resRes.error;
-
-                const retData = retRes.data;
-                const resData = resRes.data;
-
-                const mapToSale = (dbRow: any): Sale => ({
-                    ...dbRow,
-                    paymentMethod: dbRow.payment_method,
-                    paymentStatus: dbRow.payment_status,
-                    customerCare: dbRow.customer_care,
-                    amountReceived: dbRow.amount_received,
-                    settleDate: dbRow.settle_date,
-                    orderStatus: dbRow.order_status,
-                    shipping: {
-                        company: dbRow.shipping_company,
-                        trackingNumber: dbRow.tracking_number,
-                        status: dbRow.shipping_status,
-                        cost: 0
-                    },
-                    customer: dbRow.customer_snapshot || {}
-                });
-
-                setReturnedOrders((retData || []).map(mapToSale));
-                setRestockedHistory((resData || []).map(mapToSale));
-            } catch (err) {
-                console.error("Failed to fetch historical orders:", err);
+            if (dateRange.start) {
+                retQuery = retQuery.gte('date', dateRange.start + 'T00:00:00');
+                resQuery = resQuery.gte('date', dateRange.start + 'T00:00:00');
             }
-        };
+            if (dateRange.end) {
+                retQuery = retQuery.lte('date', dateRange.end + 'T23:59:59.999Z');
+                resQuery = resQuery.lte('date', dateRange.end + 'T23:59:59.999Z');
+            } else {
+                resQuery = resQuery.limit(100);
+            }
 
+            const [retRes, resRes] = await Promise.all([retQuery, resQuery]);
+            if (retRes.error) throw retRes.error;
+            if (resRes.error) throw resRes.error;
+
+            const retData = retRes.data;
+            const resData = resRes.data;
+
+            const mapToSale = (dbRow: any): Sale => ({
+                ...dbRow,
+                paymentMethod: dbRow.payment_method,
+                paymentStatus: dbRow.payment_status,
+                customerCare: dbRow.customer_care,
+                amountReceived: dbRow.amount_received,
+                settleDate: dbRow.settle_date,
+                orderStatus: dbRow.order_status,
+                shipping: {
+                    company: dbRow.shipping_company,
+                    trackingNumber: dbRow.tracking_number,
+                    status: dbRow.shipping_status,
+                    cost: 0
+                },
+                customer: dbRow.customer_snapshot || {}
+            });
+
+            setReturnedOrders((retData || []).map(mapToSale));
+            setRestockedHistory((resData || []).map(mapToSale));
+        } catch (err) {
+            console.error("Failed to fetch historical orders:", err);
+        }
+    };
+
+    useEffect(() => {
         fetchHistoricalOrders();
     }, [salesUpdatedAt, dateRange]);
 
@@ -120,9 +118,9 @@ const ReturnsRestocks: React.FC = () => {
         setIsRestocking(true);
         try {
             await bulkRestockOrders(Array.from(selectedReturnedOrderIds));
-            showToast(`Successfully restocked ${selectedReturnedOrderIds.size} orders`, 'success');
             setSelectedReturnedOrderIds(new Set());
-            await refreshData();
+            alert('Successfully Added Product back to Stock');
+            await fetchHistoricalOrders();
         } catch (error: any) {
              console.error("Bulk restock failed:", error);
              alert("Failed to restock some orders: " + error.message);
@@ -135,7 +133,7 @@ const ReturnsRestocks: React.FC = () => {
     const restockedItemsCount = restockedHistory.reduce((sum, order) => sum + order.items.reduce((s, item) => s + item.quantity, 0), 0);
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ padding: '24px' }}>
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'flex-end', marginBottom: '24px', gap: '16px' }}>
                 <div>
                     <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px 0', color: 'var(--color-primary)' }}>Returns & Restocks</h1>
@@ -156,7 +154,7 @@ const ReturnsRestocks: React.FC = () => {
                 <StatsCard title="Restocked Orders" value={restockedHistory.length} icon={ArchiveRestore} color="#2563EB" trend={`${restockedItemsCount} items restocked`} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', height: isMobile ? 'auto' : 'calc(100vh - 150px)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', height: isMobile ? 'auto' : 'calc(100vh - 300px)' }}>
                 {/* ReStock Table (Returned Orders) */}
                 <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', minHeight: isMobile ? '400px' : 'auto' }}>
                     <h3 style={{ padding: '16px 20px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '15px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -207,9 +205,12 @@ const ReturnsRestocks: React.FC = () => {
                                             style={{ cursor: 'pointer' }}
                                         />
                                     </th>
+                                    <th>Date</th>
                                     <th>Order / Customer</th>
                                     <th>Phone</th>
                                     <th>Items</th>
+                                    <th style={{ textAlign: 'right' }}>Total</th>
+                                    <th>Shipping Co</th>
                                     <th style={{ textAlign: 'right', width: '50px' }}></th>
                                 </tr>
                             </thead>
@@ -223,6 +224,9 @@ const ReturnsRestocks: React.FC = () => {
                                                 onChange={() => toggleReturnedOrderSelection(order.id)}
                                                 style={{ cursor: 'pointer' }}
                                             />
+                                        </td>
+                                        <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                                            {new Date(order.date).toLocaleDateString()}
                                         </td>
                                         <td style={{ whiteSpace: 'normal' }}>
                                             <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
@@ -240,6 +244,14 @@ const ReturnsRestocks: React.FC = () => {
                                                 ))}
                                             </div>
                                         </td>
+                                        <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>
+                                            ${order.total?.toLocaleString() || '0'}
+                                        </td>
+                                        <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                            {order.shipping?.company || '-'}
+                                        </td>
+
+
                                         <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
                                             <button
                                                 onClick={async () => {
@@ -250,8 +262,8 @@ const ReturnsRestocks: React.FC = () => {
                                                                 shipping: { ...order.shipping, status: 'ReStock' } as any
                                                             });
                                                             await restockOrder(order.id);
-                                                            showToast('Items restocked & order updated', 'success');
-                                                            await refreshData();
+                                                            alert('Successfully Added Product back to Stock');
+                                                            await fetchHistoricalOrders();
                                                         } catch (error: any) {
                                                             console.error("Restock failed:", error);
                                                             alert("Failed to restock: " + error.message);
@@ -285,15 +297,20 @@ const ReturnsRestocks: React.FC = () => {
                         <table className="spreadsheet-table">
                             <thead style={{ background: '#EFF6FF' }}>
                                 <tr>
+                                    <th>Date</th>
                                     <th>Order / Customer</th>
                                     <th>Phone</th>
                                     <th>Items Restocked</th>
-                                    <th style={{ textAlign: 'right' }}>Date</th>
+                                    <th style={{ textAlign: 'right' }}>Total</th>
+                                    <th>Shipping Co</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {restockedHistory.map(order => (
                                     <tr key={order.id} style={{ background: '#EFF6FF' }}>
+                                        <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                                            {new Date(order.date).toLocaleDateString()}
+                                        </td>
                                         <td style={{ whiteSpace: 'normal' }}>
                                             <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
@@ -310,9 +327,13 @@ const ReturnsRestocks: React.FC = () => {
                                                 ))}
                                             </div>
                                         </td>
-                                        <td style={{ textAlign: 'right', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                            {new Date(order.date).toLocaleDateString()}
+                                        <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>
+                                            ${order.total?.toLocaleString() || '0'}
                                         </td>
+                                        <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                            {order.shipping?.company || '-'}
+                                        </td>
+
                                     </tr>
                                 ))}
                             </tbody>
