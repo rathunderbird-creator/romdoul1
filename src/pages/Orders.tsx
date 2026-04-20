@@ -1104,7 +1104,11 @@ const Orders: React.FC = () => {
             return sum + (isCancelled ? 0 : (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)));
         }, 0);
         const totalOutstanding = totalRevenue - totalReceived;
-        return { totalOrders, totalRevenue, totalReceived, totalOutstanding };
+        const totalProducts = filteredOrders.reduce((sum, order) => {
+            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
+            return sum + (isCancelled ? 0 : order.items.reduce((s, item) => s + item.quantity, 0));
+        }, 0);
+        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts };
     }, [filteredOrders, totalCount]);
 
     const handleOpenAdd = () => {
@@ -2729,6 +2733,7 @@ const Orders: React.FC = () => {
                                                 if (colId === 'total') return <td key={colId} style={{ ...commonStyle, textAlign: 'right' }}>${stats.totalRevenue.toFixed(2)}</td>;
                                                 if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>${stats.totalReceived.toFixed(2)}</td>;
                                                 if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>${stats.totalOutstanding.toFixed(2)}</td>;
+                                                if (colId === 'items') return <td key={colId} style={{ ...commonStyle }}>{stats.totalProducts} pcs</td>;
 
                                                 return <td key={colId} style={commonStyle}></td>;
                                             })}
