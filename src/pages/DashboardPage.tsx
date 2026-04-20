@@ -377,62 +377,37 @@ const Dashboard: React.FC = () => {
 
 
 
-            {/* Reports Grid: Remaining Panels */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))',
-                gap: '16px'
-            }}>
-
-
-                {/* 3. Top Selling Products */}
-                <div className="glass-panel" style={{
-                    padding: '20px',
-                    height: isMobile ? '300px' : 'auto',
-                    overflowY: 'auto',
-                }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Top Selling Products</h3>
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Product</th>
-                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Qty</th>
-                                    <th style={{ padding: '8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>Rev</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {topProducts.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No data.</td>
-                                    </tr>
-                                ) : (
-                                    topProducts.map((product, index) => (
-                                        <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '8px', fontWeight: 500 }}>{product.name}</td>
-                                            <td style={{ padding: '8px', textAlign: 'center' }}>{product.quantity}</td>
-                                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>${product.revenue.toLocaleString()}</td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                            {topProducts.length > 0 && (
-                                <tfoot>
-                                    <tr style={{ borderTop: '2px solid var(--color-border)' }}>
-                                        <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>Total Summary</td>
-                                        <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>
-                                            {topProducts.reduce((sum, p) => sum + p.quantity, 0)}
-                                        </td>
-                                        <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
-                                            ${topProducts.reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
-                                        </td>
-                                    </tr>
-                                </tfoot>
-                            )}
-                        </table>
+            {/* Top Selling Products */}
+            <div style={{ marginBottom: '32px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Top Selling Products</h3>
+                {topProducts.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
+                ) : (
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: '16px'
+                    }}>
+                        {topProducts.map((product, index) => (
+                            <StatsCard
+                                key={index}
+                                title={product.name}
+                                value={`${product.quantity} Sold`}
+                                icon={ShoppingBag}
+                                color="var(--color-primary)"
+                                onClick={() => {
+                                    localStorage.setItem('orders_searchTerm', product.name);
+                                    localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_salesmanFilter', 'All');
+                                    localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                    navigate('/orders');
+                                }}
+                            />
+                        ))}
                     </div>
-                </div>
-
+                )}
             </div>
 
                 {/* 4. Salesman Performance */}
@@ -469,6 +444,15 @@ const Dashboard: React.FC = () => {
                                     value={`${s.count} Orders`}
                                     icon={User}
                                     color="var(--color-primary)"
+                                    onClick={() => {
+                                        localStorage.setItem('orders_salesmanFilter', s.name);
+                                        localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                        localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                        localStorage.setItem('orders_searchTerm', '');
+                                        localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                        navigate('/orders');
+                                    }}
                                 />
                             ))}
                         </div>
@@ -494,6 +478,15 @@ const Dashboard: React.FC = () => {
                                 icon={Package}
                                 trend={`${p.delivered} Delivered`}
                                 color="var(--color-purple)"
+                                onClick={() => {
+                                    localStorage.setItem('orders_searchTerm', p.name);
+                                    localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_salesmanFilter', 'All');
+                                    localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                    navigate('/orders');
+                                }}
                             />
                         ))}
                     </div>

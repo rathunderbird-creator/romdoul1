@@ -89,6 +89,21 @@ button {
   padding: 12px;
 }
 
+.clickable-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.clickable-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md) !important;
+  border-color: var(--color-primary-light);
+}
+
+.clickable-card:active {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm) !important;
+}
+
 .text-gradient {
   background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
   background-clip: text;
