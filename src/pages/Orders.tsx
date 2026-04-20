@@ -495,7 +495,7 @@ const Orders: React.FC = () => {
     useEffect(() => {
         if (location.state && (location.state as any).editOrderId) {
             const editId = (location.state as any).editOrderId;
-            const orderToEdit = sales.find(s => s.id === editId);
+            const orderToEdit = sales.find(s => s.id === editId) || serverOrders.find(s => s.id === editId);
             if (orderToEdit) {
                 setEditingOrder(orderToEdit);
                 setActiveTab('pos');
@@ -1229,16 +1229,30 @@ const Orders: React.FC = () => {
 
             if (field === 'date') {
                 updates.date = new Date(value).toISOString();
+                await updateOrders(ids, updates);
             } else if (field === 'status') {
                 updates.shipping = { status: value } as any;
+                await updateOrders(ids, updates);
             } else if (field === 'paymentStatus') {
-                updates.paymentStatus = value;
-                if (value === 'Paid' || value === 'Settled') {
-                    // if bulk updated, keeping it simple as it was
-                }
+                const now = new Date().toISOString();
+                const promises = ids.map(id => {
+                    const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
+                    if (!order) return Promise.resolve();
+                    
+                    const individualUpdates: Partial<Sale> = { paymentStatus: value };
+                    
+                    if (value === 'Paid' || value === 'Settled' || value === 'Get File') {
+                        individualUpdates.amountReceived = order.total;
+                        individualUpdates.settleDate = now;
+                    } else if (value === 'Cancel' || value === 'Unpaid') {
+                        individualUpdates.amountReceived = 0;
+                        individualUpdates.settleDate = null as any;
+                    }
+                    
+                    return updateOrder(id, individualUpdates);
+                });
+                await Promise.all(promises);
             }
-
-            await updateOrders(ids, updates);
 
             showToast(`Updated ${ids.length} orders`, 'success');
             setSelectedIds(new Set()); // Clear selection
