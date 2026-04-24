@@ -11,15 +11,17 @@ interface StatsCardProps {
     bgColor?: string;
     textColor?: string;
     onClick?: () => void;
+    style?: React.CSSProperties;
 }
 
-const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color = 'var(--color-primary)', bgColor, onClick }) => {
+const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, color = 'var(--color-primary)', bgColor, onClick, style }) => {
     const isMobile = useMobile();
 
     return (
         <div 
             className={`glass-panel ${onClick ? 'clickable-card' : ''}`} 
             style={{ 
+                ...style,
                 padding: isMobile ? '12px' : '16px', 
                 display: 'flex', 
                 flexDirection: 'row', 

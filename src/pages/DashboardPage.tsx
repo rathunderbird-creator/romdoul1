@@ -261,14 +261,23 @@ const Dashboard: React.FC = () => {
                         @keyframes spin { 
                             100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
                         }
+                        .dashboard-flex-container > * {
+                            flex: 1 1 calc(20% - 16px);
+                            min-width: 200px;
+                        }
+                        @media (max-width: 768px) {
+                            .dashboard-flex-container > * {
+                                flex: 1 1 100%;
+                            }
+                        }
                     `}</style>
                 </div>
             </div>
 
             {/* Sales & Orders Overview */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
+            <div className="dashboard-flex-container" style={{
+                display: 'flex',
+                flexWrap: 'wrap',
                 gap: '16px',
                 marginBottom: '24px'
             }}>
@@ -317,9 +326,9 @@ const Dashboard: React.FC = () => {
 
             {/* Pay Status Cards */}
             <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Payment Status</h3>
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
+            <div className="dashboard-flex-container" style={{
+                display: 'flex',
+                flexWrap: 'wrap',
                 gap: '16px',
                 marginBottom: '24px'
             }}>
@@ -352,9 +361,9 @@ const Dashboard: React.FC = () => {
 
             {/* Inventory Overview */}
             <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Inventory</h3>
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
+            <div className="dashboard-flex-container" style={{
+                display: 'flex',
+                flexWrap: 'wrap',
                 gap: '16px',
                 marginBottom: '24px'
             }}>
@@ -383,9 +392,9 @@ const Dashboard: React.FC = () => {
                 {topProducts.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
                 ) : (
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                    <div className="dashboard-flex-container" style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
                         gap: '16px'
                     }}>
                         {topProducts.map((product, index) => (
@@ -432,9 +441,9 @@ const Dashboard: React.FC = () => {
                     {salesmanStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
                     ) : (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                        <div className="dashboard-flex-container" style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
                             gap: '16px'
                         }}>
                             {salesmanStats.map((s, index) => (
@@ -465,9 +474,9 @@ const Dashboard: React.FC = () => {
                 {pivotStats.product.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
                 ) : (
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                    <div className="dashboard-flex-container" style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
                         gap: '16px'
                     }}>
                         {pivotStats.product.map((p, idx) => (
