@@ -140,7 +140,7 @@ const Dashboard: React.FC = () => {
     }, [filteredSales]);
 
     const salesmanStats = useMemo(() => {
-        const stats: Record<string, { count: number; total: number }> = {};
+        const stats: Record<string, { count: number; total: number; soldItems: number; shippedDeliveredTotal: number }> = {};
         filteredSales.forEach(sale => {
             const salesman = sale.salesman || 'Unassigned';
             const status = sale.shipping?.status || 'Pending';
@@ -148,15 +148,24 @@ const Dashboard: React.FC = () => {
             if (salesmanStatusFilter !== 'All' && status !== salesmanStatusFilter) return;
 
             if (!stats[salesman]) {
-                stats[salesman] = { count: 0, total: 0 };
+                stats[salesman] = { count: 0, total: 0, soldItems: 0, shippedDeliveredTotal: 0 };
             }
             stats[salesman].count += 1;
             stats[salesman].total += sale.total;
+
+            if (status === 'Shipped' || status === 'Delivered') {
+                stats[salesman].shippedDeliveredTotal += sale.total;
+                sale.items.forEach(item => {
+                    stats[salesman].soldItems += item.quantity;
+                });
+            }
         });
         return Object.entries(stats).map(([name, data]) => ({
             name,
             count: data.count,
-            total: data.total
+            total: data.total,
+            soldItems: data.soldItems,
+            shippedDeliveredTotal: data.shippedDeliveredTotal
         })).sort((a, b) => b.total - a.total);
     }, [filteredSales, salesmanStatusFilter]);
 
@@ -405,8 +414,8 @@ const Dashboard: React.FC = () => {
                                 icon={ShoppingBag}
                                 color="var(--color-primary)"
                                 onClick={() => {
-                                    localStorage.setItem('orders_searchTerm', product.name);
-                                    localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_searchTerm', `"${product.name}"`);
+                                    localStorage.setItem('orders_statusFilter', JSON.stringify(['Shipped', 'Delivered']));
                                     localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_salesmanFilter', 'All');
                                     localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
@@ -450,7 +459,8 @@ const Dashboard: React.FC = () => {
                                 <StatsCard
                                     key={index}
                                     title={s.name}
-                                    value={`${s.count} Orders`}
+                                    value={`$${s.shippedDeliveredTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                    trend={`${s.soldItems} Sold Items | ${s.count} Orders`}
                                     icon={User}
                                     color="var(--color-primary)"
                                     onClick={() => {
@@ -488,7 +498,7 @@ const Dashboard: React.FC = () => {
                                 trend={`${p.delivered} Delivered`}
                                 color="var(--color-purple)"
                                 onClick={() => {
-                                    localStorage.setItem('orders_searchTerm', p.name);
+                                    localStorage.setItem('orders_searchTerm', `"${p.name}"`);
                                     localStorage.setItem('orders_statusFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_salesmanFilter', 'All');

@@ -796,7 +796,11 @@ const Orders: React.FC = () => {
             }
 
             if (searchTerm.trim()) {
-                const terms = searchTerm.split(/[\s,]+/).filter(t => t.trim().length > 0);
+                const trimmedTerm = searchTerm.trim();
+                const isExact = trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"');
+                const phrase = isExact ? trimmedTerm.slice(1, -1) : trimmedTerm;
+                
+                const terms = isExact ? (phrase ? [phrase] : []) : phrase.split(/[\s,]+/).filter(t => t.trim().length > 0);
 
                 if (terms.length > 0) {
                     // Bulk target detection: If there are many terms, the user is pasting a list of IDs/Phones.
@@ -813,7 +817,7 @@ const Orders: React.FC = () => {
 
                         const itemOrFilters = terms.map(t => {
                             const escaped = t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                            return `name.ilike."%${escaped}%"`;
+                            return isExact ? `name.ilike."${escaped}"` : `name.ilike."%${escaped}%"`;
                         }).join(',');
                         itemQuery = itemQuery.or(itemOrFilters);
 
@@ -861,7 +865,8 @@ const Orders: React.FC = () => {
                         
                         for (const term of terms) {
                             const escapedTerm = term.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                            finalOrFilters.push(`id.ilike."%${escapedTerm}%",salesman.ilike."%${escapedTerm}%",remark.ilike."%${escapedTerm}%",customer_care.ilike."%${escapedTerm}%",shipping_company.ilike."%${escapedTerm}%",tracking_number.ilike."%${escapedTerm}%",payment_method.ilike."%${escapedTerm}%",customer_snapshot->>name.ilike."%${escapedTerm}%",customer_snapshot->>phone.ilike."%${escapedTerm}%",customer_snapshot->>city.ilike."%${escapedTerm}%"`);
+                            const matchStr = isExact ? `"${escapedTerm}"` : `"%${escapedTerm}%"`;
+                            finalOrFilters.push(`id.ilike.${matchStr},salesman.ilike.${matchStr},remark.ilike.${matchStr},customer_care.ilike.${matchStr},shipping_company.ilike.${matchStr},tracking_number.ilike.${matchStr},payment_method.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`);
                         }
 
                         let orFilter = finalOrFilters.join(',');

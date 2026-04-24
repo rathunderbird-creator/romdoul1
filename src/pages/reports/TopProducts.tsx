@@ -12,7 +12,9 @@ const TopProducts: React.FC = () => {
         let totalItemsSold = 0;
         let totalRevenue = 0;
 
-        const validSales = (reportSales || []).filter((s:any) => s.paymentStatus === 'Paid');
+        const validSales = (reportSales || []).filter((s:any) => 
+            s.shipping?.status === 'Shipped' || s.shipping?.status === 'Delivered'
+        );
 
         validSales.forEach((sale: any) => {
             sale.items.forEach((item: any) => {
