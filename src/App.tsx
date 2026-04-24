@@ -34,6 +34,7 @@ import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ActivityLogProvider } from './context/ActivityLogContext';
+import { LanguageProvider } from './context/LanguageContext';
 
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -102,6 +103,7 @@ const ProtectedApp = () => {
 
 function App() {
   return (
+    <LanguageProvider>
     <ThemeProvider>
       <StoreProvider>
         <ToastProvider>
@@ -115,6 +117,7 @@ function App() {
         </ToastProvider>
       </StoreProvider>
     </ThemeProvider>
+    </LanguageProvider>
   );
 }
 

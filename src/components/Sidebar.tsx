@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, Phone, MapPin, PieChart, CalendarClock, ChevronDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 interface SidebarProps {
@@ -11,6 +12,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile }) => {
     const { hasPermission, currentUser, logo } = useStore();
+    const { t, language, setLanguage } = useLanguage();
 
 
     // ... (rest of the hook logic is same)
@@ -25,13 +27,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     const navItems: any[] = [];
 
     if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: LayoutDashboard, label: 'Dashboard', path: '/' });
+        navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
     }
 
     if (hasPermission('manage_orders') || hasPermission('create_orders') || hasPermission('view_orders')) {
         navItems.push({ 
             icon: Truck, 
-            label: 'Orders Management', 
+            label: t('nav.orders'), 
             path: '/orders'
         });
     }
@@ -39,13 +41,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
         navItems.push({ 
             icon: Package, 
-            label: 'Inventory', 
+            label: t('nav.inventory'), 
             path: '/inventory',
             subItems: [
-                { label: 'All Products', path: '/inventory' },
-                { label: 'Stock-In', path: '/inventory/stock-in' },
-                { label: 'Stock-Out', path: '/inventory/stock-out' },
-                { label: 'Returns & Restocks', path: '/inventory/returns' }
+                { label: t('nav.allProducts'), path: '/inventory' },
+                { label: t('nav.stockIn'), path: '/inventory/stock-in' },
+                { label: t('nav.stockOut'), path: '/inventory/stock-out' },
+                { label: t('nav.returnsRestocks'), path: '/inventory/returns' }
             ]
         });
     }
@@ -53,13 +55,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_income_expense')) {
         navItems.push({ 
             icon: Wallet, 
-            label: 'Income & Expense', 
+            label: t('nav.incomeExpense'), 
             path: '/income-expense',
             subItems: [
-                { label: 'All Transactions', path: '/income-expense' },
-                { label: 'Income', path: '/income-expense/income' },
-                { label: 'Expense', path: '/income-expense/expense' },
-                { label: 'Revenue', path: '/income-expense/revenue' }
+                { label: t('nav.allTransactions'), path: '/income-expense' },
+                { label: t('nav.income'), path: '/income-expense/income' },
+                { label: t('nav.expense'), path: '/income-expense/expense' },
+                { label: t('nav.revenue'), path: '/income-expense/revenue' }
             ]
         });
     }
@@ -67,26 +69,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('view_reports')) {
         navItems.push({ 
             icon: PieChart, 
-            label: 'Reports Center', 
+            label: t('nav.reportsCenter'), 
             path: '/reports',
             subItems: [
-                { label: 'Sales Overview', path: '/reports/sales' },
-                { label: 'Top Products', path: '/reports/products' },
-                { label: 'Inventory', path: '/reports/inventory' },
-                { label: 'Financials', path: '/reports/financials' },
-                { label: 'Staff Performance', path: '/reports/staff' },
-                { label: 'Shipping Companies', path: '/reports/shipping' },
+                { label: t('nav.salesOverview'), path: '/reports/sales' },
+                { label: t('nav.topProducts'), path: '/reports/products' },
+                { label: t('nav.inventory'), path: '/reports/inventory' },
+                { label: t('nav.financials'), path: '/reports/financials' },
+                { label: t('nav.staffPerformance'), path: '/reports/staff' },
+                { label: t('nav.shippingCompanies'), path: '/reports/shipping' },
             ]
         });
     }
 
     if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: Phone, label: 'ប្រតិបត្តិករទូរស័ព្ទ', path: '/mobile-operators' });
-        navItems.push({ icon: MapPin, label: 'Shipping Point', path: '/shipping-point' });
+        navItems.push({ icon: Phone, label: t('nav.mobileOperators'), path: '/mobile-operators' });
+        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
     }
 
     if (hasPermission('manage_attendance')) {
-        navItems.push({ icon: CalendarClock, label: 'Attendance', path: '/attendance' });
+        navItems.push({ icon: CalendarClock, label: t('nav.attendance'), path: '/attendance' });
     }
 
     const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>(() => {
@@ -320,7 +322,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             }}
                         >
                             <Users size={20} />
-                            {!visualCollapsed && <span>User Management</span>}
+                            {!visualCollapsed && <span>{t('nav.userManagement')}</span>}
                         </NavLink>
                     )}
 
@@ -341,10 +343,59 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             }}
                         >
                             <Settings size={20} />
-                            {!visualCollapsed && <span>Settings</span>}
+                            {!visualCollapsed && <span>{t('nav.settings')}</span>}
                         </NavLink>
                     )}
 
+                    {/* Language Toggle */}
+                    <button
+                        onClick={() => setLanguage(language === 'en' ? 'km' : 'en')}
+                        title={language === 'en' ? 'ប្ដូរទៅភាសាខ្មែរ' : 'Switch to English'}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: visualCollapsed ? 'center' : 'flex-start',
+                            gap: '12px',
+                            padding: visualCollapsed ? '12px' : '12px 16px',
+                            borderRadius: '8px',
+                            background: 'transparent',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-secondary)',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            width: '100%',
+                            transition: 'background 0.2s'
+                        }}
+                        className="sidebar-item"
+                    >
+                        {language === 'en' ? (
+                            <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
+                                <rect width="25" height="4" fill="#032EA1"/>
+                                <rect y="4" width="25" height="8" fill="#E00025"/>
+                                <rect y="12" width="25" height="4" fill="#032EA1"/>
+                                <g fill="#fff" transform="translate(12.5,8)">
+                                    <rect x="-5" y="-1.5" width="10" height="3"/>
+                                    <rect x="-4" y="-3" width="8" height="1.5"/>
+                                    <rect x="-1" y="-5" width="2" height="2"/>
+                                    <rect x="-3.5" y="-4" width="1.5" height="1"/>
+                                    <rect x="2" y="-4" width="1.5" height="1"/>
+                                </g>
+                            </svg>
+                        ) : (
+                            <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
+                                <rect width="25" height="16" fill="#B22234"/>
+                                <rect y="1.23" width="25" height="1.23" fill="#fff"/>
+                                <rect y="3.69" width="25" height="1.23" fill="#fff"/>
+                                <rect y="6.15" width="25" height="1.23" fill="#fff"/>
+                                <rect y="8.62" width="25" height="1.23" fill="#fff"/>
+                                <rect y="11.08" width="25" height="1.23" fill="#fff"/>
+                                <rect y="13.54" width="25" height="1.23" fill="#fff"/>
+                                <rect width="10" height="8.62" fill="#3C3B6E"/>
+                            </svg>
+                        )}
+                        {!visualCollapsed && <span>{language === 'en' ? 'ខ្មែរ' : 'English'}</span>}
+                    </button>
                 </div>
 
             </aside>

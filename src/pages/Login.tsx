@@ -3,11 +3,13 @@ import { useStore } from '../context/StoreContext';
 import { useNavigate } from 'react-router-dom';
 import { Lock, LogIn, RefreshCw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useLanguage } from '../context/LanguageContext';
 
 const Login: React.FC = () => {
     const { users, login, refreshData } = useStore();
     const navigate = useNavigate();
     const { showToast } = useToast();
+    const { t, language, setLanguage } = useLanguage();
 
     const [selectedUserId, setSelectedUserId] = useState<string>('');
     const [pin, setPin] = useState('');
@@ -31,9 +33,9 @@ const Login: React.FC = () => {
         setIsRefreshing(true);
         try {
             await refreshData();
-            showToast('User list updated', 'success');
+            showToast(t('login.userListUpdated'), 'success');
         } catch (error) {
-            showToast('Failed to refresh data', 'error');
+            showToast(t('login.failedToRefresh'), 'error');
         } finally {
             setIsRefreshing(false);
         }
@@ -41,11 +43,11 @@ const Login: React.FC = () => {
 
     const handleLogin = async () => {
         if (!selectedUserId) {
-            showToast('Please select a user', 'error');
+            showToast(t('login.pleaseSelectUser'), 'error');
             return;
         }
         if (!pin) {
-            showToast('Please enter password', 'error');
+            showToast(t('login.pleaseEnterPassword'), 'error');
             return;
         }
 
@@ -55,13 +57,13 @@ const Login: React.FC = () => {
             const success = await login(pin, selectedUserId);
             if (success) {
                 navigate('/');
-                showToast('Welcome back!', 'success');
+                showToast(t('login.welcomeBack'), 'success');
             } else {
-                showToast('Invalid password', 'error');
+                showToast(t('login.invalidPassword'), 'error');
                 setPin('');
             }
         } catch (error) {
-            showToast('Login failed', 'error');
+            showToast(t('login.loginFailed'), 'error');
         } finally {
             setIsLoading(false);
         }
@@ -102,14 +104,14 @@ const Login: React.FC = () => {
                     }}>
                         <Lock size={24} /> {/* Reduced icon size */}
                     </div>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px' }}>POS Login</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>Select user and enter password</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px' }}>{t('login.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('login.subtitle')}</p>
                 </div>
 
                 {/* User Selection */}
                 <div style={{ marginBottom: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Select User</label>
+                        <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('login.selectUser')}</label>
                         <button
                             onClick={handleRefresh}
                             disabled={isRefreshing}
@@ -128,7 +130,7 @@ const Login: React.FC = () => {
                             title="Refresh Users"
                         >
                             <RefreshCw size={12} className={isRefreshing ? 'spin' : ''} />
-                            Refresh
+                            {t('login.refresh')}
                         </button>
                     </div>
 
@@ -149,7 +151,7 @@ const Login: React.FC = () => {
                                 appearance: 'none'
                             }}
                         >
-                            {validUsers.length === 0 && <option value="">No users found</option>}
+                            {validUsers.length === 0 && <option value="">{t('login.noUsers')}</option>}
                             {validUsers.map(user => {
                                 return (
                                     <option key={user.id} value={user.id}>
@@ -163,13 +165,13 @@ const Login: React.FC = () => {
 
                 {/* Password Input */}
                 <div style={{ position: 'relative', marginTop: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Password</label>
+                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{t('login.password')}</label>
                     <input
                         type="password"
                         value={pin}
                         onChange={(e) => setPin(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && selectedUserId && pin && handleLogin()}
-                        placeholder="Enter password"
+                        placeholder={t('login.enterPassword')}
                         style={{
                             width: '100%',
                             padding: '12px',
@@ -199,12 +201,58 @@ const Login: React.FC = () => {
                         marginTop: '16px'
                     }}
                 >
-                    {isLoading ? 'Verifying...' : (
+                    {isLoading ? t('login.verifying') : (
                         <>
                             <LogIn size={18} />
-                            Login
+                            {t('login.login')}
                         </>
                     )}
+                </button>
+
+                {/* Language Toggle */}
+                <button
+                    onClick={() => setLanguage(language === 'en' ? 'km' : 'en')}
+                    style={{
+                        width: '100%',
+                        padding: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        background: 'transparent',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        color: 'var(--color-text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '13px'
+                    }}
+                >
+                    {language === 'en' ? (
+                        <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
+                            <rect width="25" height="4" fill="#032EA1"/>
+                            <rect y="4" width="25" height="8" fill="#E00025"/>
+                            <rect y="12" width="25" height="4" fill="#032EA1"/>
+                            <g fill="#fff" transform="translate(12.5,8)">
+                                <rect x="-5" y="-1.5" width="10" height="3"/>
+                                <rect x="-4" y="-3" width="8" height="1.5"/>
+                                <rect x="-1" y="-5" width="2" height="2"/>
+                                <rect x="-3.5" y="-4" width="1.5" height="1"/>
+                                <rect x="2" y="-4" width="1.5" height="1"/>
+                            </g>
+                        </svg>
+                    ) : (
+                        <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
+                            <rect width="25" height="16" fill="#B22234"/>
+                            <rect y="1.23" width="25" height="1.23" fill="#fff"/>
+                            <rect y="3.69" width="25" height="1.23" fill="#fff"/>
+                            <rect y="6.15" width="25" height="1.23" fill="#fff"/>
+                            <rect y="8.62" width="25" height="1.23" fill="#fff"/>
+                            <rect y="11.08" width="25" height="1.23" fill="#fff"/>
+                            <rect y="13.54" width="25" height="1.23" fill="#fff"/>
+                            <rect width="10" height="8.62" fill="#3C3B6E"/>
+                        </svg>
+                    )}
+                    {language === 'en' ? 'ខ្មែរ' : 'English'}
                 </button>
             </div>
 

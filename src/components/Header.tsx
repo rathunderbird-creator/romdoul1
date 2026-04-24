@@ -7,6 +7,7 @@ import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, Shield
 import { useMobile } from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { useLanguage } from '../context/LanguageContext';
 
 interface HeaderProps {
     isCollapsed: boolean;
@@ -54,6 +55,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const { logs, unreadCount, isOpen, togglePanel, closePanel, markAllRead, isLoading } = useActivityLog();
     const isMobile = useMobile();
     const navigate = useNavigate();
+    const { t } = useLanguage();
     const [isRefreshing, setIsRefreshing] = React.useState(false);
 
     const panelRef = useClickOutside<HTMLDivElement>(() => {
@@ -95,9 +97,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                 borderBottom: '1px solid var(--color-border)',
             }}>
                 <div>
-                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Activity Log</h3>
+                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>{t('header.activityLog')}</h3>
                     <p style={{ margin: 0, fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                        Recent actions across the system
+                        {t('header.recentActions')}
                     </p>
                 </div>
                 <button
@@ -119,11 +121,11 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
             }}>
                 {isLoading && logs.length === 0 ? (
                     <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                        Loading activity...
+                        {t('header.loadingActivity')}
                     </div>
                 ) : logs.length === 0 ? (
                     <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                        No recent activity
+                        {t('header.noRecentActivity')}
                     </div>
                 ) : (
                     logs.map((log) => (
@@ -306,7 +308,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         {!isMobile && (
                             <div style={{ textAlign: 'right' }}>
                                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                                    {currentUser?.name || 'Guest'}
+                                    {currentUser?.name || t('header.guest')}
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
                                     {currentUser?.roleId ? (roles?.find(r => r.id === currentUser.roleId)?.name || currentUser.roleId) : ''}

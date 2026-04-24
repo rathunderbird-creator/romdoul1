@@ -5,6 +5,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import PinPrompt from '../components/PinPrompt';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
@@ -17,6 +18,7 @@ const Settings: React.FC = () => {
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
 
     // Local State
     const [localState, setLocalState] = useState({
@@ -60,10 +62,10 @@ const Settings: React.FC = () => {
                 telegramBotToken: currentData.telegramBotToken,
                 telegramChatId: currentData.telegramChatId
             });
-            showToast('Settings saved successfully!', 'success');
+            showToast(t('settings.settingsSaved'), 'success');
         } catch (error) {
             console.error(error);
-            showToast('Failed to save settings', 'error');
+            showToast(t('settings.settingsFailed'), 'error');
         }
     }, [updateStoreProfile, showToast]); // Dependencies for context functions
 
@@ -72,8 +74,8 @@ const Settings: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Settings</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage your store preferences and configuration</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('settings.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('settings.subtitle')}</p>
                 </div>
             ),
             actions: (
@@ -88,12 +90,12 @@ const Settings: React.FC = () => {
                     }}
                 >
                     <Save size={20} />
-                    Save Changes
+                    {t('settings.saveChanges')}
                 </button>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, handleSave]);
+    }, [setHeaderContent, handleSave, t]);
 
 
     useEffect(() => {
@@ -138,14 +140,14 @@ const Settings: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'linear-gradient(135deg, #FF6600 0%, #FF8533 100%)' }}></div>
-                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Appearance</h2>
+                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>{t('settings.appearance')}</h2>
                         </div>
 
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Theme Color</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.themeColor')}</label>
                             <div style={{ display: 'flex', gap: '12px' }}>
                                 <input
                                     type="color"
@@ -181,7 +183,7 @@ const Settings: React.FC = () => {
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-                                Font Size: {fontSize}px
+                                {t('settings.fontSize')}: {fontSize}px
                             </label>
                             <input
                                 type="range"
@@ -193,9 +195,9 @@ const Settings: React.FC = () => {
                                 style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
                             />
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                                <span>Small</span>
-                                <span>Medium</span>
-                                <span>Large</span>
+                                <span>{t('settings.small')}</span>
+                                <span>{t('settings.medium')}</span>
+                                <span>{t('settings.large')}</span>
                             </div>
                         </div>
                         <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
@@ -208,7 +210,7 @@ const Settings: React.FC = () => {
                                 fontSize: '13px',
                                 cursor: 'pointer'
                             }}>
-                                Reset to Defaults
+                                {t('settings.resetToDefaults')}
                             </button>
                         </div>
                     </div>
@@ -218,12 +220,12 @@ const Settings: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '24px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
                         <Store className="text-primary" size={24} />
-                        <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Store Profile</h2>
+                        <h2 style={{ fontSize: '20px', fontWeight: '600' }}>{t('settings.storeProfile')}</h2>
                     </div>
 
                     <div style={{ display: 'grid', gap: '20px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Name</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.storeName')}</label>
                             <input
                                 type="text"
                                 value={localState.storeName}
@@ -234,7 +236,7 @@ const Settings: React.FC = () => {
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Logo</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.storeLogo')}</label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                 <div style={{
                                     width: '64px',
@@ -312,14 +314,14 @@ const Settings: React.FC = () => {
                                             opacity: isUploadingLogo ? 0.7 : 1
                                         }}
                                     >
-                                        {isUploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                                        {isUploadingLogo ? t('settings.uploading') : t('settings.uploadLogo')}
                                     </button>
-                                    <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Auto-crops square.</p>
+                                    <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('settings.autoCropsSquare')}</p>
                                 </div>
                             </div>
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Store Address</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.storeAddress')}</label>
                             <input
                                 type="text"
                                 value={localState.storeAddress}
@@ -331,7 +333,7 @@ const Settings: React.FC = () => {
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Email Address</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.emailAddress')}</label>
                                 <input
                                     type="email"
                                     value={localState.email}
@@ -341,7 +343,7 @@ const Settings: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Phone Number</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.phoneNumber')}</label>
                                 <input
                                     type="tel"
                                     value={localState.phone}
@@ -375,12 +377,12 @@ const Settings: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '24px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
                         <Globe className="text-primary" size={24} />
-                        <h2 style={{ fontSize: '20px', fontWeight: '600' }}>General Configuration</h2>
+                        <h2 style={{ fontSize: '20px', fontWeight: '600' }}>{t('settings.generalConfig')}</h2>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Currency</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.currency')}</label>
                             <select
                                 value={localState.currency}
                                 onChange={(e) => setLocalState({ ...localState, currency: e.target.value })}
@@ -393,7 +395,7 @@ const Settings: React.FC = () => {
                             </select>
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Tax Rate (%)</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.taxRate')}</label>
                             <input
                                 type="number"
                                 value={localState.taxRate}
@@ -405,7 +407,7 @@ const Settings: React.FC = () => {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>KHR Exchange Rate (៛)</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.khrExchangeRate')}</label>
                             <input
                                 type="number"
                                 value={localState.khrExchangeRate}
@@ -414,12 +416,12 @@ const Settings: React.FC = () => {
                                 style={{ width: '100%', padding: '12px' }}
                             />
                             <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                                This rate is used to display totals in Khmer Riel.
+                                {t('settings.khrExchangeRateNote')}
                             </p>
                         </div>
                     </div>
                     <div style={{ marginTop: '20px' }}>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Timezone</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.timezone')}</label>
                         <select
                             value={localState.timezone}
                             onChange={(e) => setLocalState({ ...localState, timezone: e.target.value })}
@@ -434,7 +436,7 @@ const Settings: React.FC = () => {
                             <option value="UTC">UTC (GMT+0)</option>
                         </select>
                         <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                            Affects date display across the application.
+                            {t('settings.timezoneNote')}
                         </p>
                     </div>
                 </div>
@@ -444,7 +446,7 @@ const Settings: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <Bell className="text-primary" size={24} />
-                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Telegram Notifications</h2>
+                            <h2 style={{ fontSize: '20px', fontWeight: '600' }}>{t('settings.telegramNotifications')}</h2>
                         </div>
                         <button
                             onClick={async () => {
@@ -463,15 +465,15 @@ const Settings: React.FC = () => {
                             className="primary-button"
                             style={{ padding: '8px 16px', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
                         >
-                            Send Test
+                            {t('settings.sendTest')}
                         </button>
                     </div>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
-                        Receive order alerts in your Telegram groups. Get your token from @BotFather. Separate Multiple Chat IDs with commas.
+                        {t('settings.telegramNote')}
                     </p>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Telegram Bot Token</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.telegramBotToken')}</label>
                             <input
                                 type="password"
                                 value={localState.telegramBotToken}
@@ -482,7 +484,7 @@ const Settings: React.FC = () => {
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Telegram Chat IDs</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.telegramChatIds')}</label>
                             <input
                                 type="text"
                                 value={localState.telegramChatId}
@@ -499,22 +501,22 @@ const Settings: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '24px', opacity: 0.7 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                         <Shield size={24} />
-                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Security</h3>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>{t('settings.security')}</h3>
                     </div>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Update password and 2FA settings.</p>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>{t('settings.securityNote')}</p>
                 </div>
 
                 {/* Data Migration Section */}
                 <div className="glass-panel" style={{ padding: '24px', borderColor: 'var(--color-primary)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                         <Database size={24} className="text-primary" />
-                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>Data Management</h3>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600' }}>{t('settings.dataManagement')}</h3>
                     </div>
 
                     {!showDataManagement ? (
                         <div style={{ textAlign: 'center', padding: '20px 0' }}>
                             <p style={{ color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
-                                This section is protected. Please enter your PIN to access sensitive data operations.
+                                {t('settings.dataProtected')}
                             </p>
                             <button
                                 onClick={() => setIsPinPromptOpen(true)}
@@ -527,13 +529,13 @@ const Settings: React.FC = () => {
                                 }}
                             >
                                 <Shield size={18} />
-                                Unlock Data Management
+                                {t('settings.unlockDataManagement')}
                             </button>
                         </div>
                     ) : (
                         <>
                             <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
-                                Manage your application data. You can back up your current data to a JSON file or migrate local data to the cloud.
+                                {t('settings.dataManagementNote')}
                             </p>
                             <div style={{ display: 'flex', gap: '12px' }}>
                                 <button
@@ -545,7 +547,7 @@ const Settings: React.FC = () => {
                                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
                                 >
                                     <Save size={18} />
-                                    Backup Database
+                                    {t('settings.backupDatabase')}
                                 </button>
                                 <div style={{ position: 'relative' }}>
                                     <input
@@ -582,7 +584,7 @@ const Settings: React.FC = () => {
                                         style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
                                     >
                                         <Database size={18} />
-                                        Restore Database
+                                        {t('settings.restoreDatabase')}
                                     </button>
                                 </div>
                                 <button
@@ -591,7 +593,7 @@ const Settings: React.FC = () => {
                                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
                                 >
                                     <Database size={18} />
-                                    Migrate to Supabase
+                                    {t('settings.migrateToSupabase')}
                                 </button>
                             </div>
                         </>

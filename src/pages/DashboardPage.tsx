@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
+import { useLanguage } from '../context/LanguageContext';
 import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import { DateRangePicker } from '../components';
@@ -15,6 +16,7 @@ import type { Sale } from '../types';
 const Dashboard: React.FC = () => {
     const { products, refreshData } = useStore();
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const isMobile = useMobile();
     const navigate = useNavigate();
 
@@ -22,13 +24,13 @@ const Dashboard: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Dashboard</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Overview of your store performance</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('dashboard.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('dashboard.subtitle')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const [dateRange, setDateRange] = React.useState(() => {
         const now = new Date();
@@ -291,10 +293,10 @@ const Dashboard: React.FC = () => {
                 marginBottom: '24px'
             }}>
                 <StatsCard
-                    title="Total Sales"
+                    title={t('dashboard.totalSales')}
                     value={stats.totalSalesCount}
                     icon={ShoppingBag}
-                    trend="All orders"
+                    trend={t('dashboard.allOrders')}
                     color="var(--color-blue)"
                     onClick={() => {
                         localStorage.setItem('orders_statusFilter', JSON.stringify([]));
@@ -334,7 +336,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Pay Status Cards */}
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Payment Status</h3>
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.paymentStatus')}</h3>
             <div className="dashboard-flex-container" style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -350,7 +352,7 @@ const Dashboard: React.FC = () => {
                     return (
                         <StatsCard
                             key={idx}
-                            title={stat.status + " Orders"}
+                            title={stat.status + ` ${t('dashboard.orders')}`}
                             value={stat.count}
                             icon={CreditCard}
                             color={color}
@@ -369,7 +371,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Inventory Overview */}
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Inventory</h3>
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.inventory')}</h3>
             <div className="dashboard-flex-container" style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -377,17 +379,17 @@ const Dashboard: React.FC = () => {
                 marginBottom: '24px'
             }}>
                 <StatsCard
-                    title="Products in Stock"
+                    title={t('dashboard.productsInStock')}
                     value={stats.totalProducts}
                     icon={TrendingUp}
                     color="var(--color-primary)"
                     onClick={() => navigate('/inventory')}
                 />
                 <StatsCard
-                    title="Low Stock Alert"
+                    title={t('dashboard.lowStockAlert')}
                     value={stats.lowStockCount}
                     icon={AlertTriangle}
-                    trend="Items require attention"
+                    trend={t('dashboard.itemsRequireAttention')}
                     color="var(--color-red)"
                     onClick={() => navigate('/inventory')}
                 />
@@ -397,9 +399,9 @@ const Dashboard: React.FC = () => {
 
             {/* Top Selling Products */}
             <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Top Selling Products</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.topSellingProducts')}</h3>
                 {topProducts.length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
                     <div className="dashboard-flex-container" style={{
                         display: 'flex',
@@ -410,7 +412,7 @@ const Dashboard: React.FC = () => {
                             <StatsCard
                                 key={index}
                                 title={product.name}
-                                value={`${product.quantity} Sold`}
+                                value={`${product.quantity} ${t('dashboard.sold')}`}
                                 icon={ShoppingBag}
                                 color="var(--color-primary)"
                                 onClick={() => {
@@ -431,24 +433,24 @@ const Dashboard: React.FC = () => {
                 {/* 4. Salesman Performance */}
                 <div style={{ marginBottom: '32px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>Salesman Performance</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>{t('dashboard.salesmanPerformance')}</h3>
                         <select 
                             className="text-input" 
                             style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
                             value={salesmanStatusFilter}
                             onChange={(e) => setSalesmanStatusFilter(e.target.value)}
                         >
-                            <option value="All">All Statuses</option>
-                            <option value="Delivered">Delivered</option>
-                            <option value="Shipped">Shipped</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Ordered">Ordered</option>
-                            <option value="Cancelled">Cancelled</option>
-                            <option value="Returned">Returned</option>
+                            <option value="All">{t('dashboard.allStatuses')}</option>
+                            <option value="Delivered">{t('status.delivered')}</option>
+                            <option value="Shipped">{t('status.shipped')}</option>
+                            <option value="Pending">{t('status.pending')}</option>
+                            <option value="Ordered">{t('status.ordered')}</option>
+                            <option value="Cancelled">{t('status.cancelled')}</option>
+                            <option value="Returned">{t('status.returned')}</option>
                         </select>
                     </div>
                     {salesmanStats.length === 0 ? (
-                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
                         <div className="dashboard-flex-container" style={{
                             display: 'flex',
@@ -460,7 +462,7 @@ const Dashboard: React.FC = () => {
                                     key={index}
                                     title={s.name}
                                     value={`$${s.shippedDeliveredTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                                    trend={`${s.soldItems} Sold Items | ${s.count} Orders`}
+                                    trend={`${s.soldItems} ${t('dashboard.soldItems')} | ${s.count} ${t('dashboard.orders')}`}
                                     icon={User}
                                     color="var(--color-primary)"
                                     onClick={() => {
@@ -480,9 +482,9 @@ const Dashboard: React.FC = () => {
 
             {/* Product Report Cards */}
             <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Product Report</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.productReport')}</h3>
                 {pivotStats.product.length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No data.</div>
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
                     <div className="dashboard-flex-container" style={{
                         display: 'flex',
@@ -493,9 +495,9 @@ const Dashboard: React.FC = () => {
                             <StatsCard
                                 key={idx}
                                 title={p.name}
-                                value={`${p.total} Units`}
+                                value={`${p.total} ${t('dashboard.units')}`}
                                 icon={Package}
-                                trend={`${p.delivered} Delivered`}
+                                trend={`${p.delivered} ${t('dashboard.delivered')}`}
                                 color="var(--color-purple)"
                                 onClick={() => {
                                     localStorage.setItem('orders_searchTerm', `"${p.name}"`);
