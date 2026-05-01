@@ -1,0 +1,19 @@
+{
+  "instances": [
+    {
+      "name": "Romdoul1",
+      "url": "https://wkxjmllanbikerrbdjhz.supabase.co",
+      "anonKey": "sb_publishable_rO6uW6bothg51v0MVVjlXg_L-vN5dGR"
+    },
+    {
+      "name": "Romdoul2",
+      "url": "https://zroaixkccxcbeqibxpxu.supabase.co",
+      "anonKey": "sb_publishable_Y-SRM91COlU33q-66lynsw_d74HpQQG"
+    },
+    {
+      "name": "Romdoul3",
+      "url": "https://hcxlrouodijxhqsubdfv.supabase.co",
+      "anonKey": "sb_publishable_Z2s2Kf7EPi590FYvvaC5dw_lTn_bh8U"
+    }
+  ]
+}

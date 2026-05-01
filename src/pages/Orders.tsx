@@ -493,11 +493,18 @@ const Orders: React.FC = () => {
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (location.state && (location.state as any).editOrderId) {
-            const editId = (location.state as any).editOrderId;
-            const orderToEdit = sales.find(s => s.id === editId) || serverOrders.find(s => s.id === editId);
-            if (orderToEdit) {
-                setEditingOrder(orderToEdit);
+        if (location.state) {
+            const state = location.state as any;
+            if (state.editOrderId) {
+                const editId = state.editOrderId;
+                const orderToEdit = sales.find(s => s.id === editId) || serverOrders.find(s => s.id === editId);
+                if (orderToEdit) {
+                    setEditingOrder(orderToEdit);
+                    setActiveTab('pos');
+                    navigate(location.pathname, { replace: true, state: {} });
+                }
+            } else if (state.createNew) {
+                setEditingOrder(null);
                 setActiveTab('pos');
                 navigate(location.pathname, { replace: true, state: {} });
             }

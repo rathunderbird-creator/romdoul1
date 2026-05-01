@@ -2186,21 +2186,26 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // User & Role Management
     const addUser = async (userData: Omit<User, 'id'>) => {
         const newUser: User = { ...userData, id: Date.now().toString() + Math.random().toString(36).substring(2) };
-        setUsers(prev => [...prev, newUser]);
 
-        await supabase.from('users').insert({
+        const { data, error } = await supabase.from('users').insert({
             id: newUser.id,
             name: newUser.name,
             email: newUser.email,
             role_id: newUser.roleId,
             pin: newUser.pin,
             base_salary: newUser.baseSalary || 0
-        });
+        }).select();
+
+        if (error) {
+            console.error('Failed to add user to database:', error);
+            throw new Error('Failed to add user: ' + error.message);
+        }
+
+        console.log('User added to database:', data);
+        setUsers(prev => [...prev, newUser]);
     };
 
     const updateUser = async (id: string, updates: Partial<User>) => {
-        setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
-
         const dbUpdates: any = {};
         if (updates.name) dbUpdates.name = updates.name;
         if (updates.email) dbUpdates.email = updates.email;
@@ -2208,12 +2213,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.pin !== undefined) dbUpdates.pin = updates.pin; // allow empty pin
         if (updates.baseSalary !== undefined) dbUpdates.base_salary = updates.baseSalary;
 
-        await supabase.from('users').update(dbUpdates).eq('id', id);
+        const { error } = await supabase.from('users').update(dbUpdates).eq('id', id);
+        if (error) {
+            console.error('Failed to update user:', error);
+            throw new Error('Failed to update user: ' + error.message);
+        }
+
+        setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
     };
 
     const deleteUser = async (id: string) => {
+        const { error } = await supabase.from('users').delete().eq('id', id);
+        if (error) {
+            console.error('Failed to delete user:', error);
+            throw new Error('Failed to delete user: ' + error.message);
+        }
+
         setUsers(prev => prev.filter(u => u.id !== id));
-        await supabase.from('users').delete().eq('id', id);
     };
 
     const addRole = async (roleData: Omit<Role, 'id'>) => {

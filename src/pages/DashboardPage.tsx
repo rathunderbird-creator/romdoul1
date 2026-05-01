@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User } from 'lucide-react';
+import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User, Plus } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -242,6 +242,24 @@ const Dashboard: React.FC = () => {
                     <div style={{ flex: 1 }}>
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
+                    <button
+                        className="primary-button"
+                        style={{
+                            padding: '10px 16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            height: '42px',
+                            borderRadius: '8px',
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap'
+                        }}
+                        onClick={() => navigate('/orders', { state: { createNew: true } })}
+                    >
+                        <Plus size={18} />
+                        New Order
+                    </button>
                     <button
                         disabled={isLoadingSales}
                         onClick={() => {
