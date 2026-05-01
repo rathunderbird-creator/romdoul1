@@ -235,58 +235,67 @@ const Dashboard: React.FC = () => {
             }}>
                 <div style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: isMobile ? 'stretch' : 'center',
                     gap: '12px',
                     width: isMobile ? '100%' : 'auto'
                 }}>
                     <div style={{ flex: 1 }}>
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
-                    <button
-                        className="primary-button"
-                        style={{
-                            padding: '10px 16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            height: '42px',
-                            borderRadius: '8px',
-                            fontWeight: 500,
-                            whiteSpace: 'nowrap'
-                        }}
-                        onClick={() => navigate('/orders', { state: { createNew: true } })}
-                    >
-                        <Plus size={18} />
-                        New Order
-                    </button>
-                    <button
-                        disabled={isLoadingSales}
-                        onClick={() => {
-                            const btn = document.getElementById('dashboard-refresh-btn');
-                            if (btn) btn.style.animation = 'spin 1s linear infinite';
+                    <div style={{ 
+                        display: 'flex', 
+                        gap: '12px',
+                        justifyContent: isMobile ? 'space-between' : 'flex-end'
+                    }}>
+                        <button
+                            className="primary-button"
+                            style={{
+                                padding: '10px 16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                height: '42px',
+                                borderRadius: '8px',
+                                fontWeight: 500,
+                                whiteSpace: 'nowrap',
+                                flex: isMobile ? 1 : 'none'
+                            }}
+                            onClick={() => navigate('/orders', { state: { createNew: true } })}
+                        >
+                            <Plus size={18} />
+                            New Order
+                        </button>
+                        <button
+                            disabled={isLoadingSales}
+                            onClick={() => {
+                                const btn = document.getElementById('dashboard-refresh-btn');
+                                if (btn) btn.style.animation = 'spin 1s linear infinite';
 
-                            Promise.all([
-                                refreshData(true),
-                                fetchDashboardSales()
-                            ]).finally(() => {
-                                if (btn) btn.style.animation = 'none';
-                            });
-                        }}
-                        className="secondary-button"
-                        style={{
-                            padding: '10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '42px', // Match date picker height roughly
-                            aspectRatio: '1/1'
-                        }}
-                        title="Refresh Data"
-                    >
-                        <RefreshCw id="dashboard-refresh-btn" size={20} />
-                    </button>
-                    <style>{`
+                                Promise.all([
+                                    refreshData(true),
+                                    fetchDashboardSales()
+                                ]).finally(() => {
+                                    if (btn) btn.style.animation = 'none';
+                                });
+                            }}
+                            className="secondary-button"
+                            style={{
+                                padding: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '42px', // Match date picker height roughly
+                                aspectRatio: '1/1'
+                            }}
+                            title="Refresh Data"
+                        >
+                            <RefreshCw id="dashboard-refresh-btn" size={20} />
+                        </button>
+                    </div>
+                </div>
+                <style>{`
                         @keyframes spin { 
                             100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
                         }
@@ -300,7 +309,6 @@ const Dashboard: React.FC = () => {
                             }
                         }
                     `}</style>
-                </div>
             </div>
 
             {/* Sales & Orders Overview */}
