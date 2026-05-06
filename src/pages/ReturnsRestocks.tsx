@@ -15,6 +15,7 @@ const ReturnsRestocks: React.FC = () => {
     const [returnedOrders, setReturnedOrders] = useState<Sale[]>([]);
     const [returnedSearchTerm, setReturnedSearchTerm] = useState('');
     const [restockedHistory, setRestockedHistory] = useState<Sale[]>([]);
+    const [restockedSearchTerm, setRestockedSearchTerm] = useState('');
     
     // Selection State
     const [selectedReturnedOrderIds, setSelectedReturnedOrderIds] = useState<Set<string>>(new Set());
@@ -102,6 +103,17 @@ const ReturnsRestocks: React.FC = () => {
             order.items.some(item => item.name.toLowerCase().includes(query))
         );
     }, [returnedOrders, returnedSearchTerm]);
+
+    const filteredRestockedHistory = useMemo(() => {
+        if (!restockedSearchTerm.trim()) return restockedHistory;
+        const query = restockedSearchTerm.trim().toLowerCase();
+        return restockedHistory.filter(order => 
+            order.id.toLowerCase().includes(query) || 
+            (order.customer?.name || '').toLowerCase().includes(query) ||
+            String(order.customer?.phone || '').toLowerCase().includes(query) ||
+            order.items.some(item => item.name.toLowerCase().includes(query))
+        );
+    }, [restockedHistory, restockedSearchTerm]);
 
     const toggleSelectAllReturnedOrders = () => {
         if (selectedReturnedOrderIds.size === filteredReturnedOrders.length && filteredReturnedOrders.length > 0) {
@@ -229,7 +241,7 @@ const ReturnsRestocks: React.FC = () => {
                                             {new Date(order.date).toLocaleDateString()}
                                         </td>
                                         <td style={{ whiteSpace: 'normal' }}>
-                                            <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
+                                            <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(-6)}</div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
                                         </td>
                                         <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
@@ -289,9 +301,25 @@ const ReturnsRestocks: React.FC = () => {
                     <h3 style={{ padding: '12px 16px', borderBottom: '1px solid #3B82F6', margin: 0, fontSize: '14px', fontWeight: 600, color: '#2563EB', background: '#EFF6FF', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
                         <Layers size={16} /> Restocked History
                     </h3>
-                    {restockedHistory.length === 0 ? (
+                    {restockedHistory.length > 0 && (
+                        <div style={{ padding: '8px 16px', background: '#EFF6FF', borderBottom: '1px solid #BFDBFE' }}>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#2563EB' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by ID, Customer, Phone, Item..."
+                                    value={restockedSearchTerm}
+                                    onChange={(e) => setRestockedSearchTerm(e.target.value)}
+                                    style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid #BFDBFE', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'white' }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {filteredRestockedHistory.length === 0 ? (
                         <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                            <p style={{ fontSize: '13px', fontWeight: 500 }}>No restocked orders found.</p>
+                            <p style={{ fontSize: '13px', fontWeight: 500 }}>
+                                {restockedHistory.length === 0 ? 'No restocked orders found.' : 'No matching orders found.'}
+                            </p>
                         </div>
                     ) : (
                         <table className="spreadsheet-table">
@@ -306,13 +334,13 @@ const ReturnsRestocks: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {restockedHistory.map(order => (
+                                {filteredRestockedHistory.map(order => (
                                     <tr key={order.id} style={{ background: '#EFF6FF' }}>
                                         <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                                             {new Date(order.date).toLocaleDateString()}
                                         </td>
                                         <td style={{ whiteSpace: 'normal' }}>
-                                            <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(0, 8)}</div>
+                                            <div style={{ fontWeight: 600, fontSize: '13px' }}>#{order.id.slice(-6)}</div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{order.customer?.name || 'Unknown'}</div>
                                         </td>
                                         <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
