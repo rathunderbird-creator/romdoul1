@@ -11,7 +11,7 @@ interface DateRangePickerProps {
     compact?: boolean;
 }
 
-type Preset = 'Lifetime' | 'Today' | 'Yesterday' | 'This week' | 'Last week' | 'Last 30 days' | 'This month' | 'Last month' | 'Custom Range';
+type Preset = 'Lifetime' | 'Today' | 'Yesterday' | 'Last 7 days' | 'This week' | 'Last week' | 'Last 30 days' | 'This month' | 'Last month' | 'Custom Range';
 
 const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style, compact = false }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -79,6 +79,15 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                 const d = getToday();
                 d.setDate(d.getDate() - 1);
                 return { start: d, end: d };
+            }
+        },
+        {
+            label: 'Last 7 days',
+            getValue: () => {
+                const end = getToday();
+                const start = getToday();
+                start.setDate(start.getDate() - 6);
+                return { start, end };
             }
         },
         {
