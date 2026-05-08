@@ -19,6 +19,7 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
     order_created: <Truck size={14} style={{ color: '#3B82F6' }} />,
     order_shipped: <Truck size={14} style={{ color: '#10B981' }} />,
     order_status: <Truck size={14} style={{ color: '#F59E0B' }} />,
+    order_updated: <Truck size={14} style={{ color: '#F59E0B' }} />,
     order_deleted: <Truck size={14} style={{ color: '#EF4444' }} />,
     stock_in: <ArrowDownCircle size={14} style={{ color: '#10B981' }} />,
     stock_out: <ArrowUpCircle size={14} style={{ color: '#F59E0B' }} />,
@@ -159,6 +160,33 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                 }}>
                                     {log.description}
                                 </div>
+                                {log.action === 'order_updated' && log.metadata && (
+                                    <div style={{
+                                        marginTop: '4px',
+                                        padding: '6px 8px',
+                                        backgroundColor: 'var(--color-bg)',
+                                        borderRadius: '4px',
+                                        borderLeft: '2px solid var(--color-primary)',
+                                        fontSize: '11px',
+                                        color: 'var(--color-text-secondary)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '2px'
+                                    }}>
+                                        {log.metadata.oldRemark !== undefined && log.metadata.newRemark !== undefined && (
+                                            <div><span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{log.metadata.oldRemark || 'None'}</span> → <span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.newRemark || 'None'}</span></div>
+                                        )}
+                                        {log.metadata.oldTracking !== undefined && log.metadata.newTracking !== undefined && (
+                                            <div><span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{log.metadata.oldTracking || 'None'}</span> → <span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.newTracking || 'None'}</span></div>
+                                        )}
+                                        {log.metadata.remark && log.metadata.newRemark === undefined && (
+                                            <div><span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.remark}</span></div>
+                                        )}
+                                        {log.metadata.trackingNumber && log.metadata.newTracking === undefined && (
+                                            <div><span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.trackingNumber}</span></div>
+                                        )}
+                                    </div>
+                                )}
                                 <div style={{
                                     display: 'flex',
                                     gap: '8px',

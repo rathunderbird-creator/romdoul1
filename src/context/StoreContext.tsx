@@ -1239,8 +1239,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        if (salesOrder && trackingNumber && trackingNumber !== salesOrder.shipping?.trackingNumber) {
+            dispatchActivity({ 
+                action: 'order_updated', 
+                description: `Tracking ID updated for Order #${id.slice(0, 8)}`, 
+                userId: currentUser?.id, 
+                userName: currentUser?.name, 
+                metadata: { 
+                    orderId: id, 
+                    oldTracking: salesOrder.shipping?.trackingNumber || '',
+                    newTracking: trackingNumber 
+                } 
+            });
+        }
+
         setSalesUpdatedAt(Date.now());
-        dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} status → ${status}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id, status } });
+        const oldStatus = salesOrder?.shipping?.status || 'Pending';
+        if (oldStatus !== status) {
+            dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} status → ${status}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id, status } });
+        }
     };
 
     const updateOrder = async (id: string, updates: Partial<Sale>): Promise<void> => {
@@ -1358,8 +1375,43 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const { error: insertError } = await supabase.from('sale_items').insert(itemsPayload);
                 if (insertError) throw insertError;
             }
+
+            let loggedSpecific = false;
+
+            if (updates.remark !== undefined && existingOrder && updates.remark !== (existingOrder.remark || '')) {
+                dispatchActivity({ 
+                    action: 'order_updated', 
+                    description: `Remark updated for Order #${id.slice(0, 8)}`, 
+                    userId: currentUser?.id, 
+                    userName: currentUser?.name, 
+                    metadata: { 
+                        orderId: id, 
+                        oldRemark: existingOrder.remark || '',
+                        newRemark: updates.remark 
+                    } 
+                });
+                loggedSpecific = true;
+            }
+
+            if (updates.shipping?.trackingNumber !== undefined && existingOrder && updates.shipping.trackingNumber !== (existingOrder.shipping?.trackingNumber || '')) {
+                dispatchActivity({ 
+                    action: 'order_updated', 
+                    description: `Tracking ID updated for Order #${id.slice(0, 8)}`, 
+                    userId: currentUser?.id, 
+                    userName: currentUser?.name, 
+                    metadata: { 
+                        orderId: id, 
+                        oldTracking: existingOrder.shipping?.trackingNumber || '',
+                        newTracking: updates.shipping.trackingNumber 
+                    } 
+                });
+                loggedSpecific = true;
+            }
+
             setSalesUpdatedAt(Date.now());
-            dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} updated`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id } });
+            if (!loggedSpecific) {
+                dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} updated`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id } });
+            }
 
             // 5. Log stock-out movement only when shipping status changes to Shipped
             if (updates.shipping?.status && existingOrder) {
