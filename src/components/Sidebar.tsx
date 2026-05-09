@@ -326,7 +326,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         </NavLink>
                     )}
 
-                    {canManageSettings && currentUser?.roleId !== 'customer_care' && (
+                    {canManageSettings && (
                         <NavLink
                             to="/settings"
                             title={visualCollapsed ? 'Settings' : ''}

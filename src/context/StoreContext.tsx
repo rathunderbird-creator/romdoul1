@@ -182,16 +182,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const hasPermission = (permission: Permission): boolean => {
-        if (!currentUser) return false;
+        if (!currentUser) {
+            // console.warn(`hasPermission check failed for ${permission}: No currentUser`);
+            return false;
+        }
         // Optimization: Admin always has full permissions, check roleId directly first
         if (currentUser.roleId === 'admin') return true;
 
         const userRole = (config.roles || []).find(r => r.id === currentUser.roleId);
-        if (!userRole) return false;
+        if (!userRole) {
+            // console.warn(`hasPermission check failed for ${permission}: Role ${currentUser.roleId} not found in config`);
+            return false;
+        }
 
         // Redundant safely check inside role (though optimization above catches it)
         if (userRole.id === 'admin') return true;
-        return userRole.permissions.includes(permission);
+        
+        const hasPerm = userRole.permissions.includes(permission);
+        if (!hasPerm && (permission === 'create_orders' || permission === 'manage_orders' || permission === 'process_sales')) {
+            console.warn(`hasPermission check failed for ${permission}: Role ${userRole.name} does not have it. Current permissions:`, userRole.permissions);
+        }
+        return hasPerm;
     };
 
     const loadMoreOrders = async () => {
@@ -405,7 +416,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 id: 'customer_care',
                                 name: 'Customer Care',
                                 description: 'Manage support and orders',
-                                permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] as any[]
+                                permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings', 'create_orders', 'process_sales'] as any[]
                             },
                             {
                                 id: 'salesman',
@@ -463,7 +474,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         { id: 'store_manager', name: 'Store Manager', description: 'Manage store operations', permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders', 'manage_attendance'] },
                         { id: 'salesman', name: 'Salesman', description: 'Sales and order viewing', permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] },
                         { id: 'cashier', name: 'Cashier', description: 'Process sales and payments', permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] },
-                        { id: 'customer_care', name: 'Customer Care', description: 'Manage support and orders', permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings'] }
+                        { id: 'customer_care', name: 'Customer Care', description: 'Manage support and orders', permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings', 'create_orders', 'process_sales'] }
                     ];
 
                     baseRoles.forEach(br => {
