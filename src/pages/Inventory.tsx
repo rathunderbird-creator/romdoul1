@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Filter, Download } from 'lucide-react';
 import {
     DndContext,
@@ -141,7 +141,7 @@ const InlineEditCell = ({
 };
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -189,6 +189,7 @@ const Inventory: React.FC = () => {
     // Add Stock State
     const [addStockProduct, setAddStockProduct] = useState<Product | null>(null);
     const [addStockAmount, setAddStockAmount] = useState<number | string>('');
+    const [addStockCost, setAddStockCost] = useState<number | string>('');
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -248,13 +249,47 @@ const Inventory: React.FC = () => {
     });
     const [sortConfig, setSortConfig] = useState<SortConfig>(null);
 
+    // Column resize state
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+    const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+
+    const handleResizeStart = useCallback((key: string, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const th = (e.target as HTMLElement).closest('th');
+        if (!th) return;
+        const startWidth = th.getBoundingClientRect().width;
+        resizingRef.current = { key, startX: e.clientX, startWidth };
+
+        const handleMouseMove = (ev: MouseEvent) => {
+            if (!resizingRef.current) return;
+            const diff = ev.clientX - resizingRef.current.startX;
+            const newWidth = Math.max(60, resizingRef.current.startWidth + diff);
+            setColumnWidths(prev => ({ ...prev, [resizingRef.current!.key]: newWidth }));
+        };
+
+        const handleMouseUp = () => {
+            resizingRef.current = null;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    }, []);
+
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(20);
 
     // Form State
-    type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold'> & {
+    type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold' | 'purchaseCost'> & {
         price: number | string;
+        purchaseCost: number | string;
         stock: number | string;
         lowStockThreshold: number | string;
     };
@@ -263,10 +298,11 @@ const Inventory: React.FC = () => {
         name: '',
         model: '',
         price: 0,
+        purchaseCost: 0,
         stock: 0,
         lowStockThreshold: 5,
         category: categories[0] || 'Portable',
-        image: 'https://via.placeholder.com/300'
+        image: 'https://placehold.co/300x300'
     };
     const [formData, setFormData] = useState<ProductFormState>(initialFormState);
 
@@ -328,15 +364,8 @@ const Inventory: React.FC = () => {
                 return 0;
             });
         } else {
-            // Unsorted: use productOrder
+            // Default: newest first
             result.sort((a, b) => {
-                const aIndex = (productOrder || []).indexOf(a.id);
-                const bIndex = (productOrder || []).indexOf(b.id);
-
-                if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-                if (aIndex !== -1) return -1;
-                if (bIndex !== -1) return 1;
-
                 const aDate = new Date(a.createdAt || 0).getTime();
                 const bDate = new Date(b.createdAt || 0).getTime();
                 return bDate - aDate;
@@ -406,20 +435,32 @@ const Inventory: React.FC = () => {
         setEditingProduct(product);
         setFormData({
             ...product,
+            purchaseCost: product.purchaseCost ?? 0,
             lowStockThreshold: product.lowStockThreshold ?? 5
         });
         setIsModalOpen(true);
     };
 
+    const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
     const handleSave = () => {
-        if (!formData.name || !formData.price) {
-            showToast('Please fill in required fields', 'error');
+        const errors: Record<string, string> = {};
+        if (!formData.name.trim()) errors.name = 'Product name is required';
+        if (formData.price === '' || Number(formData.price) <= 0) errors.price = 'Sell price must be greater than 0';
+        if (formData.stock === '' || Number(formData.stock) < 0) errors.stock = 'Stock cannot be negative';
+        if (formData.purchaseCost === '' || Number(formData.purchaseCost) < 0) errors.purchaseCost = 'Cost cannot be negative';
+
+        if (Object.keys(errors).length > 0) {
+            setFormErrors(errors);
+            showToast('Please fix the highlighted fields', 'error');
             return;
         }
+        setFormErrors({});
 
         const productData = {
             ...formData,
             price: Number(formData.price),
+            purchaseCost: Number(formData.purchaseCost || 0),
             stock: Number(formData.stock),
             lowStockThreshold: Number(formData.lowStockThreshold)
         };
@@ -428,6 +469,13 @@ const Inventory: React.FC = () => {
             updateProduct(editingProduct.id, productData);
             showToast('Product updated successfully', 'success');
         } else {
+            // Update sell price on all existing products with the same name
+            const matchingProducts = products.filter(p => p.name.trim().toLowerCase() === formData.name.trim().toLowerCase());
+            if (matchingProducts.length > 0) {
+                matchingProducts.forEach(p => {
+                    updateProduct(p.id, { price: Number(formData.price) });
+                });
+            }
             addProduct(productData as Omit<Product, 'id'>);
             showToast('Product added successfully', 'success');
         }
@@ -459,7 +507,7 @@ const Inventory: React.FC = () => {
         }
 
         const csvRows = [];
-        const headers = ['ID', 'Name', 'Model', 'Category', 'Price', 'Stock', 'Low Stock Alert', 'Total Value'];
+        const headers = ['ID', 'Name', 'Model', 'Category', 'Cost of Purchase', 'Sell Price', 'Stock', 'Low Stock Alert', 'Total Value'];
         csvRows.push(headers.join(','));
 
         for (const product of filteredAndSortedProducts) {
@@ -468,6 +516,7 @@ const Inventory: React.FC = () => {
                 `"${(product.name || '').replace(/"/g, '""')}"`,
                 `"${(product.model || '').replace(/"/g, '""')}"`,
                 `"${(product.category || '').replace(/"/g, '""')}"`,
+                product.purchaseCost || 0,
                 product.price,
                 product.stock,
                 product.lowStockThreshold || 5,
@@ -495,7 +544,7 @@ const Inventory: React.FC = () => {
                                 (key === 'stock' && (columnFilters.stockMin || columnFilters.stockMax));
 
         return (
-            <th style={{ width, position: 'relative' }}>
+            <th style={{ width: columnWidths[key] ? `${columnWidths[key]}px` : width, position: 'relative', minWidth: '60px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <div onClick={() => handleSort(key)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}>
                         {label}
@@ -587,6 +636,16 @@ const Inventory: React.FC = () => {
                         </div>
                     )}
                 </div>
+                <div
+                    onMouseDown={(e) => handleResizeStart(key, e)}
+                    style={{
+                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '5px',
+                        cursor: 'col-resize', zIndex: 31,
+                        background: 'transparent'
+                    }}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.background = 'var(--color-primary)'; (e.target as HTMLElement).style.opacity = '0.4'; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; (e.target as HTMLElement).style.opacity = '1'; }}
+                />
             </th>
         );
     };
@@ -746,7 +805,7 @@ const Inventory: React.FC = () => {
                                 </div>
                             </div>
                         ) : (
-                            <table className="spreadsheet-table">
+                            <table className="spreadsheet-table" style={{ tableLayout: 'fixed' }}>
                             <thead>
                                 <tr>
                                     <th style={{ width: '40px', textAlign: 'center' }}>
@@ -758,8 +817,10 @@ const Inventory: React.FC = () => {
                                         />
                                     </th>
                                     {renderHeader('Product', 'name')}
+                                    {renderHeader('Date', 'createdAt' as any)}
                                     {renderHeader('Category', 'category', undefined, true)}
-                                    {renderHeader('Price', 'price', undefined, true)}
+                                    {canViewFinancials && renderHeader('Cost of Purchase', 'purchaseCost' as any)}
+                                    {renderHeader('Sell Price', 'price', undefined, true)}
                                     {renderHeader('Stock', 'stock', undefined, true)}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
                                     {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
@@ -793,11 +854,19 @@ const Inventory: React.FC = () => {
                                                         </div>
                                                     </div>
                                                 </td>
+                                                <td style={{ color: 'var(--color-text-secondary)', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                                    {product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                                                </td>
                                                 <td>
                                                     <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
                                                         {product.category}
                                                     </span>
                                                 </td>
+                                                {canViewFinancials && (
+                                                    <td style={{ color: 'var(--color-text-secondary)' }}>
+                                                        ${product.purchaseCost || 0}
+                                                    </td>
+                                                )}
                                                 <td>
                                                     <InlineEditCell 
                                                         value={product.price} 
@@ -833,6 +902,7 @@ const Inventory: React.FC = () => {
                                                                 onClick={() => {
                                                                     setAddStockProduct(product);
                                                                     setAddStockAmount('');
+                                                                    setAddStockCost(product.purchaseCost || 0);
                                                                 }}
                                                                 style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#10B981', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
                                                                 className="hover-primary"
@@ -864,7 +934,8 @@ const Inventory: React.FC = () => {
                             </tbody>
                             <tfoot>
                                 <tr style={{ background: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                    <td colSpan={3} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
+                                    <td colSpan={4} style={{ textAlign: 'right', padding: '12px 16px' }}>Totals:</td>
+                                    {canViewFinancials && <td style={{ padding: '12px 16px' }}>${filteredAndSortedProducts.reduce((sum, p) => sum + ((p.purchaseCost || 0) * p.stock), 0).toLocaleString()}</td>}
                                     <td style={{ padding: '12px 16px' }}>—</td>
                                     <td style={{ padding: '12px 16px', color: '#10B981' }}>
                                         {filteredAndSortedProducts.reduce((sum, p) => sum + p.stock, 0)}
@@ -875,6 +946,7 @@ const Inventory: React.FC = () => {
                                         </td>
                                     )}
                                     {canManageInventory && <td></td>}
+                                    {!sortConfig && <td></td>}
                                 </tr>
                             </tfoot>
                         </table>
@@ -1040,29 +1112,64 @@ const Inventory: React.FC = () => {
                             </div>
                             <div style={{ display: 'grid', gap: '16px', marginBottom: '12px' }}>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Name</label>
-                                    <input className="search-input" style={{ width: '100%' }} placeholder="e.g. JBL Flip 6" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Name *</label>
+                                    <input 
+                                        list="product-names"
+                                        className="search-input" 
+                                        style={{ width: '100%', borderColor: formErrors.name ? '#EF4444' : undefined }} 
+                                        placeholder="e.g. JBL Flip 6" 
+                                        value={formData.name} 
+                                        onChange={e => {
+                                            const newName = e.target.value;
+                                            const normalizedNewName = newName.trim().toLowerCase();
+                                            
+                                            // Find all matching products
+                                            const matches = products.filter(p => (p.name || '').trim().toLowerCase() === normalizedNewName);
+                                            // Prefer a match that actually has a real image
+                                            const isPlaceholder = (url: string | undefined) => !url || url.includes('placeholder.com') || url.includes('placehold.co');
+                                            const referenceProduct = matches.find(p => !isPlaceholder(p.image)) || matches[0];
+                                            
+                                            setFormData(prev => {
+                                                if (referenceProduct && !editingProduct) {
+                                                    return { 
+                                                        ...prev, 
+                                                        name: newName,
+                                                        image: isPlaceholder(referenceProduct.image) ? 'https://placehold.co/300x300' : referenceProduct.image,
+                                                        category: referenceProduct.category,
+                                                        price: referenceProduct.price,
+                                                        purchaseCost: referenceProduct.purchaseCost || 0
+                                                    };
+                                                }
+                                                return { ...prev, name: newName };
+                                            });
+                                        }} 
+                                    />
+                                    <datalist id="product-names">
+                                        {Array.from(new Set(products.map(p => p.name))).sort().map(name => (
+                                            <option key={name} value={name} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
+                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Model</label>
-                                        <input className="search-input" style={{ width: '100%' }} placeholder="JBL-F6" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })} />
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Cost of Purchase ($)</label>
+                                        <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.purchaseCost ? '#EF4444' : undefined }} placeholder="0.00" value={formData.purchaseCost} onChange={e => setFormData({ ...formData, purchaseCost: e.target.value === '' ? '' : Number(e.target.value) })} />
+                                        {formErrors.purchaseCost && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.purchaseCost}</p>}
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
-                                        <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
-                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Price ($)</label>
-                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value === '' ? '' : Number(e.target.value) })} />
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Sell Price ($) *</label>
+                                        <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.price ? '#EF4444' : undefined }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value === '' ? '' : Number(e.target.value) })} />
+                                        {formErrors.price && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.price}</p>}
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Stock</label>
-                                        <input className="search-input" type="number" style={{ width: '100%' }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value === '' ? '' : Number(e.target.value) })} />
+                                        <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.stock ? '#EF4444' : undefined }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value === '' ? '' : Number(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
@@ -1201,34 +1308,49 @@ const Inventory: React.FC = () => {
                             </div>
 
                             <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Quantity to Add</label>
-                                <input
-                                    className="search-input"
-                                    type="number"
-                                    style={{ width: '100%', fontSize: '16px', padding: '12px' }}
-                                    placeholder="e.g. 50"
-                                    autoFocus
-                                    value={addStockAmount}
-                                    onChange={e => setAddStockAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter' && addStockAmount !== '' && Number(addStockAmount) > 0) {
-                                            updateProduct(addStockProduct.id, { stock: addStockProduct.stock + Number(addStockAmount) });
-                                            showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
-                                            setAddStockProduct(null);
-                                        }
-                                    }}
-                                />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Quantity to Add</label>
+                                        <input
+                                            className="search-input"
+                                            type="number"
+                                            style={{ width: '100%', fontSize: '16px', padding: '12px' }}
+                                            placeholder="e.g. 50"
+                                            autoFocus
+                                            value={addStockAmount}
+                                            onChange={e => setAddStockAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            onKeyDown={async e => {
+                                                if (e.key === 'Enter' && addStockAmount !== '' && Number(addStockAmount) > 0) {
+                                                    await addStock(addStockProduct.id, Number(addStockAmount), Number(addStockCost) || 0);
+                                                    showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
+                                                    setAddStockProduct(null);
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Unit Cost ($)</label>
+                                        <input
+                                            className="search-input"
+                                            type="number"
+                                            style={{ width: '100%', fontSize: '16px', padding: '12px' }}
+                                            placeholder="0.00"
+                                            value={addStockCost}
+                                            onChange={e => setAddStockCost(e.target.value === '' ? '' : Number(e.target.value))}
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                 <button onClick={() => setAddStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button
-                                    onClick={() => {
+                                    onClick={async () => {
                                         if (addStockAmount === '' || Number(addStockAmount) <= 0) {
                                             showToast('Please enter a valid stock amount', 'error');
                                             return;
                                         }
-                                        updateProduct(addStockProduct.id, { stock: addStockProduct.stock + Number(addStockAmount) });
+                                        await addStock(addStockProduct.id, Number(addStockAmount), Number(addStockCost) || 0);
                                         showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
                                         setAddStockProduct(null);
                                     }}

@@ -29,6 +29,7 @@ const FinancialReport = lazy(() => import('./pages/reports/FinancialReport'));
 const StaffPerformance = lazy(() => import('./pages/reports/StaffPerformance'));
 const TopProducts = lazy(() => import('./pages/reports/TopProducts'));
 const ShippingReport = lazy(() => import('./pages/reports/ShippingReport'));
+const PurchaseCostReport = lazy(() => import('./pages/reports/PurchaseCostReport'));
 
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
@@ -90,6 +91,7 @@ const ProtectedApp = () => {
             <Route path="financials" element={<FinancialReport />} />
             <Route path="staff" element={<StaffPerformance />} />
             <Route path="shipping" element={<ShippingReport />} />
+            <Route path="purchase-cost" element={<PurchaseCostReport />} />
           </Route>
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />

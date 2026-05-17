@@ -16,6 +16,7 @@ interface ConfigState {
     pinnedOrderColumns?: string[]; // Added pinned order columns
     salesOrder?: string[]; // Added sales custom order
     productOrder?: string[]; // Custom order for the All Stock inventory table
+    shippingRates?: Record<string, number>; // Cost per item for each shipping company
     users?: User[];
     roles?: Role[];
     storeAddress?: string;
@@ -254,7 +255,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, price, stock, category, low_stock_threshold, created_at').order('created_at', { ascending: false }),
+                supabase.from('products').select('id, name, model, price, purchase_cost, stock, category, low_stock_threshold, image, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
@@ -273,6 +274,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
                     stock: Number(p.stock),
                     price: Number(p.price),
+                    purchaseCost: Number(p.purchase_cost || 0),
                     createdAt: p.created_at
                 })));
             }
@@ -545,7 +547,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Sync Config to DB
     const updateConfig = async (newConfig: ConfigState) => {
         setConfig(newConfig);
-        await supabase.from('app_config').upsert({ id: 1, data: newConfig });
+        const { error } = await supabase.from('app_config').upsert({ id: 1, data: newConfig });
+        if (error) {
+            console.error('Failed to update config in Supabase:', error);
+            throw new Error('Failed to update configuration: ' + error.message);
+        }
     };
 
     const addShippingCompany = (name: string) => {
@@ -556,6 +562,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const removeShippingCompany = (name: string) => {
         updateConfig({ ...config, shippingCompanies: config.shippingCompanies.filter(c => c !== name) });
+    };
+
+    const updateShippingRate = (company: string, rate: number) => {
+        updateConfig({ ...config, shippingRates: { ...(config.shippingRates || {}), [company]: rate } });
     };
 
     const addSalesman = (name: string) => {
@@ -899,6 +909,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             id: newProduct.id,
             name: newProduct.name,
             price: newProduct.price,
+            purchase_cost: newProduct.purchaseCost || 0,
             stock: newProduct.stock,
             low_stock_threshold: newProduct.lowStockThreshold,
             image: newProduct.image,
@@ -913,6 +924,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Rollback local state
             setProducts(prev => prev.filter(p => p.id !== newProduct.id));
         } else {
+            if (newProduct.stock > 0) {
+                const inventoryItems = Array.from({ length: newProduct.stock }).map(() => ({
+                    product_id: newProduct.id,
+                    cost_of_purchase: newProduct.purchaseCost || 0,
+                    status: 'in_stock'
+                }));
+                await supabase.from('inventory_items').insert(inventoryItems);
+            }
             setProductsUpdatedAt(Date.now());
             dispatchActivity({ action: 'product_added', description: `Product "${newProduct.name}" added`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: newProduct.id } });
         }
@@ -925,6 +944,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const dbUpdates: any = {};
         if (updates.name !== undefined) dbUpdates.name = updates.name;
         if (updates.price !== undefined) dbUpdates.price = updates.price;
+        if (updates.purchaseCost !== undefined) dbUpdates.purchase_cost = updates.purchaseCost;
         if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
         if (updates.lowStockThreshold !== undefined) dbUpdates.low_stock_threshold = updates.lowStockThreshold;
         if (updates.image !== undefined) dbUpdates.image = updates.image;
@@ -981,9 +1001,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             if (restockError) throw restockError;
 
-            // 2. Fetch current product stock
+            // 1. Fetch current product
             const product = products.find(p => p.id === productId);
             if (!product) throw new Error("Product not found");
+
+            // 1.5 Insert into inventory_items
+            const inventoryItems = Array.from({ length: quantity }).map(() => ({
+                product_id: productId,
+                cost_of_purchase: cost || product.purchaseCost || 0,
+                status: 'in_stock'
+            }));
+            const { error: invError } = await supabase.from('inventory_items').insert(inventoryItems);
+            if (invError) throw invError;
 
             const newStock = product.stock + quantity;
 
@@ -1161,6 +1190,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (current) {
                         await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
                     }
+
+                    // Deduct specific inventory items (FIFO)
+                    const { data: invItems } = await supabase.from('inventory_items')
+                        .select('id')
+                        .eq('product_id', item.id)
+                        .eq('status', 'in_stock')
+                        .order('created_at', { ascending: true })
+                        .limit(item.quantity);
+                    
+                    if (invItems && invItems.length > 0) {
+                        const idsToUpdate = invItems.map((i: any) => i.id);
+                        await supabase.from('inventory_items')
+                            .update({ status: 'sold', sale_id: id })
+                            .in('id', idsToUpdate);
+                    }
                 }
             }
             // Case 2: Changing FROM 'Shipped' (to non-shipped) -> RESTORE Stock
@@ -1178,6 +1222,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
                     if (current) {
                         await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
+                    }
+
+                    // Restore specific inventory items
+                    const { data: soldItems } = await supabase.from('inventory_items')
+                        .select('id')
+                        .eq('sale_id', id)
+                        .eq('product_id', item.id);
+                    
+                    if (soldItems && soldItems.length > 0) {
+                        const idsToUpdate = soldItems.map((i: any) => i.id);
+                        await supabase.from('inventory_items')
+                            .update({ status: 'in_stock', sale_id: null })
+                            .in('id', idsToUpdate);
                     }
                 }
             }
@@ -2298,17 +2355,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const addRole = async (roleData: Omit<Role, 'id'>) => {
         const newRole: Role = { ...roleData, id: Date.now().toString() };
         const newRoles = [...(config.roles || []), newRole];
-        updateConfig({ ...config, roles: newRoles });
+        await updateConfig({ ...config, roles: newRoles });
     };
 
     const updateRole = async (id: string, updates: Partial<Role>) => {
         const newRoles = (config.roles || []).map(r => r.id === id ? { ...r, ...updates } : r);
-        updateConfig({ ...config, roles: newRoles });
+        await updateConfig({ ...config, roles: newRoles });
     };
 
     const deleteRole = async (id: string) => {
         const newRoles = (config.roles || []).filter(r => r.id !== id);
-        updateConfig({ ...config, roles: newRoles });
+        await updateConfig({ ...config, roles: newRoles });
     };
 
     const updateStoreAddress = async (address: string) => {
@@ -2382,6 +2439,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateCustomer,
             deleteCustomer,
             shippingCompanies: config.shippingCompanies,
+            shippingRates: config.shippingRates || {},
+            updateShippingRate,
             salesmen: config.salesmen,
             categories: config.categories,
             addShippingCompany,

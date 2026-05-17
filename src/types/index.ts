@@ -3,12 +3,23 @@ export interface Product {
     name: string;
     model: string;
     price: number;
+    purchaseCost?: number;
     stock: number;
     lowStockThreshold?: number;
     image: string;
     category: string;
     createdAt?: string;
 }
+
+export interface InventoryItem {
+    id: string;
+    productId: string;
+    costOfPurchase: number;
+    status: 'in_stock' | 'sold' | 'returned';
+    saleId?: string;
+    createdAt?: string;
+}
+
 
 export interface CartItem extends Product {
     quantity: number;
@@ -146,6 +157,8 @@ export interface StoreContextType {
     isLoadingMore: boolean;
 
     shippingCompanies: string[];
+    shippingRates: Record<string, number>;
+    updateShippingRate: (company: string, rate: number) => void;
     salesmen: string[];
     categories: string[];
     pages: string[];

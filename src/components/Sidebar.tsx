@@ -11,7 +11,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile }) => {
-    const { hasPermission, currentUser, logo } = useStore();
+    const { hasPermission, logo } = useStore();
     const { t, language, setLanguage } = useLanguage();
 
 
@@ -78,6 +78,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.financials'), path: '/reports/financials' },
                 { label: t('nav.staffPerformance'), path: '/reports/staff' },
                 { label: t('nav.shippingCompanies'), path: '/reports/shipping' },
+                { label: t('nav.purchaseCost'), path: '/reports/purchase-cost' },
             ]
         });
     }

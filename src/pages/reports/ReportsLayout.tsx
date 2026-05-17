@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck } from 'lucide-react';
+import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck, DollarSign } from 'lucide-react';
 import { DateRangePicker } from '../../components';
 import { supabase } from '../../lib/supabase';
 import { mapSaleEntity } from '../../utils/mapper';
@@ -72,6 +72,7 @@ const ReportsLayout: React.FC = () => {
         { path: '/reports/financials', label: 'Financials', icon: Wallet },
         { path: '/reports/staff', label: 'Staff Performance', icon: Users },
         { path: '/reports/shipping', label: 'Shipping Companies', icon: Truck },
+        { path: '/reports/purchase-cost', label: 'Purchase Cost', icon: DollarSign },
     ];
 
     // Find current tab label

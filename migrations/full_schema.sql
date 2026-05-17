@@ -17,12 +17,23 @@ CREATE TABLE IF NOT EXISTS products (
     name TEXT NOT NULL,
     model TEXT,
     price NUMERIC DEFAULT 0,
+    purchase_cost NUMERIC DEFAULT 0,
     stock NUMERIC DEFAULT 0,
     low_stock_threshold NUMERIC DEFAULT 5,
     image TEXT,
     category TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS inventory_items (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    cost_of_purchase NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'in_stock' CHECK (status IN ('in_stock', 'sold', 'returned')),
+    sale_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
