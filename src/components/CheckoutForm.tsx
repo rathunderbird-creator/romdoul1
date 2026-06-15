@@ -682,7 +682,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {[{id: 'Ordered', name: 'Ordered'},{id: 'Pending', name: 'Pending'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    {[{id: 'Ordered', name: 'Ordered'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div>

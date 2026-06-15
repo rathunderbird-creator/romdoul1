@@ -204,6 +204,10 @@ button {
 }
 
 /* Row Status Colors */
+.spreadsheet-table tbody tr.confirmed-row {
+  background-color: #F0F9FF;
+}
+
 .spreadsheet-table tbody tr.pending-row {
   background-color: #FFFBEB;
 }
@@ -249,6 +253,11 @@ button {
 .spreadsheet-table tr.ordered-row td.sticky-col-first,
 .spreadsheet-table tr.ordered-row td.sticky-col-last {
   background-color: white !important;
+}
+
+.spreadsheet-table tbody tr.confirmed-row td.sticky-col-first,
+.spreadsheet-table tbody tr.confirmed-row td.sticky-col-second {
+  background-color: #F0F9FF;
 }
 
 .spreadsheet-table tbody tr.pending-row td.sticky-col-first,

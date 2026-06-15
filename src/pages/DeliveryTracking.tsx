@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList } from 'lucide-react';
+import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle } from 'lucide-react';
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker } from '../components';
 
@@ -25,7 +25,7 @@ const DeliveryTracking: React.FC = () => {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
-    const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Shipped'>('All');
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Confirmed' | 'Shipped'>('All');
 
     const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
@@ -58,7 +58,7 @@ const DeliveryTracking: React.FC = () => {
         trackingNumber: '',
         cost: 0,
         staffName: '',
-        status: 'Pending' as 'Ordered' | 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
+        status: 'Pending' as 'Ordered' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
     });
 
 
@@ -174,7 +174,7 @@ const DeliveryTracking: React.FC = () => {
             trackingNumber: order.shipping?.trackingNumber || '',
             cost: order.shipping?.cost || 0,
             staffName: order.shipping?.staffName || '',
-            status: (order.shipping?.status || 'Pending') as 'Ordered' | 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
+            status: (order.shipping?.status || 'Pending') as 'Ordered' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
         });
         setIsEditModalOpen(true);
     };
@@ -182,7 +182,7 @@ const DeliveryTracking: React.FC = () => {
 
 
     const StatusStepper = ({ currentStatus }: { currentStatus: string }) => {
-        const steps = ['Ordered', 'Pending', 'Shipped', 'Delivered'];
+        const steps = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered'];
         const currentIdx = steps.indexOf(currentStatus);
         const isCancelled = currentStatus === 'Cancelled';
 
@@ -226,8 +226,9 @@ const DeliveryTracking: React.FC = () => {
                             }}>
                                 {idx === 0 && <ClipboardList size={16} />}
                                 {idx === 1 && <Clock size={16} />}
-                                {idx === 2 && <Truck size={16} />}
-                                {idx === 3 && <Package size={16} />}
+                                {idx === 2 && <CheckCircle size={16} />}
+                                {idx === 3 && <Truck size={16} />}
+                                {idx === 4 && <Package size={16} />}
                             </div>
                             <span style={{
                                 fontSize: '13px',
@@ -271,6 +272,7 @@ const DeliveryTracking: React.FC = () => {
                         <option value="All">All Status</option>
                         <option value="Ordered">Ordered</option>
                         <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
+                        <option value="Confirmed" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>Confirmed</option>
                         <option value="Shipped" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>Shipped</option>
                     </select>
                     <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -539,9 +541,10 @@ const DeliveryTracking: React.FC = () => {
 
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Ordered' | 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Ordered' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
                                         <option value="Ordered">Ordered</option>
                                         <option value="Pending">Pending</option>
+                                        <option value="Confirmed">Confirmed</option>
                                         <option value="Shipped">Shipped</option>
                                         <option value="Delivered">Delivered</option>
                                         <option value="Cancelled">Cancelled</option>

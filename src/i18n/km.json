@@ -21,6 +21,7 @@
     "purchaseCost": "តម្លៃទិញ",
     "mobileOperators": "ប្រតិបត្តិករទូរស័ព្ទ",
     "shippingPoint": "ចំណុចដឹកជញ្ជូន",
+    "dropOffPoints": "ទីតាំងទម្លាក់ទំនិញ",
     "attendance": "វត្តមាន",
     "userManagement": "គ្រប់គ្រងអ្នកប្រើ",
     "settings": "ការកំណត់"
@@ -187,6 +188,7 @@
   },
   "status": {
     "ordered": "បានបញ្ជាទិញ",
+    "confirmed": "បានបញ្ជាក់",
     "pending": "កំពុងរង់ចាំ",
     "shipped": "បានដឹកចេញ",
     "delivered": "បានដឹកជញ្ជូន",

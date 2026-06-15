@@ -22,7 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     const location = useLocation();
     const navigate = useNavigate();
-    
+
     // Define navItems before hooks that depend on it
     const navItems: any[] = [];
 
@@ -31,17 +31,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     }
 
     if (hasPermission('manage_orders') || hasPermission('create_orders') || hasPermission('view_orders')) {
-        navItems.push({ 
-            icon: Truck, 
-            label: t('nav.orders'), 
+        navItems.push({
+            icon: Truck,
+            label: t('nav.orders'),
             path: '/orders'
         });
     }
 
     if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
-        navItems.push({ 
-            icon: Package, 
-            label: t('nav.inventory'), 
+        navItems.push({
+            icon: Package,
+            label: t('nav.inventory'),
             path: '/inventory',
             subItems: [
                 { label: t('nav.allProducts'), path: '/inventory' },
@@ -53,9 +53,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     }
 
     if (hasPermission('manage_income_expense')) {
-        navItems.push({ 
-            icon: Wallet, 
-            label: t('nav.incomeExpense'), 
+        navItems.push({
+            icon: Wallet,
+            label: t('nav.incomeExpense'),
             path: '/income-expense',
             subItems: [
                 { label: t('nav.allTransactions'), path: '/income-expense' },
@@ -67,9 +67,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     }
 
     if (hasPermission('view_reports')) {
-        navItems.push({ 
-            icon: PieChart, 
-            label: t('nav.reportsCenter'), 
+        navItems.push({
+            icon: PieChart,
+            label: t('nav.reportsCenter'),
             path: '/reports',
             subItems: [
                 { label: t('nav.salesOverview'), path: '/reports/sales' },
@@ -86,6 +86,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: Phone, label: t('nav.mobileOperators'), path: '/mobile-operators' });
         navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
+        navItems.push({ icon: MapPin, label: t('nav.dropOffPoints'), path: '/dropoff-points' });
     }
 
     if (hasPermission('manage_attendance')) {
@@ -148,7 +149,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 />
             )}
 
-            <aside 
+            <aside
                 onMouseEnter={() => {
                     if (!isMobile) {
                         hoverTimerRef.current = setTimeout(() => setIsHovered(true), 500);
@@ -164,21 +165,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     }
                 }}
                 style={{
-                width: sidebarWidth,
-                height: '100vh',
-                position: 'fixed',
-                left: 0,
-                top: 0,
-                backgroundColor: 'var(--color-surface)',
-                borderRight: '1px solid var(--color-border)',
-                display: 'flex',
-                flexDirection: 'column',
-                padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
-                zIndex: 100,
-                transition: 'width 0.3s ease, transform 0.3s ease',
-                transform: transform,
-                boxShadow: isMobile && !isCollapsed ? '4px 0 24px rgba(0,0,0,0.15)' : (isHovered && isCollapsed ? '4px 0 24px rgba(0,0,0,0.1)' : 'none')
-            }}>
+                    width: sidebarWidth,
+                    height: '100vh',
+                    position: 'fixed',
+                    left: 0,
+                    top: 0,
+                    backgroundColor: 'var(--color-surface)',
+                    borderRight: '1px solid var(--color-border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
+                    zIndex: 100,
+                    transition: 'width 0.3s ease, transform 0.3s ease',
+                    transform: transform,
+                    boxShadow: isMobile && !isCollapsed ? '4px 0 24px rgba(0,0,0,0.15)' : (isHovered && isCollapsed ? '4px 0 24px rgba(0,0,0,0.1)' : 'none')
+                }}>
                 <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', justifyContent: visualCollapsed ? 'center' : 'flex-start' }}>
                     <div style={{
                         width: '32px',
@@ -226,7 +227,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     {navItems.map((item) => {
                         const hasSubItems = item.subItems && item.subItems.length > 0;
                         const isExpanded = expandedMenus[item.label] || false;
-                        
+
                         // Check if active matches exactly or if subroute is matched (e.g. /orders/returns)
                         const isParentActive = hasSubItems ? item.subItems.some((sub: any) => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')) : location.pathname === item.path;
 
@@ -241,7 +242,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                             if (!isParentActive && item.subItems && item.subItems.length > 0) {
                                                 navigate(item.subItems[0].path);
                                             }
-                                            
+
                                             setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] }));
                                         }}
                                         style={{
@@ -372,27 +373,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     >
                         {language === 'en' ? (
                             <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
-                                <rect width="25" height="4" fill="#032EA1"/>
-                                <rect y="4" width="25" height="8" fill="#E00025"/>
-                                <rect y="12" width="25" height="4" fill="#032EA1"/>
+                                <rect width="25" height="4" fill="#032EA1" />
+                                <rect y="4" width="25" height="8" fill="#E00025" />
+                                <rect y="12" width="25" height="4" fill="#032EA1" />
                                 <g fill="#fff" transform="translate(12.5,8)">
-                                    <rect x="-5" y="-1.5" width="10" height="3"/>
-                                    <rect x="-4" y="-3" width="8" height="1.5"/>
-                                    <rect x="-1" y="-5" width="2" height="2"/>
-                                    <rect x="-3.5" y="-4" width="1.5" height="1"/>
-                                    <rect x="2" y="-4" width="1.5" height="1"/>
+                                    <rect x="-5" y="-1.5" width="10" height="3" />
+                                    <rect x="-4" y="-3" width="8" height="1.5" />
+                                    <rect x="-1" y="-5" width="2" height="2" />
+                                    <rect x="-3.5" y="-4" width="1.5" height="1" />
+                                    <rect x="2" y="-4" width="1.5" height="1" />
                                 </g>
                             </svg>
                         ) : (
                             <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
-                                <rect width="25" height="16" fill="#B22234"/>
-                                <rect y="1.23" width="25" height="1.23" fill="#fff"/>
-                                <rect y="3.69" width="25" height="1.23" fill="#fff"/>
-                                <rect y="6.15" width="25" height="1.23" fill="#fff"/>
-                                <rect y="8.62" width="25" height="1.23" fill="#fff"/>
-                                <rect y="11.08" width="25" height="1.23" fill="#fff"/>
-                                <rect y="13.54" width="25" height="1.23" fill="#fff"/>
-                                <rect width="10" height="8.62" fill="#3C3B6E"/>
+                                <rect width="25" height="16" fill="#B22234" />
+                                <rect y="1.23" width="25" height="1.23" fill="#fff" />
+                                <rect y="3.69" width="25" height="1.23" fill="#fff" />
+                                <rect y="6.15" width="25" height="1.23" fill="#fff" />
+                                <rect y="8.62" width="25" height="1.23" fill="#fff" />
+                                <rect y="11.08" width="25" height="1.23" fill="#fff" />
+                                <rect y="13.54" width="25" height="1.23" fill="#fff" />
+                                <rect width="10" height="8.62" fill="#3C3B6E" />
                             </svg>
                         )}
                         {!visualCollapsed && <span>{language === 'en' ? 'ខ្មែរ' : 'English'}</span>}

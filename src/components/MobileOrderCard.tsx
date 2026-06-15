@@ -48,6 +48,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     const getShippingColor = (status: string = '') => {
         switch (status) {
             case 'Pending': return '#D97706'; // Amber
+            case 'Confirmed': return '#0369A1'; // Cyan
             case 'Shipped': return '#2563EB'; // Blue
             case 'Delivered': return '#059669'; // Green
             case 'Cancelled': return '#DC2626'; // Red
@@ -181,7 +182,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
                                     disabledOptions={
                                         (order.shipping?.status === 'Shipped')
-                                            ? ['Ordered', 'Pending']
+                                            ? ['Ordered', 'Pending', 'Confirmed']
                                             : ['Delivered', 'Returned']
                                     }
                                     onChange={(newStatus) => onUpdateStatus(order.id, newStatus)}

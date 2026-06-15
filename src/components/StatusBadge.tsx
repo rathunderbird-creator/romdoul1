@@ -17,6 +17,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
     const getStatusStyle = (s: string) => {
         switch (s) {
             case 'Pending': return { bg: '#FEF3C7', color: '#D97706', border: '#FCD34D' }; // Amber
+            case 'Confirmed': return { bg: '#E0F2FE', color: '#0369A1', border: '#7DD3FC' }; // Cyan/Light Blue
             case 'Shipped': return { bg: '#DBEAFE', color: '#2563EB', border: '#93C5FD' }; // Blue
             case 'Delivered': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
             case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
@@ -48,7 +49,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         width: '100%'
     };
 
-    const options = ['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
+    const options = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
 
     // Update position when opening
     useEffect(() => {

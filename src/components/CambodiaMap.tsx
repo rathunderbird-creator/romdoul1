@@ -40,6 +40,7 @@ interface CambodiaMapProps {
     }>;
     shippingRules?: ShippingRule[];
     focusedPinLatLng?: [number, number] | null;
+    mapSource?: 'google' | 'osm';
 }
 
 const CAMBODIA_CENTER: [number, number] = [104.9, 12.5];
@@ -57,7 +58,8 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     onAreaSelect,
     customLocations = [],
     shippingRules = [],
-    focusedPinLatLng = null
+    focusedPinLatLng = null,
+    mapSource = 'google'
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<maplibregl.Map | null>(null);
@@ -136,14 +138,18 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                     sources: {
                         'raster-tiles': {
                             type: 'raster',
-                            tiles: [
+                            tiles: mapSource === 'osm' ? [
+                                'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                            ] : [
                                 'https://mt0.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}',
                                 'https://mt1.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}',
                                 'https://mt2.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}',
                                 'https://mt3.google.com/vt/lyrs=m&hl=km&x={x}&y={y}&z={z}'
                             ],
                             tileSize: 256,
-                            attribution: '&copy; Google Maps'
+                            attribution: mapSource === 'osm' ? '&copy; OpenStreetMap contributors' : '&copy; Google Maps'
                         }
                     },
                     layers: [{
@@ -288,7 +294,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 mapRef.current = null;
             }
         };
-    }, []);
+    }, [mapSource]);
 
     // Click Handler for Editing and Area Selection
     useEffect(() => {
@@ -460,11 +466,11 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                         e.preventDefault();
                         const address = decodeURIComponent(copyBtn.getAttribute('data-address') || '');
                         navigator.clipboard.writeText(address);
-                        
+
                         const ogHtml = copyBtn.innerHTML;
                         copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
                         copyBtn.setAttribute('style', 'margin-top: 8px; width: 100%; padding: 6px; background: var(--color-success); border: 1px solid var(--color-success); border-radius: 6px; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;');
-                        
+
                         setTimeout(() => {
                             if (popup.isOpen()) {
                                 copyBtn.innerHTML = ogHtml;

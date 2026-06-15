@@ -16,6 +16,7 @@ const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const MobileOperators = lazy(() => import('./pages/MobileOperators'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
+const DropOffPoints = lazy(() => import('./pages/DropOffPoints'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const ReturnsRestocks = lazy(() => import('./pages/ReturnsRestocks'));
 const StockIn = lazy(() => import('./pages/StockIn'));
@@ -81,6 +82,7 @@ const ProtectedApp = () => {
 
           <Route path="/mobile-operators" element={<ProtectedRoute requiredPermission="view_dashboard"><MobileOperators /></ProtectedRoute>} />
           <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
+          <Route path="/dropoff-points" element={<ProtectedRoute requiredPermission="view_dashboard"><DropOffPoints /></ProtectedRoute>} />
           <Route path="/attendance" element={<ProtectedRoute requiredPermissions={['manage_attendance']}><Attendance /></ProtectedRoute>} />
 
           <Route path="/reports" element={<ProtectedRoute requiredPermission="view_reports"><ReportsLayout /></ProtectedRoute>}>
@@ -106,19 +108,19 @@ const ProtectedApp = () => {
 function App() {
   return (
     <LanguageProvider>
-    <ThemeProvider>
-      <StoreProvider>
-        <ToastProvider>
-          <HeaderProvider>
-            <ActivityLogProvider>
-              <Router>
-                <ProtectedApp />
-              </Router>
-            </ActivityLogProvider>
-          </HeaderProvider>
-        </ToastProvider>
-      </StoreProvider>
-    </ThemeProvider>
+      <ThemeProvider>
+        <StoreProvider>
+          <ToastProvider>
+            <HeaderProvider>
+              <ActivityLogProvider>
+                <Router>
+                  <ProtectedApp />
+                </Router>
+              </ActivityLogProvider>
+            </HeaderProvider>
+          </ToastProvider>
+        </StoreProvider>
+      </ThemeProvider>
     </LanguageProvider>
   );
 }

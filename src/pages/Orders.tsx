@@ -26,6 +26,7 @@ type SortConfig = {
 const getStatusBorderColor = (s: string) => {
     switch (s) {
         case 'Pending': return '#D97706';
+        case 'Confirmed': return '#0369A1';
         case 'Shipped': return '#2563EB';
         case 'Delivered': return '#059669';
         case 'Cancelled': return '#DC2626';
@@ -1069,6 +1070,7 @@ const Orders: React.FC = () => {
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
         if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Confirmed') return 'confirmed-row';
         if (shippingStatus === 'Pending') return 'pending-row';
         if (shippingStatus === 'Shipped') return 'shipped-row';
         if (shippingStatus === 'Delivered') return 'delivered-row';
@@ -1093,6 +1095,7 @@ const Orders: React.FC = () => {
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
         if (shippingStatus === 'Ordered') return 'white';
+        if (shippingStatus === 'Confirmed') return '#F0F9FF';
         if (shippingStatus === 'Pending') return '#FFFBEB';
         if (shippingStatus === 'Shipped') return '#EFF6FF';
         if (shippingStatus === 'Delivered') return '#ECFDF5';
@@ -1645,10 +1648,10 @@ const Orders: React.FC = () => {
                                                 }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={statusFilter.length === 6}
+                                                        checked={statusFilter.length === 7}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setStatusFilter(['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock']);
+                                                                setStatusFilter(['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock']);
                                                             } else {
                                                                 setStatusFilter([]);
                                                             }
@@ -1657,7 +1660,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
                                                 </label>
-                                                {['Ordered', 'Pending', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
+                                                {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -2578,7 +2581,7 @@ const Orders: React.FC = () => {
                                                                             readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
                                                                             disabledOptions={
                                                                                 (order.shipping?.status === 'Shipped')
-                                                                                    ? ['Ordered', 'Pending']
+                                                                                    ? ['Ordered', 'Pending', 'Confirmed']
                                                                                     : ['Delivered', 'Returned']
                                                                             }
                                                                             onChange={(newStatus: string) => {

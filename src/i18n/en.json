@@ -21,6 +21,7 @@
     "purchaseCost": "Purchase Cost",
     "mobileOperators": "Mobile Operators",
     "shippingPoint": "Shipping Point",
+    "dropOffPoints": "Drop-off Points",
     "attendance": "Attendance",
     "userManagement": "User Management",
     "settings": "Settings"
@@ -187,6 +188,7 @@
   },
   "status": {
     "ordered": "Ordered",
+    "confirmed": "Confirmed",
     "pending": "Pending",
     "shipped": "Shipped",
     "delivered": "Delivered",

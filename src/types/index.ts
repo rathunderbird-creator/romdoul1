@@ -71,7 +71,7 @@ export interface Sale {
     shipping?: {
         company: string;
         trackingNumber: string;
-        status: 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' | 'Ordered';
+        status: 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' | 'Ordered' | 'Confirmed';
         cost: number;
         staffName?: string;
     };

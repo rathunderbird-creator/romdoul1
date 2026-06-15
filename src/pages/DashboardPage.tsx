@@ -177,6 +177,7 @@ const Dashboard: React.FC = () => {
         const createPivot = () => ({
             ordered: 0,
             pending: 0,
+            confirmed: 0,
             shipped: 0,
             delivered: 0,
             cancelled: 0,
@@ -188,9 +189,10 @@ const Dashboard: React.FC = () => {
 
         filteredSales.forEach(sale => {
             const status = sale.shipping?.status;
-            let field: 'ordered' | 'pending' | 'shipped' | 'delivered' | 'cancelled' | 'returned' | 'restock' | null = null;
+            let field: 'ordered' | 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'returned' | 'restock' | null = null;
 
             if (status === 'Ordered') field = 'ordered';
+            else if (status === 'Confirmed') field = 'confirmed';
             else if (status === 'Pending') field = 'pending';
             else if (status === 'Shipped') field = 'shipped';
             else if (status === 'Delivered') field = 'delivered';
@@ -338,6 +340,7 @@ const Dashboard: React.FC = () => {
                     if (stat.status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; } // green
                     else if (stat.status === 'Cancelled' || stat.status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; } // red
                     else if (stat.status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; } // purple
+                    else if (stat.status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; } // sky blue
                     else if (stat.status === 'Ordered' || stat.status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; } // yellow
 
                     return (
@@ -469,6 +472,7 @@ const Dashboard: React.FC = () => {
                             <option value="All">{t('dashboard.allStatuses')}</option>
                             <option value="Delivered">{t('status.delivered')}</option>
                             <option value="Shipped">{t('status.shipped')}</option>
+                            <option value="Confirmed">{t('status.confirmed')}</option>
                             <option value="Pending">{t('status.pending')}</option>
                             <option value="Ordered">{t('status.ordered')}</option>
                             <option value="Cancelled">{t('status.cancelled')}</option>

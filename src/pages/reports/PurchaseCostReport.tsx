@@ -6,7 +6,7 @@ import { useStore } from '../../context/StoreContext';
 import type { Sale } from '../../types';
 
 
-const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Ordered', 'Returned', 'Cancelled'];
+const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Ordered', 'Returned', 'Cancelled'];
 
 const PurchaseCostReport: React.FC = () => {
     const { reportSales } = useOutletContext<any>();

@@ -50,9 +50,14 @@ interface ShippingPointContentProps {
         phone: string;
         contactName: string;
     }) => void;
+    tableName?: string;
+    pageTitle?: string;
+    pageSubtitle?: string;
+    headerTitle?: string;
+    mapSource?: 'google' | 'osm';
 }
 
-export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode = 'page', onClose, onSelect }) => {
+export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode = 'page', onClose, onSelect, tableName = 'custom_locations', pageTitle, pageSubtitle, headerTitle, mapSource = 'google' }) => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
 
@@ -140,7 +145,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
 
     const loadCustomLocations = async () => {
         try {
-            const { data, error } = await supabase.from('custom_locations').select('*');
+            const { data, error } = await supabase.from(tableName).select('*');
             if (!error && data) {
                 setCustomLocations(data);
             }
@@ -169,13 +174,13 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                 title: (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <MapPin size={20} />
-                        <span className="font-semibold text-color-text-main" style={{ fontSize: '18px' }}>កំណត់ទីតាំងដឹកជញ្ជូនកនែ្លងផ្សេងៗ (Shipping Points)</span>
+                        <span className="font-semibold text-color-text-main" style={{ fontSize: '18px' }}>{headerTitle || 'កំណត់ទីតាំងដឹកជញ្ជូនកនែ្លងផ្សេងៗ (Shipping Points)'}</span>
                     </div>
                 )
             });
             return () => setHeaderContent(null);
         }
-    }, [setHeaderContent, mode]);
+    }, [setHeaderContent, mode, headerTitle]);
 
     // Computed properties based on selection
     const selectedProvince = useMemo(() =>
@@ -384,14 +389,14 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         setSearchPinnedTerm(loc.name);
         setIsLocationSelectorsExpanded(true);
         setFocusedPinLatLng([loc.lat, loc.lng]);
-        
+
         if (!loc.pcode.startsWith('CUSTOM_')) {
             setActiveCustomLocation(null);
             const type = loc.pcode.length === 2 ? 'province' : loc.pcode.length === 4 ? 'district' : loc.pcode.length === 6 ? 'commune' : 'village';
             handleAreaSelect(type as any, loc.pcode);
         } else {
             setActiveCustomLocation(loc);
-            let pCode='', dCode='', cCode='';
+            let pCode = '', dCode = '', cCode = '';
             if (loc.province) {
                 const searchProv = String(loc.province).trim();
                 const p = data.find(x => x.khmer === searchProv || x.latin === searchProv);
@@ -494,7 +499,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         setIsSavingLocation(true);
         try {
             if (editingLocationId) {
-                const { error: updateError } = await supabase.from('custom_locations').update({
+                const { error: updateError } = await supabase.from(tableName).update({
                     name: modalData.name.trim(),
                     lat: editMarkerLatLng[0],
                     lng: editMarkerLatLng[1],
@@ -512,7 +517,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                     throw updateError;
                 }
             } else {
-                const { error: insertError } = await supabase.from('custom_locations').insert({
+                const { error: insertError } = await supabase.from(tableName).insert({
                     pcode: targetPcode,
                     name: modalData.name.trim(),
                     lat: editMarkerLatLng[0],
@@ -552,7 +557,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
 
         setIsSavingLocation(true);
         try {
-            const { error } = await supabase.from('custom_locations').delete().eq('id', id);
+            const { error } = await supabase.from(tableName).delete().eq('id', id);
             if (error) throw error;
             setIsConfirmingDelete(false);
             setEditMarkerLatLng(null);
@@ -604,7 +609,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         setIsSavingLocation(true);
         try {
             console.log('Sending delete request to supabase...');
-            const { error, data } = await supabase.from('custom_locations').delete().eq('pcode', targetPcode).select();
+            const { error, data } = await supabase.from(tableName).delete().eq('pcode', targetPcode).select();
             console.log('Delete response:', error, data);
 
             if (error) {
@@ -630,7 +635,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
 
     const handleConfirmSelection = () => {
         if (!onSelect) return;
-        
+
         if (activeCustomLocation) {
             let resolvedProvince = activeCustomLocation.province || '';
             let resolvedProvinceLatin = '';
@@ -668,8 +673,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         else if (selectedProvinceCode) targetPcode = selectedProvinceCode;
 
         if (!targetPcode && !focusedPinLatLng) {
-           alert("សូមជ្រើសរើសទីតាំងជាមុនសិន (Please select a location first)");
-           return;
+            alert("សូមជ្រើសរើសទីតាំងជាមុនសិន (Please select a location first)");
+            return;
         }
 
         const villageName = activeVillages.find(v => v.code === selectedVillageCode)?.khmer;
@@ -692,10 +697,10 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div className="shipping-header" style={{ padding: '24px 24px 16px', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                    <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? 'ជ្រើសរើសទីតាំង (Select Location)' : 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)'}</h1>
+                    <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? 'ជ្រើសរើសទីតាំង (Select Location)' : (pageTitle || 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)')}</h1>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Map size={18} />
-                        {mode === 'selector' ? 'Select a location to dispatch the order' : 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)'}
+                        {mode === 'selector' ? 'Select a location to dispatch the order' : (pageSubtitle || 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)')}
                     </p>
                 </div>
                 {mode === 'selector' && onClose && (
@@ -834,7 +839,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                             onClick={() => {
                                                                 if (mode === 'selector' && onSelect) {
 
-                                                                    
+
                                                                     // Try to determine breakdown from data tree
                                                                     let dName = '', cName = '', vName = '';
                                                                     const p = data.find(x => x.code === res.pcode);
@@ -858,9 +863,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                         village: vName,
                                                                         addressDetail: vName || cName || dName || p?.khmer || '',
                                                                         customName: '',
-                                                                       courier: '',
-                                                                       phone: '',
-                                                                       contactName: '' 
+                                                                        courier: '',
+                                                                        phone: '',
+                                                                        contactName: ''
                                                                     });
                                                                 } else {
                                                                     handleSelectSearchResult(res.pcode, res.dcode, res.ccode, res.vcode)
@@ -1175,16 +1180,16 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                                         <Edit2 size={16} />
                                                                                     </button>
                                                                                     <button
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        handleRemovePinById(loc.id, loc.name);
-                                                                                    }}
-                                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
-                                                                                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-danger)'}
-                                                                                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-                                                                                    title="លុបទីតាំងនេះ"
-                                                                                >
-                                                                                    <Trash2 size={16} />
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            handleRemovePinById(loc.id, loc.name);
+                                                                                        }}
+                                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
+                                                                                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-danger)'}
+                                                                                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+                                                                                        title="លុបទីតាំងនេះ"
+                                                                                    >
+                                                                                        <Trash2 size={16} />
                                                                                     </button>
                                                                                 </>
                                                                             )}
@@ -1423,6 +1428,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                         onMarkerClick={handleMarkerClick}
                         customLocations={customLocations}
                         focusedPinLatLng={focusedPinLatLng}
+                        mapSource={mapSource}
                     />
                 </div>
 
