@@ -4,9 +4,9 @@ import { useMobile } from '../hooks/useMobile';
 
 interface StatsCardProps {
     title: string;
-    value: string | number;
+    value: React.ReactNode;
     icon: LucideIcon;
-    trend?: string;
+    trend?: React.ReactNode;
     color?: string;
     bgColor?: string;
     textColor?: string;

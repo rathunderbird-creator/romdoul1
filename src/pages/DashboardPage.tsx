@@ -142,7 +142,14 @@ const Dashboard: React.FC = () => {
     }, [filteredSales]);
 
     const salesmanStats = useMemo(() => {
-        const stats: Record<string, { count: number; total: number; soldItems: number; shippedDeliveredTotal: number }> = {};
+        const stats: Record<string, { 
+            count: number; 
+            total: number; 
+            soldItems: number; 
+            shippedDeliveredTotal: number;
+            statuses: Record<string, number>;
+        }> = {};
+
         filteredSales.forEach(sale => {
             const salesman = sale.salesman || 'Unassigned';
             const status = sale.shipping?.status || 'Pending';
@@ -150,12 +157,23 @@ const Dashboard: React.FC = () => {
             if (salesmanStatusFilter !== 'All' && status !== salesmanStatusFilter) return;
 
             if (!stats[salesman]) {
-                stats[salesman] = { count: 0, total: 0, soldItems: 0, shippedDeliveredTotal: 0 };
+                stats[salesman] = { 
+                    count: 0, 
+                    total: 0, 
+                    soldItems: 0, 
+                    shippedDeliveredTotal: 0,
+                    statuses: {}
+                };
             }
             stats[salesman].count += 1;
             stats[salesman].total += sale.total;
 
-            if (status === 'Shipped' || status === 'Delivered') {
+            if (!stats[salesman].statuses[status]) {
+                stats[salesman].statuses[status] = 0;
+            }
+            stats[salesman].statuses[status] += 1;
+
+            if (status === 'Confirmed' || status === 'Shipped' || status === 'Delivered') {
                 stats[salesman].shippedDeliveredTotal += sale.total;
                 sale.items.forEach(item => {
                     stats[salesman].soldItems += item.quantity;
@@ -167,7 +185,8 @@ const Dashboard: React.FC = () => {
             count: data.count,
             total: data.total,
             soldItems: data.soldItems,
-            shippedDeliveredTotal: data.shippedDeliveredTotal
+            shippedDeliveredTotal: data.shippedDeliveredTotal,
+            statuses: data.statuses
         })).sort((a, b) => b.total - a.total);
     }, [filteredSales, salesmanStatusFilter]);
 
@@ -224,18 +243,35 @@ const Dashboard: React.FC = () => {
     }, [filteredSales]);
 
     const shippingStats = useMemo(() => {
-        const stats: Record<string, { count: number; cost: number; delivered: number }> = {};
+        const stats: Record<string, { 
+            count: number; 
+            cost: number; 
+            delivered: number;
+            statuses: Record<string, number>;
+        }> = {};
         
         filteredSales.forEach(sale => {
             const ship = sale.shipping;
             if (ship && ship.company) {
                 const company = ship.company;
+                const status = ship.status || 'Pending';
                 if (!stats[company]) {
-                    stats[company] = { count: 0, cost: 0, delivered: 0 };
+                    stats[company] = { 
+                        count: 0, 
+                        cost: 0, 
+                        delivered: 0,
+                        statuses: {}
+                    };
                 }
                 stats[company].count += 1;
                 stats[company].cost += ship.cost || 0;
-                if (ship.status === 'Delivered') {
+
+                if (!stats[company].statuses[status]) {
+                    stats[company].statuses[status] = 0;
+                }
+                stats[company].statuses[status] += 1;
+
+                if (status === 'Confirmed' || status === 'Shipped' || status === 'Delivered') {
                     stats[company].delivered += 1;
                 }
             }
@@ -245,7 +281,8 @@ const Dashboard: React.FC = () => {
             name,
             count: data.count,
             cost: data.cost,
-            delivered: data.delivered
+            delivered: data.delivered,
+            statuses: data.statuses
         })).sort((a, b) => b.count - a.count);
     }, [filteredSales]);
 
@@ -513,25 +550,72 @@ const Dashboard: React.FC = () => {
                             flexWrap: 'wrap',
                             gap: '16px'
                         }}>
-                            {salesmanStats.map((s, index) => (
-                                <StatsCard
-                                    key={index}
-                                    title={s.name}
-                                    value={`$${s.shippedDeliveredTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                                    trend={`${s.soldItems} ${t('dashboard.soldItems')} | ${s.count} ${t('dashboard.orders')}`}
-                                    icon={User}
-                                    color="var(--color-primary)"
-                                    onClick={() => {
-                                        localStorage.setItem('orders_salesmanFilter', s.name);
-                                        localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                        localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                        localStorage.setItem('orders_searchTerm', '');
-                                        localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                        navigate('/orders');
-                                    }}
-                                />
-                            ))}
+                            {salesmanStats.map((s, index) => {
+                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Ordered', 'Cancelled', 'Returned', 'ReStock'];
+                                return (
+                                    <StatsCard
+                                        key={index}
+                                        title={s.name}
+                                        value={`$${s.shippedDeliveredTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        trend={
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                                                    <span style={{ color: '#1B3B6F', fontWeight: 600 }}>{s.soldItems} {t('dashboard.soldItems')}</span>
+                                                    {' | '}
+                                                    <span style={{ color: '#E65F2B', fontWeight: 600 }}>{s.count} {t('dashboard.orders')}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                                    {Object.entries(s.statuses)
+                                                        .sort((a, b) => {
+                                                            const indexA = STATUS_ORDER.indexOf(a[0]);
+                                                            const indexB = STATUS_ORDER.indexOf(b[0]);
+                                                            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                                                        })
+                                                        .map(([status, count]) => {
+                                                            let color = '#1D4ED8', bgColor = '#EFF6FF';
+                                                            if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
+                                                            else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
+                                                            else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
+                                                            else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
+                                                            else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+
+                                                            const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
+                                                            return (
+                                                                <span 
+                                                                    key={status} 
+                                                                    style={{
+                                                                        fontSize: '10px',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '4px',
+                                                                        backgroundColor: bgColor,
+                                                                        color: color,
+                                                                        fontWeight: 600,
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center'
+                                                                    }}
+                                                                >
+                                                                    {translatedStatus}: {count}
+                                                                </span>
+                                                            );
+                                                        })
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                        icon={User}
+                                        color="var(--color-primary)"
+                                        onClick={() => {
+                                            localStorage.setItem('orders_salesmanFilter', s.name);
+                                            localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_searchTerm', '');
+                                            localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                            navigate('/orders');
+                                        }}
+                                    />
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -547,24 +631,69 @@ const Dashboard: React.FC = () => {
                             flexWrap: 'wrap',
                             gap: '16px'
                         }}>
-                            {shippingStats.map((carrier, index) => (
-                                <StatsCard
-                                    key={index}
-                                    title={carrier.name}
-                                    value={`${carrier.count} ${t('dashboard.orders')}`}
-                                    trend={`$${carrier.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cost | ${carrier.delivered} Delivered`}
-                                    icon={Truck}
-                                    color="var(--color-primary)"
-                                    onClick={() => {
-                                        localStorage.setItem('orders_shippingCoFilter', JSON.stringify([carrier.name]));
-                                        localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                        localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                        localStorage.setItem('orders_searchTerm', '');
-                                        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                        navigate('/orders');
-                                    }}
-                                />
-                            ))}
+                            {shippingStats.map((carrier, index) => {
+                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Ordered', 'Cancelled', 'Returned', 'ReStock'];
+                                return (
+                                    <StatsCard
+                                        key={index}
+                                        title={carrier.name}
+                                        value={<span>{carrier.count} <span style={{ color: '#E65F2B', fontSize: '14px', fontWeight: 500 }}>{t('dashboard.orders')}</span></span>}
+                                        trend={
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                    ${carrier.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cost | <span style={{ color: '#E65F2B', fontWeight: 600 }}>{carrier.delivered} {t('dashboard.orders')}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                                    {Object.entries(carrier.statuses)
+                                                        .sort((a, b) => {
+                                                            const indexA = STATUS_ORDER.indexOf(a[0]);
+                                                            const indexB = STATUS_ORDER.indexOf(b[0]);
+                                                            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                                                        })
+                                                        .map(([status, count]) => {
+                                                            let color = '#1D4ED8', bgColor = '#EFF6FF';
+                                                            if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
+                                                            else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
+                                                            else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
+                                                            else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
+                                                            else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+
+                                                            const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
+                                                            return (
+                                                                <span 
+                                                                    key={status} 
+                                                                    style={{
+                                                                        fontSize: '10px',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '4px',
+                                                                        backgroundColor: bgColor,
+                                                                        color: color,
+                                                                        fontWeight: 600,
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center'
+                                                                    }}
+                                                                >
+                                                                    {translatedStatus}: {count}
+                                                                </span>
+                                                            );
+                                                        })
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                        icon={Truck}
+                                        color="var(--color-primary)"
+                                        onClick={() => {
+                                            localStorage.setItem('orders_shippingCoFilter', JSON.stringify([carrier.name]));
+                                            localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_searchTerm', '');
+                                            localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                            navigate('/orders');
+                                        }}
+                                    />
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -584,9 +713,58 @@ const Dashboard: React.FC = () => {
                             <StatsCard
                                 key={idx}
                                 title={p.name}
-                                value={`${p.total} ${t('dashboard.units')}`}
+                                value={<span>{p.total} <span style={{ color: '#E65F2B', fontSize: '14px', fontWeight: 500 }}>{t('dashboard.orders')}</span></span>}
+                                trend={
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                                            <span style={{ color: '#1B3B6F', fontWeight: 600 }}>{p.confirmed + p.shipped + p.delivered} {t('dashboard.sold')}</span>
+                                            {' | '}
+                                            <span style={{ color: '#E65F2B', fontWeight: 600 }}>{p.total} {t('dashboard.orders')}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                            {Object.entries({
+                                                Pending: p.pending,
+                                                Confirmed: p.confirmed,
+                                                Shipped: p.shipped,
+                                                Delivered: p.delivered,
+                                                Ordered: p.ordered,
+                                                Cancelled: p.cancelled,
+                                                Returned: p.returned,
+                                                ReStock: p.restock
+                                            })
+                                                .filter(([_, count]) => count > 0)
+                                                .map(([status, count]) => {
+                                                    let color = '#1D4ED8', bgColor = '#EFF6FF';
+                                                    if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
+                                                    else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
+                                                    else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
+                                                    else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
+                                                    else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+
+                                                    const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
+                                                    return (
+                                                        <span 
+                                                            key={status} 
+                                                            style={{
+                                                                fontSize: '10px',
+                                                                padding: '2px 6px',
+                                                                borderRadius: '4px',
+                                                                backgroundColor: bgColor,
+                                                                color: color,
+                                                                fontWeight: 600,
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center'
+                                                            }}
+                                                        >
+                                                            {translatedStatus}: {count}
+                                                        </span>
+                                                    );
+                                                })
+                                            }
+                                        </div>
+                                    </div>
+                                }
                                 icon={Package}
-                                trend={`${p.delivered} ${t('dashboard.delivered')}`}
                                 color="var(--color-purple)"
                                 onClick={() => {
                                     localStorage.setItem('orders_searchTerm', `"${p.name}"`);
