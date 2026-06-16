@@ -19,8 +19,6 @@
     "staffPerformance": "សមត្ថភាពបុគ្គលិក",
     "shippingCompanies": "ក្រុមហ៊ុនដឹកជញ្ជូន",
     "purchaseCost": "តម្លៃទិញ",
-    "mobileOperators": "ប្រតិបត្តិករទូរស័ព្ទ",
-    "shippingPoint": "ចំណុចដឹកជញ្ជូន",
     "dropOffPoints": "ទីតាំងទម្លាក់ទំនិញ",
     "attendance": "វត្តមាន",
     "userManagement": "គ្រប់គ្រងអ្នកប្រើ",
@@ -200,5 +198,19 @@
     "unpaid": "មិនទាន់បង់ប្រាក់",
     "partial": "បង់មួយផ្នែក",
     "cancel": "បោះបង់"
+  },
+  "targets": {
+    "title": "គោលដៅលក់ & វឌ្ឍនភាព",
+    "dailyTarget": "គោលដៅប្រចាំថ្ងៃ",
+    "weeklyTarget": "គោលដៅប្រចាំសប្តាហ៍",
+    "monthlyTarget": "គោលដៅប្រចាំខែ",
+    "actual": "លក់បានជាក់ស្តែង",
+    "target": "គោលដៅ",
+    "progress": "វឌ្ឍនភាព",
+    "achieved": "សម្រេចបាន",
+    "setTargets": "កំណត់គោលដៅ",
+    "salesman": "អ្នកលក់",
+    "saveSuccess": "បានធ្វើបច្ចុប្បន្នភាពគោលដៅដោយជោគជ័យ!",
+    "saveError": "បរាជ័យក្នុងការធ្វើបច្ចុប្បន្នភាពគោលដៅ"
   }
 }

@@ -1,0 +1,4 @@
+-- ALTER TABLE users ADD COLUMN target columns
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_target NUMERIC DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS weekly_target NUMERIC DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS monthly_target NUMERIC DEFAULT 0;

@@ -340,7 +340,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     email: u.email,
                     roleId: u.role_id, // Map snake_case to camelCase
                     pin: u.pin,
-                    baseSalary: Number(u.base_salary) || 0
+                    baseSalary: Number(u.base_salary) || 0,
+                    dailyTarget: Number(u.daily_target) || 0,
+                    weeklyTarget: Number(u.weekly_target) || 0,
+                    monthlyTarget: Number(u.monthly_target) || 0
                 })));
             }
 
@@ -2313,7 +2316,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             email: newUser.email,
             role_id: newUser.roleId,
             pin: newUser.pin,
-            base_salary: newUser.baseSalary || 0
+            base_salary: newUser.baseSalary || 0,
+            daily_target: newUser.dailyTarget || 0,
+            weekly_target: newUser.weeklyTarget || 0,
+            monthly_target: newUser.monthlyTarget || 0
         }).select();
 
         if (error) {
@@ -2332,6 +2338,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.roleId) dbUpdates.role_id = updates.roleId;
         if (updates.pin !== undefined) dbUpdates.pin = updates.pin; // allow empty pin
         if (updates.baseSalary !== undefined) dbUpdates.base_salary = updates.baseSalary;
+        if (updates.dailyTarget !== undefined) dbUpdates.daily_target = updates.dailyTarget;
+        if (updates.weeklyTarget !== undefined) dbUpdates.weekly_target = updates.weeklyTarget;
+        if (updates.monthlyTarget !== undefined) dbUpdates.monthly_target = updates.monthlyTarget;
 
         const { error } = await supabase.from('users').update(dbUpdates).eq('id', id);
         if (error) {

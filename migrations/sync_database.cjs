@@ -42,7 +42,10 @@ const EXPECTED_TABLES = {
     ],
     users: [
         'id', 'name', 'email', 'role_id', 'pin', 'created_at',
-        'base_salary'   // Added by payroll_migration.sql
+        'base_salary',   // Added by payroll_migration.sql
+        'daily_target',  // Added by add_salesman_targets.sql
+        'weekly_target', // Added by add_salesman_targets.sql
+        'monthly_target' // Added by add_salesman_targets.sql
     ],
     app_config: ['id', 'data', 'created_at'],
     restocks: [

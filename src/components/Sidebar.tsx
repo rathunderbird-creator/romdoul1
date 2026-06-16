@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, Phone, MapPin, PieChart, CalendarClock, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 interface SidebarProps {
     isCollapsed: boolean;
@@ -21,7 +21,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     const canManageSettings = hasPermission('manage_settings');
 
     const location = useLocation();
-    const navigate = useNavigate();
 
     // Define navItems before hooks that depend on it
     const navItems: any[] = [];
@@ -66,6 +65,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         });
     }
 
+    if (hasPermission('view_dashboard')) {
+        navItems.push({ icon: MapPin, label: t('nav.dropOffPoints'), path: '/dropoff-points' });
+    }
+
+    if (hasPermission('manage_attendance')) {
+        navItems.push({ icon: CalendarClock, label: t('nav.attendance'), path: '/attendance' });
+    }
+
     if (hasPermission('view_reports')) {
         navItems.push({
             icon: PieChart,
@@ -81,16 +88,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.purchaseCost'), path: '/reports/purchase-cost' },
             ]
         });
-    }
-
-    if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: Phone, label: t('nav.mobileOperators'), path: '/mobile-operators' });
-        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
-        navItems.push({ icon: MapPin, label: t('nav.dropOffPoints'), path: '/dropoff-points' });
-    }
-
-    if (hasPermission('manage_attendance')) {
-        navItems.push({ icon: CalendarClock, label: t('nav.attendance'), path: '/attendance' });
     }
 
     const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>(() => {
@@ -223,7 +220,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     )}
                 </div>
 
-                <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', overflowX: 'hidden' }}>
                     {navItems.map((item) => {
                         const hasSubItems = item.subItems && item.subItems.length > 0;
                         const isExpanded = expandedMenus[item.label] || false;
@@ -238,11 +235,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                         className={`sidebar-item ${isParentActive ? 'active-parent' : ''}`}
                                         title={visualCollapsed ? item.label : ''}
                                         onClick={() => {
-                                            // Check if it's already active. If not, maybe auto-navigate to the first subitem
-                                            if (!isParentActive && item.subItems && item.subItems.length > 0) {
-                                                navigate(item.subItems[0].path);
-                                            }
-
                                             setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] }));
                                         }}
                                         style={{

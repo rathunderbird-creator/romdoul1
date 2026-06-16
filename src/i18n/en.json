@@ -19,8 +19,6 @@
     "staffPerformance": "Staff Performance",
     "shippingCompanies": "Shipping Companies",
     "purchaseCost": "Purchase Cost",
-    "mobileOperators": "Mobile Operators",
-    "shippingPoint": "Shipping Point",
     "dropOffPoints": "Drop-off Points",
     "attendance": "Attendance",
     "userManagement": "User Management",
@@ -200,5 +198,19 @@
     "unpaid": "Unpaid",
     "partial": "Partial",
     "cancel": "Cancel"
+  },
+  "targets": {
+    "title": "Sales Targets & Progress",
+    "dailyTarget": "Daily Target",
+    "weeklyTarget": "Weekly Target",
+    "monthlyTarget": "Monthly Target",
+    "actual": "Actual",
+    "target": "Target",
+    "progress": "Progress",
+    "achieved": "Achieved",
+    "setTargets": "Set Targets",
+    "salesman": "Salesman",
+    "saveSuccess": "Targets updated successfully!",
+    "saveError": "Failed to update targets"
   }
 }

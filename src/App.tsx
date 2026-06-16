@@ -14,8 +14,6 @@ const PaymentTracking = lazy(() => import('./pages/PaymentTracking'));
 const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
-const MobileOperators = lazy(() => import('./pages/MobileOperators'));
-const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
 const DropOffPoints = lazy(() => import('./pages/DropOffPoints'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const ReturnsRestocks = lazy(() => import('./pages/ReturnsRestocks'));
@@ -80,8 +78,6 @@ const ProtectedApp = () => {
           <Route path="/payment-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><PaymentTracking /></ProtectedRoute>} />
           <Route path="/delivery-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
 
-          <Route path="/mobile-operators" element={<ProtectedRoute requiredPermission="view_dashboard"><MobileOperators /></ProtectedRoute>} />
-          <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
           <Route path="/dropoff-points" element={<ProtectedRoute requiredPermission="view_dashboard"><DropOffPoints /></ProtectedRoute>} />
           <Route path="/attendance" element={<ProtectedRoute requiredPermissions={['manage_attendance']}><Attendance /></ProtectedRoute>} />
 

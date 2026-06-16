@@ -271,4 +271,7 @@ export interface User {
     pin?: string; // Optional numeric PIN for quick login
     avatar?: string;
     baseSalary?: number;
+    dailyTarget?: number;
+    weeklyTarget?: number;
+    monthlyTarget?: number;
 }

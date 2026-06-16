@@ -98,6 +98,11 @@ CREATE TABLE IF NOT EXISTS users (
 -- Column added in payroll_migration.sql
 ALTER TABLE users ADD COLUMN IF NOT EXISTS base_salary NUMERIC DEFAULT 0;
 
+-- Columns added in add_salesman_targets.sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_target NUMERIC DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_target NUMERIC DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_target NUMERIC DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS app_config (
     id BIGINT PRIMARY KEY,
     data JSONB DEFAULT '{}'::jsonb,

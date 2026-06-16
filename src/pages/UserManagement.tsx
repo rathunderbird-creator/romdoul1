@@ -27,7 +27,7 @@ const UserManagement: React.FC = () => {
     // User State
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
-    const [userFormData, setUserFormData] = useState<Partial<User>>({ name: '', email: '', roleId: '', pin: '' });
+    const [userFormData, setUserFormData] = useState<Partial<User>>({ name: '', email: '', roleId: '', pin: '', dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 });
 
     // Role State
     const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
@@ -54,10 +54,15 @@ const UserManagement: React.FC = () => {
     const handleOpenUserModal = (user?: User) => {
         if (user) {
             setEditingUser(user);
-            setUserFormData(user);
+            setUserFormData({
+                ...user,
+                dailyTarget: user.dailyTarget || 0,
+                weeklyTarget: user.weeklyTarget || 0,
+                monthlyTarget: user.monthlyTarget || 0
+            });
         } else {
             setEditingUser(null);
-            setUserFormData({ name: '', email: '', roleId: roles[0]?.id || '', pin: '' });
+            setUserFormData({ name: '', email: '', roleId: roles[0]?.id || '', pin: '', dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 });
         }
         setIsUserModalOpen(true);
     };
@@ -328,7 +333,7 @@ const UserManagement: React.FC = () => {
             {/* User Modal */}
             {isUserModalOpen && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: 'var(--color-surface)', padding: '24px', borderRadius: '12px', width: '400px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+                    <div style={{ background: 'var(--color-surface)', padding: '24px', borderRadius: '12px', width: '450px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
                         <h2 style={{ marginTop: 0, marginBottom: '20px' }}>{editingUser ? 'Edit User' : 'Add User'}</h2>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div>
@@ -370,6 +375,38 @@ const UserManagement: React.FC = () => {
                                     placeholder="Enter password"
                                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
                                 />
+                            </div>
+                            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: '8px' }}>
+                                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: 'var(--color-primary)' }}>Sales Targets ($)</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>Daily</label>
+                                        <input
+                                            type="number"
+                                            value={userFormData.dailyTarget || 0}
+                                            onChange={e => setUserFormData({ ...userFormData, dailyTarget: parseFloat(e.target.value) || 0 })}
+                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>Weekly</label>
+                                        <input
+                                            type="number"
+                                            value={userFormData.weeklyTarget || 0}
+                                            onChange={e => setUserFormData({ ...userFormData, weeklyTarget: parseFloat(e.target.value) || 0 })}
+                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>Monthly</label>
+                                        <input
+                                            type="number"
+                                            value={userFormData.monthlyTarget || 0}
+                                            onChange={e => setUserFormData({ ...userFormData, monthlyTarget: parseFloat(e.target.value) || 0 })}
+                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
