@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User, Plus } from 'lucide-react';
+import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User, Plus, Truck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -221,6 +221,32 @@ const Dashboard: React.FC = () => {
         return {
             product: formatData(productMap)
         };
+    }, [filteredSales]);
+
+    const shippingStats = useMemo(() => {
+        const stats: Record<string, { count: number; cost: number; delivered: number }> = {};
+        
+        filteredSales.forEach(sale => {
+            const ship = sale.shipping;
+            if (ship && ship.company) {
+                const company = ship.company;
+                if (!stats[company]) {
+                    stats[company] = { count: 0, cost: 0, delivered: 0 };
+                }
+                stats[company].count += 1;
+                stats[company].cost += ship.cost || 0;
+                if (ship.status === 'Delivered') {
+                    stats[company].delivered += 1;
+                }
+            }
+        });
+
+        return Object.entries(stats).map(([name, data]) => ({
+            name,
+            count: data.count,
+            cost: data.cost,
+            delivered: data.delivered
+        })).sort((a, b) => b.count - a.count);
     }, [filteredSales]);
 
     return (
@@ -501,6 +527,39 @@ const Dashboard: React.FC = () => {
                                         localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                         localStorage.setItem('orders_searchTerm', '');
                                         localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                        navigate('/orders');
+                                    }}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* 5. Shipping Performance */}
+                <div style={{ marginBottom: '32px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.shippingPerformance')}</h3>
+                    {shippingStats.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
+                    ) : (
+                        <div className="dashboard-flex-container" style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '16px'
+                        }}>
+                            {shippingStats.map((carrier, index) => (
+                                <StatsCard
+                                    key={index}
+                                    title={carrier.name}
+                                    value={`${carrier.count} ${t('dashboard.orders')}`}
+                                    trend={`$${carrier.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cost | ${carrier.delivered} Delivered`}
+                                    icon={Truck}
+                                    color="var(--color-primary)"
+                                    onClick={() => {
+                                        localStorage.setItem('orders_shippingCoFilter', JSON.stringify([carrier.name]));
+                                        localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                        localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                        localStorage.setItem('orders_searchTerm', '');
                                         localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                         navigate('/orders');
                                     }}

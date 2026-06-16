@@ -208,14 +208,14 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                         <button 
                             onClick={(e) => { e.stopPropagation(); onPrint(order); }} 
                             className="moc-action-btn"
-                            disabled={!['Shipped', 'Delivered'].includes(order.shipping?.status || '')}
+                            disabled={!['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '')}
                             style={{ 
-                                opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4,
-                                cursor: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed'
+                                opacity: ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4,
+                                cursor: ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed'
                             }}
-                            title={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print" : "Status must be Shipped"}
+                            title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print" : "Status must be Confirmed, Shipped, or Delivered"}
                         >
-                            <Printer size={18} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
+                            <Printer size={18} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); onCopy(order); }} className="moc-action-btn">
                             <Copy size={18} />

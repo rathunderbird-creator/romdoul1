@@ -2463,17 +2463,17 @@ const Orders: React.FC = () => {
                                                                             <button
                                                                                 onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }}
                                                                                 className="icon-button"
-                                                                                title={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Shipped)"}
-                                                                                disabled={!['Shipped', 'Delivered'].includes(order.shipping?.status || '')}
+                                                                                title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Confirmed, Shipped, or Delivered)"}
+                                                                                disabled={!['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '')}
                                                                                 style={{
                                                                                     padding: '4px',
                                                                                     background: 'transparent',
                                                                                     border: 'none',
-                                                                                    cursor: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed',
-                                                                                    opacity: ['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
+                                                                                    cursor: ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed',
+                                                                                    opacity: ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
                                                                                 }}
                                                                             >
-                                                                                <Printer size={16} color={['Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
+                                                                                <Printer size={16} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                                                             </button>
                                                                             <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                                 <Copy size={16} color="var(--color-text-secondary)" />
