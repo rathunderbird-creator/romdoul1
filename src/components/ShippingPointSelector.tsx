@@ -43,7 +43,7 @@ export default function ShippingPointSelector({ isOpen, onClose, onSelect }: Shi
                 maxWidth: '1400px',
                 background: 'var(--color-bg)',
                 borderRadius: '24px',
-                overflow: 'hidden',
+                overflow: 'auto',
                 boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
                 display: 'flex',
                 flexDirection: 'column',
