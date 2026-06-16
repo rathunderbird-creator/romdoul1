@@ -1187,7 +1187,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                     <div
                                                                         key={loc.id || loc.pcode + idx}
                                                                         style={{
-                                                                            padding: '10px 14px',
+                                                                            padding: '8px 14px',
                                                                             borderBottom: idx < group.locations.length - 1 ? '1px solid var(--color-border)' : 'none',
                                                                             background: 'var(--color-surface)',
                                                                             display: 'flex',
@@ -1234,8 +1234,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                             }}
                                                                             style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}
                                                                         >
-                                                                            <MapPin size={14} color="var(--color-text-secondary)" />
-                                                                            <span style={{ color: loc.is_shutdown ? 'var(--color-text-secondary)' : 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                            <MapPin size={12} color="var(--color-text-secondary)" />
+                                                                            <span style={{ fontSize: '11px', color: loc.is_shutdown ? 'var(--color-text-secondary)' : 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
                                                                                 {[loc.name, loc.commune, loc.district, loc.province?.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim()].filter(Boolean).join(', ')}
                                                                                 {loc.is_shutdown && (
                                                                                     <span style={{ 
@@ -1267,7 +1267,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                                 onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
                                                                                 title="ចម្លងទីតាំង (Copy Location)"
                                                                             >
-                                                                                <Copy size={16} />
+                                                                                <Copy size={13} />
                                                                             </button>
                                                                             {loc.id && (
                                                                                 <>
@@ -1281,7 +1281,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                                         onMouseLeave={(e) => e.currentTarget.style.color = loc.is_shutdown ? 'var(--color-success)' : 'var(--color-text-secondary)'}
                                                                                         title={loc.is_shutdown ? "បើកដំណើរការឡើងវិញ (Reactivate)" : "បិទជាបណ្តោះអាសន្ន (Temporary Shutdown)"}
                                                                                     >
-                                                                                        <Power size={16} />
+                                                                                        <Power size={13} />
                                                                                     </button>
                                                                                     <button
                                                                                         onClick={(e) => {
@@ -1293,7 +1293,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                                         onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
                                                                                         title="កែពត៌មានទីតាំង(Edit)"
                                                                                     >
-                                                                                        <Edit2 size={16} />
+                                                                                        <Edit2 size={13} />
                                                                                     </button>
                                                                                     <button
                                                                                         onClick={(e) => {
@@ -1305,7 +1305,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                                         onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
                                                                                         title="លុបទីតាំងនេះ"
                                                                                     >
-                                                                                        <Trash2 size={16} />
+                                                                                        <Trash2 size={13} />
                                                                                     </button>
                                                                                 </>
                                                                             )}
