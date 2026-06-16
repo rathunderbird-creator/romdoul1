@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy, Edit2 } from 'lucide-react';
+import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy, Edit2, Power, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
 import { CambodiaMap } from '../components/CambodiaMap';
@@ -93,7 +93,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         district?: string | null,
         commune?: string | null,
         phone?: string | null,
-        contact_name?: string | null
+        contact_name?: string | null,
+        is_shutdown?: boolean
     }>>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -112,7 +113,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         district: '',
         commune: '',
         phone: '',
-        contactName: ''
+        contactName: '',
+        isShutdown: false
     });
     // Fetch data dynamically so it doesn't block the main JS bundle
     useEffect(() => {
@@ -461,7 +463,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
             district: targetDistrict,
             commune: targetCommune,
             phone: '',
-            contactName: ''
+            contactName: '',
+            isShutdown: false
         });
         setEditingLocationId(null);
         setIsSaveModalOpen(true);
@@ -477,7 +480,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
             district: loc.district || '',
             commune: loc.commune || '',
             phone: loc.phone || '',
-            contactName: loc.contact_name || ''
+            contactName: loc.contact_name || '',
+            isShutdown: loc.is_shutdown || false
         });
         setIsSaveModalOpen(true);
     };
@@ -509,6 +513,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                     commune: modalData.commune || null,
                     phone: modalData.phone || null,
                     contact_name: modalData.contactName || null,
+                    is_shutdown: modalData.isShutdown || false,
                     updated_at: new Date().toISOString()
                 }).eq('id', editingLocationId);
 
@@ -529,6 +534,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                     commune: modalData.commune || null,
                     phone: modalData.phone || null,
                     contact_name: modalData.contactName || null,
+                    is_shutdown: modalData.isShutdown || false,
                     updated_at: new Date().toISOString()
                 });
 
@@ -547,6 +553,26 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         } catch (e: any) {
             console.error('Catch Block Error in submitSaveLocation API:', e);
             setSavingError(e.message || JSON.stringify(e));
+        } finally {
+            setIsSavingLocation(false);
+        }
+    };
+
+    const handleToggleShutdown = async (loc: any) => {
+        const newStatus = !loc.is_shutdown;
+        setIsSavingLocation(true);
+        try {
+            const { error } = await supabase.from(tableName).update({
+                is_shutdown: newStatus,
+                updated_at: new Date().toISOString()
+            }).eq('id', loc.id);
+
+            if (error) throw error;
+            await loadCustomLocations();
+            showToast(`Location "${loc.name}" is now ${newStatus ? 'Temporarily Shutdown' : 'Reactivated'}`, 'success');
+        } catch (e: any) {
+            console.error('Error toggling shutdown status', e);
+            showToast('Failed to toggle status: ' + e.message, 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -1107,6 +1133,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                             alignItems: 'center',
                                                                             justifyContent: 'space-between',
                                                                             transition: 'background 0.2s',
+                                                                            opacity: loc.is_shutdown ? 0.6 : 1
                                                                         }}
                                                                         onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
                                                                         onMouseLeave={(e) => e.currentTarget.style.background = 'var(--color-surface)'}
@@ -1147,7 +1174,23 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                             style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}
                                                                         >
                                                                             <MapPin size={14} color="var(--color-text-secondary)" />
-                                                                            <span style={{ color: 'var(--color-text-main)' }}>{[loc.name, loc.commune, loc.district, loc.province?.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim()].filter(Boolean).join(', ')}</span>
+                                                                            <span style={{ color: loc.is_shutdown ? 'var(--color-text-secondary)' : 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                                {[loc.name, loc.commune, loc.district, loc.province?.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim()].filter(Boolean).join(', ')}
+                                                                                {loc.is_shutdown && (
+                                                                                    <span style={{ 
+                                                                                        background: '#fee2e2', 
+                                                                                        color: '#dc2626', 
+                                                                                        fontSize: '10px', 
+                                                                                        padding: '1px 5px', 
+                                                                                        borderRadius: '4px', 
+                                                                                        marginLeft: '6px', 
+                                                                                        fontWeight: 600,
+                                                                                        display: 'inline-block' 
+                                                                                    }}>
+                                                                                        Shutdown
+                                                                                    </span>
+                                                                                )}
+                                                                            </span>
                                                                         </div>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                                             <button
@@ -1167,6 +1210,18 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                                                             </button>
                                                                             {loc.id && (
                                                                                 <>
+                                                                                    <button
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            handleToggleShutdown(loc);
+                                                                                        }}
+                                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: loc.is_shutdown ? 'var(--color-success)' : 'var(--color-text-secondary)', transition: 'color 0.2s' }}
+                                                                                        onMouseEnter={(e) => e.currentTarget.style.color = loc.is_shutdown ? 'var(--color-success)' : 'var(--color-danger)'}
+                                                                                        onMouseLeave={(e) => e.currentTarget.style.color = loc.is_shutdown ? 'var(--color-success)' : 'var(--color-text-secondary)'}
+                                                                                        title={loc.is_shutdown ? "បើកដំណើរការឡើងវិញ (Reactivate)" : "បិទជាបណ្តោះអាសន្ន (Temporary Shutdown)"}
+                                                                                    >
+                                                                                        <Power size={16} />
+                                                                                    </button>
                                                                                     <button
                                                                                         onClick={(e) => {
                                                                                             e.stopPropagation();
@@ -1206,8 +1261,99 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                 </>
                             )}
                         </div>
-
                     </div>
+
+                    {/* Shutdown Checkpoints Panel */}
+                    {customLocations.some(loc => loc.is_shutdown) && (
+                        <div style={{
+                            background: 'var(--color-surface)',
+                            borderRadius: '16px',
+                            border: '1px solid var(--color-border)',
+                            borderLeft: '4px solid var(--color-danger, #ef4444)',
+                            padding: '20px',
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <AlertTriangle size={18} color="var(--color-danger, #ef4444)" />
+                                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                    ទីតាំងផ្អាកជាបណ្តោះអាសន្ន (Shutdown Checkpoints) ({customLocations.filter(loc => loc.is_shutdown).length})
+                                </h3>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
+                                {customLocations.filter(loc => loc.is_shutdown).map((loc, idx) => (
+                                    <div 
+                                        key={loc.id || loc.pcode + idx}
+                                        style={{
+                                            padding: '12px',
+                                            background: 'var(--color-bg)',
+                                            border: '1px solid var(--color-border)',
+                                            borderRadius: '8px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '6px'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                            <div style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '14px' }}>
+                                                {loc.name}
+                                            </div>
+                                            <button
+                                                onClick={() => handleToggleShutdown(loc)}
+                                                style={{
+                                                    background: 'none',
+                                                    cursor: 'pointer',
+                                                    color: 'var(--color-success)',
+                                                    fontSize: '12px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    padding: '4px 8px',
+                                                    backgroundColor: 'var(--color-success-light, #ecfdf5)',
+                                                    border: '1px solid var(--color-success, #10b981)',
+                                                    borderRadius: '6px',
+                                                    fontWeight: 500
+                                                }}
+                                                title="បើកដំណើរការឡើងវិញ (Reactivate)"
+                                            >
+                                                <Power size={12} /> បើកឡើងវិញ
+                                            </button>
+                                        </div>
+
+                                        {loc.courier && (
+                                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                                <strong style={{ color: 'var(--color-primary)' }}>សេវាកម្ម:</strong> {loc.courier}
+                                            </div>
+                                        )}
+                                        
+                                        {(loc.province || loc.district || loc.commune) && (
+                                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                <strong>តំបន់:</strong> {[loc.province, loc.district, loc.commune].filter(Boolean).join(' > ')}
+                                            </div>
+                                        )}
+
+                                        {(loc.contact_name || loc.phone) && (
+                                            <div style={{ 
+                                                fontSize: '12px', 
+                                                color: 'var(--color-text-secondary)',
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: '8px',
+                                                marginTop: '2px',
+                                                paddingTop: '6px',
+                                                borderTop: '1px dashed var(--color-border)'
+                                            }}>
+                                                {loc.contact_name && <span><strong>ឈ្មោះ:</strong> {loc.contact_name}</span>}
+                                                {loc.phone && <span><strong>ទូរស័ព្ទ:</strong> {loc.phone}</span>}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
 
@@ -1399,6 +1545,17 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Contact Name / ឈ្មោះអ្នកទទួល</label>
                                     <input type="text" value={modalData.contactName} onChange={(e) => setModalData({ ...modalData, contactName: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={modalData.isShutdown}
+                                            onChange={(e) => setModalData({ ...modalData, isShutdown: e.target.checked })}
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <span>បិទទីតាំងនេះជាបណ្តោះអាសន្ន (Temporarily Shutdown)</span>
+                                    </label>
                                 </div>
 
                                 <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>

@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS public.custom_locations (
     commune TEXT,
     phone TEXT,
     contact_name TEXT,
+    is_shutdown BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

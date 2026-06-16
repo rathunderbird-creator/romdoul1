@@ -27,6 +27,7 @@ interface CambodiaMapProps {
     onMarkerClick?: (loc: any) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
     customLocations?: Array<{
+        id?: string,
         pcode: string,
         name?: string,
         lat: number,
@@ -36,7 +37,8 @@ interface CambodiaMapProps {
         district?: string | null,
         commune?: string | null,
         phone?: string | null,
-        contact_name?: string | null
+        contact_name?: string | null,
+        is_shutdown?: boolean
     }>;
     shippingRules?: ShippingRule[];
     focusedPinLatLng?: [number, number] | null;
@@ -428,7 +430,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
             el.style.cursor = 'pointer';
             el.style.filter = 'drop-shadow(0px 2px 4px rgba(0,0,0,0.4))';
             el.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#ef4444" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="${loc.is_shutdown ? '#9ca3af' : '#ef4444'}" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                     <circle cx="12" cy="10" r="3" fill="white"/>
                 </svg>
@@ -436,6 +438,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
 
             const popupContent = `
                 <div style="padding: 4px; font-family: 'Battambang', system-ui, sans-serif;">
+                    ${loc.is_shutdown ? `<div style="padding: 4px 8px; background: #fee2e2; color: #dc2626; border-radius: 4px; font-size: 11px; font-weight: 600; text-align: center; margin-bottom: 8px;">បិទជាបណ្តោះអាសន្ន (TEMPORARILY SHUTDOWN)</div>` : ''}
                     <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 2px;">ទីតាំងបានកំណត់:</div>
                     <div style="font-size: 15px; color: var(--color-text-main); font-weight: 600; margin-bottom: 6px;">${loc.name || loc.pcode}</div>
                     

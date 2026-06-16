@@ -68,7 +68,7 @@ const EXPECTED_TABLES = {
     custom_locations: [
         'id', 'pcode', 'name', 'lat', 'lng', 'type',
         'courier', 'province', 'district', 'commune',
-        'phone', 'contact_name', 'created_at', 'updated_at'
+        'phone', 'contact_name', 'is_shutdown', 'created_at', 'updated_at'
     ],
     shipping_rules: [
         'id', 'pcode', 'name', 'is_shippable', 'shipping_fee',

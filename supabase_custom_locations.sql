@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS public.custom_locations (
     lat DOUBLE PRECISION NOT NULL,
     lng DOUBLE PRECISION NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('province', 'district', 'commune', 'village')),
+    is_shutdown BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
