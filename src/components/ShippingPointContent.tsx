@@ -98,7 +98,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
     }>>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-    const [isPinnedListExpanded, setIsPinnedListExpanded] = useState(true);
+    const [isPinnedListExpanded, setIsPinnedListExpanded] = useState(false);
     const [isLocationSelectorsExpanded, setIsLocationSelectorsExpanded] = useState(true);
 
     // Modal states
