@@ -610,6 +610,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
                                             <option value="">ជ្រើសរើសក្រុមហ៊ុនដឹកជញ្ជូន...</option>
+                                            <option value="អ្នកដឹក">អ្នកដឹក</option>
                                             {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                         {!isMobile && (
