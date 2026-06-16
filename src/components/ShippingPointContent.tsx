@@ -281,13 +281,58 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
             return province ? { name: province.khmer, code: province.code } : { name: 'Unknown', code: '' };
         };
 
-        const filteredLocations = searchPinnedTerm.trim() === ''
+        // Helper to find location codes (province, district, commune)
+        const getLocationCodes = (loc: typeof customLocations[0]) => {
+            let pCode = '';
+            let dCode = '';
+            let cCode = '';
+
+            if (loc.pcode && !loc.pcode.startsWith('CUSTOM_')) {
+                pCode = loc.pcode.substring(0, 2);
+                if (loc.pcode.length >= 4) dCode = loc.pcode.substring(0, 4);
+                if (loc.pcode.length >= 6) cCode = loc.pcode.substring(0, 6);
+            } else {
+                // Custom locations map by name matching from data structure
+                if (loc.province) {
+                    const province = data.find(p => p.khmer === loc.province || p.latin === loc.province);
+                    if (province) {
+                        pCode = province.code;
+                        if (loc.district && province.districts) {
+                            const district = province.districts.find(d => d.khmer === loc.district || d.latin === loc.district);
+                            if (district) {
+                                dCode = district.code;
+                                if (loc.commune && district.communes) {
+                                    const commune = district.communes.find(c => c.khmer === loc.commune || c.latin === loc.commune);
+                                    if (commune) {
+                                        cCode = commune.code;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return { provinceCode: pCode, districtCode: dCode, communeCode: cCode };
+        };
+
+        let filteredLocations = searchPinnedTerm.trim() === ''
             ? customLocations
             : customLocations.filter(loc => {
                 const { name: provinceName } = getProvinceInfo(loc);
                 const searchTerm = searchPinnedTerm.toLowerCase();
                 return loc.name.toLowerCase().includes(searchTerm) || provinceName.toLowerCase().includes(searchTerm);
             });
+
+        // Filter by selected area if chosen
+        if (selectedProvinceCode) {
+            filteredLocations = filteredLocations.filter(loc => {
+                const codes = getLocationCodes(loc);
+                if (codes.provinceCode !== selectedProvinceCode) return false;
+                if (selectedDistrictCode && codes.districtCode !== selectedDistrictCode) return false;
+                if (selectedCommuneCode && codes.communeCode !== selectedCommuneCode) return false;
+                return true;
+            });
+        }
 
         filteredLocations.forEach(loc => {
             const { name: provinceName, code: provinceCode } = getProvinceInfo(loc);
@@ -301,39 +346,55 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
 
         // Sort keys alphabetically
         return Object.keys(groups).sort().map(key => groups[key]);
-    }, [customLocations, data, searchPinnedTerm]);
+    }, [customLocations, data, searchPinnedTerm, selectedProvinceCode, selectedDistrictCode, selectedCommuneCode]);
 
 
 
 
     const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSelectedProvinceCode(e.target.value);
+        const val = e.target.value;
+        setSelectedProvinceCode(val);
         setSelectedDistrictCode('');
         setSelectedCommuneCode('');
         setSelectedVillageCode('');
         setEditMarkerLatLng(null);
         setActiveCustomLocation(null);
+        if (val) {
+            setIsPinnedListExpanded(true);
+        }
     };
 
     const handleDistrictChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSelectedDistrictCode(e.target.value);
+        const val = e.target.value;
+        setSelectedDistrictCode(val);
         setSelectedCommuneCode('');
         setSelectedVillageCode('');
         setEditMarkerLatLng(null);
         setActiveCustomLocation(null);
+        if (val) {
+            setIsPinnedListExpanded(true);
+        }
     };
 
     const handleCommuneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSelectedCommuneCode(e.target.value);
+        const val = e.target.value;
+        setSelectedCommuneCode(val);
         setSelectedVillageCode('');
         setEditMarkerLatLng(null);
         setActiveCustomLocation(null);
+        if (val) {
+            setIsPinnedListExpanded(true);
+        }
     };
 
     const handleVillageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSelectedVillageCode(e.target.value);
+        const val = e.target.value;
+        setSelectedVillageCode(val);
         setEditMarkerLatLng(null);
         setActiveCustomLocation(null);
+        if (val) {
+            setIsPinnedListExpanded(true);
+        }
     };
 
     const handleSelectSearchResult = (pcode: string, dcode: string, ccode: string, vcode: string) => {
@@ -1057,7 +1118,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <MapPin size={18} color="var(--color-primary)" />
-                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ទីតាំងដែលបានកំណត់ ({customLocations.length})</h3>
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ទីតាំងដែលបានកំណត់ ({pinnedLocationsByProvince.reduce((sum, g) => sum + g.locations.length, 0)})</h3>
                                 </div>
                                 <div style={{ color: 'var(--color-text-secondary)' }}>
                                     {isPinnedListExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
