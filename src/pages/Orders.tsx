@@ -41,7 +41,8 @@ const ShippingModalComponent: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     order: Sale | null;
-}> = ({ isOpen, onClose, order }) => {
+    targetStatus?: 'Confirmed' | 'Shipped';
+}> = ({ isOpen, onClose, order, targetStatus = 'Shipped' }) => {
     const { shippingCompanies, customerCare, updateOrder, updateOrderStatus } = useStore();
     const { showToast } = useToast();
 
@@ -78,7 +79,7 @@ const ShippingModalComponent: React.FC<{
         <Modal isOpen={isOpen} onClose={onClose} title="Select Shipping Company">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    Please select the shipping company for this order before changing its status to Shipped.
+                    Please select the shipping company for this order before changing its status to {targetStatus}.
                 </p>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
@@ -178,8 +179,8 @@ const ShippingModalComponent: React.FC<{
                                 if (Object.keys(updates).length > 0) {
                                     await updateOrder(order.id, updates);
                                 }
-                                await updateOrderStatus(order.id, 'Shipped', order.shipping?.trackingNumber, selectedCompany);
-                                showToast('Order marked as shipped', 'success');
+                                await updateOrderStatus(order.id, targetStatus, order.shipping?.trackingNumber, selectedCompany);
+                                showToast(targetStatus === 'Shipped' ? 'Order marked as shipped' : 'Order marked as confirmed', 'success');
                             } catch (e: any) {
                                 console.error('Failed to update shipping status:', e);
                                 showToast('Update failed. Please try again.', 'error');
@@ -193,10 +194,10 @@ const ShippingModalComponent: React.FC<{
                             padding: '10px 16px', borderRadius: '8px', border: 'none',
                             background: selectedCompany ? 'var(--color-primary)' : 'var(--color-border)',
                             color: 'white', cursor: selectedCompany ? 'pointer' : 'not-allowed',
-                            fontSize: '14px', fontWeight: 500
+                            fontSize: '14px', fontWeight: 600
                         }}
                     >
-                        Confirm
+                        Save
                     </button>
                 </div>
             </div>
@@ -489,6 +490,7 @@ const Orders: React.FC = () => {
     // Shipping Modal State
     const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
+    const [shippingTargetStatus, setShippingTargetStatus] = useState<'Confirmed' | 'Shipped'>('Shipped');
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -1123,7 +1125,17 @@ const Orders: React.FC = () => {
             const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
             return sum + (isCancelled ? 0 : order.items.reduce((s, item) => s + item.quantity, 0));
         }, 0);
-        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts };
+        const statusCounts = filteredOrders.reduce((acc, order) => {
+            const status = order.shipping?.status || 'Pending';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        const payStatusCounts = filteredOrders.reduce((acc, order) => {
+            const status = order.paymentStatus || 'Unpaid';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts, statusCounts, payStatusCounts };
     }, [filteredOrders, totalCount]);
 
     const handleOpenAdd = () => {
@@ -2148,6 +2160,12 @@ const Orders: React.FC = () => {
                                                 setIsPayByModalOpen(true);
                                                 return;
                                             }
+                                            if (status === 'Shipped' || status === 'Confirmed') {
+                                                setShippingTargetStatus(status);
+                                                setShippingOrderToUpdate(order);
+                                                setIsShippingModalOpen(true);
+                                                return;
+                                            }
                                             updateOrderStatus(id, status);
                                             if (status === 'ReStock') {
                                                 updateOrder(id, { paymentStatus: 'Cancel' });
@@ -2586,6 +2604,13 @@ const Orders: React.FC = () => {
                                                                             }
                                                                             onChange={(newStatus: string) => {
                                                                                 if (newStatus === 'Shipped') {
+                                                                                    setShippingTargetStatus('Shipped');
+                                                                                    setShippingOrderToUpdate(order);
+                                                                                    setIsShippingModalOpen(true);
+                                                                                    return;
+                                                                                }
+                                                                                if (newStatus === 'Confirmed') {
+                                                                                    setShippingTargetStatus('Confirmed');
                                                                                     setShippingOrderToUpdate(order);
                                                                                     setIsShippingModalOpen(true);
                                                                                     return;
@@ -2786,8 +2811,92 @@ const Orders: React.FC = () => {
             {
                 activeTab === 'list' && filteredOrders.length > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length)} to {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} entries
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length)} to {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} entries
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
+                                {(() => {
+                                    const statuses = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
+                                    const getStatusColors = (s: string) => {
+                                        switch (s) {
+                                            case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
+                                            case 'Confirmed': return { bg: '#E0F2FE', color: '#0369A1' };
+                                            case 'Shipped': return { bg: '#DBEAFE', color: '#2563EB' };
+                                            case 'Delivered': return { bg: '#D1FAE5', color: '#059669' };
+                                            case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626' };
+                                            case 'Returned': return { bg: '#F3F4F6', color: '#DC2626' };
+                                            case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE' };
+                                            case 'Ordered': return { bg: '#F3F4F6', color: '#111827' };
+                                            default: return { bg: '#F3F4F6', color: '#4B5563' };
+                                        }
+                                    };
+                                    return statuses.map(status => {
+                                        const count = stats.statusCounts[status] || 0;
+                                        if (count === 0) return null;
+                                        const colors = getStatusColors(status);
+                                        return (
+                                            <span key={status} style={{
+                                                backgroundColor: colors.bg,
+                                                color: colors.color,
+                                                padding: '1px 5px',
+                                                borderRadius: '4px',
+                                                fontSize: '10px',
+                                                fontWeight: 600,
+                                                whiteSpace: 'nowrap',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '2px'
+                                            }}>
+                                                {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                            </span>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                            {Object.values(stats.payStatusCounts).some(c => c > 0) && (
+                                <>
+                                    <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
+                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
+                                        {(() => {
+                                            const payStatuses = ['Unpaid', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                            const getPayStatusColors = (s: string) => {
+                                                switch (s) {
+                                                    case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
+                                                    case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
+                                                    case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
+                                                    case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
+                                                    case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626' };
+                                                    case 'Cancel': return { bg: '#FEF2F2', color: '#991B1B' };
+                                                    case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
+                                                    default: return { bg: '#F3F4F6', color: '#4B5563' };
+                                                }
+                                            };
+                                            return payStatuses.map(status => {
+                                                const count = stats.payStatusCounts[status] || 0;
+                                                if (count === 0) return null;
+                                                const colors = getPayStatusColors(status);
+                                                return (
+                                                    <span key={status} style={{
+                                                        backgroundColor: colors.bg,
+                                                        color: colors.color,
+                                                        padding: '1px 5px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '10px',
+                                                        fontWeight: 600,
+                                                        whiteSpace: 'nowrap',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '2px'
+                                                    }}>
+                                                        {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                    </span>
+                                                );
+                                            });
+                                        })()}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
 
@@ -2968,6 +3077,7 @@ const Orders: React.FC = () => {
                 isOpen={isShippingModalOpen}
                 onClose={() => { setIsShippingModalOpen(false); setShippingOrderToUpdate(null); }}
                 order={shippingOrderToUpdate}
+                targetStatus={shippingTargetStatus}
             />
             {/* Pending Remark Modal */}
             <PendingRemarkModalComponent

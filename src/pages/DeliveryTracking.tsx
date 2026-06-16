@@ -137,12 +137,24 @@ const DeliveryTracking: React.FC = () => {
         const shippedCount = trackingOrders.filter(o => o.shipping?.status === 'Shipped').length;
         const totalItems = trackingOrders.length;
         const totalCost = trackingOrders.reduce((sum, order) => sum + (order.shipping?.cost || 0), 0);
+        const statusCounts = trackingOrders.reduce((acc, order) => {
+            const status = order.shipping?.status || 'Pending';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        const payStatusCounts = trackingOrders.reduce((acc, order) => {
+            const status = order.paymentStatus || 'Unpaid';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
 
         return {
             pendingCount,
             shippedCount,
             totalItems,
-            totalCost
+            totalCost,
+            statusCounts,
+            payStatusCounts
         };
     }, [trackingOrders]);
 
@@ -443,8 +455,92 @@ const DeliveryTracking: React.FC = () => {
 
             {trackingOrders.length > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
-                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, trackingOrders.length)} to {Math.min(currentPage * itemsPerPage, trackingOrders.length)} of {trackingOrders.length} entries
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, trackingOrders.length)} to {Math.min(currentPage * itemsPerPage, trackingOrders.length)} of {trackingOrders.length} entries
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
+                            {(() => {
+                                const statuses = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
+                                const getStatusColors = (s: string) => {
+                                    switch (s) {
+                                        case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
+                                        case 'Confirmed': return { bg: '#E0F2FE', color: '#0369A1' };
+                                        case 'Shipped': return { bg: '#DBEAFE', color: '#2563EB' };
+                                        case 'Delivered': return { bg: '#D1FAE5', color: '#059669' };
+                                        case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626' };
+                                        case 'Returned': return { bg: '#F3F4F6', color: '#DC2626' };
+                                        case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE' };
+                                        case 'Ordered': return { bg: '#F3F4F6', color: '#111827' };
+                                        default: return { bg: '#F3F4F6', color: '#4B5563' };
+                                    }
+                                };
+                                return statuses.map(status => {
+                                    const count = stats.statusCounts[status] || 0;
+                                    if (count === 0) return null;
+                                    const colors = getStatusColors(status);
+                                    return (
+                                        <span key={status} style={{
+                                            backgroundColor: colors.bg,
+                                            color: colors.color,
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            fontSize: '10px',
+                                            fontWeight: 600,
+                                            whiteSpace: 'nowrap',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '2px'
+                                        }}>
+                                            {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                        </span>
+                                    );
+                                });
+                            })()}
+                        </div>
+                        {Object.values(stats.payStatusCounts).some(c => c > 0) && (
+                            <>
+                                <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
+                                    {(() => {
+                                        const payStatuses = ['Unpaid', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                        const getPayStatusColors = (s: string) => {
+                                            switch (s) {
+                                                case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
+                                                case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
+                                                case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
+                                                case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
+                                                case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626' };
+                                                case 'Cancel': return { bg: '#FEF2F2', color: '#991B1B' };
+                                                case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
+                                                default: return { bg: '#F3F4F6', color: '#4B5563' };
+                                            }
+                                        };
+                                        return payStatuses.map(status => {
+                                            const count = stats.payStatusCounts[status] || 0;
+                                            if (count === 0) return null;
+                                            const colors = getPayStatusColors(status);
+                                            return (
+                                                <span key={status} style={{
+                                                    backgroundColor: colors.bg,
+                                                    color: colors.color,
+                                                    padding: '1px 5px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
+                                                    fontWeight: 600,
+                                                    whiteSpace: 'nowrap',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '2px'
+                                                }}>
+                                                    {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                </span>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </>
+                        )}
                     </div>
 
 
