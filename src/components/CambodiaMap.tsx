@@ -486,9 +486,16 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 .setPopup(popup)
                 .addTo(map);
 
+            if (focusedPinLatLng && focusedPinLatLng[0] === loc.lat && focusedPinLatLng[1] === loc.lng) {
+                const p = marker.getPopup();
+                if (p && !p.isOpen()) {
+                    marker.togglePopup();
+                }
+            }
+
             customMarkersRef.current.push(marker);
         });
-    }, [customLocations, shippingRules, isLoading, selectedProvinceCode]);
+    }, [customLocations, shippingRules, isLoading, selectedProvinceCode, focusedPinLatLng]);
 
     // Render Shipping Rule Markers
     useEffect(() => {
@@ -566,10 +573,17 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 .setPopup(popup)
                 .addTo(map);
 
+            if (focusedPinLatLng && focusedPinLatLng[1] === centroid[0] && focusedPinLatLng[0] === centroid[1]) {
+                const p = marker.getPopup();
+                if (p && !p.isOpen()) {
+                    marker.togglePopup();
+                }
+            }
+
             ruleMarkersRef.current.push(marker);
         });
 
-    }, [shippingRules, isLoading, selectedProvinceCode]);
+    }, [shippingRules, isLoading, selectedProvinceCode, focusedPinLatLng]);
 
     // Filter Effect
     useEffect(() => {
