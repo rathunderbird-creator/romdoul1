@@ -49,10 +49,19 @@ export default function ShippingPointSelector({ isOpen, onClose, onSelect }: Shi
                 flexDirection: 'column',
                 animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
             }}>
-                <ShippingPointContent mode="selector" onSelect={(data) => {
-                    onSelect(data);
-                    onClose();
-                }} onClose={onClose} />
+                <ShippingPointContent 
+                    mode="selector" 
+                    onSelect={(data) => {
+                        onSelect(data);
+                        onClose();
+                    }} 
+                    onClose={onClose} 
+                    tableName="custom_locations"
+                    headerTitle="កំណត់ទីតាំងទម្លាក់ទំនិញ (Drop-off Points)"
+                    pageTitle="កំណត់ទីតាំងទម្លាក់ទំនិញ (Drop-off Points)"
+                    pageSubtitle="បង្កើតទីតាំងទម្លាក់ទំនិញសម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin drop-off locations for easier access)"
+                    mapSource="osm"
+                />
             </div>
         </div>
     );
