@@ -7,9 +7,14 @@ interface ModalProps {
     onClose: () => void;
     title: string;
     children: ReactNode;
+    width?: string;
+    height?: string;
+    bodyPadding?: string;
+    bodyOverflowY?: string;
+    fullScreen?: boolean;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, width, height, bodyPadding, bodyOverflowY, fullScreen }) => {
     const isMobile = useMobile();
 
     if (!isOpen) return null;
@@ -20,22 +25,23 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
             inset: 0,
             backgroundColor: 'rgba(0, 0, 0, 0.5)',
             display: 'flex',
-            alignItems: isMobile ? 'flex-end' : 'center',
+            alignItems: fullScreen ? 'center' : (isMobile ? 'flex-end' : 'center'),
             justifyContent: 'center',
             zIndex: 1000,
-            padding: isMobile ? '0' : '20px'
+            padding: (fullScreen || isMobile) ? '0' : '20px'
         }}>
             <div
                 className="glass-panel"
                 style={{
                     backgroundColor: 'var(--color-surface)',
                     width: '100%',
-                    maxWidth: '500px',
-                    maxHeight: isMobile ? '90vh' : '90vh',
+                    maxWidth: fullScreen ? '100vw' : (width || '500px'),
+                    height: fullScreen ? '100vh' : (height || 'auto'),
+                    maxHeight: fullScreen ? '100vh' : (isMobile ? '90vh' : '90vh'),
                     display: 'flex',
                     flexDirection: 'column',
-                    borderRadius: isMobile ? '24px 24px 0 0' : '16px',
-                    animation: isMobile ? 'slideUp 0.3s ease-out' : 'fadeIn 0.2s ease-out',
+                    borderRadius: fullScreen ? '0' : (isMobile ? '24px 24px 0 0' : '16px'),
+                    animation: fullScreen ? 'fadeIn 0.2s ease-out' : (isMobile ? 'slideUp 0.3s ease-out' : 'fadeIn 0.2s ease-out'),
                     overflow: 'hidden'
                 }}
             >
@@ -61,9 +67,11 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
                 </div>
 
                 <div style={{
-                    padding: '24px',
-                    overflowY: 'auto',
-                    flex: 1
+                    padding: bodyPadding !== undefined ? bodyPadding : '24px',
+                    overflowY: (bodyOverflowY as any) || 'auto',
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column'
                 }}>
                     {children}
                 </div>

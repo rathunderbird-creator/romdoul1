@@ -8,6 +8,7 @@ import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal } from '../components';
+import { ShippingPointContent } from '../components/ShippingPointContent';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
@@ -436,6 +437,19 @@ const Orders: React.FC = () => {
                             <Store size={18} /> POS
                         </button>
                     )}
+                    {hasPermission('view_dashboard') && (
+                        <button
+                            onClick={() => setIsDropOffModalOpen(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: 'transparent',
+                                color: 'var(--color-text-secondary)',
+                                fontWeight: 500, cursor: 'pointer', border: 'none'
+                            }}
+                        >
+                            <MapPin size={18} /> Drop-off Points
+                        </button>
+                    )}
                 </div>
             )
         });
@@ -491,6 +505,7 @@ const Orders: React.FC = () => {
     const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
     const [shippingTargetStatus, setShippingTargetStatus] = useState<'Confirmed' | 'Shipped'>('Shipped');
+    const [isDropOffModalOpen, setIsDropOffModalOpen] = useState(false);
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -3103,6 +3118,23 @@ const Orders: React.FC = () => {
                 onApply={handleBulkEdit}
                 count={selectedIds.size}
             />
+            {/* Drop-off Points Modal */}
+            <Modal
+                isOpen={isDropOffModalOpen}
+                onClose={() => setIsDropOffModalOpen(false)}
+                title="Drop-off Points"
+                fullScreen
+                bodyPadding="0"
+                bodyOverflowY="auto"
+            >
+                <ShippingPointContent
+                    mode="page"
+                    hideHeaderEffect
+                    hideHeader
+                    tableName="custom_locations"
+                    mapSource="osm"
+                />
+            </Modal>
         </div >
     );
 };

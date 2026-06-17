@@ -26,6 +26,7 @@ interface CambodiaMapProps {
     onMapClick?: (lat: number, lng: number, autoSave?: boolean) => void;
     onMarkerClick?: (loc: any) => void;
     onAreaSelect?: (type: 'province' | 'district' | 'commune' | 'village', code: string) => void;
+    onPopupClose?: () => void;
     customLocations?: Array<{
         id?: string,
         pcode: string,
@@ -58,6 +59,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     onMapClick,
     onMarkerClick,
     onAreaSelect,
+    onPopupClose,
     customLocations = [],
     shippingRules = [],
     focusedPinLatLng = null,
@@ -76,6 +78,11 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
     useEffect(() => {
         onMarkerClickRef.current = onMarkerClick;
     }, [onMarkerClick]);
+
+    const onPopupCloseRef = useRef(onPopupClose);
+    useEffect(() => {
+        onPopupCloseRef.current = onPopupClose;
+    }, [onPopupClose]);
 
     // Helper to get geometry bounds for zooming
     const getGeometryBounds = useCallback((geometry: maplibregl.MapGeoJSONFeature['geometry']): maplibregl.LngLatBounds | null => {
@@ -453,13 +460,23 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 </div>
             `;
 
-            const popup = new maplibregl.Popup({ offset: [0, -28], closeButton: false })
+            const popup = new maplibregl.Popup({ offset: [0, -28], closeButton: true })
                 .setHTML(popupContent);
+
+            popup.on('close', () => {
+                if (onPopupCloseRef.current) {
+                    onPopupCloseRef.current();
+                }
+            });
 
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (onMarkerClickRef.current) onMarkerClickRef.current(loc);
             });
+            el.addEventListener('mousedown', (e) => e.stopPropagation());
+            el.addEventListener('mouseup', (e) => e.stopPropagation());
+            el.addEventListener('pointerdown', (e) => e.stopPropagation());
+            el.addEventListener('pointerup', (e) => e.stopPropagation());
 
             popup.on('open', () => {
                 const copyBtn = popup.getElement()?.querySelector('.copy-pin-btn');

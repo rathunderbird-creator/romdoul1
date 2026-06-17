@@ -55,9 +55,22 @@ interface ShippingPointContentProps {
     pageSubtitle?: string;
     headerTitle?: string;
     mapSource?: 'google' | 'osm';
+    hideHeaderEffect?: boolean;
+    hideHeader?: boolean;
 }
 
-export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode = 'page', onClose, onSelect, tableName = 'custom_locations', pageTitle, pageSubtitle, headerTitle, mapSource = 'google' }) => {
+export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ 
+    mode = 'page', 
+    onClose, 
+    onSelect, 
+    tableName = 'custom_locations', 
+    pageTitle, 
+    pageSubtitle, 
+    headerTitle, 
+    mapSource = 'google',
+    hideHeaderEffect = false,
+    hideHeader = false
+}) => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
 
@@ -171,7 +184,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
     }, []);
 
     useEffect(() => {
-        if (mode === 'page') {
+        if (mode === 'page' && !hideHeaderEffect) {
             setHeaderContent({
                 title: (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -182,7 +195,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
             });
             return () => setHeaderContent(null);
         }
-    }, [setHeaderContent, mode, headerTitle]);
+    }, [setHeaderContent, mode, headerTitle, hideHeaderEffect]);
 
     // Computed properties based on selection
     const selectedProvince = useMemo(() =>
@@ -452,6 +465,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
         setSearchPinnedTerm(loc.name);
         setIsLocationSelectorsExpanded(true);
         setFocusedPinLatLng([loc.lat, loc.lng]);
+        setIsEditing(false);
 
         if (!loc.pcode.startsWith('CUSTOM_')) {
             setActiveCustomLocation(null);
@@ -782,20 +796,22 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div className="shipping-header" style={{ padding: '24px 24px 16px', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? 'ជ្រើសរើសទីតាំង (Select Location)' : (pageTitle || 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Map size={18} />
-                        {mode === 'selector' ? 'Select a location to dispatch the order' : (pageSubtitle || 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)')}
-                    </p>
+            {!hideHeader && (
+                <div className="shipping-header" style={{ padding: '24px 24px 16px', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? 'ជ្រើសរើសទីតាំង (Select Location)' : (pageTitle || 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)')}</h1>
+                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Map size={18} />
+                            {mode === 'selector' ? 'Select a location to dispatch the order' : (pageSubtitle || 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)')}
+                        </p>
+                    </div>
+                    {mode === 'selector' && onClose && (
+                        <button onClick={onClose} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                            <X size={18} /> បិទ (Close)
+                        </button>
+                    )}
                 </div>
-                {mode === 'selector' && onClose && (
-                    <button onClick={onClose} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                        <X size={18} /> បិទ (Close)
-                    </button>
-                )}
-            </div>
+            )}
 
             <div className="shipping-layout" style={{
                 flex: 1,
@@ -1473,20 +1489,24 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                                     <>
                                         {activeCustomLocation && (
                                             <button
-                                                onClick={() => setIsConfirmingDelete(true)}
+                                                onClick={() => {
+                                                    setActiveCustomLocation(null);
+                                                    setFocusedPinLatLng(null);
+                                                    setSearchPinnedTerm('');
+                                                }}
                                                 style={{
                                                     display: 'flex', alignItems: 'center', gap: '8px',
                                                     padding: '8px 16px',
                                                     background: 'var(--color-surface)',
-                                                    border: '1px solid var(--color-danger, #ef4444)',
+                                                    border: '1px solid var(--color-border)',
                                                     borderRadius: '8px',
-                                                    color: 'var(--color-danger, #ef4444)',
+                                                    color: 'var(--color-text-secondary)',
                                                     fontWeight: 500,
                                                     cursor: 'pointer',
                                                     boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
                                                 }}
                                             >
-                                                <Trash2 size={16} /> លុបទីតាំង
+                                                <X size={16} /> Exit Selected Point
                                             </button>
                                         )}
                                         {mode === 'selector' && (
@@ -1644,6 +1664,11 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({ mode
                         editMarkerLatLng={editMarkerLatLng}
                         onMapClick={handleMapClick}
                         onMarkerClick={handleMarkerClick}
+                        onPopupClose={() => {
+                            setActiveCustomLocation(null);
+                            setFocusedPinLatLng(null);
+                            setSearchPinnedTerm('');
+                        }}
                         customLocations={customLocations}
                         focusedPinLatLng={focusedPinLatLng}
                         mapSource={mapSource}
