@@ -94,6 +94,7 @@ const ShippingModalComponent: React.FC<{
                         }}
                     >
                         <option value="" disabled>Select a company</option>
+                        <option value="អ្នកដឹក">អ្នកដឹក</option>
                         {shippingCompanies.map(company => (
                             <option key={company} value={company}>{company}</option>
                         ))}
@@ -378,6 +379,10 @@ const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
     const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore } = useStore();
+
+    const filterShippingCompanies = useMemo(() => {
+        return ['អ្នកដឹក', ...shippingCompanies];
+    }, [shippingCompanies]);
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
@@ -1754,7 +1759,7 @@ const Orders: React.FC = () => {
                                                 background: 'white',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
-                                                {shippingCompanies.length > 0 && (
+                                                {filterShippingCompanies.length > 0 && (
                                                     <label style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -1767,9 +1772,9 @@ const Orders: React.FC = () => {
                                                     }}>
                                                         <input
                                                             type="checkbox"
-                                                            checked={shippingCoFilter.length === shippingCompanies.length && shippingCompanies.length > 0}
+                                                            checked={shippingCoFilter.length === filterShippingCompanies.length && filterShippingCompanies.length > 0}
                                                             onChange={(e) => {
-                                                                if (e.target.checked) setShippingCoFilter([...shippingCompanies]);
+                                                                if (e.target.checked) setShippingCoFilter([...filterShippingCompanies]);
                                                                 else setShippingCoFilter([]);
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
@@ -1777,7 +1782,7 @@ const Orders: React.FC = () => {
                                                         <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
                                                     </label>
                                                 )}
-                                                {shippingCompanies.map(co => (
+                                                {filterShippingCompanies.map(co => (
                                                     <label key={co} style={{
                                                         display: 'flex', alignItems: 'center', gap: '10px',
                                                         padding: '8px 12px', cursor: 'pointer', borderRadius: '6px',
@@ -1796,7 +1801,7 @@ const Orders: React.FC = () => {
                                                         <span style={{ fontSize: '13px' }}>{co}</span>
                                                     </label>
                                                 ))}
-                                                {shippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No shipping companies found.</div>}
+                                                {filterShippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No shipping companies found.</div>}
                                             </div>
                                         </>
                                     )}
