@@ -963,37 +963,6 @@ const IncomeExpense: React.FC = () => {
                                         fontSize: '14px'
                                     }}
                                 />
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Co</label>
-                            <div style={{ position: 'relative' }}>
-                                <Truck size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                                <select
-                                    value={formData.shipping_co}
-                                    onChange={(e) => setFormData(p => ({ ...p, shipping_co: e.target.value }))}
-                                    style={{
-                                        width: '100%',
-                                        padding: '12px 12px 12px 40px',
-                                        borderRadius: '8px',
-                                        border: '1px solid var(--color-border)',
-                                        background: 'var(--color-surface)',
-                                        color: 'var(--color-text-main)',
-                                        fontSize: '14px',
-                                        appearance: 'none',
-                                        outline: 'none',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    <option value="">None (No shipping)</option>
-                                    {allShippingCo.map(co => (
-                                        <option key={co} value={co}>{co}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                            </div>
-                        </div>
                                 {showCategoryDropdown && filteredCategories.length > 0 && (
                                     <div style={{
                                         position: 'absolute',
@@ -1030,6 +999,35 @@ const IncomeExpense: React.FC = () => {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Co</label>
+                            <div style={{ position: 'relative' }}>
+                                <Truck size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                <select
+                                    value={formData.shipping_co}
+                                    onChange={(e) => setFormData(p => ({ ...p, shipping_co: e.target.value }))}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 12px 12px 40px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--color-surface)',
+                                        color: 'var(--color-text-main)',
+                                        fontSize: '14px',
+                                        appearance: 'none',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="">None (No shipping)</option>
+                                    {allShippingCo.map(co => (
+                                        <option key={co} value={co}>{co}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                             </div>
                         </div>
                     </div>
