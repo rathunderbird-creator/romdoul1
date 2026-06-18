@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, RefreshCw, Wallet } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, RefreshCw, Wallet, Truck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -21,7 +21,7 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC = () => {
-    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission } = useStore();
+    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission, shippingCompanies } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
@@ -52,6 +52,7 @@ const IncomeExpense: React.FC = () => {
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
     const [filterType, setFilterType] = useState<'All' | 'Income' | 'Expense'>(getFilterFromPath());
     const [filterCategory, setFilterCategory] = useState<string>('All');
+    const [filterShippingCo, setFilterShippingCo] = useState<string>('All');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState(() => {
         const saved = localStorage.getItem('incomeExpenseDateRange');
@@ -146,6 +147,7 @@ const IncomeExpense: React.FC = () => {
         exchangeRate: '4100',
         category: '',
         description: '',
+        shipping_co: '',
         date: new Date().toISOString().split('T')[0]
     });
 
@@ -161,13 +163,20 @@ const IncomeExpense: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent]);
 
+    // Computed list of shipping companies (including custom drivers)
+    const allShippingCo = useMemo(() => {
+        return ['អ្នកដឹក', ...shippingCompanies];
+    }, [shippingCompanies]);
+
     // Filtering
     const filteredTransactions = useMemo(() => {
         return localTransactions.filter(t => {
             const matchesType = filterType === 'All' || t.type === filterType;
             const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
+            const matchesShippingCo = filterShippingCo === 'All' || t.shipping_co === filterShippingCo;
             const matchesSearch = (t.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+                (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                (t.shipping_co?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
             const itemDate = parseDate(t.date);
 
@@ -188,7 +197,7 @@ const IncomeExpense: React.FC = () => {
                 matchesDate = itemDate <= endDate;
             }
 
-            return matchesType && matchesCategory && matchesSearch && matchesDate;
+            return matchesType && matchesCategory && matchesShippingCo && matchesSearch && matchesDate;
         }).sort((a, b) => {
             const dateA = parseDate(a.date);
             const dateB = parseDate(b.date);
@@ -209,7 +218,7 @@ const IncomeExpense: React.FC = () => {
             // If same type and day, newest time first
             return dateB.getTime() - dateA.getTime();
         });
-    }, [localTransactions, filterType, filterCategory, searchTerm, dateRange]);
+    }, [localTransactions, filterType, filterCategory, filterShippingCo, searchTerm, dateRange, shippingCompanies]);
 
     // Stats
     const stats = useMemo(() => {
@@ -252,6 +261,7 @@ const IncomeExpense: React.FC = () => {
             exchangeRate: '4100',
             category: '',
             description: '',
+            shipping_co: '',
             date: new Date().toISOString().split('T')[0]
         });
         setEditingTransaction(null);
@@ -267,6 +277,7 @@ const IncomeExpense: React.FC = () => {
             exchangeRate: '4100',
             category: t.category || '',
             description: t.description || '',
+            shipping_co: t.shipping_co || '',
             date: parseDate(t.date).toISOString().split('T')[0]
         });
         setIsAddModalOpen(true);
@@ -295,6 +306,7 @@ const IncomeExpense: React.FC = () => {
                     amount: finalAmount,
                     category: formData.category,
                     description: formData.description,
+                    shipping_co: formData.shipping_co || undefined,
                     date: formData.date
                 });
             } else {
@@ -303,6 +315,7 @@ const IncomeExpense: React.FC = () => {
                     amount: finalAmount,
                     category: formData.category,
                     description: formData.description,
+                    shipping_co: formData.shipping_co || undefined,
                     date: formData.date,
                     added_by: currentUser?.name || 'Unknown'
                 });
@@ -443,6 +456,35 @@ const IncomeExpense: React.FC = () => {
                         <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                     </div>
 
+                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
+                        <Truck size={16} style={{ position: 'absolute', left: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                        <select
+                            value={filterShippingCo}
+                            onChange={(e) => setFilterShippingCo(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '12px 36px 12px 40px',
+                                borderRadius: '12px',
+                                border: '1px solid var(--color-border)',
+                                background: 'var(--color-background)',
+                                color: 'var(--color-text-main)',
+                                fontSize: '14px',
+                                appearance: 'none',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                transition: 'all 0.2s'
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
+                        >
+                            <option value="All">All Shipping Co</option>
+                            {allShippingCo.map(co => (
+                                <option key={co} value={co}>{co}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    </div>
+
                     <div style={{ position: 'relative', flex: '1 1 200px' }}>
                         <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                         <input
@@ -473,13 +515,14 @@ const IncomeExpense: React.FC = () => {
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
                     
-                    {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All' || filterCategory !== 'All') && (
+                    {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All' || filterCategory !== 'All' || filterShippingCo !== 'All') && (
                         <button
                             onClick={() => {
                                 setDateRange({ start: '', end: '' });
                                 setSearchTerm('');
                                 setFilterType('All');
                                 setFilterCategory('All');
+                                setFilterShippingCo('All');
                             }}
                             className="secondary-button"
                             style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '42px', borderRadius: '10px' }}
@@ -568,6 +611,15 @@ const IncomeExpense: React.FC = () => {
                                     </div>
                                     {isExpanded && (
                                         <div className="moc-expanded">
+                                            {t.shipping_co && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                                    <Truck size={14} />
+                                                    <strong>Shipping Co:</strong>
+                                                    <span style={{ background: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', padding: '2px 8px', borderRadius: '6px', fontWeight: 500, fontSize: '12px' }}>
+                                                        {t.shipping_co}
+                                                    </span>
+                                                </div>
+                                            )}
                                             {t.description && (
                                                 <div style={{ fontSize: '13px', color: 'var(--color-text-main)', padding: '12px 0', borderTop: '1px dashed var(--color-border)', marginBottom: '8px' }}>
                                                     {t.description}
@@ -598,6 +650,7 @@ const IncomeExpense: React.FC = () => {
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Date</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Type</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Shipping Co</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Description</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Amount</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Actions</th>
@@ -606,7 +659,7 @@ const IncomeExpense: React.FC = () => {
                         <tbody>
                             {filteredTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} style={{ padding: '80px 20px' }}>
+                                    <td colSpan={7} style={{ padding: '80px 20px' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                                             <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                                 <Wallet size={36} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
@@ -641,6 +694,24 @@ const IncomeExpense: React.FC = () => {
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
                                             {t.category || '-'}
                                         </td>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                            {t.shipping_co ? (
+                                                <span style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '8px',
+                                                    fontSize: '12px',
+                                                    fontWeight: 500,
+                                                    background: 'var(--color-primary-light)',
+                                                    color: 'var(--color-primary-dark)'
+                                                }}>
+                                                    <Truck size={12} />
+                                                    {t.shipping_co}
+                                                </span>
+                                            ) : '-'}
+                                        </td>
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                                             {t.description || '-'}
                                         </td>
@@ -674,7 +745,7 @@ const IncomeExpense: React.FC = () => {
                         </tbody>
                         <tfoot>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold', borderTop: '2px solid var(--color-border)' }}>
-                                <td colSpan={4} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={5} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Income
                                 </td>
                                 <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-green)', fontSize: '14px' }}>
@@ -683,7 +754,7 @@ const IncomeExpense: React.FC = () => {
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                <td colSpan={4} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={5} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Expense
                                 </td>
                                 <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-red)', fontSize: '14px' }}>
@@ -692,7 +763,7 @@ const IncomeExpense: React.FC = () => {
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-background)', fontWeight: '800', borderTop: '1px solid var(--color-border)' }}>
-                                <td colSpan={4} style={{ padding: '14px 20px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
+                                <td colSpan={5} style={{ padding: '14px 20px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
                                     Net Balance
                                 </td>
                                 <td style={{ padding: '14px 20px', textAlign: 'right', color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)', fontSize: '15px' }}>
@@ -846,7 +917,7 @@ const IncomeExpense: React.FC = () => {
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
                             <div style={{ position: 'relative' }}>
@@ -892,6 +963,37 @@ const IncomeExpense: React.FC = () => {
                                         fontSize: '14px'
                                     }}
                                 />
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Co</label>
+                            <div style={{ position: 'relative' }}>
+                                <Truck size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                <select
+                                    value={formData.shipping_co}
+                                    onChange={(e) => setFormData(p => ({ ...p, shipping_co: e.target.value }))}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 12px 12px 40px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--color-surface)',
+                                        color: 'var(--color-text-main)',
+                                        fontSize: '14px',
+                                        appearance: 'none',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="">None (No shipping)</option>
+                                    {allShippingCo.map(co => (
+                                        <option key={co} value={co}>{co}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                            </div>
+                        </div>
                                 {showCategoryDropdown && filteredCategories.length > 0 && (
                                     <div style={{
                                         position: 'absolute',

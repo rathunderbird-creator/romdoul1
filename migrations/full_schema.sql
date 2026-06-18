@@ -127,8 +127,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     description TEXT,
     date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     added_by TEXT,
+    shipping_co TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Column added in add_shipping_co_to_transactions.sql
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS shipping_co TEXT;
 
 -- ============================================================
 -- 2. FEATURE TABLES

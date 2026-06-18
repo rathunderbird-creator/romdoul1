@@ -53,7 +53,7 @@ const EXPECTED_TABLES = {
     ],
     transactions: [
         'id', 'type', 'amount', 'category', 'description',
-        'date', 'added_by', 'created_at'
+        'date', 'added_by', 'created_at', 'shipping_co'
     ],
     stock_movements: [
         'id', 'product_id', 'product_name', 'type', 'quantity',

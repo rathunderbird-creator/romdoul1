@@ -96,6 +96,7 @@ export interface Transaction {
     date: string;
     added_by?: string;
     created_at?: string;
+    shipping_co?: string;
 }
 
 export interface StaffAttendance {
