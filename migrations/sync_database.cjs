@@ -163,6 +163,10 @@ async function runCheck(instance) {
         // Try to query the table
         const { data, error } = await supabase.from(tableName).select('*').limit(1);
 
+        if (error && (error.message?.includes('fetch failed') || error.message?.includes('Failed to fetch') || error.message?.includes('network') || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT')) {
+            throw new Error(`Connection failed: ${error.message || 'fetch failed'}`);
+        }
+
         if (error && (error.code === '42P01' || error.message?.includes('relation') || error.code === 'PGRST204' || (error.code === 'PGRST302' && error.message?.includes('does not exist')))) {
             // Table doesn't exist
             results.missingTables.push(tableName);
