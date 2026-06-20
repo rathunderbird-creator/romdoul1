@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Users, Award, Target, Save, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -12,10 +12,19 @@ const StaffPerformance: React.FC = () => {
     const { reportSales, startDate, endDate } = useOutletContext<any>();
     const { showToast } = useToast();
     const { t } = useLanguage();
+    const navigate = useNavigate();
+
+    const handleNavigateToOrders = (salesman?: string) => {
+        if (salesman) {
+            localStorage.setItem('orders_salesmanFilter', salesman);
+        }
+        navigate('/orders');
+    };
 
     const [salesForTargets, setSalesForTargets] = useState<any[]>([]);
     const [isLoadingTargets, setIsLoadingTargets] = useState(false);
     const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+    const [targetModalUserId, setTargetModalUserId] = useState<string | null>(null);
     const [tempTargets, setTempTargets] = useState<Record<string, { dailyTarget: number; weeklyTarget: number; monthlyTarget: number }>>({});
 
     // Fetch monthly sales for targets (paid sales from the current month to today)
@@ -120,7 +129,7 @@ const StaffPerformance: React.FC = () => {
     }, [reportSales, salesmen, startDate, endDate]);
 
     // Modal target operations
-    const handleOpenSetTargetsModal = () => {
+    const handleOpenSetTargetsModal = (userId?: string) => {
         const initialTemp: typeof tempTargets = {};
         users.forEach(u => {
             initialTemp[u.id] = {
@@ -130,6 +139,7 @@ const StaffPerformance: React.FC = () => {
             };
         });
         setTempTargets(initialTemp);
+        setTargetModalUserId(userId || null);
         setIsTargetModalOpen(true);
     };
 
@@ -221,7 +231,7 @@ const StaffPerformance: React.FC = () => {
                 <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>{t('nav.staffPerformance')}</h2>
                 {currentUser?.roleId === 'admin' && (
                     <button
-                        onClick={handleOpenSetTargetsModal}
+                        onClick={() => handleOpenSetTargetsModal()}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -261,7 +271,12 @@ const StaffPerformance: React.FC = () => {
                                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-light))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '16px' }}>
                                             {user.name.charAt(0).toUpperCase()}
                                         </div>
-                                        <div>
+                                        <div 
+                                            style={{ cursor: 'pointer', flex: 1 }}
+                                            onClick={() => handleNavigateToOrders(user.name)}
+                                            onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                                            onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
+                                        >
                                             <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>{user.name}</h4>
                                             <span style={{
                                                 padding: '2px 8px',
@@ -276,6 +291,33 @@ const StaffPerformance: React.FC = () => {
                                                 {user.roleId.charAt(0).toUpperCase() + user.roleId.slice(1)}
                                             </span>
                                         </div>
+                                        {currentUser?.roleId === 'admin' && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenSetTargetsModal(user.id);
+                                                }}
+                                                style={{
+                                                    background: 'var(--color-surface)',
+                                                    border: '1px solid var(--color-border)',
+                                                    padding: '6px 10px',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '12px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    color: 'var(--color-text-secondary)',
+                                                    transition: 'all 0.2s',
+                                                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                                }}
+                                                onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.color = 'var(--color-primary)'; }}
+                                                onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+                                                title="Set Target"
+                                            >
+                                                <Target size={14} /> Set
+                                            </button>
+                                        )}
                                     </div>
                                     {renderProgressRow(t('targets.dailyTarget'), stats.daily, user.dailyTarget || 0)}
                                     {renderProgressRow(t('targets.weeklyTarget'), stats.weekly, user.weeklyTarget || 0)}
@@ -298,7 +340,13 @@ const StaffPerformance: React.FC = () => {
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Active Staff</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Users size={18} /></div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{staffData.length}</div>
+                    <div 
+                        style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)', cursor: 'pointer' }}
+                        onClick={() => handleNavigateToOrders('All')}
+                        title="Go to Orders"
+                    >
+                        {staffData.length}
+                    </div>
                 </div>
 
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(236, 72, 153, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(236, 72, 153, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -306,7 +354,13 @@ const StaffPerformance: React.FC = () => {
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Top Performer</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(236, 72, 153, 0.15)', color: '#EC4899' }}><Award size={18} /></div>
                     </div>
-                    <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--color-text-main)', marginTop: '4px' }}>{topSalesman ? topSalesman.name : 'N/A'}</div>
+                    <div 
+                        style={{ fontSize: '20px', fontWeight: 700, color: 'var(--color-text-main)', marginTop: '4px', cursor: topSalesman ? 'pointer' : 'default' }}
+                        onClick={() => topSalesman ? handleNavigateToOrders(topSalesman.name) : undefined}
+                        title={topSalesman ? "Go to Orders for " + topSalesman.name : undefined}
+                    >
+                        {topSalesman ? topSalesman.name : 'N/A'}
+                    </div>
                 </div>
             </div>
 
@@ -326,7 +380,14 @@ const StaffPerformance: React.FC = () => {
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                                     formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Revenue']}
                                 />
-                                <Bar dataKey="revenue" fill="#8B5CF6" radius={[0, 4, 4, 0]} barSize={24} />
+                                <Bar 
+                                    dataKey="revenue" 
+                                    fill="#8B5CF6" 
+                                    radius={[0, 4, 4, 0]} 
+                                    barSize={24} 
+                                    onClick={(data) => handleNavigateToOrders(data.name)} 
+                                    style={{ cursor: 'pointer' }} 
+                                />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : (
@@ -348,7 +409,14 @@ const StaffPerformance: React.FC = () => {
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                                     formatter={(value: any) => [`${value}`, 'Orders Processed']}
                                 />
-                                <Bar dataKey="orders" fill="#EC4899" radius={[0, 4, 4, 0]} barSize={24} />
+                                <Bar 
+                                    dataKey="orders" 
+                                    fill="#EC4899" 
+                                    radius={[0, 4, 4, 0]} 
+                                    barSize={24} 
+                                    onClick={(data) => handleNavigateToOrders(data.name)} 
+                                    style={{ cursor: 'pointer' }} 
+                                />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : (
@@ -379,7 +447,7 @@ const StaffPerformance: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {users.filter(u => u.roleId === 'salesman' || u.roleId === 'store_manager' || u.roleId === 'cashier').map(user => {
+                                    {users.filter(u => (u.roleId === 'salesman' || u.roleId === 'store_manager' || u.roleId === 'cashier') && (!targetModalUserId || u.id === targetModalUserId)).map(user => {
                                         const values = tempTargets[user.id] || { dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 };
                                         return (
                                             <tr key={user.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
