@@ -61,7 +61,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [salesUpdatedAt, setSalesUpdatedAt] = useState<number>(Date.now());
     const [pinnedOrderColumns, setPinnedOrderColumns] = useState<string[]>([]);
     const [config, setConfig] = useState<ConfigState>({
-        shippingCompanies: ['J&T', 'VET', 'JS Express'],
+        shippingCompanies: ['J&T', 'VET', 'JS Express', 'D2D'],
         salesmen: ['Sokheng', 'Thida'],
         categories: ['Portable', 'PartyBox'],
         pages: ['Chantha Sound'],
@@ -353,7 +353,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (configResult.error.code === 'PGRST116') {
                     // Initial if no config found in DB
                     const defaultConfig = {
-                        shippingCompanies: ['J&T', 'VET', 'JS Express'],
+                        shippingCompanies: ['J&T', 'VET', 'JS Express', 'D2D'],
                         salesmen: ['Sokheng', 'Thida'],
                         categories: ['Portable', 'PartyBox'],
                         pages: ['Chantha Sound'],
@@ -454,7 +454,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     !loadedConfig.roles ||
                     !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_orders')) ||
                     !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('view_inventory_stock')) ||
-                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('manage_attendance'));
+                    !(loadedConfig.roles.find((r: Role) => r.id === 'admin')?.permissions?.includes('manage_attendance')) ||
+                    !loadedConfig.shippingCompanies?.includes('D2D');
 
                 if (needsMigration) {
                     // Re-inject missing cities, but PRESERVE all existing custom roles or custom permissions
@@ -521,6 +522,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         pinnedOrderColumns: loadedConfig.pinnedOrderColumns || [],
                         salesOrder: loadedConfig.salesOrder || [],
                         productOrder: loadedConfig.productOrder || [],
+                        shippingCompanies: loadedConfig.shippingCompanies?.includes('D2D') 
+                            ? loadedConfig.shippingCompanies 
+                            : [...(loadedConfig.shippingCompanies || []), 'D2D'],
                         roles: updatedRoles
                     };
                     setConfig(updatedConfig);
