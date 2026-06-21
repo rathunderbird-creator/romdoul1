@@ -27,19 +27,20 @@ const StaffPerformance: React.FC = () => {
     const [targetModalUserId, setTargetModalUserId] = useState<string | null>(null);
     const [tempTargets, setTempTargets] = useState<Record<string, { dailyTarget: number; weeklyTarget: number; monthlyTarget: number }>>({});
 
-    // Fetch monthly sales for targets (paid sales from the current month to today)
+    // Fetch monthly sales for targets (relative to the selected endDate or current month)
     useEffect(() => {
         const fetchSalesForTargets = async () => {
             setIsLoadingTargets(true);
             try {
-                const now = new Date();
+                const now = endDate ? new Date(endDate) : new Date();
                 const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
                 
                 const { data, error } = await supabase
                     .from('sales')
                     .select('total, date, salesman, payment_status')
                     .eq('payment_status', 'Paid')
-                    .gte('date', startOfMonth.toISOString());
+                    .gte('date', startOfMonth.toISOString())
+                    .lte('date', new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString());
 
                 if (error) throw error;
                 setSalesForTargets(data || []);
@@ -51,11 +52,11 @@ const StaffPerformance: React.FC = () => {
         };
 
         fetchSalesForTargets();
-    }, [reportSales]);
+    }, [endDate, reportSales]);
 
-    // Calculate actual sales for today, this week, and this month
+    // Calculate actual sales for the reference day, week, and month (based on endDate)
     const targetActuals = useMemo(() => {
-        const now = new Date();
+        const now = endDate ? new Date(endDate) : new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         
         const currentDay = now.getDay();
@@ -76,6 +77,9 @@ const StaffPerformance: React.FC = () => {
             const stats = map.get(sm)!;
             const saleDate = new Date(sale.date);
 
+            // If the sale is after our reference 'now', do not count it for target progress
+            if (saleDate > now) return;
+
             stats.monthly += Number(sale.total) || 0;
 
             if (saleDate >= startOfWeek) {
@@ -88,7 +92,7 @@ const StaffPerformance: React.FC = () => {
         });
 
         return map;
-    }, [salesForTargets]);
+    }, [salesForTargets, endDate]);
 
     // Filter to display salesmen users or anyone with targets configured
     const targetUsers = useMemo(() => {
