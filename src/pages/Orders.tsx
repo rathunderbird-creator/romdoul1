@@ -739,6 +739,55 @@ const Orders: React.FC = () => {
         document.body.style.cursor = '';
     }, [handleGlobalMouseMove]);
 
+    const autoFitColumn = (colId: string) => {
+        const table = document.querySelector('.spreadsheet-table') as HTMLTableElement;
+        if (!table) return;
+
+        const visibleCols = allColumns.filter(c => visibleColumns.includes(c.id));
+        const colIndex = visibleCols.findIndex(c => c.id === colId);
+        if (colIndex === -1) return;
+        const cellIndex = colIndex + 1; // +1 for checkbox column
+
+        const measurer = document.createElement('div');
+        measurer.style.cssText = 'position:absolute;visibility:hidden;height:auto;width:auto;white-space:nowrap;padding:0 12px;font-size:13px;font-family:inherit;';
+        document.body.appendChild(measurer);
+
+        let maxWidth = 40;
+
+        const headerCell = table.tHead?.rows[0]?.cells[cellIndex];
+        if (headerCell) {
+            measurer.style.fontWeight = '600';
+            measurer.textContent = (headerCell.textContent || '').trim();
+            maxWidth = Math.max(maxWidth, measurer.scrollWidth + 40);
+            measurer.style.fontWeight = '';
+        }
+
+        const rows = table.tBodies[0]?.rows;
+        if (rows) {
+            for (let i = 0; i < rows.length; i++) {
+                const cell = rows[i]?.cells[cellIndex];
+                if (cell) {
+                    measurer.textContent = (cell.textContent || '').trim();
+                    maxWidth = Math.max(maxWidth, measurer.scrollWidth);
+                }
+            }
+        }
+
+        document.body.removeChild(measurer);
+        const finalWidth = Math.min(Math.max(maxWidth, 40), 600);
+
+        if (resizeRef.current && resizeRef.current.colId === colId) {
+            document.documentElement.style.removeProperty(`--col-${colId}-width`);
+            resizeRef.current = null;
+            setResizingCol(null);
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.body.style.cursor = '';
+        }
+
+        setColumnWidths(prev => ({ ...prev, [colId]: finalWidth }));
+    };
+
     // Appearance State
     const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
 
@@ -2540,6 +2589,7 @@ const Orders: React.FC = () => {
                                                         </div>
                                                         <div
                                                             onMouseDown={(e) => startResize(e, colId)}
+                                                            onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); autoFitColumn(colId); }}
                                                             style={{
                                                                 position: 'absolute',
                                                                 right: 0,
@@ -2556,6 +2606,7 @@ const Orders: React.FC = () => {
                                                     </th>
                                                 );
                                             })}
+                                            <th style={{ width: '100%', minWidth: 'auto', background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2867,6 +2918,7 @@ const Orders: React.FC = () => {
                                                             default: return <td key={colId} style={cellStyle}>-</td>;
                                                         }
                                                     })}
+                                                    <td style={{ width: '100%', minWidth: 'auto' }}></td>
                                                 </tr>
                                             );
                                         })}
@@ -2902,6 +2954,7 @@ const Orders: React.FC = () => {
 
                                                 return <td key={colId} style={commonStyle}></td>;
                                             })}
+                                            <td style={{ width: '100%', minWidth: 'auto', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                                         </tr>
                                     </tfoot>
                                 </table>
