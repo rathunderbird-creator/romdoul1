@@ -13,10 +13,13 @@ interface ReceiptModalProps {
 interface ReceiptContentProps {
     sale: Sale;
     variant: 'full' | 'simple';
+    customKhr?: string;
+    onCustomKhrChange?: (val: string) => void;
 }
 
-const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
+const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKhr, onCustomKhrChange }) => {
     const { storeAddress, storeName, phone, logo, khrExchangeRate } = useStore();
+    const displayKhr = customKhr !== undefined ? customKhr : Math.round(sale.total * khrExchangeRate).toString();
 
     return (
         <div className="receipt-content-wrapper" style={{ padding: '12px', overflowY: 'visible', width: '100%', boxSizing: 'border-box' }}>
@@ -115,9 +118,22 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                 </div>
                 {variant === 'full' && (
                     <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '4px', alignItems: 'center' }}>
                             <span>TOTAL KH(៛)</span>
-                            <span>{(sale.total * khrExchangeRate).toLocaleString()} ៛</span>
+                            {onCustomKhrChange ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input 
+                                        type="number" 
+                                        value={displayKhr} 
+                                        onChange={(e) => onCustomKhrChange(e.target.value)}
+                                        style={{ width: '100px', textAlign: 'right', border: '1px dashed #ccc', borderRadius: '4px', padding: '2px 4px', fontSize: '14px', fontWeight: 'bold', outline: 'none' }}
+                                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                                    />
+                                    <span>៛</span>
+                                </div>
+                            ) : (
+                                <span>{Number(displayKhr || 0).toLocaleString()} ៛</span>
+                            )}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666', marginTop: '8px' }}>
                             <span>Payment Method</span>
@@ -131,8 +147,9 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
+    const { updateOrder, khrExchangeRate } = useStore();
     const [printTwoCopies, setPrintTwoCopies] = React.useState(false);
-    const { updateOrder } = useStore();
+    const [customKhr, setCustomKhr] = React.useState<string>(Math.round(sale.total * (khrExchangeRate || 4100)).toString());
 
     const handlePrint = () => {
         updateOrder(sale.id, { isPrinted: true });
@@ -198,7 +215,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                     </div>
 
                     <div style={{ padding: '0', overflowY: 'auto' }}>
-                        <ReceiptContent sale={sale} variant="full" />
+                        <ReceiptContent sale={sale} variant="full" customKhr={customKhr} onCustomKhrChange={setCustomKhr} />
 
                         {printTwoCopies && (
                             <div style={{ borderTop: '2px dashed #eee', margin: '20px', textAlign: 'center', color: '#888', fontSize: '12px', padding: '10px' }}>
@@ -233,11 +250,11 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
             {/* Hidden Print-Only Container, rendered into body via Portal */}
             {ReactDOM.createPortal(
                 <div id="printable-area" className="print-only">
-                    <ReceiptContent sale={sale} variant="full" />
+                    <ReceiptContent sale={sale} variant="full" customKhr={customKhr} />
                     {printTwoCopies && (
                         <>
                             <div className="page-break" style={{ pageBreakBefore: 'always', breakBefore: 'page', height: '1px', width: '100%', visibility: 'hidden' }}></div>
-                            <ReceiptContent sale={sale} variant="simple" />
+                            <ReceiptContent sale={sale} variant="simple" customKhr={customKhr} />
                         </>
                     )}
                 </div>,

@@ -788,6 +788,48 @@ const Orders: React.FC = () => {
         setColumnWidths(prev => ({ ...prev, [colId]: finalWidth }));
     };
 
+    const autoFitAllColumns = () => {
+        const table = document.querySelector('.spreadsheet-table') as HTMLTableElement;
+        if (!table) return;
+
+        const visibleCols = allColumns.filter(c => visibleColumns.includes(c.id));
+        
+        const measurer = document.createElement('div');
+        measurer.style.cssText = 'position:absolute;visibility:hidden;height:auto;width:auto;white-space:nowrap;padding:0 12px;font-size:13px;font-family:inherit;';
+        document.body.appendChild(measurer);
+
+        const newWidths = { ...columnWidths };
+
+        visibleCols.forEach((col, colIndex) => {
+            const cellIndex = colIndex + 1; // +1 for checkbox column
+            let maxWidth = 40;
+
+            const headerCell = table.tHead?.rows[0]?.cells[cellIndex];
+            if (headerCell) {
+                measurer.style.fontWeight = '600';
+                measurer.textContent = (headerCell.textContent || '').trim();
+                maxWidth = Math.max(maxWidth, measurer.scrollWidth + 40);
+                measurer.style.fontWeight = '';
+            }
+
+            const rows = table.tBodies[0]?.rows;
+            if (rows) {
+                for (let i = 0; i < rows.length; i++) {
+                    const cell = rows[i]?.cells[cellIndex];
+                    if (cell) {
+                        measurer.textContent = (cell.textContent || '').trim();
+                        maxWidth = Math.max(maxWidth, measurer.scrollWidth);
+                    }
+                }
+            }
+
+            newWidths[col.id] = Math.min(Math.max(maxWidth, 40), 600);
+        });
+
+        document.body.removeChild(measurer);
+        setColumnWidths(newWidths);
+    };
+
     // Appearance State
     const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
 
@@ -2431,6 +2473,15 @@ const Orders: React.FC = () => {
                                                         style={{ cursor: 'pointer' }}
                                                     />
                                                 )}
+                                                <div
+                                                    onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); autoFitAllColumns(); }}
+                                                    style={{
+                                                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '10px',
+                                                        cursor: 'col-resize', background: 'transparent', zIndex: 25, transform: 'translateX(50%)'
+                                                    }}
+                                                    className="resize-handle"
+                                                    title="Double click to auto-fit all columns"
+                                                />
                                             </th>
                                             {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
                                                 const colId = col.id;
