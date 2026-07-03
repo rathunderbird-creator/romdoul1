@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Save, Store, Globe, Bell, Shield, Database } from 'lucide-react';
+import { Save, Store, Globe, Bell, Shield, Database, Eye, EyeOff } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -9,12 +9,10 @@ import { useLanguage } from '../context/LanguageContext';
 import PinPrompt from '../components/PinPrompt';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
-
-
-
+import type { TelegramConfig } from '../types';
 
 const Settings: React.FC = () => {
-    const { storeAddress, storeName, logo, email, phone, telegramBotToken, telegramChatId, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency, khrExchangeRate } = useStore();
+    const { storeAddress, storeName, logo, email, phone, telegramBotToken, telegramChatId, telegramConfigs, updateStoreProfile, backupData, restoreData, timezone, taxRate, currency, khrExchangeRate } = useStore();
     const { showToast } = useToast();
     const { themeColor, setThemeColor, fontSize, setFontSize, resetTheme } = useTheme();
     const { setHeaderContent } = useHeader();
@@ -32,13 +30,15 @@ const Settings: React.FC = () => {
         khrExchangeRate: 4100,
         logo: '',
         telegramBotToken: '',
-        telegramChatId: ''
+        telegramChatId: '',
+        telegramConfigs: [] as TelegramConfig[]
     });
 
     // PIN Protection State
     const [showDataManagement, setShowDataManagement] = useState(false);
     const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+    const [visibleTokens, setVisibleTokens] = useState<Record<number, boolean>>({});
 
     // Use ref to hold the latest state for the save handler (avoid stale closure)
     const stateRef = useRef(localState);
@@ -60,14 +60,84 @@ const Settings: React.FC = () => {
                 khrExchangeRate: currentData.khrExchangeRate,
                 logo: currentData.logo,
                 telegramBotToken: currentData.telegramBotToken,
-                telegramChatId: currentData.telegramChatId
+                telegramChatId: currentData.telegramChatId,
+                telegramConfigs: currentData.telegramConfigs
             });
             showToast(t('settings.settingsSaved'), 'success');
         } catch (error) {
             console.error(error);
             showToast(t('settings.settingsFailed'), 'error');
         }
-    }, [updateStoreProfile, showToast]); // Dependencies for context functions
+    }, [updateStoreProfile, showToast, t]);
+
+    const handleCommitTelegramConfigs = useCallback(async (configId: string) => {
+        const currentData = stateRef.current;
+        if (!originalStateRef.current) return;
+        
+        const originalConfigs: TelegramConfig[] = originalStateRef.current.telegramConfigs || [];
+        const localConfig = currentData.telegramConfigs.find(c => c.id === configId);
+        
+        let mergedConfigs = [...originalConfigs];
+        if (!localConfig) {
+            // It means the config was removed. To commit a removal, we filter it out.
+            mergedConfigs = originalConfigs.filter((c: TelegramConfig) => c.id !== configId);
+        } else {
+            // If it's an update or addition:
+            const existingIndex = mergedConfigs.findIndex(c => c.id === configId);
+            if (existingIndex >= 0) {
+                mergedConfigs[existingIndex] = localConfig;
+            } else {
+                mergedConfigs.push(localConfig);
+            }
+        }
+        
+        try {
+            await updateStoreProfile({
+                ...originalStateRef.current, // Keep original values for other fields
+                telegramConfigs: mergedConfigs // Only commit this specific telegram change
+            });
+            showToast('Telegram Configuration committed!', 'success');
+        } catch (error) {
+            console.error(error);
+            showToast('Failed to commit Telegram configuration', 'error');
+        }
+    }, [updateStoreProfile, showToast]);
+
+    const originalStateRef = useRef<any>(null);
+
+    useEffect(() => {
+        let initialConfigs = telegramConfigs || [];
+        if (initialConfigs.length === 0) {
+            initialConfigs = [{
+                id: 'default-config-id',
+                name: 'Main Group',
+                botToken: telegramBotToken || '',
+                chatId: telegramChatId || '',
+                triggerStatuses: ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned'],
+                note: ''
+            }];
+        }
+        
+        const originalState = {
+            storeName: storeName || '',
+            storeAddress: storeAddress || '',
+            email: email || '',
+            phone: phone || '',
+            timezone: timezone || 'Asia/Phnom_Penh',
+            taxRate: taxRate || 0,
+            currency: currency || 'USD ($)',
+            khrExchangeRate: khrExchangeRate || 4100,
+            logo: logo || '',
+            telegramBotToken: telegramBotToken || '',
+            telegramChatId: telegramChatId || '',
+            telegramConfigs: initialConfigs
+        };
+
+        originalStateRef.current = originalState;
+        setLocalState(originalState);
+    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency, logo, telegramBotToken, telegramChatId, telegramConfigs]);
+
+    const hasChanges = originalStateRef.current ? JSON.stringify(localState) !== JSON.stringify(originalStateRef.current) : false;
 
     // Header Content
     React.useEffect(() => {
@@ -81,12 +151,15 @@ const Settings: React.FC = () => {
             actions: (
                 <button
                     onClick={handleSave}
+                    disabled={!hasChanges}
                     className="primary-button"
                     style={{
                         padding: '12px 24px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px'
+                        gap: '8px',
+                        opacity: hasChanges ? 1 : 0.5,
+                        cursor: hasChanges ? 'pointer' : 'not-allowed'
                     }}
                 >
                     <Save size={20} />
@@ -95,24 +168,9 @@ const Settings: React.FC = () => {
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, handleSave, t]);
+    }, [setHeaderContent, handleSave, t, hasChanges]);
 
 
-    useEffect(() => {
-        setLocalState({
-            storeName: storeName || '',
-            storeAddress: storeAddress || '',
-            email: email || '',
-            phone: phone || '',
-            timezone: timezone || 'Asia/Phnom_Penh',
-            taxRate: taxRate || 0,
-            currency: currency || 'USD ($)',
-            khrExchangeRate: khrExchangeRate || 4100,
-            logo: logo || '',
-            telegramBotToken: telegramBotToken || '',
-            telegramChatId: telegramChatId || ''
-        });
-    }, [storeName, storeAddress, email, phone, timezone, taxRate, currency, logo, telegramBotToken, telegramChatId]);
 
 
 
@@ -131,10 +189,10 @@ const Settings: React.FC = () => {
     };
 
     return (
-        <div>
+        <div style={{ width: '100%' }}>
 
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '800px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
                 {/* Appearance Section */}
                 <div className="glass-panel" style={{ padding: '24px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
@@ -449,52 +507,180 @@ const Settings: React.FC = () => {
                             <h2 style={{ fontSize: '20px', fontWeight: '600' }}>{t('settings.telegramNotifications')}</h2>
                         </div>
                         <button
-                            onClick={async () => {
-                                if (!localState.telegramBotToken || !localState.telegramChatId) {
-                                    showToast('Please enter Bot Token and Chat ID first', 'error');
-                                    return;
-                                }
-                                try {
-                                    const { sendTelegramTestMessage } = await import('../utils/telegram');
-                                    await sendTelegramTestMessage(localState.telegramBotToken, localState.telegramChatId);
-                                    showToast('Test message sent!', 'success');
-                                } catch (err: any) {
-                                    showToast(err.message || 'Failed to send test message', 'error');
-                                }
+                            onClick={() => {
+                                const newConfig: TelegramConfig = {
+                                    id: Date.now().toString(),
+                                    name: 'New Group',
+                                    botToken: '',
+                                    chatId: '',
+                                    triggerStatuses: ['Ordered']
+                                };
+                                setLocalState({ ...localState, telegramConfigs: [...(localState.telegramConfigs || []), newConfig] });
                             }}
                             className="primary-button"
                             style={{ padding: '8px 16px', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
                         >
-                            {t('settings.sendTest')}
+                            + Add Group
                         </button>
                     </div>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
                         {t('settings.telegramNote')}
                     </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.telegramBotToken')}</label>
-                            <input
-                                type="password"
-                                value={localState.telegramBotToken}
-                                onChange={(e) => setLocalState({ ...localState, telegramBotToken: e.target.value })}
-                                placeholder="123456789:ABCDefgh..."
-                                className="search-input"
-                                style={{ width: '100%', padding: '12px' }}
-                            />
+
+                    {/* Configuration Array */}
+
+                    {/* New Configuration Array */}
+                    {localState.telegramConfigs?.map((config, index) => {
+                        const originalConfig = originalStateRef.current?.telegramConfigs?.[index];
+                        const isRowChanged = !originalConfig || JSON.stringify(config) !== JSON.stringify(originalConfig);
+
+                        return (
+                        <div key={config.id} style={{ marginBottom: '20px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-bg)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <input 
+                                    type="text" 
+                                    value={config.name}
+                                    onChange={(e) => {
+                                        const newConfigs = [...localState.telegramConfigs];
+                                        newConfigs[index] = { ...newConfigs[index], name: e.target.value };
+                                        setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                    }}
+                                    style={{ fontSize: '16px', fontWeight: '600', padding: '4px 8px', border: '1px solid transparent', borderBottom: '1px solid var(--color-border)', background: 'transparent' }}
+                                    placeholder="Group Name"
+                                />
+                                <div>
+                                    <button
+                                        onClick={() => {
+                                            const newConfigs = localState.telegramConfigs.filter((_, i) => i !== index);
+                                            setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                        }}
+                                        style={{ padding: '6px 12px', fontSize: '12px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', marginBottom: '16px', flexWrap: 'nowrap' }}>
+                                <div style={{ flex: '1' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Bot Token</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type={visibleTokens[index] ? "text" : "password"}
+                                            value={config.botToken}
+                                            onChange={(e) => {
+                                                const newConfigs = [...localState.telegramConfigs];
+                                                newConfigs[index] = { ...newConfigs[index], botToken: e.target.value };
+                                                setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                            }}
+                                            placeholder="123456789:ABCDefgh..."
+                                            className="search-input"
+                                            style={{ width: '100%', padding: '10px', paddingRight: '40px' }}
+                                        />
+                                        <button
+                                            onClick={() => setVisibleTokens(prev => ({ ...prev, [index]: !prev[index] }))}
+                                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
+                                        >
+                                            {visibleTokens[index] ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div style={{ flex: '1' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Chat IDs</label>
+                                    <input
+                                        type="text"
+                                        value={config.chatId}
+                                        onChange={(e) => {
+                                            const newConfigs = [...localState.telegramConfigs];
+                                            newConfigs[index] = { ...newConfigs[index], chatId: e.target.value };
+                                            setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                        }}
+                                        placeholder="-100123..., -45678..."
+                                        className="search-input"
+                                        style={{ width: '100%', padding: '10px' }}
+                                    />
+                                </div>
+                                <div style={{ flex: '1' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Note (Remark)</label>
+                                    <input
+                                        type="text"
+                                        value={config.note || ''}
+                                        onChange={(e) => {
+                                            const newConfigs = [...localState.telegramConfigs];
+                                            newConfigs[index] = { ...newConfigs[index], note: e.target.value };
+                                            setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                        }}
+                                        placeholder="Add a remark for this bot configuration..."
+                                        className="search-input"
+                                        style={{ width: '100%', padding: '10px' }}
+                                    />
+                                </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (!config.botToken || !config.chatId) {
+                                                showToast('Please enter Bot Token and Chat ID first', 'error');
+                                                return;
+                                            }
+                                            try {
+                                                const { sendTelegramTestMessage } = await import('../utils/telegram');
+                                                await sendTelegramTestMessage(config.botToken, config.chatId);
+                                                showToast('Test message sent!', 'success');
+                                            } catch (err: any) {
+                                                showToast(err.message || 'Failed to send test message', 'error');
+                                            }
+                                        }}
+                                        style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
+                                    >
+                                        Test
+                                    </button>
+                                    <button
+                                        onClick={() => handleCommitTelegramConfigs(config.id)}
+                                        disabled={!isRowChanged}
+                                        style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: isRowChanged ? 'pointer' : 'not-allowed', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap', opacity: isRowChanged ? 1 : 0.5 }}
+                                    >
+                                        Commit
+                                    </button>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Trigger when Delivery Status is:</label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned'].map(status => {
+                                        const isSelected = config.triggerStatuses.includes(status);
+                                        return (
+                                            <button
+                                                key={status}
+                                                onClick={() => {
+                                                    const newConfigs = [...localState.telegramConfigs];
+                                                    if (isSelected) {
+                                                        newConfigs[index] = { ...newConfigs[index], triggerStatuses: config.triggerStatuses.filter(s => s !== status) };
+                                                    } else {
+                                                        newConfigs[index] = { ...newConfigs[index], triggerStatuses: [...config.triggerStatuses, status] };
+                                                    }
+                                                    setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                                }}
+                                                style={{
+                                                    padding: '4px 12px',
+                                                    borderRadius: '16px',
+                                                    fontSize: '12px',
+                                                    fontWeight: 500,
+                                                    border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                                    background: isSelected ? 'var(--color-primary)' : 'transparent',
+                                                    color: isSelected ? 'white' : 'var(--color-text-secondary)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                {status}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>{t('settings.telegramChatIds')}</label>
-                            <input
-                                type="text"
-                                value={localState.telegramChatId}
-                                onChange={(e) => setLocalState({ ...localState, telegramChatId: e.target.value })}
-                                placeholder="-100123..., -45678..."
-                                className="search-input"
-                                style={{ width: '100%', padding: '12px' }}
-                            />
-                        </div>
-                    </div>
+                        );
+                    })}
                 </div>
 
                 {/* Security Section */}

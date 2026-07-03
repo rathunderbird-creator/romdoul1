@@ -63,7 +63,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, sales, khrExchangeRate } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -382,6 +382,21 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             if (orderToEdit) {
                 await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
                 showToast('Order updated', 'success');
+
+                // Send Telegram Notification if status changed
+                if (orderToEdit.shipping?.status !== formData.shippingStatus) {
+                    const orderCopy = { ...orderToEdit, ...orderData, date: formData.date || orderToEdit.date } as Sale;
+                    if (telegramConfigs && telegramConfigs.length > 0) {
+                        const matchingConfigs = telegramConfigs.filter(c => c.triggerStatuses.includes(formData.shippingStatus));
+                        matchingConfigs.forEach(config => {
+                            if (config.botToken && config.chatId) {
+                                sendTelegramOrderNotification(config.botToken, config.chatId, orderCopy, orderCopy.orderIndex || 0).catch(err => {
+                                    console.error('Failed to send Telegram notification:', err);
+                                });
+                            }
+                        });
+                    }
+                }
             } else {
                 const createdSale = await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
                 // We need the current sales to calculate sequence
@@ -390,7 +405,17 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 showToast('Order created', 'success');
 
                 // Send Telegram Notification
-                if (telegramBotToken && telegramChatId) {
+                if (telegramConfigs && telegramConfigs.length > 0) {
+                    const matchingConfigs = telegramConfigs.filter(c => c.triggerStatuses.includes(formData.shippingStatus));
+                    matchingConfigs.forEach(config => {
+                        if (config.botToken && config.chatId) {
+                            sendTelegramOrderNotification(config.botToken, config.chatId, createdSale, sequenceNumber).catch(err => {
+                                console.error('Failed to send Telegram notification:', err);
+                                showToast(`Telegram Error: ${err.message}`, 'error');
+                            });
+                        }
+                    });
+                } else if (telegramBotToken && telegramChatId) {
                     sendTelegramOrderNotification(telegramBotToken, telegramChatId, createdSale, sequenceNumber).catch(err => {
                         console.error('Failed to send Telegram notification:', err);
                         showToast(`Telegram Error: ${err.message}`, 'error');

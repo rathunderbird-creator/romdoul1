@@ -2,6 +2,9 @@
   "nav": {
     "dashboard": "Dashboard",
     "orders": "Orders Management",
+    "allOrders": "All Orders",
+    "shippingDelivery": "Delivery Tracking",
+    "allPayStatus": "Payment Tracking",
     "inventory": "Inventory",
     "allProducts": "All Products",
     "stockIn": "Stock-In",
@@ -19,7 +22,7 @@
     "staffPerformance": "Staff Performance",
     "shippingCompanies": "Shipping Companies",
     "purchaseCost": "Purchase Cost",
-    "dropOffPoints": "Drop-off Points",
+    "shippingPoint": "Shipping Points",
     "attendance": "Attendance",
     "userManagement": "User Management",
     "settings": "Settings"

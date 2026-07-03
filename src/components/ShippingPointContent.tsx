@@ -4,6 +4,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
+import { getShippingCoColor } from '../utils/orderUtils';
 
 
 
@@ -1590,7 +1591,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                         style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}
                                     >
                                         <option value="">Select Courier</option>
-                                        {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                                        {shippingCompanies.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
                                     </select>
                                 </div>
 

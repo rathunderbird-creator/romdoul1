@@ -109,6 +109,15 @@ export interface StaffAttendance {
     notes?: string;
 }
 
+export interface TelegramConfig {
+    id: string;
+    name: string;
+    botToken: string;
+    chatId: string;
+    triggerStatuses: string[];
+    note?: string;
+}
+
 export interface StoreContextType {
     products: Product[];
     cart: CartItem[];
@@ -219,6 +228,7 @@ export interface StoreContextType {
     phone: string;
     telegramBotToken?: string;
     telegramChatId?: string;
+    telegramConfigs?: TelegramConfig[];
     timezone: string;
     updateTimezone: (timezone: string) => void;
     taxRate: number;
@@ -228,7 +238,7 @@ export interface StoreContextType {
     khrExchangeRate: number;
     updateKhrExchangeRate: (rate: number) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
-    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => void;
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => void;
 
     // User & Role Management
     users: User[];

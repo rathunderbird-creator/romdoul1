@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, RefreshCw, Wallet, Truck } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Wallet, Truck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -11,6 +11,7 @@ import type { Transaction } from '../types';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
 import { supabase } from '../lib/supabase';
+import { getShippingCoColor } from '../utils/orderUtils';
 
 // Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
 const parseDate = (dateStr: string) => {
@@ -54,6 +55,8 @@ const IncomeExpense: React.FC = () => {
     const [filterCategory, setFilterCategory] = useState<string>('All');
     const [filterShippingCo, setFilterShippingCo] = useState<string>('All');
     const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize] = useState(50);
     const [dateRange, setDateRange] = useState(() => {
         const saved = localStorage.getItem('incomeExpenseDateRange');
         if (saved) {
@@ -219,6 +222,18 @@ const IncomeExpense: React.FC = () => {
             return dateB.getTime() - dateA.getTime();
         });
     }, [localTransactions, filterType, filterCategory, filterShippingCo, searchTerm, dateRange, shippingCompanies]);
+
+    // Reset page when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterType, filterCategory, filterShippingCo, searchTerm, dateRange]);
+
+    // Pagination
+    const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
+    const paginatedTransactions = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredTransactions.slice(start, start + pageSize);
+    }, [filteredTransactions, currentPage, pageSize]);
 
     // Stats
     const stats = useMemo(() => {
@@ -450,7 +465,7 @@ const IncomeExpense: React.FC = () => {
                         >
                             <option value="All">All Categories</option>
                             {uniqueCategories.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
+                                <option key={cat} value={cat} style={{ color: getShippingCoColor(cat) }}>{cat}</option>
                             ))}
                         </select>
                         <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
@@ -479,7 +494,7 @@ const IncomeExpense: React.FC = () => {
                         >
                             <option value="All">All Shipping Co</option>
                             {allShippingCo.map(co => (
-                                <option key={co} value={co}>{co}</option>
+                                <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
                             ))}
                         </select>
                         <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
@@ -570,7 +585,7 @@ const IncomeExpense: React.FC = () => {
                             <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>Try adjusting your filters or add a new record.</p>
                         </div>
                     ) : (
-                        filteredTransactions.map(t => {
+                        paginatedTransactions.map(t => {
                             const isExpanded = expandedCards.has(t.id);
                             return (
                                 <div key={t.id} className="mobile-order-card" style={{ cursor: 'pointer' }} onClick={() => toggleCardExpand(t.id)}>
@@ -670,7 +685,7 @@ const IncomeExpense: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredTransactions.map(t => (
+                                paginatedTransactions.map(t => (
                                     <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s' }} className="table-row-hover">
                                         <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-main)' }}>
                                             {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -705,8 +720,7 @@ const IncomeExpense: React.FC = () => {
                                                     fontSize: '12px',
                                                     fontWeight: 500,
                                                     background: 'var(--color-primary-light)',
-                                                    color: 'var(--color-primary-dark)'
-                                                }}>
+                                                    color: getShippingCoColor(t.shipping_co || '') }}>
                                                     <Truck size={12} />
                                                     {t.shipping_co}
                                                 </span>
@@ -773,6 +787,145 @@ const IncomeExpense: React.FC = () => {
                             </tr>
                         </tfoot>
                     </table>
+                </div>
+            )}
+
+            {/* Pagination Controls */}
+            {filteredTransactions.length > pageSize && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: isMobile ? '16px' : '16px 24px',
+                    marginTop: '16px',
+                    background: 'var(--color-surface)',
+                    borderRadius: '16px',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
+                    flexWrap: 'wrap',
+                    gap: '12px'
+                }}>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                        Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, filteredTransactions.length)} of {filteredTransactions.length} transactions
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(1)}
+                            className="secondary-button"
+                            style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                opacity: currentPage === 1 ? 0.4 : 1,
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                minWidth: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            title="First page"
+                        >
+                            ««
+                        </button>
+                        <button
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            className="secondary-button"
+                            style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                opacity: currentPage === 1 ? 0.4 : 1,
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                minWidth: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            title="Previous page"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+
+                        {/* Page number buttons */}
+                        {(() => {
+                            const pages: number[] = [];
+                            const maxButtons = isMobile ? 3 : 5;
+                            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+                            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+                            if (endPage - startPage + 1 < maxButtons) {
+                                startPage = Math.max(1, endPage - maxButtons + 1);
+                            }
+                            for (let i = startPage; i <= endPage; i++) pages.push(i);
+                            return pages.map(page => (
+                                <button
+                                    key={page}
+                                    onClick={() => setCurrentPage(page)}
+                                    style={{
+                                        padding: '8px 12px',
+                                        borderRadius: '8px',
+                                        border: page === currentPage ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                        background: page === currentPage ? 'var(--color-primary)' : 'var(--color-surface)',
+                                        color: page === currentPage ? 'white' : 'var(--color-text-main)',
+                                        fontSize: '13px',
+                                        fontWeight: page === currentPage ? 600 : 400,
+                                        cursor: 'pointer',
+                                        minWidth: '36px',
+                                        transition: 'all 0.2s',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                >
+                                    {page}
+                                </button>
+                            ));
+                        })()}
+
+                        <button
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            className="secondary-button"
+                            style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                opacity: currentPage === totalPages ? 0.4 : 1,
+                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                minWidth: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            title="Next page"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                        <button
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(totalPages)}
+                            className="secondary-button"
+                            style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                opacity: currentPage === totalPages ? 0.4 : 1,
+                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                minWidth: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            title="Last page"
+                        >
+                            »»
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -1024,7 +1177,7 @@ const IncomeExpense: React.FC = () => {
                                 >
                                     <option value="">None (No shipping)</option>
                                     {allShippingCo.map(co => (
-                                        <option key={co} value={co}>{co}</option>
+                                        <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
                                     ))}
                                 </select>
                                 <ChevronDown size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />

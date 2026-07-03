@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
-import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction } from '../types';
+import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction, TelegramConfig } from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -30,6 +30,7 @@ interface ConfigState {
     logo?: string;
     telegramBotToken?: string;
     telegramChatId?: string;
+    telegramConfigs?: TelegramConfig[];
 }
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -108,7 +109,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         khrExchangeRate: 4100,
         logo: '',
         telegramBotToken: '',
-        telegramChatId: ''
+        telegramChatId: '',
+        telegramConfigs: []
     });
 
 
@@ -438,7 +440,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         taxRate: 0,
                         currency: 'USD ($)',
                         telegramBotToken: '',
-                        telegramChatId: ''
+                        telegramChatId: '',
+                        telegramConfigs: []
                     };
                     setConfig(defaultConfig);
                     await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
@@ -2389,7 +2392,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, khrExchangeRate: rate });
     };
 
-    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => {
+    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => {
         updateConfig({ ...config, ...data });
     };
 
@@ -2502,6 +2505,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             phone: config.phone || '',
             telegramBotToken: config.telegramBotToken || '',
             telegramChatId: config.telegramChatId || '',
+            telegramConfigs: config.telegramConfigs || [],
             updateStoreAddress,
             updateStoreProfile,
             timezone: config.timezone || 'Asia/Phnom_Penh',

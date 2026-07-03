@@ -6,6 +6,7 @@ import { useMobile } from '../hooks/useMobile';
 import StatsCard from '../components/StatsCard';
 import DateRangePicker from '../components/DateRangePicker';
 import type { Sale } from '../types';
+import { getShippingCoColor } from '../utils/orderUtils';
 
 const ReturnsRestocks: React.FC = () => {
     const { restockOrder, bulkRestockOrders, updateOrder, salesUpdatedAt } = useStore();
@@ -259,7 +260,7 @@ const ReturnsRestocks: React.FC = () => {
                                         <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>
                                             ${order.total?.toLocaleString() || '0'}
                                         </td>
-                                        <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        <td style={{ fontSize: '12px', color: getShippingCoColor(order.shipping?.company || '') }}>
                                             {order.shipping?.company || '-'}
                                         </td>
 
@@ -358,7 +359,7 @@ const ReturnsRestocks: React.FC = () => {
                                         <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>
                                             ${order.total?.toLocaleString() || '0'}
                                         </td>
-                                        <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        <td style={{ fontSize: '12px', color: getShippingCoColor(order.shipping?.company || '') }}>
                                             {order.shipping?.company || '-'}
                                         </td>
 

@@ -1,14 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, ChevronLeft, ChevronRight, Printer, Edit, Eye } from 'lucide-react';
+import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText } from 'lucide-react';
 import type { Sale } from '../types';
-import { PaymentStatusBadge, DateRangePicker, ReceiptModal } from '../components';
+import { PaymentStatusBadge, DateRangePicker, ReceiptModal, StatusBadge } from '../components';
+import { supabase } from '../lib/supabase';
+import { mapSaleEntity } from '../utils/mapper';
+import { useClickOutside } from '../hooks/useClickOutside';
+import { getShippingCoColor } from '../utils/orderUtils';
+import ReportModal from '../components/ReportModal';
+
 const PaymentTracking: React.FC = () => {
-    const { sales, updateOrder } = useStore();
+    const { updateOrder, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
+
+    const [isReportOpen, setIsReportOpen] = useState(false);
 
     React.useEffect(() => {
         setHeaderContent({
@@ -18,16 +26,80 @@ const PaymentTracking: React.FC = () => {
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Track payments and settlements</p>
                 </div>
             ),
+            actions: (
+                <button
+                    onClick={() => setIsReportOpen(true)}
+                    style={{
+                        padding: '8px 20px',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                        color: 'white',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        border: 'none',
+                        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                        transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)'; }}
+                >
+                    <FileText size={16} />
+                    Check Payment Tracking Report
+                </button>
+            ),
         });
         return () => setHeaderContent(null);
     }, [setHeaderContent]);
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
-    const [statusFilter, setStatusFilter] = useState<'All' | 'Unpaid' | 'Paid' | 'Get File' | 'Cancel'>('All');
+    const [settleDateRange, setSettleDateRange] = useState({ start: '', end: '' });
+    const [orderDateRange, setOrderDateRange] = useState({ start: '', end: '' });
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Unpaid' | 'Paid' | 'Get File' | 'Cancel'>(() => {
+        return (localStorage.getItem('payment_statusFilter') as any) || 'All';
+    });
+    const [salesmanFilter, setSalesmanFilter] = useState<string>(() => {
+        return localStorage.getItem('payment_salesmanFilter') || 'All';
+    });
+    const [shippingCoFilter, setShippingCoFilter] = useState<string[]>(() => {
+        const saved = localStorage.getItem('payment_shippingCoFilter');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [customerCareFilter, setCustomerCareFilter] = useState<string>(() => {
+        return localStorage.getItem('payment_customerCareFilter') || 'All';
+    });
+
+    useEffect(() => { localStorage.setItem('payment_statusFilter', statusFilter); }, [statusFilter]);
+    useEffect(() => { localStorage.setItem('payment_salesmanFilter', salesmanFilter); }, [salesmanFilter]);
+    useEffect(() => { localStorage.setItem('payment_shippingCoFilter', JSON.stringify(shippingCoFilter)); }, [shippingCoFilter]);
+    useEffect(() => { localStorage.setItem('payment_customerCareFilter', customerCareFilter); }, [customerCareFilter]);
+
+    const [isSalesmanOpen, setIsSalesmanOpen] = useState(false);
+    const [isShippingCoOpen, setIsShippingCoOpen] = useState(false);
+    const [isCustomerCareOpen, setIsCustomerCareOpen] = useState(false);
+    const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
+    const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
+    const customerCareFilterRef = useClickOutside<HTMLDivElement>(() => setIsCustomerCareOpen(false));
+    const filterShippingCompanies = shippingCompanies;
+    const isMobile = window.innerWidth <= 768;
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        } else if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
+            setSortConfig(null);
+            return;
+        }
+        setSortConfig({ key, direction });
+    };
 
     const toggleSelection = (id: string) => {
         const newSet = new Set(selectedIds);
@@ -44,7 +116,7 @@ const PaymentTracking: React.FC = () => {
         }
     };
 
-    const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
+    const [selectedOrder] = useState<Sale | null>(null);
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -52,24 +124,146 @@ const PaymentTracking: React.FC = () => {
     // Column Visibility
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const allColumns = [
-        { id: 'actions', label: 'Actions' },
-        { id: 'date', label: 'Date' },
+        { id: 'date', label: 'Order Date' },
+        { id: 'settleDate', label: 'Settle Date' },
         { id: 'customer', label: 'Customer' },
         { id: 'phone', label: 'Phone' },
         { id: 'address', label: 'Address' },
+        { id: 'salesman', label: 'Salesman' },
         { id: 'items', label: 'Products' },
         { id: 'total', label: 'Total' },
+        { id: 'shippingCo', label: 'Shipping Co' },
         { id: 'payBy', label: 'Pay By' },
         { id: 'received', label: 'Received' },
         { id: 'remaining', label: 'Remaining' },
+        { id: 'orderStatus', label: 'Order Status' },
         { id: 'status', label: 'Pay Status' },
-        { id: 'settleDate', label: 'Settle Date' },
         { id: 'remark', label: 'Remark' },
     ];
     // Default visible
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
-        'actions', 'date', 'customer', 'phone', 'address', 'items', 'total', 'payBy', 'received', 'remaining', 'status', 'settleDate', 'remark'
+        'date', 'settleDate', 'customer', 'phone', 'address', 'salesman', 'items', 'total', 'shippingCo', 'payBy', 'received', 'remaining', 'orderStatus', 'status', 'remark'
     ]);
+
+    // Column widths and resize state
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+        const saved = localStorage.getItem('payment_column_widths');
+        return saved ? JSON.parse(saved) : {
+            date: 110,
+            settleDate: 110,
+            customer: 140,
+            phone: 110,
+            address: 200,
+            salesman: 100,
+            items: 200,
+            total: 90,
+            shippingCo: 110,
+            payBy: 90,
+            received: 90,
+            remaining: 90,
+            orderStatus: 130,
+            status: 120,
+            remark: 150
+        };
+    });
+
+    React.useEffect(() => {
+        localStorage.setItem('payment_column_widths', JSON.stringify(columnWidths));
+    }, [columnWidths]);
+
+    const [resizingCol, setResizingCol] = useState<string | null>(null);
+    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string } | null>(null);
+
+    const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const { startX, startWidth, colId } = resizeRef.current;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(15, startWidth + diff);
+        document.documentElement.style.setProperty(`--col-payment-${colId}-width`, `${newWidth}px`);
+    }, []);
+
+    const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const { startX, startWidth, colId } = resizeRef.current;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(15, startWidth + diff);
+
+        setColumnWidths(prev => ({ ...prev, [colId]: newWidth }));
+        document.documentElement.style.removeProperty(`--col-payment-${colId}-width`);
+
+        resizeRef.current = null;
+        setResizingCol(null);
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.cursor = '';
+    }, [handleGlobalMouseMove]);
+
+    const startResize = (e: React.MouseEvent, colId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentWidth = columnWidths[colId] || 150;
+        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId };
+        setResizingCol(colId);
+        document.addEventListener('mousemove', handleGlobalMouseMove);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.cursor = 'col-resize';
+    };
+
+    React.useEffect(() => {
+        return () => {
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [handleGlobalMouseMove, handleGlobalMouseUp]);
+
+    const autoFitColumn = (colId: string) => {
+        const table = document.querySelector('.spreadsheet-table') as HTMLTableElement;
+        if (!table) return;
+
+        const visibleCols = allColumns.filter(c => visibleColumns.includes(c.id));
+        const colIndex = visibleCols.findIndex(c => c.id === colId);
+        if (colIndex === -1) return;
+        const cellIndex = colIndex + 1;
+
+        const measurer = document.createElement('div');
+        measurer.style.cssText = 'position:absolute;visibility:hidden;height:auto;width:auto;white-space:nowrap;padding:0 12px;font-size:13px;font-family:inherit;';
+        document.body.appendChild(measurer);
+
+        let maxWidth = 40;
+
+        const headerCell = table.tHead?.rows[0]?.cells[cellIndex];
+        if (headerCell) {
+            measurer.style.fontWeight = '600';
+            measurer.textContent = (headerCell.textContent || '').trim();
+            maxWidth = Math.max(maxWidth, measurer.scrollWidth + 28);
+            measurer.style.fontWeight = '';
+        }
+
+        const rows = table.tBodies[0]?.rows;
+        if (rows) {
+            for (let i = 0; i < rows.length; i++) {
+                const cell = rows[i]?.cells[cellIndex];
+                if (cell) {
+                    measurer.textContent = (cell.textContent || '').trim();
+                    maxWidth = Math.max(maxWidth, measurer.scrollWidth);
+                }
+            }
+        }
+
+        document.body.removeChild(measurer);
+        const finalWidth = Math.min(Math.max(maxWidth, 40), 600);
+
+        if (resizeRef.current && resizeRef.current.colId === colId) {
+            document.documentElement.style.removeProperty(`--col-payment-${colId}-width`);
+            resizeRef.current = null;
+            setResizingCol(null);
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.body.style.cursor = '';
+        }
+
+        setColumnWidths(prev => ({ ...prev, [colId]: finalWidth }));
+    };
 
     const [formData, setFormData] = useState({
         amountReceived: 0,
@@ -77,60 +271,211 @@ const PaymentTracking: React.FC = () => {
         paymentStatus: 'Paid' as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel'
     });
 
+    // Server-side fetching (same pattern as Orders Management)
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(200);
+    const [totalCount, setTotalCount] = useState(0);
+    const [serverOrders, setServerOrders] = useState<Sale[]>([]);
+    const [, setIsLoadingOrders] = useState(false);
 
-    // Filter Logic:
-    // Only show orders where Shipping Status is 'Delivered'
-    const trackingOrders = useMemo(() => {
-        return sales.filter(order => {
-            // PRIMARY FILTER: Must be Delivered
-            if (order.shipping?.status !== 'Delivered') return false;
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter, salesmanFilter, shippingCoFilter, customerCareFilter, settleDateRange, orderDateRange, itemsPerPage, sortConfig]);
 
-            const lowerTerm = searchTerm.toLowerCase();
-            const matchesSearch =
-                order.customer?.name.toLowerCase().includes(lowerTerm) ||
-                order.id.toLowerCase().includes(lowerTerm) ||
-                (order.customer?.phone || '').includes(lowerTerm) ||
-                (order.customer?.address || '').toLowerCase().includes(lowerTerm) ||
-                (order.customer?.city || '').toLowerCase().includes(lowerTerm) ||
-                (order.customer?.page || '').toLowerCase().includes(lowerTerm) ||
-                order.items.some(item => item.name.toLowerCase().includes(lowerTerm) || (item.model && item.model.toLowerCase().includes(lowerTerm))) ||
-                order.total.toString().includes(lowerTerm) ||
-                (order.amountReceived || 0).toString().includes(lowerTerm) ||
-                ((order.total - (order.amountReceived || 0)).toString()).includes(lowerTerm) ||
-                order.paymentMethod.toLowerCase().includes(lowerTerm) ||
-                (order.remark || '').toLowerCase().includes(lowerTerm);
+    const fetchOrders = React.useCallback(async () => {
+        setIsLoadingOrders(true);
+        try {
+            let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
 
-            const matchesStatus = statusFilter === 'All' || order.paymentStatus === statusFilter;
-
-            let matchesDate = true;
-            if (dateRange.start && dateRange.end) {
-                const orderDate = new Date(order.date);
-                const start = new Date(dateRange.start);
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                matchesDate = orderDate >= start && orderDate <= end;
+            // Payment status filter
+            if (statusFilter !== 'All') {
+                query = query.eq('payment_status', statusFilter);
             }
 
-            return matchesSearch && matchesStatus && matchesDate;
-        });
-    }, [sales, searchTerm, statusFilter, dateRange]);
+            // Salesman filter
+            const isSalesman = currentUser?.roleId === 'salesman';
+            const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
+            if (effectiveSalesmanFilter !== 'All') {
+                query = query.eq('salesman', effectiveSalesmanFilter);
+            }
 
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(50);
+            // Shipping Co filter
+            if (shippingCoFilter.length > 0) {
+                query = query.in('shipping_company', shippingCoFilter);
+            }
 
-    React.useEffect(() => {
-        setCurrentPage(1);
-    }, [searchTerm, statusFilter, dateRange, itemsPerPage]);
+            // Customer Care filter
+            if (customerCareFilter !== 'All') {
+                query = query.eq('customer_care', customerCareFilter);
+            }
 
-    const paginatedOrders = useMemo(() => {
-        const start = (currentPage - 1) * itemsPerPage;
-        return trackingOrders.slice(start, start + itemsPerPage);
-    }, [trackingOrders, currentPage, itemsPerPage]);
+            // Settle Date range filter
+            if (settleDateRange.start) {
+                const start = new Date(settleDateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('settle_date', start.toISOString());
+            }
+            if (settleDateRange.end) {
+                const end = new Date(settleDateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('settle_date', end.toISOString());
+            }
 
-    // Calculate Totals
+            // Order Date range filter
+            if (orderDateRange.start) {
+                const start = new Date(orderDateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('date', start.toISOString());
+            }
+            if (orderDateRange.end) {
+                const end = new Date(orderDateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('date', end.toISOString());
+            }
+
+            // Search term
+            if (searchTerm.trim()) {
+                const trimmedTerm = searchTerm.trim();
+                const isExact = trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"');
+                const phrase = isExact ? trimmedTerm.slice(1, -1) : trimmedTerm;
+                const terms = isExact ? (phrase ? [phrase] : []) : phrase.split(/[\s,]+/).filter(t => t.trim().length > 0);
+
+                if (terms.length > 0) {
+                    const isBulk = terms.length > 10;
+
+                    let matchingSaleIds: string[] = [];
+
+                    if (!isBulk) {
+                        let itemQuery = supabase
+                            .from('sale_items')
+                            .select('sale_id, sales!inner(date, payment_status)');
+
+                        const itemOrFilters = terms.map(t => {
+                            const escaped = t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                            return isExact ? `name.ilike."${escaped}"` : `name.ilike."%${escaped}%"`;
+                        }).join(',');
+                        itemQuery = itemQuery.or(itemOrFilters);
+
+                        if (statusFilter !== 'All') {
+                            itemQuery = itemQuery.eq('sales.payment_status', statusFilter);
+                        }
+                        if (effectiveSalesmanFilter !== 'All') {
+                            itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
+                        }
+                        if (shippingCoFilter.length > 0) {
+                            itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
+                        }
+                        if (customerCareFilter !== 'All') {
+                            itemQuery = itemQuery.eq('sales.customer_care', customerCareFilter);
+                        }
+                        if (settleDateRange.start) {
+                            const start = new Date(settleDateRange.start);
+                            start.setHours(0, 0, 0, 0);
+                            itemQuery = itemQuery.gte('sales.settle_date', start.toISOString());
+                        }
+                        if (settleDateRange.end) {
+                            const end = new Date(settleDateRange.end);
+                            end.setHours(23, 59, 59, 999);
+                            itemQuery = itemQuery.lte('sales.settle_date', end.toISOString());
+                        }
+                        if (orderDateRange.start) {
+                            const start = new Date(orderDateRange.start);
+                            start.setHours(0, 0, 0, 0);
+                            itemQuery = itemQuery.gte('sales.date', start.toISOString());
+                        }
+                        if (orderDateRange.end) {
+                            const end = new Date(orderDateRange.end);
+                            end.setHours(23, 59, 59, 999);
+                            itemQuery = itemQuery.lte('sales.date', end.toISOString());
+                        }
+
+                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+
+                        const { data: itemMatches } = await itemQuery;
+
+                        if (itemMatches && itemMatches.length > 0) {
+                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                        }
+                    }
+
+                    if (isBulk) {
+                        const inList = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(',');
+                        query = query.or(`id.in.(${inList}),tracking_number.in.(${inList}),customer_snapshot->>phone.in.(${inList})`);
+                    } else {
+                        let finalOrFilters: string[] = [];
+
+                        for (const term of terms) {
+                            const escapedTerm = term.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                            const matchStr = isExact ? `"${escapedTerm}"` : `"%${escapedTerm}%"`;
+                            finalOrFilters.push(`id.ilike.${matchStr},remark.ilike.${matchStr},payment_method.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`);
+                        }
+
+                        let orFilter = finalOrFilters.join(',');
+
+                        if (matchingSaleIds.length > 0) {
+                            orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
+                        }
+
+                        query = query.or(orFilter);
+                    }
+                }
+            }
+
+            // Sort
+            if (sortConfig) {
+                const columnMap: Record<string, string> = {
+                    settleDate: 'settle_date',
+                    date: 'date',
+                    customer: 'customer_id',
+                    salesman: 'salesman',
+                    shippingCo: 'shipping_company',
+                    payBy: 'payment_method',
+                    received: 'amount_received',
+                    remaining: 'amount_received',
+                    status: 'payment_status',
+                    remark: 'remark',
+                    total: 'total_amount'
+                };
+                const dbCol = columnMap[sortConfig.key];
+                if (dbCol) {
+                    query = query.order(dbCol, { ascending: sortConfig.direction === 'asc' });
+                } else {
+                    query = query.order('date', { ascending: false });
+                }
+            } else {
+                query = query.order('date', { ascending: false });
+            }
+
+            // Pagination
+            const from = (currentPage - 1) * itemsPerPage;
+            const to = from + itemsPerPage - 1;
+            query = query.range(from, to);
+
+            const { data, count, error } = await query;
+            if (error) throw error;
+
+            setTotalCount(count || 0);
+            const mapped = (data || []).map(mapSaleEntity);
+            setServerOrders(mapped);
+        } catch (err) {
+            console.error("Fetch payment orders failed", err);
+        } finally {
+            setIsLoadingOrders(false);
+        }
+    }, [statusFilter, salesmanFilter, shippingCoFilter, customerCareFilter, settleDateRange, orderDateRange, searchTerm, currentPage, itemsPerPage, salesUpdatedAt, currentUser, sortConfig]);
+
+    useEffect(() => {
+        fetchOrders();
+    }, [fetchOrders]);
+
+    // Derived state
+    const trackingOrders = serverOrders;
+    const paginatedOrders = serverOrders;
+
+    // Calculate Totals for the current page
     const stats = useMemo(() => {
-        const totalOrders = trackingOrders.length;
+        const totalOrders = totalCount;
         const totalRevenue = trackingOrders.reduce((sum, order) => sum + order.total, 0);
         const totalReceived = trackingOrders.reduce((sum, order) => sum + (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)), 0);
         const totalOutstanding = totalRevenue - totalReceived;
@@ -141,7 +486,7 @@ const PaymentTracking: React.FC = () => {
             totalReceived,
             totalOutstanding
         };
-    }, [trackingOrders]);
+    }, [trackingOrders, totalCount]);
 
 
 
@@ -157,20 +502,14 @@ const PaymentTracking: React.FC = () => {
         setIsEditModalOpen(false);
     };
 
-    const handleOpenEdit = (order: Sale) => {
-        setSelectedOrder(order);
-        setFormData({
-            amountReceived: order.amountReceived || 0,
-            settleDate: order.settleDate || '',
-            paymentStatus: order.paymentStatus || 'Paid'
-        });
-        setIsEditModalOpen(true);
-    };
 
 
+
+
+    const hasActiveFilters = searchTerm !== '' || statusFilter !== 'All' || salesmanFilter !== 'All' || shippingCoFilter.length > 0 || customerCareFilter !== 'All' || settleDateRange.start !== '' || settleDateRange.end !== '' || orderDateRange.start !== '' || orderDateRange.end !== '';
 
     return (
-        <div>
+        <div className="payment-tracking-container" style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
 
 
 
@@ -189,37 +528,273 @@ const PaymentTracking: React.FC = () => {
                     />
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Date:</span>
+                    <DateRangePicker value={orderDateRange} onChange={setOrderDateRange} />
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Settle Date:</span>
+                    <DateRangePicker value={settleDateRange} onChange={setSettleDateRange} />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <div ref={salesmanFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsSalesmanOpen(!isSalesmanOpen); setIsShippingCoOpen(false); setIsCustomerCareOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '160px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen') : salesmanFilter}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+
+                        {isSalesmanOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: salesmanFilter === 'All' ? 'var(--color-bg)' : 'transparent'
+                                }}
+                                    onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
+                                >
+                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
+                                </label>
+                                {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
+                                    <label key={s.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: salesmanFilter === s.name ? 'var(--color-bg)' : 'transparent'
+                                    }}
+                                        onClick={() => { setSalesmanFilter(s.name); setIsSalesmanOpen(false); }}
+                                    >
+                                        <span style={{ fontSize: '13px' }}>{s.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div ref={customerCareFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsCustomerCareOpen(!isCustomerCareOpen); setIsSalesmanOpen(false); setIsShippingCoOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '160px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', color: customerCareFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                    {customerCareFilter === 'All' ? 'Customer Care' : customerCareFilter}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+
+                        {isCustomerCareOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: customerCareFilter === 'All' ? 'var(--color-bg)' : 'transparent'
+                                }}
+                                    onClick={() => { setCustomerCareFilter('All'); setIsCustomerCareOpen(false); }}
+                                >
+                                    <span style={{ fontSize: '13px' }}>All Customer Care</span>
+                                </label>
+                                {(customerCare || []).map(cc => (
+                                    <label key={cc} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: customerCareFilter === cc ? 'var(--color-bg)' : 'transparent'
+                                    }}
+                                        onClick={() => { setCustomerCareFilter(cc); setIsCustomerCareOpen(false); }}
+                                    >
+                                        <span style={{ fontSize: '13px' }}>{cc}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div ref={shippingCoFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsShippingCoOpen(!isShippingCoOpen); setIsSalesmanOpen(false); setIsCustomerCareOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '160px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? '#000000' : '#000000' }}>
+                                    {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+                        {isShippingCoOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: shippingCoFilter.length === filterShippingCompanies.length ? 'var(--color-bg)' : 'transparent'
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={shippingCoFilter.length === filterShippingCompanies.length && filterShippingCompanies.length > 0}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setShippingCoFilter([...filterShippingCompanies]);
+                                            else setShippingCoFilter([]);
+                                        }}
+                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                    />
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                </label>
+                                {filterShippingCompanies.map(co => (
+                                    <label key={co} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: shippingCoFilter.includes(co) ? 'var(--color-bg)' : 'transparent'
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={shippingCoFilter.includes(co)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) setShippingCoFilter([...shippingCoFilter, co]);
+                                                else setShippingCoFilter(shippingCoFilter.filter(s => s !== co));
+                                            }}
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <span style={{ fontSize: "13px", color: getShippingCoColor(co) }}>{co}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     <select
                         value={statusFilter}
                         onChange={e => setStatusFilter(e.target.value as any)}
                         className="search-input"
                         style={{ width: '130px' }}
                     >
-                        <option value="All">All Status</option>
+                        <option value="All">All Payment Status</option>
                         <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Paid</option>
                         <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>Get File</option>
                         <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Unpaid</option>
                         <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>Cancel</option>
                     </select>
-                    <DateRangePicker value={dateRange} onChange={setDateRange} />
 
                     <button
                         onClick={() => {
                             setSearchTerm('');
                             setStatusFilter('All');
-                            setDateRange({ start: '', end: '' });
+                            setSalesmanFilter('All');
+                            setShippingCoFilter([]);
+                            setCustomerCareFilter('All');
+                            setSettleDateRange({ start: '', end: '' });
+                            setOrderDateRange({ start: '', end: '' });
                         }}
                         style={{
-                            padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                            background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer',
-                            fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
+                            padding: '10px 16px', borderRadius: '8px', 
+                            border: hasActiveFilters ? 'none' : '1px solid var(--color-border)',
+                            background: hasActiveFilters ? '#EF4444' : 'var(--color-surface)', 
+                            color: hasActiveFilters ? '#ffffff' : 'var(--color-text-secondary)', 
+                            cursor: 'pointer',
+                            fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
+                            transition: 'all 0.2s ease'
                         }}
                         title="Clear Filters"
                     >
                         <X size={16} /> Clear
                     </button>
                 </div>
+
+                <button
+                    onClick={() => {
+                        refreshData();
+                        const btn = document.getElementById('payment-refresh-btn');
+                        if (btn) {
+                            btn.style.animation = 'spin 1s linear';
+                            setTimeout(() => btn.style.animation = '', 1000);
+                        }
+                    }}
+                    title="Refresh Data"
+                    style={{
+                        padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                        background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}
+                >
+                    <RefreshCw id="payment-refresh-btn" size={18} />
+                </button>
+                <style>{`
+                    @keyframes spin { 
+                        100% { transform: rotate(360deg); } 
+                    }
+                `}</style>
 
                 <div style={{ position: 'relative' }}>
                     <button
@@ -262,117 +837,189 @@ const PaymentTracking: React.FC = () => {
             </div>
 
             {/* Table */}
-            <div className="glass-panel" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
-                <table className="spreadsheet-table">
+            <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(100vh - 260px)' }}>
+                <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
+                <table
+                    className="spreadsheet-table"
+                    style={{
+                        minWidth: '100%',
+                        whiteSpace: 'nowrap',
+                        borderCollapse: 'separate',
+                        borderSpacing: 0,
+                        fontSize: '13px',
+                        tableLayout: 'fixed'
+                    }}
+                >
                     <thead>
                         <tr>
-                            <th style={{ width: '40px', textAlign: 'center' }} className="sticky-col-first">
+                            <th style={{ width: '40px', textAlign: 'center', background: '#e5e7eb', position: 'sticky', left: 0, top: 0, zIndex: 40 }} className="sticky-col-first">
                                 <input
                                     type="checkbox"
                                     checked={trackingOrders.length > 0 && selectedIds.size === trackingOrders.length}
                                     onChange={toggleSelectAll}
-                                    style={{ cursor: 'pointer' }}
+                                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                             </th>
-                            {visibleColumns.includes('actions') && <th className="sticky-col-second">Actions</th>}
-                            {visibleColumns.includes('date') && <th>Date</th>}
-                            {visibleColumns.includes('customer') && <th>Customer</th>}
-                            {visibleColumns.includes('phone') && <th>Phone</th>}
-                            {visibleColumns.includes('address') && <th>Address</th>}
-                            {visibleColumns.includes('items') && <th>Products</th>}
-                            {visibleColumns.includes('total') && <th>Total</th>}
-                            {visibleColumns.includes('payBy') && <th>Pay By</th>}
-                            {visibleColumns.includes('received') && <th>Received</th>}
-                            {visibleColumns.includes('remaining') && <th>Remaining</th>}
-                            {visibleColumns.includes('status') && <th>Status</th>}
-                            {visibleColumns.includes('settleDate') && <th>Settle Date</th>}
-                            {visibleColumns.includes('remark') && <th>Remark</th>}
+                            {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
+                                const colId = col.id;
+                                const width = columnWidths[colId] || 150;
+                                
+                                return (
+                                    <th
+                                        key={colId}
+                                        style={{
+                                            width: `var(--col-payment-${colId}-width, ${width}px)`,
+                                            minWidth: `var(--col-payment-${colId}-width, ${width}px)`,
+                                            overflow: 'visible',
+                                            borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                            transition: 'border-color 0.1s',
+                                            padding: 0,
+                                            position: 'sticky',
+                                            zIndex: 30,
+                                            background: '#e5e7eb',
+                                            boxShadow: 'none',
+                                            top: 0
+                                        }}
+                                    >
+                                        <div 
+                                            onClick={() => handleSort(colId)}
+                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: '100%', userSelect: 'none', padding: 'var(--table-padding, 5px 6px)', cursor: 'pointer' }}
+                                        >
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{col.label}</span>
+                                            {sortConfig?.key === colId && (
+                                                sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                            )}
+                                        </div>
+                                        <div
+                                            onMouseDown={(e) => startResize(e, colId)}
+                                            onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); autoFitColumn(colId); }}
+                                            style={{
+                                                position: 'absolute',
+                                                right: 0,
+                                                top: 0,
+                                                bottom: 0,
+                                                width: '10px',
+                                                cursor: 'col-resize',
+                                                background: 'transparent',
+                                                zIndex: 25,
+                                                transform: 'translateX(50%)'
+                                            }}
+                                            className="resize-handle"
+                                        />
+                                    </th>
+                                );
+                            })}
+                            <th style={{ width: '100%', minWidth: 'auto', background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
                         </tr>
                     </thead>
                     <tbody>
                         {paginatedOrders.map((order) => (
                             <tr key={order.id} className={selectedIds.has(order.id) ? 'selected' : ''}>
-                                <td style={{ textAlign: 'center' }} className="sticky-col-first">
+                                <td style={{ width: '40px', textAlign: 'center' }} className="sticky-col-first">
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.has(order.id)}
                                         onChange={() => toggleSelection(order.id)}
-                                        style={{ cursor: 'pointer' }}
+                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
                                 </td>
-                                {visibleColumns.includes('actions') &&
-                                    <td className="sticky-col-second">
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <button 
-                                                onClick={() => setReceiptSale(order)} 
-                                                className="icon-button" 
-                                                title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Confirmed, Shipped, or Delivered)"}
-                                                disabled={!['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '')}
-                                                style={{ 
-                                                    padding: '4px', 
-                                                    background: 'transparent', 
-                                                    border: 'none', 
-                                                    cursor: ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 'pointer' : 'not-allowed',
-                                                    opacity: ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? 1 : 0.4
-                                                }}
-                                            >
-                                                <Printer size={16} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
-                                            </button>
-                                            <button onClick={() => { setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                <Eye size={16} color="var(--color-text-secondary)" />
-                                            </button>
-                                            <button onClick={() => handleOpenEdit(order)} className="icon-button" title="Edit Payment" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                <Edit size={16} color="var(--color-text-secondary)" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                }
-                                {visibleColumns.includes('date') && <td>{new Date(order.date).toLocaleDateString()}</td>}
-                                {visibleColumns.includes('customer') && <td style={{ fontWeight: 500 }}>{order.customer?.name}</td>}
-                                {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.phone}</td>}
-                                {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.address || '-'}</td>}
-                                {visibleColumns.includes('items') && <td>
-                                    <div style={{ fontSize: '12px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {visibleColumns.includes('date') && <td style={{ width: `var(--col-payment-date-width, ${columnWidths.date}px)` }}>{new Date(order.date).toLocaleDateString()}</td>}
+                                {visibleColumns.includes('settleDate') && <td style={{ width: `var(--col-payment-settleDate-width, ${columnWidths.settleDate}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.settleDate ? new Date(order.settleDate).toLocaleDateString() : ''}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>}
+                                {visibleColumns.includes('customer') && <td style={{ fontWeight: 500, width: `var(--col-payment-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
+                                {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-payment-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>{order.customer?.phone}</td>}
+                                {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-payment-address-width, ${columnWidths.address}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.address || ''}>{order.customer?.address || '-'}</td>}
+                                {visibleColumns.includes('salesman') && <td style={{ color: 'var(--color-text-main)', width: `var(--col-payment-salesman-width, ${columnWidths.salesman}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.salesman || ''}>{order.salesman || '-'}</td>}
+                                {visibleColumns.includes('items') && <td style={{ width: `var(--col-payment-items-width, ${columnWidths.items}px)` }}>
+                                    <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}>
                                         {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
                                     </div>
                                 </td>}
-                                {visibleColumns.includes('total') && <td style={{ fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>}
-                                {visibleColumns.includes('payBy') && <td>{order.paymentMethod}</td>}
-                                {visibleColumns.includes('received') && <td style={{ textAlign: 'right' }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
-                                {visibleColumns.includes('remaining') && <td style={{ color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
+                                {visibleColumns.includes('total') && <td style={{ fontWeight: 'bold', textAlign: 'right', width: `var(--col-payment-total-width, ${columnWidths.total}px)` }}>${order.total.toFixed(2)}</td>}
+                                {visibleColumns.includes('shippingCo') && <td style={{ color: getShippingCoColor(order.shipping?.company || ''), width: `var(--col-payment-shippingCo-width, ${columnWidths.shippingCo}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.company || ''}>{order.shipping?.company || '-'}</td>}
+                                {visibleColumns.includes('payBy') && <td style={{ width: `var(--col-payment-payBy-width, ${columnWidths.payBy}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.paymentMethod}>{order.paymentMethod}</td>}
+                                {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)` }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
+                                {visibleColumns.includes('remaining') && <td style={{ color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right', width: `var(--col-payment-remaining-width, ${columnWidths.remaining}px)` }}>
                                     ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
                                 </td>}
-                                {visibleColumns.includes('status') && <td>
+                                {visibleColumns.includes('orderStatus') && <td style={{ width: `var(--col-payment-orderStatus-width, ${columnWidths.orderStatus}px)`, padding: '8px' }}>
+                                    <StatusBadge
+                                        status={order.shipping?.status || 'Pending'}
+                                        readOnly={order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered'}
+                                        disabledOptions={
+                                            (order.shipping?.status === 'Shipped')
+                                                ? ['Ordered', 'Pending', 'Confirmed']
+                                                : ['Delivered', 'Returned']
+                                        }
+                                        onChange={(newStatus: string) => {
+                                            updateOrderStatus(order.id, newStatus as any);
+                                            if (newStatus === 'ReStock') {
+                                                updateOrder(order.id, { paymentStatus: 'Cancel' });
+                                                restockOrder(order.id);
+                                            } else if (newStatus === 'Returned') {
+                                                updateOrder(order.id, { paymentStatus: 'Cancel' });
+                                            }
+                                        }}
+                                    />
+                                </td>}
+                                {visibleColumns.includes('status') && <td style={{ width: `var(--col-payment-status-width, ${columnWidths.status}px)` }}>
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
                                         onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel', ...(newStatus === 'Paid' && order.shipping?.status !== 'Delivered' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
                                         readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
                                     />
                                 </td>}
-                                {visibleColumns.includes('settleDate') && <td>{order.settleDate || '-'}</td>}
-                                {visibleColumns.includes('remark') && <td>{order.remark || '-'}</td>}
+                                {visibleColumns.includes('remark') && <td style={{ width: `var(--col-payment-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}
+                                <td style={{ width: '100%', minWidth: 'auto' }}></td>
                             </tr>
                         ))}
                     </tbody>
                     <tfoot>
                         <tr>
+                            <td className="sticky-col-first" style={{ width: '40px', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                             {visibleColumns.map((colId, index) => {
-                                if (colId === 'total') return <td key={colId} style={{ fontWeight: 'bold', textAlign: 'right', padding: '6px 10px', fontSize: '12px' }}>${stats.totalRevenue.toFixed(2)}</td>;
-                                if (colId === 'received') return <td key={colId} style={{ fontWeight: '700', color: 'var(--color-green)', textAlign: 'right', padding: '6px 10px', fontSize: '12px' }}>${stats.totalReceived.toFixed(2)}</td>;
-                                if (colId === 'remaining') return <td key={colId} style={{ fontWeight: '700', color: stats.totalOutstanding > 0 ? 'var(--color-red)' : 'var(--color-green)', textAlign: 'right', padding: '6px 10px', fontSize: '12px' }}>${stats.totalOutstanding.toFixed(2)}</td>;
-                                if (index === 0) return <td key={colId} style={{ fontWeight: 'bold', padding: '6px 10px', fontSize: '12px' }}>Total ({stats.totalOrders})</td>;
-                                return <td key={colId}></td>;
+                                const width = columnWidths[colId] || 150;
+                                const style: React.CSSProperties = {
+                                    width: `var(--col-payment-${colId}-width, ${width}px)`,
+                                    background: 'var(--color-bg)',
+                                    borderTop: '2px solid var(--color-border)',
+                                    padding: 'var(--table-padding, 5px 6px)',
+                                    fontSize: '12px'
+                                };
+                                
+                                if (colId === 'total') return (
+                                    <td key={colId} style={{ ...style, fontWeight: 'bold', textAlign: 'right' }}>
+                                        ${stats.totalRevenue.toFixed(2)}
+                                    </td>
+                                );
+                                if (colId === 'received') return (
+                                    <td key={colId} style={{ ...style, fontWeight: 'bold', textAlign: 'right', color: '#2563EB' }}>
+                                        ${stats.totalReceived.toFixed(2)}
+                                    </td>
+                                );
+                                if (colId === 'remaining') return (
+                                    <td key={colId} style={{ ...style, fontWeight: 'bold', textAlign: 'right', color: 'var(--color-red)' }}>
+                                        ${stats.totalOutstanding.toFixed(2)}
+                                    </td>
+                                );
+                                if (index === 0) return (
+                                    <td key={colId} style={{ ...style, fontWeight: 'bold' }}>
+                                        Total ({stats.totalOrders})
+                                    </td>
+                                );
+                                return <td key={colId} style={style}></td>;
                             })}
+                            <td style={{ width: '100%', minWidth: 'auto', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                         </tr>
                     </tfoot>
                 </table>
-                {trackingOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No Delivered orders found.</div>}
+                </div>
+            {totalCount === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No payments found.</div>}
             </div>
 
-            {trackingOrders.length > 0 && (
+            {totalCount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
                     <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, trackingOrders.length)} to {Math.min(currentPage * itemsPerPage, trackingOrders.length)} of {trackingOrders.length} entries
+                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, totalCount)} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} entries
                     </div>
 
 
@@ -394,10 +1041,12 @@ const PaymentTracking: React.FC = () => {
                                     cursor: 'pointer'
                                 }}
                             >
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
                                 <option value={100}>100</option>
+                                <option value={200}>200</option>
+                                <option value={300}>300</option>
+                                <option value={500}>500</option>
+                                <option value={1000}>1000</option>
+                                <option value={3000}>3000</option>
                             </select>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -415,16 +1064,16 @@ const PaymentTracking: React.FC = () => {
                                 <ChevronLeft size={16} />
                             </button>
                             <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(trackingOrders.length / itemsPerPage)}
+                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
                             </span>
                             <button
-                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(trackingOrders.length / itemsPerPage), p + 1))}
-                                disabled={currentPage === Math.ceil(trackingOrders.length / itemsPerPage)}
+                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / itemsPerPage), p + 1))}
+                                disabled={currentPage >= Math.ceil(totalCount / itemsPerPage)}
                                 style={{
                                     padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                    background: currentPage === Math.ceil(trackingOrders.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
-                                    color: currentPage === Math.ceil(trackingOrders.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                    cursor: currentPage === Math.ceil(trackingOrders.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                                    background: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                                    color: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                    cursor: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                                 }}
                             >
@@ -509,6 +1158,12 @@ const PaymentTracking: React.FC = () => {
                     />
                 )
             }
+
+            {/* Report Modal */}
+            <ReportModal
+                isOpen={isReportOpen}
+                onClose={() => setIsReportOpen(false)}
+            />
         </div >
     );
 };

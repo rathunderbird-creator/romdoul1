@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle } from 'lucide-react';
+import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker } from '../components';
+import { getShippingCoColor } from '../utils/orderUtils';
 
 const DeliveryTracking: React.FC = () => {
     const { sales, updateOrderStatus, updateOrder } = useStore();
@@ -64,6 +65,137 @@ const DeliveryTracking: React.FC = () => {
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        } else if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
+            setSortConfig(null);
+            return;
+        }
+        setSortConfig({ key, direction });
+    };
+
+    // Column widths and resize state
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+        const saved = localStorage.getItem('delivery_column_widths');
+        return saved ? JSON.parse(saved) : {
+            actions: 120,
+            date: 110,
+            customer: 140,
+            phone: 110,
+            address: 200,
+            items: 200,
+            shippingCo: 110,
+            tracking: 130,
+            deliveryMan: 120,
+            status: 130,
+            cost: 90,
+            remark: 150
+        };
+    });
+
+    React.useEffect(() => {
+        localStorage.setItem('delivery_column_widths', JSON.stringify(columnWidths));
+    }, [columnWidths]);
+
+    const [resizingCol, setResizingCol] = useState<string | null>(null);
+    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string } | null>(null);
+
+    const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const { startX, startWidth, colId } = resizeRef.current;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(15, startWidth + diff);
+        document.documentElement.style.setProperty(`--col-delivery-${colId}-width`, `${newWidth}px`);
+    }, []);
+
+    const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const { startX, startWidth, colId } = resizeRef.current;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(15, startWidth + diff);
+
+        setColumnWidths(prev => ({ ...prev, [colId]: newWidth }));
+        document.documentElement.style.removeProperty(`--col-delivery-${colId}-width`);
+
+        resizeRef.current = null;
+        setResizingCol(null);
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.cursor = '';
+    }, [handleGlobalMouseMove]);
+
+    const startResize = (e: React.MouseEvent, colId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentWidth = columnWidths[colId] || 150;
+        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId };
+        setResizingCol(colId);
+        document.addEventListener('mousemove', handleGlobalMouseMove);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        document.body.style.cursor = 'col-resize';
+    };
+
+    React.useEffect(() => {
+        return () => {
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [handleGlobalMouseMove, handleGlobalMouseUp]);
+
+    const autoFitColumn = (colId: string) => {
+        const table = document.querySelector('.spreadsheet-table') as HTMLTableElement;
+        if (!table) return;
+
+        const visibleCols = allColumns.filter(c => visibleColumns.includes(c.id));
+        const colIndex = visibleCols.findIndex(c => c.id === colId);
+        if (colIndex === -1) return;
+        const cellIndex = colIndex + 1; // +1 for checkbox column
+
+        const measurer = document.createElement('div');
+        measurer.style.cssText = 'position:absolute;visibility:hidden;height:auto;width:auto;white-space:nowrap;padding:0 12px;font-size:13px;font-family:inherit;';
+        document.body.appendChild(measurer);
+
+        let maxWidth = 40;
+
+        // Measure header
+        const headerCell = table.tHead?.rows[0]?.cells[cellIndex];
+        if (headerCell) {
+            measurer.style.fontWeight = '600';
+            measurer.textContent = (headerCell.textContent || '').trim();
+            maxWidth = Math.max(maxWidth, measurer.scrollWidth + 28);
+            measurer.style.fontWeight = '';
+        }
+
+        // Measure body cells
+        const rows = table.tBodies[0]?.rows;
+        if (rows) {
+            for (let i = 0; i < rows.length; i++) {
+                const cell = rows[i]?.cells[cellIndex];
+                if (cell) {
+                    measurer.textContent = (cell.textContent || '').trim();
+                    maxWidth = Math.max(maxWidth, measurer.scrollWidth);
+                }
+            }
+        }
+
+        document.body.removeChild(measurer);
+        const finalWidth = Math.min(Math.max(maxWidth, 40), 600);
+
+        if (resizeRef.current && resizeRef.current.colId === colId) {
+            document.documentElement.style.removeProperty(`--col-delivery-${colId}-width`);
+            resizeRef.current = null;
+            setResizingCol(null);
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.body.style.cursor = '';
+        }
+
+        setColumnWidths(prev => ({ ...prev, [colId]: finalWidth }));
+    };
 
     const toggleSelection = (id: string) => {
         const newSet = new Set(selectedIds);
@@ -126,10 +258,40 @@ const DeliveryTracking: React.FC = () => {
         setCurrentPage(1);
     }, [searchTerm, statusFilter, dateRange, itemsPerPage]);
 
+    const sortedAndFilteredOrders = useMemo(() => {
+        let result = trackingOrders;
+        if (sortConfig) {
+            result = [...result].sort((a, b) => {
+                let aVal: any = '';
+                let bVal: any = '';
+                switch (sortConfig.key) {
+                    case 'date': aVal = new Date(a.date).getTime(); bVal = new Date(b.date).getTime(); break;
+                    case 'customer': aVal = a.customer?.name || ''; bVal = b.customer?.name || ''; break;
+                    case 'phone': aVal = a.customer?.phone || ''; bVal = b.customer?.phone || ''; break;
+                    case 'address': aVal = a.customer?.address || ''; bVal = b.customer?.address || ''; break;
+                    case 'shippingCo': aVal = a.shipping?.company || ''; bVal = b.shipping?.company || ''; break;
+                    case 'tracking': aVal = a.shipping?.trackingNumber || ''; bVal = b.shipping?.trackingNumber || ''; break;
+                    case 'deliveryMan': aVal = a.shipping?.staffName || ''; bVal = b.shipping?.staffName || ''; break;
+                    case 'status': aVal = a.shipping?.status || ''; bVal = b.shipping?.status || ''; break;
+                    case 'cost': aVal = a.shipping?.cost || 0; bVal = b.shipping?.cost || 0; break;
+                    case 'remark': aVal = a.remark || ''; bVal = b.remark || ''; break;
+                    default: aVal = new Date(a.date).getTime(); bVal = new Date(b.date).getTime();
+                }
+                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        } else {
+             // Default sort by date descending
+             result = [...result].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        }
+        return result;
+    }, [trackingOrders, sortConfig]);
+
     const paginatedOrders = useMemo(() => {
         const start = (currentPage - 1) * itemsPerPage;
-        return trackingOrders.slice(start, start + itemsPerPage);
-    }, [trackingOrders, currentPage, itemsPerPage]);
+        return sortedAndFilteredOrders.slice(start, start + itemsPerPage);
+    }, [sortedAndFilteredOrders, currentPage, itemsPerPage]);
 
     // Calculate Totals
     const stats = useMemo(() => {
@@ -349,44 +511,92 @@ const DeliveryTracking: React.FC = () => {
             <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(100vh - 260px)' }}> {/* changed overflow to visible for dropdowns if needed, or better keep auto but manage dropdown z-index/portal */}
                 {/* Reverting to auto for scrolling, custom dropdown handles inline */}
                 <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
-                    <table className="spreadsheet-table">
+                    <table
+                        className="spreadsheet-table"
+                        style={{
+                            minWidth: '100%',
+                            whiteSpace: 'nowrap',
+                            borderCollapse: 'separate',
+                            borderSpacing: 0,
+                            fontSize: '13px',
+                            tableLayout: 'fixed'
+                        }}
+                    >
                         <thead>
                             <tr>
-                                <th style={{ width: '40px', textAlign: 'center' }} className="sticky-col-first">
+                                <th style={{ width: '40px', textAlign: 'center', background: '#e5e7eb', position: 'sticky', left: 0, top: 0, zIndex: 40 }} className="sticky-col-first">
                                     <input
                                         type="checkbox"
                                         checked={trackingOrders.length > 0 && selectedIds.size === trackingOrders.length}
                                         onChange={toggleSelectAll}
-                                        style={{ cursor: 'pointer' }}
+                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
                                 </th>
-                                {visibleColumns.includes('actions') && <th className="sticky-col-second">Actions</th>}
-                                {visibleColumns.includes('date') && <th>Date</th>}
-                                {visibleColumns.includes('customer') && <th>Customer</th>}
-                                {visibleColumns.includes('phone') && <th>Phone</th>}
-                                {visibleColumns.includes('address') && <th>Address</th>}
-                                {visibleColumns.includes('items') && <th>Products</th>}
-                                {visibleColumns.includes('shippingCo') && <th>Shipping Co.</th>}
-                                {visibleColumns.includes('tracking') && <th>Tracking ID</th>}
-                                {visibleColumns.includes('deliveryMan') && <th>Delivery Man</th>}
-                                {visibleColumns.includes('status') && <th>Ship Status</th>}
-                                {visibleColumns.includes('cost') && <th>Cost</th>}
-                                {visibleColumns.includes('remark') && <th>Remark</th>}
+                                {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
+                                    const colId = col.id;
+                                    const width = columnWidths[colId] || 150;
+                                    
+                                    return (
+                                        <th
+                                            key={colId}
+                                            style={{
+                                                width: `var(--col-delivery-${colId}-width, ${width}px)`,
+                                                minWidth: `var(--col-delivery-${colId}-width, ${width}px)`,
+                                                overflow: 'visible',
+                                                borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                transition: 'border-color 0.1s',
+                                                padding: 0,
+                                                position: 'sticky',
+                                                zIndex: 30,
+                                                background: '#e5e7eb',
+                                                boxShadow: 'none',
+                                                top: 0
+                                            }}
+                                        >
+                                            <div 
+                                                onClick={() => handleSort(colId)}
+                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: '100%', userSelect: 'none', padding: 'var(--table-padding, 5px 6px)', cursor: 'pointer' }}
+                                            >
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{col.label}</span>
+                                                {sortConfig?.key === colId && (
+                                                    sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                )}
+                                            </div>
+                                            <div
+                                                onMouseDown={(e) => startResize(e, colId)}
+                                                onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); autoFitColumn(colId); }}
+                                                style={{
+                                                    position: 'absolute',
+                                                    right: 0,
+                                                    top: 0,
+                                                    bottom: 0,
+                                                    width: '10px',
+                                                    cursor: 'col-resize',
+                                                    background: 'transparent',
+                                                    zIndex: 25,
+                                                    transform: 'translateX(50%)'
+                                                }}
+                                                className="resize-handle"
+                                            />
+                                        </th>
+                                    );
+                                })}
+                                <th style={{ width: '100%', minWidth: 'auto', background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
                             </tr>
                         </thead>
                         <tbody>
                             {paginatedOrders.map((order) => (
                                 <tr key={order.id} className={selectedIds.has(order.id) ? 'selected' : ''}>
-                                    <td style={{ textAlign: 'center' }} className="sticky-col-first">
+                                    <td style={{ width: '40px', textAlign: 'center' }} className="sticky-col-first">
                                         <input
                                             type="checkbox"
                                             checked={selectedIds.has(order.id)}
                                             onChange={() => toggleSelection(order.id)}
-                                            style={{ cursor: 'pointer' }}
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                         />
                                     </td>
                                     {visibleColumns.includes('actions') &&
-                                        <td className="sticky-col-second">
+                                        <td style={{ width: `var(--col-delivery-actions-width, ${columnWidths.actions}px)` }} className="sticky-col-second">
                                             <div style={{ display: 'flex', gap: '8px' }}>
                                                 <button 
                                                     onClick={() => setReceiptSale(order)} 
@@ -412,40 +622,60 @@ const DeliveryTracking: React.FC = () => {
                                             </div>
                                         </td>
                                     }
-                                    {visibleColumns.includes('date') && <td>{new Date(order.date).toLocaleDateString()}</td>}
-                                    {visibleColumns.includes('customer') && <td style={{ fontWeight: 500 }}>{order.customer?.name}</td>}
-                                    {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.phone}</td>}
-                                    {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)' }}>{order.customer?.address || '-'}</td>}
-                                    {visibleColumns.includes('items') && <td>
-                                        <div style={{ fontSize: '12px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {order.items.map(i => `${i.name} x${i.quantity} `).join(', ')}
+                                    {visibleColumns.includes('date') && <td style={{ width: `var(--col-delivery-date-width, ${columnWidths.date}px)` }}>{new Date(order.date).toLocaleDateString()}</td>}
+                                    {visibleColumns.includes('customer') && <td style={{ fontWeight: 500, width: `var(--col-delivery-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
+                                    {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>{order.customer?.phone}</td>}
+                                    {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-address-width, ${columnWidths.address}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.address || ''}>{order.customer?.address || '-'}</td>}
+                                    {visibleColumns.includes('items') && <td style={{ width: `var(--col-delivery-items-width, ${columnWidths.items}px)` }}>
+                                        <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}>
+                                            {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
                                         </div>
                                     </td>}
-                                    {visibleColumns.includes('shippingCo') && <td>{order.shipping?.company || '-'}</td>}
-                                    {visibleColumns.includes('tracking') && <td style={{ fontFamily: 'monospace' }}>
+                                    {visibleColumns.includes('shippingCo') && <td style={{ color: getShippingCoColor(order.shipping?.company || ''), width: `var(--col-delivery-shippingCo-width, ${columnWidths.shippingCo}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.company || ''}>{order.shipping?.company || '-'}</td>}
+                                    {visibleColumns.includes('tracking') && <td style={{ fontFamily: 'monospace', width: `var(--col-delivery-tracking-width, ${columnWidths.tracking}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.trackingNumber || ''}>
                                         {order.shipping?.trackingNumber ? (
                                             <span style={{ background: '#F3F4F6', padding: '2px 6px', borderRadius: '4px' }}>{order.shipping.trackingNumber}</span>
                                         ) : '-'}
                                     </td>}
-                                    {visibleColumns.includes('deliveryMan') && <td>{order.shipping?.staffName || '-'}</td>}
-                                    {visibleColumns.includes('status') && <td>
+                                    {visibleColumns.includes('deliveryMan') && <td style={{ width: `var(--col-delivery-deliveryMan-width, ${columnWidths.deliveryMan}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.staffName || ''}>{order.shipping?.staffName || '-'}</td>}
+                                    {visibleColumns.includes('status') && <td style={{ width: `var(--col-delivery-status-width, ${columnWidths.status}px)` }}>
                                         <StatusBadge
                                             status={order.shipping?.status || 'Pending'}
                                             onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock')}
                                         />
                                     </td>}
-                                    {visibleColumns.includes('cost') && <td style={{ textAlign: 'right' }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}
-                                    {visibleColumns.includes('remark') && <td>{order.remark || '-'}</td>}
+                                    {visibleColumns.includes('cost') && <td style={{ textAlign: 'right', width: `var(--col-delivery-cost-width, ${columnWidths.cost}px)` }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}
+                                    {visibleColumns.includes('remark') && <td style={{ width: `var(--col-delivery-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}
+                                    <td style={{ width: '100%', minWidth: 'auto' }}></td>
                                 </tr>
                             ))}
                         </tbody>
                         <tfoot>
                             <tr>
+                                <td className="sticky-col-first" style={{ width: '40px', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                                 {visibleColumns.map((colId, index) => {
-                                    if (colId === 'cost') return <td key={colId} style={{ fontWeight: 'bold', textAlign: 'right', color: 'var(--color-red)', padding: '6px 10px', fontSize: '12px' }}>${stats.totalCost.toFixed(2)}</td>;
-                                    if (index === 0) return <td key={colId} style={{ fontWeight: 'bold', padding: '6px 10px', fontSize: '12px' }}>Total ({stats.totalItems})</td>;
-                                    return <td key={colId}></td>;
+                                    const width = columnWidths[colId] || 150;
+                                    const style = {
+                                        width: `var(--col-delivery-${colId}-width, ${width}px)`,
+                                        background: 'var(--color-bg)',
+                                        borderTop: '2px solid var(--color-border)',
+                                        padding: 'var(--table-padding, 5px 6px)',
+                                        fontSize: '12px'
+                                    };
+                                    
+                                    if (colId === 'cost') return (
+                                        <td key={colId} style={{ ...style, fontWeight: 'bold', textAlign: 'right', color: 'var(--color-red)' }}>
+                                            ${stats.totalCost.toFixed(2)}
+                                        </td>
+                                    );
+                                    if (index === 0) return (
+                                        <td key={colId} style={{ ...style, fontWeight: 'bold' }}>
+                                            Total ({stats.totalItems})
+                                        </td>
+                                    );
+                                    return <td key={colId} style={style}></td>;
                                 })}
+                                <td style={{ width: '100%', minWidth: 'auto', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                             </tr>
                         </tfoot>
                     </table>

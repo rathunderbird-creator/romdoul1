@@ -9,6 +9,7 @@ import { dispatchActivity } from '../utils/activityLogger';
 import StatsCard from '../components/StatsCard';
 import DateRangePicker from '../components/DateRangePicker';
 import Modal from '../components/Modal';
+import { getShippingCoColor } from '../utils/orderUtils';
 
 interface StockOutRecord {
     id: string;
@@ -416,7 +417,7 @@ const StockOut: React.FC = () => {
                                 style={{ ...inputStyle, appearance: 'none' as any }}
                             >
                                 {REASON_OPTIONS.map(r => (
-                                    <option key={r} value={r}>{r}</option>
+                                    <option key={r} value={r} style={{ color: getShippingCoColor(r) }}>{r}</option>
                                 ))}
                             </select>
                         </div>
@@ -470,7 +471,7 @@ const StockOut: React.FC = () => {
                                 style={inputStyle}
                             />
                             <datalist id="shipping-companies">
-                                {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                                {shippingCompanies?.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
                             </datalist>
                         </div>
 
@@ -573,8 +574,8 @@ const StockOut: React.FC = () => {
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                         {record.customer_phone || '-'}
                                     </td>
-                                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        {record.shipping_co || '-'}
+                                    <td style={{ fontSize: "12px", color: getShippingCoColor(record.shipping_co || "") }}>
+                                        {record.shipping_co || "-"}
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
                                         {record.reference_id || '-'}
@@ -624,7 +625,7 @@ const StockOut: React.FC = () => {
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Reason</label>
                         <select value={editReason} onChange={(e) => setEditReason(e.target.value)} style={{ ...inputStyle, appearance: 'none' as any }}>
                             {REASON_OPTIONS.map(r => (
-                                <option key={r} value={r}>{r}</option>
+                                <option key={r} value={r} style={{ color: getShippingCoColor(r) }}>{r}</option>
                             ))}
                         </select>
                     </div>
@@ -636,7 +637,7 @@ const StockOut: React.FC = () => {
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
                         <input type="text" list="shipping-companies-edit" value={editShippingCo} onChange={(e) => setEditShippingCo(e.target.value)} style={inputStyle} />
                         <datalist id="shipping-companies-edit">
-                            {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                            {shippingCompanies?.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
                         </datalist>
                     </div>
                     <div>

@@ -133,7 +133,7 @@ button {
 
 .spreadsheet-table.compact th,
 .spreadsheet-table.compact td {
-  padding: 4px 8px !important;
+  padding: 3px 5px !important;
   height: auto !important;
 }
 
@@ -147,7 +147,7 @@ button {
   border-bottom: 1px solid var(--color-border);
   border-right: 1px solid var(--color-bg);
   /* Very subtle vertical divider */
-  padding: var(--table-padding, 8px 12px);
+  padding: var(--table-padding, 5px 6px);
   /* More breathable padding */
   text-align: left;
   white-space: nowrap;

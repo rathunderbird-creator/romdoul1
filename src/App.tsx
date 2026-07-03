@@ -14,7 +14,7 @@ const PaymentTracking = lazy(() => import('./pages/PaymentTracking'));
 const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
-const DropOffPoints = lazy(() => import('./pages/DropOffPoints'));
+const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const ReturnsRestocks = lazy(() => import('./pages/ReturnsRestocks'));
 const StockIn = lazy(() => import('./pages/StockIn'));
@@ -70,15 +70,15 @@ const ProtectedApp = () => {
           <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
           <Route path="/income-expense/revenue" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><Revenue /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
+          <Route path="/orders/shipping" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
           <Route path="/orders/:id" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrderDetailPage /></ProtectedRoute>} />
 
           {/* These pages seem to be work in progress or not fully guarded in Sidebar yet, 
               but better protect them or hide them if not used. 
               For now, I'll protect them with 'manage_orders' as they relate to order tracking. */}
           <Route path="/payment-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><PaymentTracking /></ProtectedRoute>} />
-          <Route path="/delivery-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
 
-          <Route path="/dropoff-points" element={<ProtectedRoute requiredPermission="view_dashboard"><DropOffPoints /></ProtectedRoute>} />
+          <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
           <Route path="/attendance" element={<ProtectedRoute requiredPermissions={['manage_attendance']}><Attendance /></ProtectedRoute>} />
 
           <Route path="/reports" element={<ProtectedRoute requiredPermission="view_reports"><ReportsLayout /></ProtectedRoute>}>

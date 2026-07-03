@@ -33,7 +33,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         navItems.push({
             icon: Truck,
             label: t('nav.orders'),
-            path: '/orders'
+            path: '/orders',
+            subItems: [
+                { label: t('nav.allOrders'), path: '/orders' },
+                { label: t('nav.shippingDelivery'), path: '/orders/shipping' },
+                { label: t('nav.allPayStatus'), path: '/payment-tracking' }
+            ]
         });
     }
 
@@ -66,7 +71,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     }
 
     if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: MapPin, label: t('nav.dropOffPoints'), path: '/dropoff-points' });
+        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
     }
 
     if (hasPermission('manage_attendance')) {

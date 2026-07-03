@@ -9,6 +9,7 @@ import { dispatchActivity } from '../utils/activityLogger';
 import StatsCard from '../components/StatsCard';
 import DateRangePicker from '../components/DateRangePicker';
 import Modal from '../components/Modal';
+import { getShippingCoColor } from '../utils/orderUtils';
 
 interface StockInRecord {
     id: string;
@@ -427,7 +428,7 @@ const StockIn: React.FC = () => {
                                 style={inputStyle}
                             />
                             <datalist id="shipping-companies-in">
-                                {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                                {shippingCompanies?.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
                             </datalist>
                         </div>
 
@@ -546,8 +547,8 @@ const StockIn: React.FC = () => {
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                         {record.source || '-'}
                                     </td>
-                                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        {record.shipping_co || '-'}
+                                    <td style={{ fontSize: "12px", color: getShippingCoColor(record.shipping_co || "") }}>
+                                        {record.shipping_co || "-"}
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{record.note || '-'}</td>
                                     {isAdmin && (
@@ -602,7 +603,7 @@ const StockIn: React.FC = () => {
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Shipping Co</label>
                         <input type="text" list="shipping-companies-edit-in" value={editShippingCo} onChange={(e) => setEditShippingCo(e.target.value)} style={inputStyle} />
                         <datalist id="shipping-companies-edit-in">
-                            {shippingCompanies?.map(c => <option key={c} value={c} />)}
+                            {shippingCompanies?.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
                         </datalist>
                     </div>
                     <div>

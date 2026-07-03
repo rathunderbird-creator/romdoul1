@@ -2,6 +2,9 @@
   "nav": {
     "dashboard": "ផ្ទាំងគ្រប់គ្រង",
     "orders": "គ្រប់គ្រងការបញ្ជាទិញ",
+    "allOrders": "ការបញ្ជាទិញទាំងអស់",
+    "shippingDelivery": "តាមដានការដឹកជញ្ជូន",
+    "allPayStatus": "តាមដានការបង់ប្រាក់",
     "inventory": "ស្តុកទំនិញ",
     "allProducts": "ផលិតផលទាំងអស់",
     "stockIn": "ស្តុកចូល",
@@ -19,7 +22,7 @@
     "staffPerformance": "សមត្ថភាពបុគ្គលិក",
     "shippingCompanies": "ក្រុមហ៊ុនដឹកជញ្ជូន",
     "purchaseCost": "តម្លៃទិញ",
-    "dropOffPoints": "ទីតាំងទម្លាក់ទំនិញ",
+    "shippingPoint": "ទីតាំងដឹកជញ្ជូន",
     "attendance": "វត្តមាន",
     "userManagement": "គ្រប់គ្រងអ្នកប្រើ",
     "settings": "ការកំណត់"

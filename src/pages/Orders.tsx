@@ -12,7 +12,7 @@ import { ShippingPointContent } from '../components/ShippingPointContent';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
-import { generateOrderCopyText } from '../utils/orderUtils';
+import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
@@ -94,9 +94,9 @@ const ShippingModalComponent: React.FC<{
                         }}
                     >
                         <option value="" disabled>Select a company</option>
-                        <option value="អ្នកដឹក">អ្នកដឹក</option>
+                        <option value="អ្នកដឹក" style={{ color: getShippingCoColor('អ្នកដឹក') }}>អ្នកដឹក</option>
                         {shippingCompanies.map(company => (
-                            <option key={company} value={company}>{company}</option>
+                            <option key={company} value={company} style={{ color: getShippingCoColor(company) }}>{company}</option>
                         ))}
                     </select>
                 </div>
@@ -378,7 +378,7 @@ const PayByModalComponent: React.FC<{
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore } = useStore();
 
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
@@ -444,7 +444,7 @@ const Orders: React.FC = () => {
                     )}
                     {hasPermission('view_dashboard') && (
                         <button
-                            onClick={() => setIsDropOffModalOpen(true)}
+                            onClick={() => setIsShippingPointModalOpen(true)}
                             style={{
                                 padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
                                 background: 'transparent',
@@ -452,7 +452,7 @@ const Orders: React.FC = () => {
                                 fontWeight: 500, cursor: 'pointer', border: 'none'
                             }}
                         >
-                            <MapPin size={18} /> Drop-off Points
+                            <MapPin size={18} /> Shipping Points
                         </button>
                     )}
                 </div>
@@ -510,7 +510,7 @@ const Orders: React.FC = () => {
     const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
     const [shippingTargetStatus, setShippingTargetStatus] = useState<'Confirmed' | 'Shipped'>('Shipped');
-    const [isDropOffModalOpen, setIsDropOffModalOpen] = useState(false);
+    const [isShippingPointModalOpen, setIsShippingPointModalOpen] = useState(false);
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -752,7 +752,12 @@ const Orders: React.FC = () => {
 
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
-        return saved ? JSON.parse(saved) : { fontSize: 12, padding: 8, height: 'auto' };
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.height === '44px') parsed.height = '35px';
+            return parsed;
+        }
+        return { fontSize: 12, padding: 5, height: 'auto' };
     });
 
     useEffect(() => {
@@ -763,6 +768,9 @@ const Orders: React.FC = () => {
     const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
     const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
     const payStatusFilterRef = useClickOutside<HTMLDivElement>(() => setIsPayStatusOpen(false));
+    const [pageFilter, setPageFilter] = useState<string[]>([]);
+    const [isPageOpen, setIsPageOpen] = useState(false);
+    const pageFilterRef = useClickOutside<HTMLDivElement>(() => setIsPageOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
     const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
@@ -788,7 +796,7 @@ const Orders: React.FC = () => {
     // Reset pagination when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, columnFilters, itemsPerPage]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, columnFilters, itemsPerPage]);
 
     const fetchOrders = React.useCallback(async () => {
         setIsLoadingOrders(true);
@@ -812,6 +820,10 @@ const Orders: React.FC = () => {
 
             if (shippingCoFilter.length > 0) {
                 query = query.in('shipping_company', shippingCoFilter);
+            }
+
+            if (pageFilter.length > 0) {
+                query = query.in('page_source', pageFilter);
             }
 
             if (dateRange.start) {
@@ -843,7 +855,7 @@ const Orders: React.FC = () => {
                         // Combine item matching into one query using OR
                         let itemQuery = supabase
                             .from('sale_items')
-                            .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company)');
+                            .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company, page_source)');
 
                         const itemOrFilters = terms.map(t => {
                             const escaped = t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -864,6 +876,11 @@ const Orders: React.FC = () => {
                         if (shippingCoFilter.length > 0) {
                             itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
                         }
+                        if (pageFilter.length > 0) {
+                            itemQuery = itemQuery.in('sales.page_source', pageFilter);
+                        }
+                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(500);
+                        
                         if (dateRange.start) {
                             const start = new Date(dateRange.start);
                             start.setHours(0, 0, 0, 0);
@@ -1046,7 +1063,7 @@ const Orders: React.FC = () => {
         } finally {
             setIsLoadingOrders(false);
         }
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt, columnFilters]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt, columnFilters]);
 
     useEffect(() => {
         fetchOrders();
@@ -1406,7 +1423,7 @@ const Orders: React.FC = () => {
         document.body.removeChild(textArea);
     };
 
-    const hasFilters = statusFilter.length > 0 || salesmanFilter !== 'All' || searchTerm !== '' || payStatusFilter.length > 0 || shippingCoFilter.length > 0 || (dateRange.start && dateRange.end) || Object.keys(columnFilters).length > 0;
+    const hasFilters = statusFilter.length > 0 || salesmanFilter !== 'All' || searchTerm !== '' || payStatusFilter.length > 0 || shippingCoFilter.length > 0 || pageFilter.length > 0 || (dateRange.start && dateRange.end) || Object.keys(columnFilters).length > 0;
 
     return (
         <div>
@@ -1573,8 +1590,7 @@ const Orders: React.FC = () => {
                                     {isSalesmanOpen && (
                                         <>
 
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute',
+                                            <div className="glass-panel" style={{ position: 'absolute',
                                                 top: '100%',
                                                 left: 0,
                                                 marginTop: '4px',
@@ -1654,8 +1670,7 @@ const Orders: React.FC = () => {
                                     {isStatusFilterOpen && (
                                         <>
 
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute',
+                                            <div className="glass-panel" style={{ position: 'absolute',
                                                 top: '100%',
                                                 left: 0,
                                                 marginTop: '4px',
@@ -1690,7 +1705,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                     />
-                                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                 </label>
                                                 {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
                                                     <label key={status} style={{
@@ -1752,8 +1767,7 @@ const Orders: React.FC = () => {
                                     {isShippingCoOpen && (
                                         <>
 
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute', top: '100%', left: 0, marginTop: '4px',
+                                            <div className="glass-panel" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px',
                                                 padding: '8px', width: '220px', zIndex: 100,
                                                 display: 'flex', flexDirection: 'column', gap: '2px',
                                                 background: 'white',
@@ -1779,7 +1793,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                     </label>
                                                 )}
                                                 {filterShippingCompanies.map(co => (
@@ -1798,7 +1812,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px' }}>{co}</span>
+                                                        <span style={{ fontSize: "13px", color: getShippingCoColor(co) }}>{co}</span>
                                                     </label>
                                                 ))}
                                                 {filterShippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No shipping companies found.</div>}
@@ -1839,8 +1853,7 @@ const Orders: React.FC = () => {
                                     {isPayStatusOpen && (
                                         <>
 
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute',
+                                            <div className="glass-panel" style={{ position: 'absolute',
                                                 top: '100%',
                                                 left: 0,
                                                 marginTop: '4px',
@@ -1875,7 +1888,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                     />
-                                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>Select All</span>
+                                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                 </label>
                                                 {['Unpaid', 'Get File', 'Paid', 'Cancel'].map(status => (
                                                     <label key={status} style={{
@@ -1905,7 +1918,102 @@ const Orders: React.FC = () => {
                                     )}
                                 </div>
 
+                                <div ref={pageFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <button
+                                        onClick={() => setIsPageOpen(!isPageOpen)}
+                                        className="search-input"
+                                        style={{
+                                            minWidth: '160px',
+                                            width: isMobile ? '100%' : 'auto',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            cursor: 'pointer',
+                                            paddingRight: '12px',
+                                            background: 'white',
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Store size={16} color="var(--color-primary)" />
+                                            <span style={{ fontSize: '13px', color: pageFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                                {pageFilter.length === 0 ? 'Pages' : `${pageFilter.length} Selected`}
+                                            </span>
+                                        </div>
+                                        <ChevronDown size={14} color="var(--color-text-secondary)" />
+                                    </button>
 
+                                    {isPageOpen && (
+                                        <>
+                                            <div className="glass-panel" style={{ position: 'absolute',
+                                                top: '100%',
+                                                left: 0,
+                                                marginTop: '4px',
+                                                width: '200px',
+                                                padding: '8px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '2px',
+                                                zIndex: 100,
+                                                background: 'white',
+                                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                                            }}>
+                                                {pages.length > 0 && (
+                                                    <label style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '10px',
+                                                        padding: '8px 12px',
+                                                        cursor: 'pointer',
+                                                        borderRadius: '6px',
+                                                        borderBottom: '1px solid var(--color-border)',
+                                                        marginBottom: '4px'
+                                                    }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={pageFilter.length === pages.length && pages.length > 0}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setPageFilter([...pages]);
+                                                                } else {
+                                                                    setPageFilter([]);
+                                                                }
+                                                            }}
+                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                                    </label>
+                                                )}
+                                                {pages.map(page => (
+                                                    <label key={page} style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '10px',
+                                                        padding: '8px 12px',
+                                                        cursor: 'pointer',
+                                                        borderRadius: '6px',
+                                                        transition: 'background 0.2s',
+                                                        backgroundColor: pageFilter.includes(page) ? 'var(--color-bg)' : 'transparent'
+                                                    }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={pageFilter.includes(page)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setPageFilter([...pageFilter, page]);
+                                                                else setPageFilter(pageFilter.filter(p => p !== page));
+                                                            }}
+                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '13px', color: '#000000' }}>{page}</span>
+                                                    </label>
+                                                ))}
+                                                {pages.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No pages found.</div>}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
 
                                 <button
                                     onClick={() => {
@@ -1914,6 +2022,7 @@ const Orders: React.FC = () => {
                                         setSalesmanFilter('All');
                                         setPayStatusFilter([]);
                                         setShippingCoFilter([]);
+                                        setPageFilter([]);
                                         setColumnFilters({});
                                         setDateRange({ start: '', end: '' });
                                     }}
@@ -1958,8 +2067,7 @@ const Orders: React.FC = () => {
                                         </button>
 
                                         {showTools && (
-                                            <div className="glass-panel" style={{
-                                                position: 'absolute', top: '100%', right: 0, marginTop: '4px',
+                                            <div className="glass-panel" style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px',
                                                 padding: '8px', width: '220px', zIndex: 100,
                                                 display: 'flex', flexDirection: 'column', gap: '4px',
                                                 background: 'white',
@@ -1982,8 +2090,7 @@ const Orders: React.FC = () => {
                                                         <ChevronRight size={14} color="var(--color-text-secondary)" />
                                                     </button>
                                                     {showAppearanceMenu && (
-                                                        <div className="glass-panel" style={{
-                                                            position: 'absolute', top: 0, right: '100%', marginRight: '8px',
+                                                        <div className="glass-panel" style={{ position: 'absolute', top: 0, right: '100%', marginRight: '8px',
                                                             padding: '16px', width: '250px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
                                                             display: 'flex', flexDirection: 'column', gap: '12px', background: 'white',
                                                             boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
@@ -2026,11 +2133,11 @@ const Orders: React.FC = () => {
                                                                         Auto
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => setTableSettings({ ...tableSettings, height: '44px' })}
+                                                                        onClick={() => setTableSettings({ ...tableSettings, height: '35px' })}
                                                                         style={{
                                                                             flex: 1, padding: '6px', fontSize: '12px',
-                                                                            background: tableSettings.height === '44px' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                            color: tableSettings.height === '44px' ? 'white' : 'var(--color-text-main)',
+                                                                            background: tableSettings.height === '35px' ? 'var(--color-primary)' : 'var(--color-bg)',
+                                                                            color: tableSettings.height === '35px' ? 'white' : 'var(--color-text-main)',
                                                                             borderRadius: '4px', border: 'none', cursor: 'pointer'
                                                                         }}
                                                                     >
@@ -2061,8 +2168,7 @@ const Orders: React.FC = () => {
                                                         <ChevronRight size={14} color="var(--color-text-secondary)" />
                                                     </button>
                                                     {showColumnMenu && (
-                                                        <div className="glass-panel" style={{
-                                                            position: 'absolute', top: 0, right: '100%', marginRight: '8px',
+                                                        <div className="glass-panel" style={{ position: 'absolute', top: 0, right: '100%', marginRight: '8px',
                                                             padding: '16px', width: '200px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
                                                             display: 'flex', flexDirection: 'column', gap: '8px', background: 'white',
                                                             boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
@@ -2262,7 +2368,7 @@ const Orders: React.FC = () => {
                                         borderSpacing: 0,
                                         // Apply CSS Variables
                                         ['--table-font-size' as any]: `${tableSettings.fontSize}px`,
-                                        ['--table-padding' as any]: `${tableSettings.padding}px 8px`, // Reduced side padding too
+                                        ['--table-padding' as any]: `${tableSettings.padding}px 6px`, // Reduced side padding too
                                         ['--table-row-height' as any]: tableSettings.height === 'auto' ? 'auto' : tableSettings.height
                                     }}>
                                     <thead>
@@ -2334,8 +2440,7 @@ const Orders: React.FC = () => {
                                                                             <Filter size={14} />
                                                                         </button>
                                                                         {activeColFilter === colId && (
-                                                                            <div className="glass-panel" style={{
-                                                                                position: 'absolute', top: '100%', left: 0, marginTop: '8px',
+                                                                            <div className="glass-panel" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '8px',
                                                                                 padding: '12px', zIndex: 100, background: 'white',
                                                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
                                                                                 width: '220px',
@@ -2701,7 +2806,7 @@ const Orders: React.FC = () => {
                                                                         />
                                                                     </td>
                                                                 );
-                                                            case 'shippingCo': return <td key={colId} style={cellStyle}>{order.shipping?.company || '-'}</td>;
+                                                            case 'shippingCo': return <td key={colId} style={{ ...cellStyle, color: getShippingCoColor(order.shipping?.company || '') }}>{order.shipping?.company || '-'}</td>;
                                                             case 'salesman': return <td key={colId} style={cellStyle}>{order.salesman || '-'}</td>;
                                                             case 'customerCare': return <td key={colId} style={cellStyle}>{order.customerCare || '-'}</td>;
                                                             case 'remark':
@@ -3073,7 +3178,7 @@ const Orders: React.FC = () => {
                             </div>
 
                             <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', display: 'grid', gap: '8px' }}>
-                                <div><strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}</div>
+                                <div style={{ color: getShippingCoColor(selectedOrder.shipping?.company || '') }}><strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}</div>
                                 <div><strong>Salesman:</strong> {selectedOrder.salesman}</div>
                                 <div><strong>Remark:</strong> {selectedOrder.remark || '-'}</div>
                             </div>
@@ -3123,11 +3228,11 @@ const Orders: React.FC = () => {
                 onApply={handleBulkEdit}
                 count={selectedIds.size}
             />
-            {/* Drop-off Points Modal */}
+            {/* Shipping Points Modal */}
             <Modal
-                isOpen={isDropOffModalOpen}
-                onClose={() => setIsDropOffModalOpen(false)}
-                title="Drop-off Points"
+                isOpen={isShippingPointModalOpen}
+                onClose={() => setIsShippingPointModalOpen(false)}
+                title="Shipping Points"
                 fullScreen
                 bodyPadding="0"
                 bodyOverflowY="auto"
@@ -3137,7 +3242,7 @@ const Orders: React.FC = () => {
                     hideHeaderEffect
                     hideHeader
                     tableName="custom_locations"
-                    mapSource="osm"
+                    mapSource="google"
                 />
             </Modal>
         </div >
@@ -3145,3 +3250,6 @@ const Orders: React.FC = () => {
 };
 
 export default Orders;
+
+
+
