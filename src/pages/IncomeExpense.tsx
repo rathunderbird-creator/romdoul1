@@ -207,20 +207,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             const dateA = parseDate(a.date);
             const dateB = parseDate(b.date);
 
-            // Compare dates ignoring time
-            const dayA = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate()).getTime();
-            const dayB = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate()).getTime();
-
-            if (dayB !== dayA) {
-                return dayB - dayA; // Newest first
-            }
-
-            // Same day: Income first, then Expense
-            if (a.type !== b.type) {
-                return a.type === 'Income' ? -1 : 1;
-            }
-
-            // If same type and day, newest time first
+            // Newest first, regardless of type
             return dateB.getTime() - dateA.getTime();
         });
     }, [localTransactions, filterType, filterCategory, filterShippingCo, searchTerm, dateRange, shippingCompanies]);
