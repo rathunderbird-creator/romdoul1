@@ -3,7 +3,7 @@ export const OPERATOR_DATA = [
         name: 'Cellcard',
         color: '#F48220', // Cellcard Orange
         bg: 'rgba(244, 130, 32, 0.1)',
-        logo: 'https://www.google.com/s2/favicons?domain=cellcard.com.kh&sz=128',
+        logo: '/media/Cellcard.jpg',
         prefixes: ['011', '012', '014', '017', '061', '076', '077', '078', '079', '085', '089', '092', '095', '099']
     },
     {

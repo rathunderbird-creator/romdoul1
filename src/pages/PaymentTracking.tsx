@@ -15,6 +15,20 @@ import ReportModal from '../components/ReportModal';
 import Modal from '../components/Modal';
 import IncomeExpense from './IncomeExpense';
 
+const getStatusBorderColor = (s: string) => {
+    switch (s) {
+        case 'Pending': return '#D97706';
+        case 'Confirmed': return '#0369A1';
+        case 'Shipped': return '#2563EB';
+        case 'Delivered': return '#059669';
+        case 'Cancelled': return '#DC2626';
+        case 'Returned': return '#DC2626';
+        case 'ReStock': return '#7E22CE';
+        case 'Ordered': return '#111827';
+        default: return '#4B5563';
+    }
+};
+
 const PaymentTracking: React.FC = () => {
     const { updateOrder, updateOrders, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData } = useStore();
     const { showToast } = useToast();
@@ -659,6 +673,30 @@ const PaymentTracking: React.FC = () => {
 
     const hasActiveFilters = searchTerm !== '' || statusFilter !== 'All' || salesmanFilter !== 'All' || shippingCoFilter.length > 0 || customerCareFilter !== 'All' || settleDateRange.start !== '' || settleDateRange.end !== '' || orderDateRange.start !== '' || orderDateRange.end !== '';
 
+    const getRowClass = (order: Sale) => {
+        if (selectedIds.has(order.id)) return 'selected';
+
+        // Priority 1: Shipping Status = ReStock
+        if (order.shipping?.status === 'ReStock') return 'restock-row';
+
+        // Priority 2: Payment Status = Cancel
+        if (order.paymentStatus === 'Cancel') return 'returned-row';
+
+        // Priority 2: Shipping Status
+        const shippingStatus = order.shipping?.status;
+        if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Confirmed') return 'confirmed-row';
+        if (shippingStatus === 'Pending') return 'pending-row';
+        if (shippingStatus === 'Shipped') return 'shipped-row';
+        if (shippingStatus === 'Delivered') return 'delivered-row';
+        if (shippingStatus === 'Returned') return 'returned-row';
+
+        // Secondary: Payment Status
+        if (order.paymentStatus === 'Paid') return 'paid-settled-row';
+
+        return '';
+    };
+
     return (
         <div className="payment-tracking-container" style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
 
@@ -1074,8 +1112,8 @@ const PaymentTracking: React.FC = () => {
                     </thead>
                     <tbody>
                         {paginatedOrders.map((order) => (
-                            <tr key={order.id} className={selectedIds.has(order.id) ? 'selected' : ''}>
-                                <td style={{ width: '40px', textAlign: 'center' }} className="sticky-col-first">
+                            <tr key={order.id} className={getRowClass(order)}>
+                                <td style={{ width: '40px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Ordered' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.has(order.id)}

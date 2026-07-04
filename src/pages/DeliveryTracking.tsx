@@ -10,6 +10,21 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
+import { getOperatorForPhone } from '../utils/telecom';
+
+const getStatusBorderColor = (s: string) => {
+    switch (s) {
+        case 'Pending': return '#D97706';
+        case 'Confirmed': return '#0369A1';
+        case 'Shipped': return '#2563EB';
+        case 'Delivered': return '#059669';
+        case 'Cancelled': return '#DC2626';
+        case 'Returned': return '#DC2626';
+        case 'ReStock': return '#7E22CE';
+        case 'Ordered': return '#111827';
+        default: return '#4B5563';
+    }
+};
 
 const FollowUpButton = ({ orderId, status, isAdmin, onCall }: { orderId: string, status: string, isAdmin: boolean, onCall?: () => void }) => {
     const [lastFollowUp, setLastFollowUp] = useState<string>(() => localStorage.getItem(`followUp_${orderId}`) || '');
@@ -798,6 +813,30 @@ const DeliveryTracking: React.FC = () => {
         );
     };
 
+    const getRowClass = (order: Sale) => {
+        if (selectedIds.has(order.id)) return 'selected';
+
+        // Priority 1: Shipping Status = ReStock
+        if (order.shipping?.status === 'ReStock') return 'restock-row';
+
+        // Priority 2: Payment Status = Cancel
+        if (order.paymentStatus === 'Cancel') return 'returned-row';
+
+        // Priority 2: Shipping Status
+        const shippingStatus = order.shipping?.status;
+        if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Confirmed') return 'confirmed-row';
+        if (shippingStatus === 'Pending') return 'pending-row';
+        if (shippingStatus === 'Shipped') return 'shipped-row';
+        if (shippingStatus === 'Delivered') return 'delivered-row';
+        if (shippingStatus === 'Returned') return 'returned-row';
+
+        // Secondary: Payment Status
+        if (order.paymentStatus === 'Paid') return 'paid-settled-row';
+
+        return '';
+    };
+
     return (
         <div>
 
@@ -1314,8 +1353,8 @@ const DeliveryTracking: React.FC = () => {
                         </thead>
                         <tbody>
                             {paginatedOrders.map((order) => (
-                                <tr key={order.id} className={selectedIds.has(order.id) ? 'selected' : ''}>
-                                    <td style={{ width: '40px', textAlign: 'center' }} className="sticky-col-first">
+                                <tr key={order.id} className={getRowClass(order)}>
+                                    <td style={{ width: '40px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Ordered' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
                                         <input
                                             type="checkbox"
                                             checked={selectedIds.has(order.id)}
@@ -1352,7 +1391,18 @@ const DeliveryTracking: React.FC = () => {
                                     }
                                     {visibleColumns.includes('date') && <td style={{ width: `var(--col-delivery-date-width, ${columnWidths.date}px)` }}>{new Date(order.date).toLocaleDateString()}</td>}
                                     {visibleColumns.includes('customer') && <td style={{ fontWeight: 500, width: `var(--col-delivery-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
-                                    {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>{order.customer?.phone}</td>}
+                                    {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {order.customer?.phone && getOperatorForPhone(order.customer.phone)?.logo && (
+                                                <img 
+                                                    src={getOperatorForPhone(order.customer.phone)?.logo} 
+                                                    alt="operator" 
+                                                    style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} 
+                                                />
+                                            )}
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.customer?.phone}</span>
+                                        </div>
+                                    </td>}
                                     {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-address-width, ${columnWidths.address}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.address || ''}>{order.customer?.address || '-'}</td>}
                                     {visibleColumns.includes('items') && <td style={{ width: `var(--col-delivery-items-width, ${columnWidths.items}px)` }}>
                                         <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}>
@@ -1670,7 +1720,16 @@ const DeliveryTracking: React.FC = () => {
                                     <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Customer</h3>
                                     <div style={{ marginBottom: '16px' }}>
                                         <div style={{ fontWeight: 600 }}>{selectedOrder.customer?.name}</div>
-                                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{selectedOrder.customer?.phone}</div>
+                                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {selectedOrder.customer?.phone && getOperatorForPhone(selectedOrder.customer.phone)?.logo && (
+                                                <img 
+                                                    src={getOperatorForPhone(selectedOrder.customer.phone)?.logo} 
+                                                    alt="operator" 
+                                                    style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} 
+                                                />
+                                            )}
+                                            <span>{selectedOrder.customer?.phone}</span>
+                                        </div>
                                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{selectedOrder.customer?.address}</div>
                                     </div>
                                     <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Items</h3>
