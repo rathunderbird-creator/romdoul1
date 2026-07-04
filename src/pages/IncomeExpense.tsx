@@ -22,7 +22,7 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
-    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission, shippingCompanies, sales } = useStore();
+    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission, shippingCompanies, sales, paymentMethods } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
@@ -151,6 +151,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         category: '',
         description: '',
         shipping_co: '',
+        pay_by: '',
         date: new Date().toISOString().split('T')[0]
     });
 
@@ -278,6 +279,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             category: '',
             description: '',
             shipping_co: '',
+            pay_by: '',
             date: new Date().toISOString().split('T')[0]
         });
         setEditingTransaction(null);
@@ -294,6 +296,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             category: t.category || '',
             description: t.description || '',
             shipping_co: t.shipping_co || '',
+            pay_by: t.pay_by || '',
             date: parseDate(t.date).toISOString().split('T')[0]
         });
         setIsAddModalOpen(true);
@@ -323,6 +326,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     category: formData.category,
                     description: formData.description,
                     shipping_co: formData.shipping_co || null,
+                    pay_by: formData.pay_by || null,
                     date: formData.date
                 });
             } else {
@@ -332,6 +336,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     category: formData.category,
                     description: formData.description,
                     shipping_co: formData.shipping_co || null,
+                    pay_by: formData.pay_by || null,
                     date: formData.date,
                     added_by: currentUser?.name || 'Unknown'
                 });
@@ -750,7 +755,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             {t.description || '-'}
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
-                                            {relatedOrder ? relatedOrder.paymentMethod : '-'}
+                                            {t.pay_by ? t.pay_by : (relatedOrder ? relatedOrder.paymentMethod : '-')}
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', textAlign: 'right' }}>
                                             {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
@@ -1093,7 +1098,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
                             <div style={{ position: 'relative' }}>
@@ -1201,6 +1206,34 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                     <option value="">None (No shipping)</option>
                                     {allShippingCo.map(co => (
                                         <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Pay By</label>
+                            <div style={{ position: 'relative' }}>
+                                <Wallet size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                <select
+                                    value={formData.pay_by}
+                                    onChange={(e) => setFormData(p => ({ ...p, pay_by: e.target.value }))}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 12px 12px 40px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--color-surface)',
+                                        color: 'var(--color-text-main)',
+                                        fontSize: '14px',
+                                        appearance: 'none',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="">None</option>
+                                    {paymentMethods.map(method => (
+                                        <option key={method} value={method}>{method}</option>
                                     ))}
                                 </select>
                                 <ChevronDown size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
