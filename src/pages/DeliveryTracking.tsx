@@ -1053,6 +1053,9 @@ const DeliveryTracking: React.FC = () => {
                                             }}
                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                         />
+                                        {getShippingLogo(co) && (
+                                            <img src={getShippingLogo(co)!} alt="logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        )}
                                         <span style={{ fontSize: "13px", color: getShippingCoColor(co) }}>{co}</span>
                                     </label>
                                 ))}

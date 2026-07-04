@@ -14,6 +14,7 @@ import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
+import { getShippingLogo } from '../utils/shipping';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
@@ -1908,6 +1909,9 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
+                                                        {getShippingLogo(co) && (
+                                                            <img src={getShippingLogo(co)!} alt="logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                        )}
                                                         <span style={{ fontSize: "13px", color: getShippingCoColor(co) }}>{co}</span>
                                                     </label>
                                                 ))}
@@ -2911,7 +2915,14 @@ const Orders: React.FC = () => {
                                                                         />
                                                                     </td>
                                                                 );
-                                                            case 'shippingCo': return <td key={colId} style={{ ...cellStyle, color: getShippingCoColor(order.shipping?.company || '') }}>{order.shipping?.company || '-'}</td>;
+                                                            case 'shippingCo': return <td key={colId} style={{ ...cellStyle, color: getShippingCoColor(order.shipping?.company || '') }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    {order.shipping?.company && getShippingLogo(order.shipping.company) && (
+                                                                        <img src={getShippingLogo(order.shipping.company)!} alt="shipping logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                                    )}
+                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.shipping?.company || '-'}</span>
+                                                                </div>
+                                                            </td>;
                                                             case 'salesman': return <td key={colId} style={cellStyle}>{order.salesman || '-'}</td>;
                                                             case 'customerCare': return <td key={colId} style={cellStyle}>{order.customerCare || '-'}</td>;
                                                             case 'remark':
