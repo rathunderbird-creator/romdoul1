@@ -11,6 +11,7 @@ import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { getOperatorForPhone } from '../utils/telecom';
+import { getShippingLogo } from '../utils/shipping';
 
 const getStatusBorderColor = (s: string) => {
     switch (s) {
@@ -1409,7 +1410,14 @@ const DeliveryTracking: React.FC = () => {
                                             {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
                                         </div>
                                     </td>}
-                                    {visibleColumns.includes('shippingCo') && <td style={{ color: getShippingCoColor(order.shipping?.company || ''), width: `var(--col-delivery-shippingCo-width, ${columnWidths.shippingCo}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.company || ''}>{order.shipping?.company || '-'}</td>}
+                                    {visibleColumns.includes('shippingCo') && <td style={{ color: getShippingCoColor(order.shipping?.company || ''), width: `var(--col-delivery-shippingCo-width, ${columnWidths.shippingCo}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.company || ''}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {order.shipping?.company && getShippingLogo(order.shipping.company) && (
+                                                <img src={getShippingLogo(order.shipping.company)!} alt="shipping logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                            )}
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.shipping?.company || '-'}</span>
+                                        </div>
+                                    </td>}
                                     {visibleColumns.includes('tracking') && <td style={{ fontFamily: 'monospace', width: `var(--col-delivery-tracking-width, ${columnWidths.tracking}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.trackingNumber || ''}>
                                         {order.shipping?.trackingNumber ? (
                                             <span style={{ background: '#F3F4F6', padding: '2px 6px', borderRadius: '4px' }}>{order.shipping.trackingNumber}</span>
@@ -1702,7 +1710,12 @@ const DeliveryTracking: React.FC = () => {
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Shipping Co.</label>
-                                                <div>{selectedOrder.shipping?.company || 'N/A'}</div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    {selectedOrder.shipping?.company && getShippingLogo(selectedOrder.shipping.company) && (
+                                                        <img src={getShippingLogo(selectedOrder.shipping.company)!} alt="shipping logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                    )}
+                                                    <span>{selectedOrder.shipping?.company || 'N/A'}</span>
+                                                </div>
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Delivery Staff</label>

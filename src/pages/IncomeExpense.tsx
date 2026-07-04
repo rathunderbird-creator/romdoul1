@@ -8,6 +8,7 @@ import { DateRangePicker } from '../components';
 import { useLocation } from 'react-router-dom';
 import '../components/MobileOrderCard.css';
 import type { Transaction } from '../types';
+import { getShippingLogo } from '../utils/shipping';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
 import { supabase } from '../lib/supabase';
@@ -634,7 +635,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             )}
                                             {t.shipping_co && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                                    <Truck size={14} />
+                                                    {getShippingLogo(t.shipping_co) ? (
+                                                        <img src={getShippingLogo(t.shipping_co)!} alt="shipping logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                    ) : (
+                                                        <Truck size={14} />
+                                                    )}
                                                     <strong>Shipping Co:</strong>
                                                     <span style={{ background: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', padding: '2px 8px', borderRadius: '6px', fontWeight: 500, fontSize: '12px' }}>
                                                         {t.shipping_co}
@@ -733,7 +738,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                     fontWeight: 500,
                                                     background: 'var(--color-primary-light)',
                                                     color: getShippingCoColor(t.shipping_co || '') }}>
-                                                    <Truck size={12} />
+                                                    {getShippingLogo(t.shipping_co) ? (
+                                                        <img src={getShippingLogo(t.shipping_co)!} alt="shipping logo" style={{ width: '12px', height: '12px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                    ) : (
+                                                        <Truck size={12} />
+                                                    )}
                                                     {t.shipping_co}
                                                 </span>
                                             ) : '-'}
