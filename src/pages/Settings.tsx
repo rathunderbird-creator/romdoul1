@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Save, Store, Globe, Bell, Shield, Database, Eye, EyeOff } from 'lucide-react';
+import { Save, Store, Globe, Bell, Shield, Database, Eye, EyeOff, ChevronDown } from 'lucide-react';
 import { migrateData } from '../lib/migration';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -39,6 +39,7 @@ const Settings: React.FC = () => {
     const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);
     const [visibleTokens, setVisibleTokens] = useState<Record<number, boolean>>({});
+    const [statusDropdownOpen, setStatusDropdownOpen] = useState<Record<number, boolean>>({});
 
     // Use ref to hold the latest state for the save handler (avoid stale closure)
     const stateRef = useRef(localState);
@@ -500,7 +501,7 @@ const Settings: React.FC = () => {
                 </div>
 
                 {/* Telegram Notifications Section */}
-                <div className="glass-panel" style={{ padding: '24px' }}>
+                <div className="glass-panel" style={{ padding: '24px', position: 'relative', zIndex: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <Bell className="text-primary" size={24} />
@@ -535,7 +536,7 @@ const Settings: React.FC = () => {
                         const isRowChanged = !originalConfig || JSON.stringify(config) !== JSON.stringify(originalConfig);
 
                         return (
-                        <div key={config.id} style={{ marginBottom: '20px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-bg)' }}>
+                        <div key={config.id} style={{ marginBottom: '20px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-bg)', position: 'relative', zIndex: 100 - index }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <input 
                                     type="text" 
@@ -601,6 +602,64 @@ const Settings: React.FC = () => {
                                         style={{ width: '100%', padding: '10px' }}
                                     />
                                 </div>
+
+                                <div style={{ flex: '1' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Trigger Statuses</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <div
+                                            onClick={() => setStatusDropdownOpen(prev => ({ ...prev, [index]: !prev[index] }))}
+                                            className="search-input"
+                                            style={{ width: '100%', padding: '10px', minHeight: '42px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--color-bg)' }}
+                                        >
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {config.triggerStatuses?.length === 8 ? 'All Statuses' : (config.triggerStatuses?.length > 0 ? config.triggerStatuses.join(', ') : 'Select Status')}
+                                            </span>
+                                            <ChevronDown size={16} />
+                                        </div>
+                                        {statusDropdownOpen[index] && (
+                                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', marginTop: '4px', padding: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', maxHeight: '200px', overflowY: 'auto' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-border)', marginBottom: '4px', fontWeight: 600 }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={config.triggerStatuses?.length === 8}
+                                                        onChange={(e) => {
+                                                            const newConfigs = [...localState.telegramConfigs];
+                                                            if (e.target.checked) {
+                                                                newConfigs[index] = { ...newConfigs[index], triggerStatuses: ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'] };
+                                                            } else {
+                                                                newConfigs[index] = { ...newConfigs[index], triggerStatuses: [] };
+                                                            }
+                                                            setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                                        }}
+                                                        style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                                    />
+                                                    All Statuses
+                                                </label>
+                                                {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(status => (
+                                                    <label key={status} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={config.triggerStatuses?.includes(status) || false}
+                                                            onChange={(e) => {
+                                                                const newConfigs = [...localState.telegramConfigs];
+                                                                const currentStatuses = config.triggerStatuses || [];
+                                                                if (e.target.checked) {
+                                                                    newConfigs[index] = { ...newConfigs[index], triggerStatuses: [...currentStatuses, status] };
+                                                                } else {
+                                                                    newConfigs[index] = { ...newConfigs[index], triggerStatuses: currentStatuses.filter(s => s !== status) };
+                                                                }
+                                                                setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                                            }}
+                                                            style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                                        />
+                                                        {status}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                
                                 <div style={{ flex: '1' }}>
                                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Note (Remark)</label>
                                     <input
@@ -641,42 +700,6 @@ const Settings: React.FC = () => {
                                     >
                                         Commit
                                     </button>
-                            </div>
-
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Trigger when Delivery Status is:</label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                    {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned'].map(status => {
-                                        const isSelected = config.triggerStatuses.includes(status);
-                                        return (
-                                            <button
-                                                key={status}
-                                                onClick={() => {
-                                                    const newConfigs = [...localState.telegramConfigs];
-                                                    if (isSelected) {
-                                                        newConfigs[index] = { ...newConfigs[index], triggerStatuses: config.triggerStatuses.filter(s => s !== status) };
-                                                    } else {
-                                                        newConfigs[index] = { ...newConfigs[index], triggerStatuses: [...config.triggerStatuses, status] };
-                                                    }
-                                                    setLocalState({ ...localState, telegramConfigs: newConfigs });
-                                                }}
-                                                style={{
-                                                    padding: '4px 12px',
-                                                    borderRadius: '16px',
-                                                    fontSize: '12px',
-                                                    fontWeight: 500,
-                                                    border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                                    background: isSelected ? 'var(--color-primary)' : 'transparent',
-                                                    color: isSelected ? 'white' : 'var(--color-text-secondary)',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                {status}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
                             </div>
                         </div>
                         );
