@@ -35,15 +35,17 @@ export const generateOrderCopyText = (order: Sale, allSales: Sale[]) => {
 };
 
 export const getShippingCoColor = (co: string) => {
-    switch (co) {
-        case 'J&T': return 'red';
-        case 'JS Express': return 'darkblue';
-        case 'VET': return 'orange';
-        case 'D2D': return 'blue';
-        case 'Toro Express': return 'darkred';
-        case 'អ្នកដឹក': return 'gray';
-        case 'បុគ្គលិកហាង': return 'gray';
-        case 'GRAB': return 'green';
-        default: return 'var(--color-text-main)';
-    }
+    if (!co) return 'var(--color-text-main)';
+    const normalized = co.toLowerCase().trim();
+    
+    if (normalized.includes('j&t')) return '#DC2626'; // J&T Red
+    if (normalized.includes('js')) return '#1E3A8A'; // JS Dark Blue
+    if (normalized.includes('vet')) return '#EA580C'; // VET Orange
+    if (normalized.includes('d2d')) return '#2563EB'; // D2D Blue
+    if (normalized.includes('toro')) return '#DC2626'; // Toro Red
+    if (normalized.includes('អ្នកដឹក')) return '#4B5563'; // Gray
+    if (normalized.includes('បុគ្គលិកហាង')) return '#4B5563'; // Gray
+    if (normalized.includes('grab')) return '#16A34A'; // Grab Green
+    
+    return 'var(--color-text-main)';
 };
