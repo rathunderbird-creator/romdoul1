@@ -7,11 +7,12 @@ import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal } from '../components';
+import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal } from '../components';
 import { ShippingPointContent } from '../components/ShippingPointContent';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
+
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
@@ -840,6 +841,10 @@ const Orders: React.FC = () => {
     // Pay By Modal State
     const [isPayByModalOpen, setIsPayByModalOpen] = useState(false);
     const [payByOrderToUpdate, setPayByOrderToUpdate] = useState<Sale | null>(null);
+
+    // Select Payment Method Modal State
+    const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+    const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
 
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
@@ -2780,11 +2785,9 @@ const Orders: React.FC = () => {
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
-                                                                                    updates.amountReceived = order.total;
-                                                                                    updates.settleDate = new Date().toISOString();
-                                                                                    if (newStatus === 'Paid' && order.shipping?.status !== 'Delivered') {
-                                                                                        updates.shipping = { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' };
-                                                                                    }
+                                                                                    setPaymentMethodTargetOrder(order);
+                                                                                    setIsPaymentMethodModalOpen(true);
+                                                                                    return;
                                                                                 } else if (newStatus === 'Cancel') {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
@@ -3320,6 +3323,23 @@ const Orders: React.FC = () => {
                 onClose={() => { setIsPayByModalOpen(false); setPayByOrderToUpdate(null); }}
                 order={payByOrderToUpdate}
             />
+            {/* Settle Payment Modal */}
+            {paymentMethodTargetOrder && (
+                <SettlePaymentModal
+                    isOpen={isPaymentMethodModalOpen}
+                    onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
+                    initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
+                    initialDate={paymentMethodTargetOrder.settleDate || undefined}
+                    onConfirm={({ paymentMethod, settleDate }) => {
+                        const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
+                        updates.amountReceived = paymentMethodTargetOrder.total;
+                        if (paymentMethodTargetOrder.shipping?.status !== 'Delivered') {
+                            updates.shipping = { ...(paymentMethodTargetOrder.shipping || {}), company: paymentMethodTargetOrder.shipping?.company || '', trackingNumber: paymentMethodTargetOrder.shipping?.trackingNumber || '', cost: paymentMethodTargetOrder.shipping?.cost || 0, status: 'Shipped' };
+                        }
+                        updateOrder(paymentMethodTargetOrder.id, updates);
+                    }}
+                />
+            )}
             <DataImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}

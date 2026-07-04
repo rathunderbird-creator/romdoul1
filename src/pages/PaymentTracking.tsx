@@ -2,21 +2,27 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit } from 'lucide-react';
 import type { Sale } from '../types';
-import { PaymentStatusBadge, DateRangePicker, ReceiptModal, StatusBadge } from '../components';
+import { PaymentStatusBadge, DateRangePicker, StatusBadge, SettlePaymentModal, POSInterface, BulkEditModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { getShippingCoColor } from '../utils/orderUtils';
+import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
+import { getOperatorForPhone } from '../utils/telecom';
 import ReportModal from '../components/ReportModal';
+import Modal from '../components/Modal';
+import IncomeExpense from './IncomeExpense';
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
+    const navigate = useNavigate();
 
     const [isReportOpen, setIsReportOpen] = useState(false);
+    const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
 
     React.useEffect(() => {
         setHeaderContent({
@@ -27,33 +33,58 @@ const PaymentTracking: React.FC = () => {
                 </div>
             ),
             actions: (
-                <button
-                    onClick={() => setIsReportOpen(true)}
-                    style={{
-                        padding: '8px 20px',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-                        color: 'white',
-                        fontWeight: 600,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        border: 'none',
-                        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-                        transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)'; }}
-                >
-                    <FileText size={16} />
-                    Check Payment Tracking Report
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                        onClick={() => setIsIncomeModalOpen(true)}
+                        style={{
+                            padding: '8px 20px',
+                            borderRadius: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'linear-gradient(135deg, #10B981, #059669)',
+                            color: 'white',
+                            fontWeight: 600,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            border: 'none',
+                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                            transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)'; }}
+                    >
+                        <Wallet size={16} />
+                        Check Income
+                    </button>
+                    <button
+                        onClick={() => setIsReportOpen(true)}
+                        style={{
+                            padding: '8px 20px',
+                            borderRadius: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                            color: 'white',
+                            fontWeight: 600,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            border: 'none',
+                            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                            transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)'; }}
+                    >
+                        <FileText size={16} />
+                        Check Payment Tracking Report
+                    </button>
+                </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, navigate]);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [settleDateRange, setSettleDateRange] = useState({ start: '', end: '' });
@@ -83,7 +114,9 @@ const PaymentTracking: React.FC = () => {
     const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const customerCareFilterRef = useClickOutside<HTMLDivElement>(() => setIsCustomerCareOpen(false));
-    const filterShippingCompanies = shippingCompanies;
+    const filterShippingCompanies = useMemo(() => {
+        return ['អ្នកដឹក', ...shippingCompanies];
+    }, [shippingCompanies]);
     const isMobile = window.innerWidth <= 768;
 
     // Selection State
@@ -116,14 +149,75 @@ const PaymentTracking: React.FC = () => {
         }
     };
 
-    const [selectedOrder] = useState<Sale | null>(null);
-    const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
-    const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+    const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+
+    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus', value: any) => {
+        if (selectedIds.size === 0) return;
+
+        try {
+            let ids = Array.from(selectedIds);
+            const updates: Partial<Sale> = {};
+
+            if (field === 'date') {
+                updates.date = new Date(value).toISOString();
+                await updateOrders(ids, updates);
+            } else if (field === 'status') {
+                updates.shipping = { status: value } as any;
+                await updateOrders(ids, updates);
+            } else if (field === 'paymentStatus') {
+                const now = new Date().toISOString();
+                const promises = ids.map(id => {
+                    const order = serverOrders.find(s => s.id === id);
+                    if (!order) return Promise.resolve();
+                    
+                    const individualUpdates: Partial<Sale> = { paymentStatus: value };
+                    
+                    if (value === 'Paid' || value === 'Settled' || value === 'Get File') {
+                        individualUpdates.amountReceived = order.total;
+                        individualUpdates.settleDate = now;
+                    } else if (value === 'Cancel' || value === 'Unpaid') {
+                        individualUpdates.amountReceived = 0;
+                        individualUpdates.settleDate = null as any;
+                    }
+                    
+                    return updateOrder(id, individualUpdates);
+                });
+                await Promise.all(promises);
+            }
+
+            setSelectedIds(new Set());
+            setIsBulkEditOpen(false);
+            showToast(`Successfully updated ${ids.length} orders`, 'success');
+        } catch (error) {
+            console.error('Bulk edit error:', error);
+            showToast('Failed to update orders', 'error');
+        }
+    };
+
+    const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isEditOrderModalOpen, setIsEditOrderModalOpen] = useState(false);
+
+    const handleCopyOrder = (order: Sale) => {
+        const textToCopy = generateOrderCopyText(order, []);
+        navigator.clipboard.writeText(textToCopy);
+        showToast('Order info copied!', 'success');
+    };
+
+    const handleOpenEdit = (order: Sale) => {
+        setSelectedOrder(order);
+        setIsEditOrderModalOpen(true);
+    };
+
+    const handleCloseEdit = () => {
+        setSelectedOrder(null);
+        setIsEditOrderModalOpen(false);
+    };
 
     // Column Visibility
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const allColumns = [
+        { id: 'actions', label: 'Actions' },
         { id: 'date', label: 'Order Date' },
         { id: 'settleDate', label: 'Settle Date' },
         { id: 'customer', label: 'Customer' },
@@ -141,14 +235,25 @@ const PaymentTracking: React.FC = () => {
         { id: 'remark', label: 'Remark' },
     ];
     // Default visible
-    const [visibleColumns, setVisibleColumns] = useState<string[]>([
-        'date', 'settleDate', 'customer', 'phone', 'address', 'salesman', 'items', 'total', 'shippingCo', 'payBy', 'received', 'remaining', 'orderStatus', 'status', 'remark'
-    ]);
+    const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
+        const saved = localStorage.getItem('payment_visibleColumns');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) {}
+        }
+        return [
+            'actions', 'date', 'settleDate', 'customer', 'phone', 'address', 'salesman', 'items', 'total', 'shippingCo', 'payBy', 'received', 'remaining', 'orderStatus', 'status', 'remark'
+        ];
+    });
+
+    React.useEffect(() => {
+        localStorage.setItem('payment_visibleColumns', JSON.stringify(visibleColumns));
+    }, [visibleColumns]);
 
     // Column widths and resize state
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         const saved = localStorage.getItem('payment_column_widths');
         return saved ? JSON.parse(saved) : {
+            actions: 60,
             date: 110,
             settleDate: 110,
             customer: 140,
@@ -312,6 +417,10 @@ const PaymentTracking: React.FC = () => {
         settleDate: '',
         paymentStatus: 'Paid' as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel'
     });
+
+    // Select Payment Method Modal State
+    const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+    const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
 
     // Server-side fetching (same pattern as Orders Management)
     const [currentPage, setCurrentPage] = useState(1);
@@ -816,7 +925,7 @@ const PaymentTracking: React.FC = () => {
 
                 <button
                     onClick={() => {
-                        refreshData();
+                        refreshData(true);
                         const btn = document.getElementById('payment-refresh-btn');
                         if (btn) {
                             btn.style.animation = 'spin 1s linear';
@@ -974,10 +1083,32 @@ const PaymentTracking: React.FC = () => {
                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
                                 </td>
+                                {visibleColumns.includes('actions') && (
+                                    <td style={{ width: `var(--col-payment-actions-width, ${columnWidths.actions || 60}px)`, textAlign: 'center' }}>
+                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                <Copy size={16} color="var(--color-text-secondary)" />
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title="Edit Order" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                <Edit size={16} color="var(--color-text-secondary)" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                )}
                                 {visibleColumns.includes('date') && <td style={{ width: `var(--col-payment-date-width, ${columnWidths.date}px)` }}>{new Date(order.date).toLocaleDateString()}</td>}
                                 {visibleColumns.includes('settleDate') && <td style={{ width: `var(--col-payment-settleDate-width, ${columnWidths.settleDate}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.settleDate ? new Date(order.settleDate).toLocaleDateString() : ''}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>}
                                 {visibleColumns.includes('customer') && <td style={{ fontWeight: 500, width: `var(--col-payment-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
-                                {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-payment-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>{order.customer?.phone}</td>}
+                                {visibleColumns.includes('phone') && (() => {
+                                    const operator = getOperatorForPhone(order.customer?.phone);
+                                    return (
+                                        <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-payment-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                {operator && <img src={operator.logo} alt={operator.name} style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '2px' }} title={operator.name} />}
+                                                <span>{order.customer?.phone || '-'}</span>
+                                            </div>
+                                        </td>
+                                    );
+                                })()}
                                 {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-payment-address-width, ${columnWidths.address}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.address || ''}>{order.customer?.address || '-'}</td>}
                                 {visibleColumns.includes('salesman') && <td style={{ color: 'var(--color-text-main)', width: `var(--col-payment-salesman-width, ${columnWidths.salesman}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.salesman || ''}>{order.salesman || '-'}</td>}
                                 {visibleColumns.includes('items') && <td style={{ width: `var(--col-payment-items-width, ${columnWidths.items}px)` }}>
@@ -988,8 +1119,8 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('total') && <td style={{ fontWeight: 'bold', textAlign: 'right', width: `var(--col-payment-total-width, ${columnWidths.total}px)` }}>${order.total.toFixed(2)}</td>}
                                 {visibleColumns.includes('shippingCo') && <td style={{ color: getShippingCoColor(order.shipping?.company || ''), width: `var(--col-payment-shippingCo-width, ${columnWidths.shippingCo}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.company || ''}>{order.shipping?.company || '-'}</td>}
                                 {visibleColumns.includes('payBy') && <td style={{ width: `var(--col-payment-payBy-width, ${columnWidths.payBy}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.paymentMethod}>{order.paymentMethod}</td>}
-                                {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)` }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
-                                {visibleColumns.includes('remaining') && <td style={{ color: (order.total - (order.amountReceived || 0)) > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right', width: `var(--col-payment-remaining-width, ${columnWidths.remaining}px)` }}>
+                                {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)`, color: '#2563EB', fontWeight: 600 }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
+                                {visibleColumns.includes('remaining') && <td style={{ color: '#059669', fontWeight: 600, textAlign: 'right', width: `var(--col-payment-remaining-width, ${columnWidths.remaining}px)` }}>
                                     ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
                                 </td>}
                                 {visibleColumns.includes('orderStatus') && <td style={{ width: `var(--col-payment-orderStatus-width, ${columnWidths.orderStatus}px)`, padding: '8px' }}>
@@ -1015,7 +1146,14 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('status') && <td style={{ width: `var(--col-payment-status-width, ${columnWidths.status}px)` }}>
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
-                                        onChange={(newStatus) => updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel', ...(newStatus === 'Paid' && order.shipping?.status !== 'Delivered' ? { shipping: { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {}) })}
+                                        onChange={(newStatus) => {
+                                            if (newStatus === 'Paid') {
+                                                setPaymentMethodTargetOrder(order);
+                                                setIsPaymentMethodModalOpen(true);
+                                                return;
+                                            }
+                                            updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })
+                                        }}
                                         readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
                                     />
                                 </td>}
@@ -1027,7 +1165,8 @@ const PaymentTracking: React.FC = () => {
                     <tfoot>
                         <tr>
                             <td className="sticky-col-first" style={{ width: '40px', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
-                            {visibleColumns.map((colId, index) => {
+                            {allColumns.filter(col => visibleColumns.includes(col.id)).map((col, index) => {
+                                const colId = col.id;
                                 const width = columnWidths[colId] || 150;
                                 const style: React.CSSProperties = {
                                     width: `var(--col-payment-${colId}-width, ${width}px)`,
@@ -1048,7 +1187,7 @@ const PaymentTracking: React.FC = () => {
                                     </td>
                                 );
                                 if (colId === 'remaining') return (
-                                    <td key={colId} style={{ ...style, fontWeight: 'bold', textAlign: 'right', color: 'var(--color-red)' }}>
+                                    <td key={colId} style={{ ...style, fontWeight: 'bold', textAlign: 'right', color: '#059669' }}>
                                         ${stats.totalOutstanding.toFixed(2)}
                                     </td>
                                 );
@@ -1173,48 +1312,80 @@ const PaymentTracking: React.FC = () => {
                 )
             }
 
-            {/* View Order Modal */}
+            {/* Edit Order Modal */}
+            <Modal
+                isOpen={isEditOrderModalOpen}
+                onClose={handleCloseEdit}
+                title="Edit Order"
+                width="1200px"
+                fullScreen
+                bodyPadding="0"
+                bodyOverflowY="hidden"
+            >
+                {selectedOrder && (
+                    <POSInterface
+                        orderToEdit={selectedOrder}
+                        onCancelEdit={handleCloseEdit}
+                    />
+                )}
+            </Modal>
+
+            {/* Bulk Actions Bar */}
             {
-                isViewModalOpen && selectedOrder && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                        <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Order Details</h2>
-                                <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
-                            </div>
-                            {/* Simple view details */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                                <div>
-                                    <strong>Customer:</strong> {selectedOrder.customer?.name} <br />
-                                    {selectedOrder.customer?.phone} <br />
-                                    {selectedOrder.customer?.address}
-                                </div>
-                                <div>
-                                    <strong>Order Info:</strong> <br />
-                                    ID: {selectedOrder.id} <br />
-                                    Total: ${selectedOrder.total.toFixed(2)}
-                                </div>
-                            </div>
-                        </div>
+                selectedIds.size > 0 && (
+                    <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
+                        <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
+                        <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
+                        <button onClick={() => setIsBulkEditOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'var(--color-primary)', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                            <Edit size={18} /> Edit
+                        </button>
                     </div>
                 )
             }
 
-            {/* Receipt Modal */}
-            {
-                receiptSale && (
-                    <ReceiptModal
-                        sale={receiptSale}
-                        onClose={() => setReceiptSale(null)}
-                    />
-                )
-            }
+            <BulkEditModal
+                isOpen={isBulkEditOpen}
+                onClose={() => setIsBulkEditOpen(false)}
+                onApply={handleBulkEdit}
+                count={selectedIds.size}
+            />
+
+            {/* Settle Payment Modal */}
+            {paymentMethodTargetOrder && (
+                <SettlePaymentModal
+                    isOpen={isPaymentMethodModalOpen}
+                    onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
+                    initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
+                    initialDate={paymentMethodTargetOrder.settleDate || undefined}
+                    onConfirm={({ paymentMethod, settleDate }) => {
+                        const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
+                        updates.amountReceived = paymentMethodTargetOrder.total;
+                        if (paymentMethodTargetOrder.shipping?.status !== 'Delivered') {
+                            updates.shipping = { ...(paymentMethodTargetOrder.shipping || {}), company: paymentMethodTargetOrder.shipping?.company || '', trackingNumber: paymentMethodTargetOrder.shipping?.trackingNumber || '', cost: paymentMethodTargetOrder.shipping?.cost || 0, status: 'Shipped' };
+                        }
+                        updateOrder(paymentMethodTargetOrder.id, updates);
+                    }}
+                />
+            )}
 
             {/* Report Modal */}
             <ReportModal
                 isOpen={isReportOpen}
                 onClose={() => setIsReportOpen(false)}
             />
+
+            {/* Income Expense Modal */}
+            <Modal
+                isOpen={isIncomeModalOpen}
+                onClose={() => setIsIncomeModalOpen(false)}
+                title="Income & Expense"
+                width="1200px"
+                height="90vh"
+                bodyPadding="0"
+                bodyOverflowY="auto"
+            >
+                <IncomeExpense isModal />
+            </Modal>
         </div >
     );
 };

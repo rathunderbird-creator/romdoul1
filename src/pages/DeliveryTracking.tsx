@@ -1,14 +1,158 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle, ChevronDown, ChevronUp, RefreshCw, Phone, MessageCircle } from 'lucide-react';
 import type { Sale } from '../types';
-import { ReceiptModal, StatusBadge, DateRangePicker } from '../components';
+import { ReceiptModal, StatusBadge, DateRangePicker, Modal } from '../components';
 import { getShippingCoColor } from '../utils/orderUtils';
+import { useClickOutside } from '../hooks/useClickOutside';
+import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
+import { supabase } from '../lib/supabase';
+import { mapSaleEntity } from '../utils/mapper';
+
+const FollowUpButton = ({ orderId, status, isAdmin, onCall }: { orderId: string, status: string, isAdmin: boolean, onCall?: () => void }) => {
+    const [lastFollowUp, setLastFollowUp] = useState<string>(() => localStorage.getItem(`followUp_${orderId}`) || '');
+    
+    const isPermanentlyDisabled = status === 'Delivered' || status === 'Returned';
+    
+    const isCalledToday = useMemo(() => {
+        if (!lastFollowUp) return false;
+        const lastDate = new Date(lastFollowUp);
+        const today = new Date();
+        return lastDate.toDateString() === today.toDateString();
+    }, [lastFollowUp]);
+
+    const isDisabled = isPermanentlyDisabled || isCalledToday;
+
+    const handleCall = () => {
+        if (isDisabled) return;
+        const now = new Date().toISOString();
+        localStorage.setItem(`followUp_${orderId}`, now);
+        setLastFollowUp(now);
+        if (onCall) onCall();
+    };
+
+    const handleReset = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        localStorage.removeItem(`followUp_${orderId}`);
+        setLastFollowUp('');
+    };
+
+    return (
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%' }}>
+            <button
+                onClick={handleCall}
+                disabled={isDisabled}
+                style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: isDisabled ? '#E5E7EB' : '#2563EB',
+                    color: isDisabled ? '#9CA3AF' : '#FFFFFF',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s ease',
+                    width: '100%',
+                    justifyContent: 'center'
+                }}
+            >
+                <Phone size={12} />
+                {isCalledToday && !isPermanentlyDisabled ? 'Called' : 'Call'}
+            </button>
+            {isAdmin && isDisabled && (
+                <button 
+                    onClick={handleReset} 
+                    style={{ 
+                        background: '#F3F4F6', 
+                        border: 'none', 
+                        cursor: 'pointer', 
+                        padding: '4px', 
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease'
+                    }} 
+                    title="Re-enable Call Button"
+                    onMouseOver={(e) => e.currentTarget.style.background = '#E5E7EB'}
+                    onMouseOut={(e) => e.currentTarget.style.background = '#F3F4F6'}
+                >
+                    <RefreshCw size={12} color="#6B7280" />
+                </button>
+            )}
+        </div>
+    );
+};
+
+const EditableRemark = ({ order, updateOrder }: { order: Sale, updateOrder: (id: string, updates: Partial<Sale>) => void }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [value, setValue] = useState(order.remark || '');
+
+    useEffect(() => {
+        setValue(order.remark || '');
+    }, [order.remark]);
+
+    const handleBlur = () => {
+        setIsEditing(false);
+        if (value !== (order.remark || '')) {
+            updateOrder(order.id, { remark: value });
+        }
+    };
+
+    if (isEditing) {
+        return (
+            <input
+                autoFocus
+                type="text"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onBlur={handleBlur}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        handleBlur();
+                    }
+                }}
+                style={{
+                    width: '100%',
+                    padding: '2px 4px',
+                    border: '1px solid var(--color-primary)',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    outline: 'none',
+                    background: 'var(--color-bg)',
+                    color: 'var(--color-text-main)'
+                }}
+                onClick={(e) => e.stopPropagation()}
+            />
+        );
+    }
+
+    return (
+        <div 
+            onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+            style={{ 
+                minHeight: '20px', 
+                cursor: 'text', 
+                width: '100%', 
+                display: 'block', 
+                whiteSpace: 'nowrap', 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis' 
+            }}
+            title={order.remark || 'Click to add remark'}
+        >
+            {order.remark || <span style={{ color: 'var(--color-text-secondary)' }}>-</span>}
+        </div>
+    );
+};
 
 const DeliveryTracking: React.FC = () => {
-    const { sales, updateOrderStatus, updateOrder } = useStore();
+    const { sales, salesUpdatedAt, updateOrderStatus, updateOrder, users, currentUser, shippingCompanies, customerCare, refreshData, telegramBotToken, telegramChatId, updateStoreProfile } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
 
@@ -25,19 +169,103 @@ const DeliveryTracking: React.FC = () => {
     }, [setHeaderContent]);
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
-    const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Confirmed' | 'Shipped'>('All');
+    const [orderDateRange, setOrderDateRange] = useState({ start: '', end: '' });
+    const [statusFilter, setStatusFilter] = useState<string[]>(() => {
+        const saved = localStorage.getItem('delivery_statusFilter');
+        return saved ? JSON.parse(saved) : [];
+    });
+    useEffect(() => { localStorage.setItem('delivery_statusFilter', JSON.stringify(statusFilter)); }, [statusFilter]);
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState<'All' | 'Paid' | 'Get File' | 'Unpaid' | 'Cancel'>('All');
+
+    const [salesmanFilter, setSalesmanFilter] = useState<string>(() => {
+        return localStorage.getItem('delivery_salesmanFilter') || 'All';
+    });
+    const [shippingCoFilter, setShippingCoFilter] = useState<string[]>(() => {
+        const saved = localStorage.getItem('delivery_shippingCoFilter');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [customerCareFilter, setCustomerCareFilter] = useState<string>(() => {
+        return localStorage.getItem('delivery_customerCareFilter') || 'All';
+    });
+
+    useEffect(() => { localStorage.setItem('delivery_salesmanFilter', salesmanFilter); }, [salesmanFilter]);
+    useEffect(() => { localStorage.setItem('delivery_shippingCoFilter', JSON.stringify(shippingCoFilter)); }, [shippingCoFilter]);
+    useEffect(() => { localStorage.setItem('delivery_customerCareFilter', customerCareFilter); }, [customerCareFilter]);
+
+    const [isSalesmanOpen, setIsSalesmanOpen] = useState(false);
+    const [isShippingCoOpen, setIsShippingCoOpen] = useState(false);
+    const [isCustomerCareOpen, setIsCustomerCareOpen] = useState(false);
+    const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+    const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
+    const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
+    const customerCareFilterRef = useClickOutside<HTMLDivElement>(() => setIsCustomerCareOpen(false));
+    const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
+    const filterShippingCompanies = useMemo(() => {
+        return ['អ្នកដឹក', ...shippingCompanies];
+    }, [shippingCompanies]);
+    const isMobile = window.innerWidth <= 768;
+
+    const hasActiveFilters = searchTerm !== '' ||
+        statusFilter.length > 0 ||
+        paymentStatusFilter !== 'All' ||
+        salesmanFilter !== 'All' ||
+        shippingCoFilter.length > 0 ||
+        customerCareFilter !== 'All' ||
+        orderDateRange.start !== '';
 
     const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
+    // Telegram Settings
+    const [showTelegramSettings, setShowTelegramSettings] = useState(false);
+    const [tempBotToken, setTempBotToken] = useState(telegramBotToken || '');
+    const [tempChatId, setTempChatId] = useState(telegramChatId || '');
+
+    useEffect(() => {
+        setTempBotToken(telegramBotToken || '');
+        setTempChatId(telegramChatId || '');
+    }, [telegramBotToken, telegramChatId, showTelegramSettings]);
+
+    const handleSaveTelegramConfig = () => {
+        updateStoreProfile({
+            telegramBotToken: tempBotToken,
+            telegramChatId: tempChatId
+        });
+        showToast('Telegram configuration saved!', 'success');
+        setShowTelegramSettings(false);
+    };
+
+    const handleTestTelegram = async () => {
+        if (!tempBotToken || !tempChatId) {
+            showToast('Please enter both Bot Token and Group Chat ID', 'error');
+            return;
+        }
+        try {
+            await sendTelegramTestMessage(tempBotToken, tempChatId);
+            showToast('Test message sent successfully!', 'success');
+        } catch (error: any) {
+            showToast(`Failed to send test message: ${error.message}`, 'error');
+        }
+    };
+
+    const handleFollowUpCall = async (order: Sale) => {
+        if (!telegramBotToken || !telegramChatId) return;
+        const sequenceNumber = sales.findIndex(s => s.id === order.id) + 1;
+        try {
+            await sendTelegramOrderNotification(telegramBotToken, telegramChatId, order, sequenceNumber);
+            showToast('Follow up notification sent to Telegram', 'success');
+        } catch (error: any) {
+            showToast(`Failed to send Telegram message: ${error.message}`, 'error');
+        }
+    };
+
     // Column Visibility
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const allColumns = [
         { id: 'actions', label: 'Actions' },
-        { id: 'date', label: 'Date' },
+        { id: 'date', label: 'Order Date' },
         { id: 'customer', label: 'Customer' },
         { id: 'phone', label: 'Phone' },
         { id: 'address', label: 'Address' },
@@ -47,12 +275,32 @@ const DeliveryTracking: React.FC = () => {
         { id: 'deliveryMan', label: 'Delivery Man' },
         { id: 'status', label: 'Ship Status' },
         { id: 'cost', label: 'Cost' },
+        { id: 'followUp', label: 'Follow Up' },
         { id: 'remark', label: 'Remark' },
     ];
     // Default visible
-    const [visibleColumns, setVisibleColumns] = useState<string[]>([
-        'actions', 'date', 'customer', 'phone', 'address', 'items', 'shippingCo', 'tracking', 'deliveryMan', 'status', 'cost', 'remark'
-    ]);
+    const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
+        const saved = localStorage.getItem('delivery_visibleColumns');
+        if (saved) {
+            try { 
+                const parsed = JSON.parse(saved);
+                if (!parsed.includes('followUp')) {
+                    const remarkIdx = parsed.indexOf('remark');
+                    if (remarkIdx !== -1) parsed.splice(remarkIdx, 0, 'followUp');
+                    else parsed.push('followUp');
+                    localStorage.setItem('delivery_visibleColumns', JSON.stringify(parsed));
+                }
+                return parsed;
+            } catch (e) {}
+        }
+        return [
+            'actions', 'date', 'customer', 'phone', 'address', 'items', 'shippingCo', 'tracking', 'deliveryMan', 'status', 'cost', 'followUp', 'remark'
+        ];
+    });
+
+    React.useEffect(() => {
+        localStorage.setItem('delivery_visibleColumns', JSON.stringify(visibleColumns));
+    }, [visibleColumns]);
 
     const [formData, setFormData] = useState({
         company: '',
@@ -254,92 +502,184 @@ const DeliveryTracking: React.FC = () => {
         }
     };
 
-    // Filter Logic:
-    // Only show orders where Shipping Status is 'Pending' or 'Shipped'
-    const trackingOrders = useMemo(() => {
-        return sales.filter(order => {
-            // PRIMARY FILTER: Must be Pending or Shipped
-            const currentStatus = order.shipping?.status || 'Pending';
-            if (currentStatus === 'Delivered' || currentStatus === 'Cancelled') return false;
-
-            const lowerTerm = searchTerm.toLowerCase();
-            const matchesSearch =
-                order.customer?.name.toLowerCase().includes(lowerTerm) ||
-                order.id.toLowerCase().includes(lowerTerm) ||
-                (order.customer?.phone || '').includes(lowerTerm) ||
-                (order.customer?.address || '').toLowerCase().includes(lowerTerm) ||
-                (order.customer?.city || '').toLowerCase().includes(lowerTerm) ||
-                (order.customer?.page || '').toLowerCase().includes(lowerTerm) ||
-                order.items.some(item => item.name.toLowerCase().includes(lowerTerm) || (item.model && item.model.toLowerCase().includes(lowerTerm))) ||
-                (order.shipping?.trackingNumber || '').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.company || '').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.staffName || '').toLowerCase().includes(lowerTerm) ||
-                (order.shipping?.cost || 0).toString().includes(lowerTerm) ||
-                (order.remark || '').toLowerCase().includes(lowerTerm);
-
-            const matchesStatus = statusFilter === 'All' || currentStatus === statusFilter;
-
-            let matchesDate = true;
-            if (dateRange.start && dateRange.end) {
-                const orderDate = new Date(order.date);
-                const start = new Date(dateRange.start);
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                matchesDate = orderDate >= start && orderDate <= end;
-            }
-
-            return matchesSearch && matchesStatus && matchesDate;
-        });
-    }, [sales, searchTerm, statusFilter, dateRange]);
-
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(50);
+    const [itemsPerPage, setItemsPerPage] = useState(200);
 
     React.useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, statusFilter, dateRange, itemsPerPage]);
+    }, [searchTerm, statusFilter, paymentStatusFilter, orderDateRange, salesmanFilter, customerCareFilter, shippingCoFilter, itemsPerPage, sortConfig]);
 
-    const sortedAndFilteredOrders = useMemo(() => {
-        let result = trackingOrders;
-        if (sortConfig) {
-            result = [...result].sort((a, b) => {
-                let aVal: any = '';
-                let bVal: any = '';
-                switch (sortConfig.key) {
-                    case 'date': aVal = new Date(a.date).getTime(); bVal = new Date(b.date).getTime(); break;
-                    case 'customer': aVal = a.customer?.name || ''; bVal = b.customer?.name || ''; break;
-                    case 'phone': aVal = a.customer?.phone || ''; bVal = b.customer?.phone || ''; break;
-                    case 'address': aVal = a.customer?.address || ''; bVal = b.customer?.address || ''; break;
-                    case 'shippingCo': aVal = a.shipping?.company || ''; bVal = b.shipping?.company || ''; break;
-                    case 'tracking': aVal = a.shipping?.trackingNumber || ''; bVal = b.shipping?.trackingNumber || ''; break;
-                    case 'deliveryMan': aVal = a.shipping?.staffName || ''; bVal = b.shipping?.staffName || ''; break;
-                    case 'status': aVal = a.shipping?.status || ''; bVal = b.shipping?.status || ''; break;
-                    case 'cost': aVal = a.shipping?.cost || 0; bVal = b.shipping?.cost || 0; break;
-                    case 'remark': aVal = a.remark || ''; bVal = b.remark || ''; break;
-                    default: aVal = new Date(a.date).getTime(); bVal = new Date(b.date).getTime();
+    // Server-side fetching
+    const [totalCount, setTotalCount] = useState(0);
+    const [serverOrders, setServerOrders] = useState<Sale[]>([]);
+    const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+
+    const fetchOrders = React.useCallback(async () => {
+        setIsLoadingOrders(true);
+        try {
+            let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
+
+            // Shipping status filter
+            if (statusFilter.length > 0) {
+                query = query.in('shipping_status', statusFilter);
+            } else {
+                query = query.not('shipping_status', 'in', '("Delivered","Cancelled")');
+            }
+
+            // Payment status filter
+            if (paymentStatusFilter !== 'All') {
+                query = query.eq('payment_status', paymentStatusFilter);
+            }
+
+            // Salesman filter
+            const isSalesman = currentUser?.roleId === 'salesman';
+            const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
+            if (effectiveSalesmanFilter !== 'All') {
+                query = query.eq('salesman', effectiveSalesmanFilter);
+            }
+
+            // Shipping Co filter
+            if (shippingCoFilter.length > 0) {
+                query = query.in('shipping_company', shippingCoFilter);
+            }
+
+            // Customer Care filter
+            if (customerCareFilter !== 'All') {
+                query = query.eq('customer_care', customerCareFilter);
+            }
+
+            // Order Date range filter
+            if (orderDateRange.start) {
+                const start = new Date(orderDateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('date', start.toISOString());
+            }
+            if (orderDateRange.end) {
+                const end = new Date(orderDateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('date', end.toISOString());
+            }
+
+            // Search term
+            if (searchTerm.trim()) {
+                const trimmedTerm = searchTerm.trim();
+                const isExact = trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"');
+                const phrase = isExact ? trimmedTerm.slice(1, -1) : trimmedTerm;
+                const terms = isExact ? (phrase ? [phrase] : []) : phrase.split(/[\s,]+/).filter(t => t.trim().length > 0);
+
+                if (terms.length > 0) {
+                    const isBulk = terms.length > 10;
+                    let matchingSaleIds: string[] = [];
+
+                    if (!isBulk) {
+                        let itemQuery = supabase.from('sale_items').select('sale_id, sales!inner(date, payment_status, shipping_status)');
+                        const itemOrFilters = terms.map(t => {
+                            const escaped = t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                            return isExact ? `name.ilike."${escaped}"` : `name.ilike."%${escaped}%"`;
+                        }).join(',');
+                        itemQuery = itemQuery.or(itemOrFilters);
+
+                        if (statusFilter.length > 0) {
+                            itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
+                        } else {
+                            itemQuery = itemQuery.not('sales.shipping_status', 'in', '("Delivered","Cancelled")');
+                        }
+                        if (paymentStatusFilter !== 'All') itemQuery = itemQuery.eq('sales.payment_status', paymentStatusFilter);
+                        if (effectiveSalesmanFilter !== 'All') itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
+                        if (shippingCoFilter.length > 0) itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
+                        if (customerCareFilter !== 'All') itemQuery = itemQuery.eq('sales.customer_care', customerCareFilter);
+                        if (orderDateRange.start) {
+                            const start = new Date(orderDateRange.start);
+                            start.setHours(0, 0, 0, 0);
+                            itemQuery = itemQuery.gte('sales.date', start.toISOString());
+                        }
+                        if (orderDateRange.end) {
+                            const end = new Date(orderDateRange.end);
+                            end.setHours(23, 59, 59, 999);
+                            itemQuery = itemQuery.lte('sales.date', end.toISOString());
+                        }
+
+                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+                        const { data: itemMatches } = await itemQuery;
+                        if (itemMatches && itemMatches.length > 0) {
+                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                        }
+                    }
+
+                    if (isBulk) {
+                        const inList = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(',');
+                        query = query.or(`id.in.(${inList}),tracking_number.in.(${inList}),customer_snapshot->>phone.in.(${inList})`);
+                    } else {
+                        let finalOrFilters: string[] = [];
+                        for (const term of terms) {
+                            const escapedTerm = term.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                            const matchStr = isExact ? `"${escapedTerm}"` : `"%${escapedTerm}%"`;
+                            finalOrFilters.push(`id.ilike.${matchStr},remark.ilike.${matchStr},tracking_number.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`);
+                        }
+                        let orFilter = finalOrFilters.join(',');
+                        if (matchingSaleIds.length > 0) {
+                            orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
+                        }
+                        query = query.or(orFilter);
+                    }
                 }
-                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-        } else {
-             // Default sort by date descending
-             result = [...result].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            }
+
+            // Sort
+            if (sortConfig) {
+                const columnMap: Record<string, string> = {
+                    date: 'date',
+                    customer: 'customer_id',
+                    phone: 'customer_id',
+                    address: 'customer_id',
+                    shippingCo: 'shipping_company',
+                    tracking: 'tracking_number',
+                    deliveryMan: 'shipping_staff',
+                    status: 'shipping_status',
+                    cost: 'shipping_cost',
+                    remark: 'remark'
+                };
+                const dbCol = columnMap[sortConfig.key];
+                if (dbCol) {
+                    query = query.order(dbCol, { ascending: sortConfig.direction === 'asc' });
+                } else {
+                    query = query.order('date', { ascending: false });
+                }
+            } else {
+                query = query.order('date', { ascending: false });
+            }
+
+            // Pagination
+            const from = (currentPage - 1) * itemsPerPage;
+            const to = from + itemsPerPage - 1;
+            query = query.range(from, to);
+
+            const { data, count, error } = await query;
+            if (error) throw error;
+
+            setTotalCount(count || 0);
+            const mapped = (data || []).map(mapSaleEntity);
+            setServerOrders(mapped);
+        } catch (err) {
+            console.error("Fetch delivery tracking failed", err);
+        } finally {
+            setIsLoadingOrders(false);
         }
-        return result;
-    }, [trackingOrders, sortConfig]);
+    }, [statusFilter, paymentStatusFilter, salesmanFilter, shippingCoFilter, customerCareFilter, orderDateRange, searchTerm, currentPage, itemsPerPage, salesUpdatedAt, currentUser, sortConfig]);
 
-    const paginatedOrders = useMemo(() => {
-        const start = (currentPage - 1) * itemsPerPage;
-        return sortedAndFilteredOrders.slice(start, start + itemsPerPage);
-    }, [sortedAndFilteredOrders, currentPage, itemsPerPage]);
+    useEffect(() => {
+        fetchOrders();
+    }, [fetchOrders]);
 
-    // Calculate Totals
+    const trackingOrders = serverOrders;
+    const paginatedOrders = serverOrders;
+
+    // Calculate Totals for the current page
     const stats = useMemo(() => {
         const pendingCount = trackingOrders.filter(o => (o.shipping?.status || 'Pending') === 'Pending').length;
         const shippedCount = trackingOrders.filter(o => o.shipping?.status === 'Shipped').length;
-        const totalItems = trackingOrders.length;
+        const totalItems = totalCount;
         const totalCost = trackingOrders.reduce((sum, order) => sum + (order.shipping?.cost || 0), 0);
         const statusCounts = trackingOrders.reduce((acc, order) => {
             const status = order.shipping?.status || 'Pending';
@@ -360,7 +700,7 @@ const DeliveryTracking: React.FC = () => {
             statusCounts,
             payStatusCounts
         };
-    }, [trackingOrders]);
+    }, [trackingOrders, totalCount]);
 
 
 
@@ -478,36 +818,373 @@ const DeliveryTracking: React.FC = () => {
                     />
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Date:</span>
+                    <DateRangePicker value={orderDateRange} onChange={setOrderDateRange} />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <div ref={salesmanFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsSalesmanOpen(!isSalesmanOpen); setIsShippingCoOpen(false); setIsCustomerCareOpen(false); setIsStatusFilterOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '160px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen') : salesmanFilter}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+
+                        {isSalesmanOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: salesmanFilter === 'All' ? 'var(--color-bg)' : 'transparent'
+                                }}
+                                    onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
+                                >
+                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
+                                </label>
+                                {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
+                                    <label key={s.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: salesmanFilter === s.name ? 'var(--color-bg)' : 'transparent'
+                                    }}
+                                        onClick={() => { setSalesmanFilter(s.name); setIsSalesmanOpen(false); }}
+                                    >
+                                        <span style={{ fontSize: '13px' }}>{s.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div ref={customerCareFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsCustomerCareOpen(!isCustomerCareOpen); setIsSalesmanOpen(false); setIsShippingCoOpen(false); setIsStatusFilterOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '160px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', color: customerCareFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
+                                    {customerCareFilter === 'All' ? 'Customer Care' : customerCareFilter}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+
+                        {isCustomerCareOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: customerCareFilter === 'All' ? 'var(--color-bg)' : 'transparent'
+                                }}
+                                    onClick={() => { setCustomerCareFilter('All'); setIsCustomerCareOpen(false); }}
+                                >
+                                    <span style={{ fontSize: '13px' }}>All Customer Care</span>
+                                </label>
+                                {(customerCare || []).map(cc => (
+                                    <label key={cc} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: customerCareFilter === cc ? 'var(--color-bg)' : 'transparent'
+                                    }}
+                                        onClick={() => { setCustomerCareFilter(cc); setIsCustomerCareOpen(false); }}
+                                    >
+                                        <span style={{ fontSize: '13px' }}>{cc}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div ref={shippingCoFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsShippingCoOpen(!isShippingCoOpen); setIsSalesmanOpen(false); setIsCustomerCareOpen(false); setIsStatusFilterOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '160px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? '#000000' : '#000000' }}>
+                                    {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+                        {isShippingCoOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: shippingCoFilter.length === filterShippingCompanies.length ? 'var(--color-bg)' : 'transparent'
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={shippingCoFilter.length === filterShippingCompanies.length && filterShippingCompanies.length > 0}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setShippingCoFilter([...filterShippingCompanies]);
+                                            else setShippingCoFilter([]);
+                                        }}
+                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                    />
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                </label>
+                                {filterShippingCompanies.map(co => (
+                                    <label key={co} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                        borderRadius: '6px', cursor: 'pointer',
+                                        backgroundColor: shippingCoFilter.includes(co) ? 'var(--color-bg)' : 'transparent'
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={shippingCoFilter.includes(co)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) setShippingCoFilter([...shippingCoFilter, co]);
+                                                else setShippingCoFilter(shippingCoFilter.filter(s => s !== co));
+                                            }}
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <span style={{ fontSize: "13px", color: getShippingCoColor(co) }}>{co}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div ref={statusFilterRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                            onClick={() => { setIsStatusFilterOpen(!isStatusFilterOpen); setIsSalesmanOpen(false); setIsCustomerCareOpen(false); setIsShippingCoOpen(false); }}
+                            className="search-input"
+                            style={{
+                                minWidth: '130px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--color-surface)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: statusFilter.length === 0 ? '#000000' : '#000000' }}>
+                                    {statusFilter.length === 0 ? 'All Shipping' : `Shipping (${statusFilter.length})`}
+                                </span>
+                            </div>
+                            <ChevronDown size={14} color="var(--color-text-secondary)" />
+                        </button>
+                        {isStatusFilterOpen && (
+                            <div className="glass-panel" style={{
+                                background: '#ffffff',
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                padding: '8px',
+                                minWidth: '100%',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}>
+                                <label style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                    borderRadius: '6px', cursor: 'pointer',
+                                    backgroundColor: statusFilter.length === 8 ? 'var(--color-bg)' : 'transparent'
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={statusFilter.length === 8}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setStatusFilter(['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled']);
+                                            else setStatusFilter([]);
+                                        }}
+                                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                    />
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                </label>
+                                {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(s => {
+                                    const getStatusColors = (status: string) => {
+                                        switch (status) {
+                                            case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
+                                            case 'Confirmed': return { bg: '#E0F2FE', color: '#0369A1' };
+                                            case 'Shipped': return { bg: '#DBEAFE', color: '#2563EB' };
+                                            case 'Delivered': return { bg: '#D1FAE5', color: '#059669' };
+                                            case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626' };
+                                            case 'Returned': return { bg: '#F3F4F6', color: '#DC2626' };
+                                            case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE' };
+                                            case 'Ordered': return { bg: '#F3F4F6', color: '#111827' };
+                                            default: return { bg: '#F3F4F6', color: '#4B5563' };
+                                        }
+                                    };
+                                    const colors = getStatusColors(s);
+                                    return (
+                                        <label key={s} style={{
+                                            display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+                                            borderRadius: '6px', cursor: 'pointer',
+                                            backgroundColor: statusFilter.includes(s) ? 'var(--color-bg)' : 'transparent'
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={statusFilter.includes(s)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) setStatusFilter([...statusFilter, s]);
+                                                    else setStatusFilter(statusFilter.filter(x => x !== s));
+                                                }}
+                                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                            />
+                                            <span style={{ fontSize: "13px", padding: '2px 6px', borderRadius: '4px', background: colors.bg, color: colors.color }}>{s}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
                     <select
-                        value={statusFilter}
-                        onChange={e => setStatusFilter(e.target.value as any)}
+                        value={paymentStatusFilter}
+                        onChange={e => setPaymentStatusFilter(e.target.value as any)}
                         className="search-input"
                         style={{ width: '130px' }}
                     >
-                        <option value="All">All Status</option>
-                        <option value="Ordered">Ordered</option>
-                        <option value="Pending" style={{ backgroundColor: '#FEF3C7', color: '#D97706' }}>Pending</option>
-                        <option value="Confirmed" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>Confirmed</option>
-                        <option value="Shipped" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>Shipped</option>
+                        <option value="All">All Payment</option>
+                        <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Paid</option>
+                        <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>Get File</option>
+                        <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Unpaid</option>
+                        <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>Cancel</option>
                     </select>
-                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+
                     <button
                         onClick={() => {
                             setSearchTerm('');
-                            setStatusFilter('All');
-                            setDateRange({ start: '', end: '' });
+                            setStatusFilter([]);
+                            setPaymentStatusFilter('All');
+                            setSalesmanFilter('All');
+                            setShippingCoFilter([]);
+                            setCustomerCareFilter('All');
+                            setOrderDateRange({ start: '', end: '' });
                         }}
                         style={{
-                            padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                            background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer',
-                            fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
+                            padding: '10px 16px', borderRadius: '8px', 
+                            border: hasActiveFilters ? 'none' : '1px solid var(--color-border)',
+                            background: hasActiveFilters ? '#EF4444' : 'var(--color-surface)', 
+                            color: hasActiveFilters ? '#ffffff' : 'var(--color-text-secondary)', 
+                            cursor: 'pointer',
+                            fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
+                            transition: 'all 0.2s ease'
                         }}
                         title="Clear Filters"
                     >
                         <X size={16} /> Clear
                     </button>
                 </div>
+
+                <button
+                    onClick={() => {
+                        refreshData(true);
+                        const btn = document.getElementById('delivery-refresh-btn');
+                        if (btn) {
+                            btn.style.animation = 'spin 1s linear';
+                            setTimeout(() => btn.style.animation = '', 1000);
+                        }
+                    }}
+                    title="Refresh Data"
+                    style={{
+                        padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                        background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}
+                >
+                    <RefreshCw id="delivery-refresh-btn" size={18} />
+                </button>
+
+                {currentUser?.roleId === 'admin' && (
+                    <button
+                        onClick={() => setShowTelegramSettings(true)}
+                        title="Telegram Settings"
+                        style={{
+                            padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: '#0088cc', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        <MessageCircle size={18} />
+                    </button>
+                )}
+                <style>{`
+                    @keyframes spin { 
+                        100% { transform: rotate(360deg); } 
+                    }
+                `}</style>
 
                 <div style={{ position: 'relative' }}>
                     <button
@@ -696,7 +1373,12 @@ const DeliveryTracking: React.FC = () => {
                                         />
                                     </td>}
                                     {visibleColumns.includes('cost') && <td style={{ textAlign: 'right', width: `var(--col-delivery-cost-width, ${columnWidths.cost}px)` }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}
-                                    {visibleColumns.includes('remark') && <td style={{ width: `var(--col-delivery-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}
+                                    {visibleColumns.includes('followUp') && <td style={{ width: `var(--col-delivery-followUp-width, ${columnWidths.followUp}px)` }}>
+                                        <FollowUpButton orderId={order.id} status={order.shipping?.status || 'Pending'} isAdmin={currentUser?.roleId === 'admin'} onCall={() => handleFollowUpCall(order)} />
+                                    </td>}
+                                    {visibleColumns.includes('remark') && <td style={{ width: `var(--col-delivery-remark-width, ${columnWidths.remark}px)` }}>
+                                        <EditableRemark order={order} updateOrder={updateOrder} />
+                                    </td>}
                                     <td style={{ width: '100%', minWidth: 'auto' }}></td>
                                 </tr>
                             ))}
@@ -731,14 +1413,14 @@ const DeliveryTracking: React.FC = () => {
                         </tfoot>
                     </table>
                 </div>
-                {trackingOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No Pending or Shipped orders found.</div>}
+                {totalCount === 0 && !isLoadingOrders && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No shipments found.</div>}
             </div>
 
-            {trackingOrders.length > 0 && (
+            {totalCount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, trackingOrders.length)} to {Math.min(currentPage * itemsPerPage, trackingOrders.length)} of {trackingOrders.length} entries
+                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, totalCount)} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} entries
                         </div>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                             {(() => {
@@ -843,10 +1525,12 @@ const DeliveryTracking: React.FC = () => {
                                     cursor: 'pointer'
                                 }}
                             >
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
                                 <option value={100}>100</option>
+                                <option value={200}>200</option>
+                                <option value={300}>300</option>
+                                <option value={500}>500</option>
+                                <option value={1000}>1000</option>
+                                <option value={3000}>3000</option>
                             </select>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -864,16 +1548,16 @@ const DeliveryTracking: React.FC = () => {
                                 <ChevronLeft size={16} />
                             </button>
                             <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.ceil(trackingOrders.length / itemsPerPage)}
+                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
                             </span>
                             <button
-                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(trackingOrders.length / itemsPerPage), p + 1))}
-                                disabled={currentPage === Math.ceil(trackingOrders.length / itemsPerPage)}
+                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / itemsPerPage), p + 1))}
+                                disabled={currentPage >= Math.ceil(totalCount / itemsPerPage)}
                                 style={{
                                     padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
-                                    background: currentPage === Math.ceil(trackingOrders.length / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
-                                    color: currentPage === Math.ceil(trackingOrders.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
-                                    cursor: currentPage === Math.ceil(trackingOrders.length / itemsPerPage) ? 'not-allowed' : 'pointer',
+                                    background: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'var(--color-bg)' : 'var(--color-surface)',
+                                    color: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                    cursor: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 'not-allowed' : 'pointer',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                                 }}
                             >
@@ -1018,6 +1702,70 @@ const DeliveryTracking: React.FC = () => {
                     />
                 )
             }
+
+            {/* Telegram Settings Modal */}
+            {showTelegramSettings && (
+                <Modal isOpen={showTelegramSettings} onClose={() => setShowTelegramSettings(false)} title="Telegram Bot Settings">
+                    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>
+                                Bot Token
+                            </label>
+                            <input
+                                type="text"
+                                value={tempBotToken}
+                                onChange={(e) => setTempBotToken(e.target.value)}
+                                className="search-input"
+                                placeholder="1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                style={{ width: '100%', padding: '10px' }}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>
+                                Group Chat ID
+                            </label>
+                            <input
+                                type="text"
+                                value={tempChatId}
+                                onChange={(e) => setTempChatId(e.target.value)}
+                                className="search-input"
+                                placeholder="-1001234567890"
+                                style={{ width: '100%', padding: '10px' }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                            <button
+                                onClick={handleTestTelegram}
+                                style={{
+                                    padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                    background: 'var(--color-bg)', color: 'var(--color-text-main)', cursor: 'pointer', fontWeight: 500,
+                                    marginRight: 'auto'
+                                }}
+                            >
+                                Test Message
+                            </button>
+                            <button
+                                onClick={() => setShowTelegramSettings(false)}
+                                style={{
+                                    padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                    background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontWeight: 500
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveTelegramConfig}
+                                style={{
+                                    padding: '8px 16px', borderRadius: '6px', border: 'none',
+                                    background: 'var(--color-primary)', color: 'white', cursor: 'pointer', fontWeight: 500
+                                }}
+                            >
+                                Save Settings
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
         </div >
     );
 };

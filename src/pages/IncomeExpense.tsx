@@ -21,8 +21,8 @@ const parseDate = (dateStr: string) => {
     return isNaN(d.getTime()) ? new Date() : d;
 };
 
-const IncomeExpense: React.FC = () => {
-    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission, shippingCompanies } = useStore();
+const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
+    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission, shippingCompanies, sales } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
@@ -155,6 +155,7 @@ const IncomeExpense: React.FC = () => {
     });
 
     useEffect(() => {
+        if (isModal) return;
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
@@ -164,7 +165,7 @@ const IncomeExpense: React.FC = () => {
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, isModal]);
 
     // Computed list of shipping companies (including custom drivers)
     const allShippingCo = useMemo(() => {
@@ -321,7 +322,7 @@ const IncomeExpense: React.FC = () => {
                     amount: finalAmount,
                     category: formData.category,
                     description: formData.description,
-                    shipping_co: formData.shipping_co || undefined,
+                    shipping_co: formData.shipping_co || null,
                     date: formData.date
                 });
             } else {
@@ -330,7 +331,7 @@ const IncomeExpense: React.FC = () => {
                     amount: finalAmount,
                     category: formData.category,
                     description: formData.description,
-                    shipping_co: formData.shipping_co || undefined,
+                    shipping_co: formData.shipping_co || null,
                     date: formData.date,
                     added_by: currentUser?.name || 'Unknown'
                 });
@@ -587,6 +588,10 @@ const IncomeExpense: React.FC = () => {
                     ) : (
                         paginatedTransactions.map(t => {
                             const isExpanded = expandedCards.has(t.id);
+                            const relatedOrder = t.type === 'Income' && t.category === 'លក់ឥវ៉ាន់'
+                                ? sales.find(s => s.customer?.name === t.description && (s.amountReceived === t.amount || s.total === t.amount))
+                                : null;
+
                             return (
                                 <div key={t.id} className="mobile-order-card" style={{ cursor: 'pointer' }} onClick={() => toggleCardExpand(t.id)}>
                                     <div className="moc-header" style={{ paddingBottom: '12px', alignItems: 'flex-start' }}>
@@ -626,6 +631,15 @@ const IncomeExpense: React.FC = () => {
                                     </div>
                                     {isExpanded && (
                                         <div className="moc-expanded">
+                                            {relatedOrder && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                                    <Wallet size={14} />
+                                                    <strong>Pay By:</strong>
+                                                    <span style={{ color: 'var(--color-text-main)', fontWeight: 500 }}>
+                                                        {relatedOrder.paymentMethod}
+                                                    </span>
+                                                </div>
+                                            )}
                                             {t.shipping_co && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                                     <Truck size={14} />
@@ -667,6 +681,7 @@ const IncomeExpense: React.FC = () => {
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Shipping Co</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Description</th>
+                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Pay By</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Amount</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Actions</th>
                             </tr>
@@ -685,7 +700,12 @@ const IncomeExpense: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                paginatedTransactions.map(t => (
+                                paginatedTransactions.map(t => {
+                                    const relatedOrder = t.type === 'Income' && t.category === 'លក់ឥវ៉ាន់'
+                                        ? sales.find(s => s.customer?.name === t.description && (s.amountReceived === t.amount || s.total === t.amount))
+                                        : null;
+
+                                    return (
                                     <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s' }} className="table-row-hover">
                                         <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-main)' }}>
                                             {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -729,6 +749,9 @@ const IncomeExpense: React.FC = () => {
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                                             {t.description || '-'}
                                         </td>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                            {relatedOrder ? relatedOrder.paymentMethod : '-'}
+                                        </td>
                                         <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', textAlign: 'right' }}>
                                             {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
                                         </td>
@@ -754,12 +777,12 @@ const IncomeExpense: React.FC = () => {
                                             </div>
                                         </td>
                                     </tr>
-                                ))
+                                )})
                             )}
                         </tbody>
                         <tfoot>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold', borderTop: '2px solid var(--color-border)' }}>
-                                <td colSpan={5} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={6} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Income
                                 </td>
                                 <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-green)', fontSize: '14px' }}>
@@ -768,7 +791,7 @@ const IncomeExpense: React.FC = () => {
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                <td colSpan={5} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={6} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Expense
                                 </td>
                                 <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-red)', fontSize: '14px' }}>

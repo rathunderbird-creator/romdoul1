@@ -740,7 +740,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // Transaction Actions
     const addTransaction = async (transaction: Omit<Transaction, 'id' | 'created_at'>) => {
-        setIsLoading(true);
         try {
             const newTransaction = {
                 ...transaction,
@@ -752,13 +751,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error adding transaction:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
-        setIsLoading(true);
         try {
             const { data, error } = await supabase.from('transactions').update(updates).eq('id', id).select().single();
             if (error) throw error;
@@ -766,13 +762,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error updating transaction:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const deleteTransaction = async (id: string) => {
-        setIsLoading(true);
         try {
             const { error } = await supabase.from('transactions').delete().eq('id', id);
             if (error) throw error;
@@ -780,8 +773,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error deleting transaction:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -1365,6 +1356,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 ? new Date(rawDate).toISOString() 
                 : rawDate;
 
+            const shippingCoToRecord = updates.shipping?.company || existingOrder.shipping?.company || null;
+
             const newTransaction = {
                 id: transactionId,
                 date: normalizedDate,
@@ -1372,7 +1365,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 category: 'លក់ឥវ៉ាន់',
                 amount: amountToRecord || 0,
                 description: customerName,
-                addedBy: currentUser?.name || 'System'
+                addedBy: currentUser?.name || 'System',
+                shipping_co: shippingCoToRecord
             };
 
             // Optimistic update
@@ -1386,7 +1380,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 category: newTransaction.category,
                 amount: newTransaction.amount,
                 description: newTransaction.description,
-                added_by: newTransaction.addedBy
+                added_by: newTransaction.addedBy,
+                shipping_co: newTransaction.shipping_co
             }]).then(({ error }) => {
                 if (error) console.error('Failed to create transaction for updated order:', error);
             });

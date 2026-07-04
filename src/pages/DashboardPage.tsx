@@ -33,12 +33,20 @@ const Dashboard: React.FC = () => {
     }, [setHeaderContent, t]);
 
     const [dateRange, setDateRange] = React.useState(() => {
+        const stored = localStorage.getItem('dashboard_dateRange');
+        if (stored) {
+            try {
+                return JSON.parse(stored);
+            } catch (e) {}
+        }
         const now = new Date();
         const today = now.toISOString().split('T')[0];
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(now.getDate() - 30);
-        return { start: thirtyDaysAgo.toISOString().split('T')[0], end: today };
+        return { start: today, end: today };
     });
+
+    React.useEffect(() => {
+        localStorage.setItem('dashboard_dateRange', JSON.stringify(dateRange));
+    }, [dateRange]);
 
     const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
     const [isLoadingSales, setIsLoadingSales] = React.useState(false);
