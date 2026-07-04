@@ -14,6 +14,7 @@ import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
+import { getPaymentLogo } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
@@ -2767,7 +2768,14 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'total': return <td key={colId} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
-                                                            case 'payBy': return <td key={colId} style={cellStyle}>{order.paymentMethod}</td>;
+                                                            case 'payBy': return <td key={colId} style={cellStyle}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    {order.paymentMethod && getPaymentLogo(order.paymentMethod) && (
+                                                                        <img src={getPaymentLogo(order.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
+                                                                    )}
+                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.paymentMethod || '-'}</span>
+                                                                </div>
+                                                            </td>;
                                                             case 'received': return <td key={colId} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',

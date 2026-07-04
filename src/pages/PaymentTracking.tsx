@@ -11,6 +11,7 @@ import { mapSaleEntity } from '../utils/mapper';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
+import { getPaymentLogo } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import ReportModal from '../components/ReportModal';
 import Modal from '../components/Modal';
@@ -1167,7 +1168,14 @@ const PaymentTracking: React.FC = () => {
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.shipping?.company || '-'}</span>
                                     </div>
                                 </td>}
-                                {visibleColumns.includes('payBy') && <td style={{ width: `var(--col-payment-payBy-width, ${columnWidths.payBy}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.paymentMethod}>{order.paymentMethod}</td>}
+                                {visibleColumns.includes('payBy') && <td style={{ width: `var(--col-payment-payBy-width, ${columnWidths.payBy}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.paymentMethod}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {order.paymentMethod && getPaymentLogo(order.paymentMethod) && (
+                                            <img src={getPaymentLogo(order.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
+                                        )}
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.paymentMethod || '-'}</span>
+                                    </div>
+                                </td>}
                                 {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)`, color: '#2563EB', fontWeight: 600 }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
                                 {visibleColumns.includes('remaining') && <td style={{ color: '#059669', fontWeight: 600, textAlign: 'right', width: `var(--col-payment-remaining-width, ${columnWidths.remaining}px)` }}>
                                     ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
