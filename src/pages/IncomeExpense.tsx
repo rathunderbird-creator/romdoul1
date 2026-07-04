@@ -387,7 +387,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             title="Total Income"
                             value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             icon={TrendingUp}
-                            color="var(--color-green)"
+                            color="var(--color-blue)"
                         />
                     </div>
                 </div>
@@ -440,7 +440,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         >All</button>
                         <button
                             onClick={() => setFilterType('Income')}
-                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-green)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-blue)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                         >Income</button>
                         <button
                             onClick={() => setFilterType('Expense')}
@@ -607,8 +607,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             <ChevronDown size={20} />
                                         </div>
                                         <div className="moc-avatar" style={{
-                                            backgroundColor: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                            color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)',
+                                            backgroundColor: t.type === 'Income' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                            color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)',
                                             marginTop: '2px'
                                         }}>
                                             {t.type === 'Income' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
@@ -618,7 +618,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 <span className="moc-customer-name">
                                                     {t.category || 'Uncategorized'}
                                                 </span>
-                                                <span style={{ color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
+                                                <span style={{ color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
                                                     {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                 </span>
                                             </div>
@@ -712,7 +712,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
                                     return (
                                     <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s' }} className="table-row-hover">
-                                        <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-main)' }}>
+                                        <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                         </td>
                                         <td style={{ padding: '16px' }}>
@@ -724,17 +724,17 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 borderRadius: '12px',
                                                 fontSize: '12px',
                                                 fontWeight: 500,
-                                                background: t.type === 'Income' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)'
+                                                background: t.type === 'Income' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                                color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)'
                                             }}>
                                                 {t.type === 'Income' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                                                 {t.type}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.category || '-'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.shipping_co ? (
                                                 <span style={{
                                                     display: 'inline-flex',
@@ -751,13 +751,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 </span>
                                             ) : '-'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.description || '-'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-main)' }}>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.pay_by ? t.pay_by : (relatedOrder ? relatedOrder.paymentMethod : '-')}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)', textAlign: 'right' }}>
+                                        <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', textAlign: 'right' }}>
                                             {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
                                         </td>
                                         <td style={{ padding: '16px', textAlign: 'center' }}>
@@ -790,7 +790,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 <td colSpan={6} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Income
                                 </td>
-                                <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-green)', fontSize: '14px' }}>
+                                <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-blue)', fontSize: '14px' }}>
                                     +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td></td>
@@ -974,7 +974,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 padding: '10px',
                                 borderRadius: '8px',
                                 border: 'none',
-                                background: formData.type === 'Income' ? 'var(--color-green)' : 'transparent',
+                                background: formData.type === 'Income' ? 'var(--color-blue)' : 'transparent',
                                 color: formData.type === 'Income' ? 'white' : 'var(--color-text-secondary)',
                                 fontWeight: formData.type === 'Income' ? 600 : 400,
                                 cursor: 'pointer',
@@ -1273,7 +1273,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         <button
                             onClick={handleSave}
                             className="primary-button"
-                            style={{ flex: 1, padding: '12px', background: formData.type === 'Income' ? 'var(--color-green)' : 'var(--color-red)' }}
+                            style={{ flex: 1, padding: '12px', background: formData.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}
                         >
                             Save {formData.type}
                         </button>
