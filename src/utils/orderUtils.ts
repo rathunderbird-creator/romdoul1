@@ -41,8 +41,8 @@ export const getShippingCoColor = (co: string) => {
         case 'VET': return 'orange';
         case 'D2D': return 'blue';
         case 'Toro Express': return 'darkred';
-        case '???????':
-        case '???????????': return 'gray';
+        case 'អ្នកដឹក': return 'gray';
+        case 'បុគ្គលិកហាង': return 'gray';
         case 'GRAB': return 'green';
         default: return 'var(--color-text-main)';
     }

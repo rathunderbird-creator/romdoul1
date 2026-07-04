@@ -5,7 +5,9 @@ export const SHIPPING_LOGOS: Record<string, string> = {
     'js': '/media/shipping/jsexpress.jpg',
     'js express': '/media/shipping/jsexpress.jpg',
     'toro': '/media/shipping/toroexpress.png',
-    'vet': '/media/shipping/vetexpress.png'
+    'vet': '/media/shipping/vetexpress.png',
+    'អ្នកដឹក': '/media/shipping/deliveryman.png',
+    'បុគ្គលិកហាង': '/media/shipping/deliverywoman.png'
 };
 
 export const getShippingLogo = (shippingCo: string | null | undefined): string | null => {
