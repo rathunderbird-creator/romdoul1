@@ -9,7 +9,7 @@ import { useLocation } from 'react-router-dom';
 import '../components/MobileOrderCard.css';
 import type { Transaction } from '../types';
 import { getShippingLogo } from '../utils/shipping';
-import { getPaymentLogo } from '../utils/payment';
+import { getPaymentLogo, getPaymentColor } from '../utils/payment';
 import StatsCard from '../components/StatsCard';
 import Modal from '../components/Modal';
 import { supabase } from '../lib/supabase';
@@ -756,7 +756,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 {(t.pay_by || relatedOrder?.paymentMethod) && getPaymentLogo(t.pay_by || relatedOrder?.paymentMethod) && (
                                                     <img src={getPaymentLogo(t.pay_by || relatedOrder?.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
                                                 )}
-                                                <span>{t.pay_by ? t.pay_by : (relatedOrder ? relatedOrder.paymentMethod : '-')}</span>
+                                                <span style={{ color: getPaymentColor(t.pay_by || relatedOrder?.paymentMethod) }}>{t.pay_by ? t.pay_by : (relatedOrder ? relatedOrder.paymentMethod : '-')}</span>
                                             </div>
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', textAlign: 'right' }}>

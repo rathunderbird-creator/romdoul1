@@ -14,7 +14,7 @@ import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
-import { getPaymentLogo } from '../utils/payment';
+import { getPaymentLogo, getPaymentColor } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
@@ -2773,7 +2773,7 @@ const Orders: React.FC = () => {
                                                                     {order.paymentMethod && getPaymentLogo(order.paymentMethod) && (
                                                                         <img src={getPaymentLogo(order.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
                                                                     )}
-                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.paymentMethod || '-'}</span>
+                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: getPaymentColor(order.paymentMethod) }}>{order.paymentMethod || '-'}</span>
                                                                 </div>
                                                             </td>;
                                                             case 'received': return <td key={colId} style={{

@@ -21,3 +21,18 @@ export const getPaymentLogo = (payBy: string | null | undefined): string | null 
     }
     return null;
 };
+
+export const getPaymentColor = (payBy: string | null | undefined): string => {
+    if (!payBy) return 'var(--color-text-main)';
+    const normalized = payBy.toLowerCase().trim();
+    
+    if (normalized.includes('cash') || normalized.includes('cod')) {
+        return '#16A34A'; // Green
+    }
+    
+    if (normalized.includes('bank') || normalized.includes('aba') || normalized.includes('acleda') || normalized.includes('transfer') || normalized.includes('qr') || normalized.includes('card')) {
+        return '#2563EB'; // Blue
+    }
+    
+    return 'var(--color-text-main)';
+};

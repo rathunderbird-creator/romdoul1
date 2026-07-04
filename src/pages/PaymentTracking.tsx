@@ -11,7 +11,7 @@ import { mapSaleEntity } from '../utils/mapper';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
-import { getPaymentLogo } from '../utils/payment';
+import { getPaymentLogo, getPaymentColor } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import ReportModal from '../components/ReportModal';
 import Modal from '../components/Modal';
@@ -1173,7 +1173,7 @@ const PaymentTracking: React.FC = () => {
                                         {order.paymentMethod && getPaymentLogo(order.paymentMethod) && (
                                             <img src={getPaymentLogo(order.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
                                         )}
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.paymentMethod || '-'}</span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: getPaymentColor(order.paymentMethod) }}>{order.paymentMethod || '-'}</span>
                                     </div>
                                 </td>}
                                 {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)`, color: '#2563EB', fontWeight: 600 }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
