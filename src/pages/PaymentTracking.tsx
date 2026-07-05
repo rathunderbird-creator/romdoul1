@@ -196,7 +196,7 @@ const PaymentTracking: React.FC = () => {
 
     const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
 
-    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDateInput?: string) => {
+    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDateInput?: string, payByInput?: string) => {
         if (selectedIds.size === 0) return;
 
         try {
@@ -223,6 +223,7 @@ const PaymentTracking: React.FC = () => {
                     if (value === 'Paid' || value === 'Settled' || value === 'Get File') {
                         individualUpdates.amountReceived = order.total;
                         individualUpdates.settleDate = now;
+                        if (payByInput) individualUpdates.paymentMethod = payByInput as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null as any;

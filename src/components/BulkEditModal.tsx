@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Package, CreditCard } from 'lucide-react';
+import { useStore } from '../context/StoreContext';
 
 interface BulkEditModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string) => Promise<void>;
+    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string, payBy?: string) => Promise<void>;
     count: number;
 }
 
 const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply, count }) => {
+    const { paymentMethods } = useStore();
     const [field, setField] = useState<'date' | 'status' | 'paymentStatus' | 'settleDate'>('date');
     const [value, setValue] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
+    const [payBy, setPayBy] = useState<string>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
@@ -21,10 +24,12 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
             const mm = String(now.getMonth() + 1).padStart(2, '0');
             const dd = String(now.getDate()).padStart(2, '0');
             setSettleDate(`${yyyy}-${mm}-${dd}`);
+            setPayBy(paymentMethods[0] || 'Cash');
         } else {
             setSettleDate('');
+            setPayBy('');
         }
-    }, [field, value]);
+    }, [field, value, paymentMethods]);
 
     if (!isOpen) return null;
 
@@ -32,7 +37,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
         if (!value) return;
         setIsSubmitting(true);
         try {
-            await onApply(field, value, settleDate);
+            await onApply(field, value, settleDate, payBy);
             onClose();
         } catch (error) {
             console.error(error);
@@ -234,45 +239,66 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             </select>
 
                             {(value === 'Paid' || value === 'Settled') && (
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                                        Settle Date
-                                    </label>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <input
-                                            type="date"
-                                            value={settleDate}
-                                            onChange={(e) => setSettleDate(e.target.value)}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                                            Settle Date
+                                        </label>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <input
+                                                type="date"
+                                                value={settleDate}
+                                                onChange={(e) => setSettleDate(e.target.value)}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '12px',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid var(--color-border)',
+                                                    fontSize: '14px'
+                                                }}
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    const now = new Date();
+                                                    const yyyy = now.getFullYear();
+                                                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                                                    const dd = String(now.getDate()).padStart(2, '0');
+                                                    setSettleDate(`${yyyy}-${mm}-${dd}`);
+                                                }}
+                                                style={{
+                                                    padding: '0 16px',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid var(--color-primary)',
+                                                    background: 'var(--color-surface)',
+                                                    color: 'var(--color-primary)',
+                                                    fontWeight: 500,
+                                                    cursor: 'pointer',
+                                                    fontSize: '13px',
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                            >
+                                                Now
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                                            Pay By
+                                        </label>
+                                        <select
+                                            value={payBy}
+                                            onChange={(e) => setPayBy(e.target.value)}
                                             style={{
-                                                flex: 1,
+                                                width: '100%',
                                                 padding: '12px',
                                                 borderRadius: '8px',
                                                 border: '1px solid var(--color-border)',
                                                 fontSize: '14px'
                                             }}
-                                        />
-                                        <button
-                                            onClick={() => {
-                                                const now = new Date();
-                                                const yyyy = now.getFullYear();
-                                                const mm = String(now.getMonth() + 1).padStart(2, '0');
-                                                const dd = String(now.getDate()).padStart(2, '0');
-                                                setSettleDate(`${yyyy}-${mm}-${dd}`);
-                                            }}
-                                            style={{
-                                                padding: '0 16px',
-                                                borderRadius: '8px',
-                                                border: '1px solid var(--color-primary)',
-                                                background: 'var(--color-surface)',
-                                                color: 'var(--color-primary)',
-                                                fontWeight: 500,
-                                                cursor: 'pointer',
-                                                fontSize: '13px',
-                                                whiteSpace: 'nowrap'
-                                            }}
                                         >
-                                            Now
-                                        </button>
+                                            {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
                                     </div>
                                 </div>
                             )}
