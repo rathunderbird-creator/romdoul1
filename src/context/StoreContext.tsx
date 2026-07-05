@@ -1331,7 +1331,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const updateOrder = async (id: string, updates: Partial<Sale>): Promise<void> => {
         // Find existing order BEFORE local update for checking status change
-        const existingOrder = sales.find(s => s.id === id);
+        let existingOrder = sales.find(s => s.id === id);
+
+        if (!existingOrder) {
+            const { data } = await supabase.from('sales').select('*').eq('id', id).single();
+            if (data) {
+                existingOrder = mapSaleEntity(data) as any;
+            }
+        }
 
         // 1. Optimistic Local Update
         setSales(prev => prev.map(sale =>
