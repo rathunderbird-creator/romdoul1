@@ -577,7 +577,7 @@ const PaymentTracking: React.FC = () => {
                         for (const term of terms) {
                             const escapedTerm = term.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
                             const matchStr = isExact ? `"${escapedTerm}"` : `"%${escapedTerm}%"`;
-                            finalOrFilters.push(`id.ilike.${matchStr},remark.ilike.${matchStr},payment_method.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`);
+                            finalOrFilters.push(`id.ilike.${matchStr},remark.ilike.${matchStr},payment_method.ilike.${matchStr},tracking_number.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`);
                         }
 
                         let orFilter = finalOrFilters.join(',');
