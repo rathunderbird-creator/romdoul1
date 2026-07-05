@@ -209,8 +209,21 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             const dateA = parseDate(a.date);
             const dateB = parseDate(b.date);
 
-            // Newest first, regardless of type
-            return dateB.getTime() - dateA.getTime();
+            // 1. Sort by Date (newest first)
+            if (dateA.getTime() !== dateB.getTime()) {
+                return dateB.getTime() - dateA.getTime();
+            }
+
+            // 2. Sort by Type (Income always on top, Expense on bottom)
+            if (a.type !== b.type) {
+                return a.type === 'Income' ? -1 : 1;
+            }
+
+            // 3. Order by newest transaction (created_at)
+            const timeA = a.created_at ? new Date(a.created_at).getTime() : dateA.getTime();
+            const timeB = b.created_at ? new Date(b.created_at).getTime() : dateB.getTime();
+            
+            return timeB - timeA;
         });
     }, [localTransactions, filterType, filterCategory, filterShippingCo, searchTerm, dateRange, shippingCompanies]);
 
