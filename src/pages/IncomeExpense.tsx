@@ -427,90 +427,15 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 padding: isMobile ? '12px' : '16px', 
                 marginBottom: '16px', 
                 display: 'flex', 
-                flexDirection: isMobile ? 'column' : 'row',
+                flexDirection: 'column',
                 gap: '12px', 
-                alignItems: isMobile ? 'stretch' : 'center',
-                justifyContent: 'space-between',
                 backgroundColor: 'var(--color-surface)', 
                 border: '1px solid var(--color-border)', 
                 borderRadius: '16px',
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
             }}>
-                {/* Left Side: Type Filters & Search */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', flex: 1 }}>
-                    <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
-                        <button
-                            onClick={() => setFilterType('All')}
-                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 500, boxShadow: filterType === 'All' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                        >All</button>
-                        <button
-                            onClick={() => setFilterType('Income')}
-                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-blue)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                        >Income</button>
-                        <button
-                            onClick={() => setFilterType('Expense')}
-                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 500, boxShadow: filterType === 'Expense' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                        >Expense</button>
-                    </div>
-
-                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
-                        <Tag size={16} style={{ position: 'absolute', left: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <select
-                            value={filterCategory}
-                            onChange={(e) => setFilterCategory(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 32px 10px 36px',
-                                borderRadius: '10px',
-                                border: '1px solid var(--color-border)',
-                                background: 'var(--color-background)',
-                                color: 'var(--color-text-main)',
-                                fontSize: '13px',
-                                appearance: 'none',
-                                cursor: 'pointer',
-                                outline: 'none',
-                                transition: 'all 0.2s'
-                            }}
-                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
-                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
-                        >
-                            <option value="All">All Categories</option>
-                            {uniqueCategories.map(cat => (
-                                <option key={cat} value={cat} style={{ color: getShippingCoColor(cat) }}>{cat}</option>
-                            ))}
-                        </select>
-                        <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                    </div>
-
-                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
-                        <Truck size={16} style={{ position: 'absolute', left: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <select
-                            value={filterShippingCo}
-                            onChange={(e) => setFilterShippingCo(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 32px 10px 36px',
-                                borderRadius: '10px',
-                                border: '1px solid var(--color-border)',
-                                background: 'var(--color-background)',
-                                color: 'var(--color-text-main)',
-                                fontSize: '13px',
-                                appearance: 'none',
-                                cursor: 'pointer',
-                                outline: 'none',
-                                transition: 'all 0.2s'
-                            }}
-                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
-                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
-                        >
-                            <option value="All">All Shipping Co</option>
-                            {allShippingCo.map(co => (
-                                <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
-                            ))}
-                        </select>
-                        <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                    </div>
-
+                {/* Top Row: Search & Actions */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', width: '100%' }}>
                     <div style={{ position: 'relative', flex: '1 1 200px' }}>
                         <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                         <input
@@ -533,10 +458,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         />
                     </div>
-                </div>
 
-                {/* Right Side: Actions (Date, Clear, Refresh, Add) */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
                     <div style={{ flex: isMobile ? '1 1 100%' : 'none' }}>
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
@@ -580,6 +502,82 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             <Plus size={20} />
                             Add Transaction
                         </button>
+                    </div>
+                </div>
+
+                {/* Bottom Row: Type, Category, Shipping Co */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', width: '100%' }}>
+                    <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                        <button
+                            onClick={() => setFilterType('All')}
+                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 500, boxShadow: filterType === 'All' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                        >All</button>
+                        <button
+                            onClick={() => setFilterType('Income')}
+                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-blue)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                        >Income</button>
+                        <button
+                            onClick={() => setFilterType('Expense')}
+                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 500, boxShadow: filterType === 'Expense' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                        >Expense</button>
+                    </div>
+
+                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 200px', display: 'flex', alignItems: 'center' }}>
+                        <Tag size={16} style={{ position: 'absolute', left: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 32px 10px 36px',
+                                borderRadius: '10px',
+                                border: '1px solid var(--color-border)',
+                                background: 'var(--color-background)',
+                                color: 'var(--color-text-main)',
+                                fontSize: '13px',
+                                appearance: 'none',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                transition: 'all 0.2s'
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
+                        >
+                            <option value="All">All Categories</option>
+                            {uniqueCategories.map(cat => (
+                                <option key={cat} value={cat} style={{ color: getShippingCoColor(cat) }}>{cat}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    </div>
+
+                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 200px', display: 'flex', alignItems: 'center' }}>
+                        <Truck size={16} style={{ position: 'absolute', left: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                        <select
+                            value={filterShippingCo}
+                            onChange={(e) => setFilterShippingCo(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 32px 10px 36px',
+                                borderRadius: '10px',
+                                border: '1px solid var(--color-border)',
+                                background: 'var(--color-background)',
+                                color: 'var(--color-text-main)',
+                                fontSize: '13px',
+                                appearance: 'none',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                transition: 'all 0.2s'
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
+                        >
+                            <option value="All">All Shipping Co</option>
+                            {allShippingCo.map(co => (
+                                <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                     </div>
                 </div>
             </div>
