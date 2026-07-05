@@ -150,11 +150,40 @@ const PaymentTracking: React.FC = () => {
         setSortConfig({ key, direction });
     };
 
-    const toggleSelection = (id: string) => {
+    const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+
+    const toggleSelection = (id: string, e?: React.MouseEvent) => {
+        if (e && e.shiftKey && lastSelectedId) {
+            const currentIndex = paginatedOrders.findIndex(o => o.id === id);
+            const lastIndex = paginatedOrders.findIndex(o => o.id === lastSelectedId);
+
+            if (currentIndex !== -1 && lastIndex !== -1) {
+                const start = Math.min(currentIndex, lastIndex);
+                const end = Math.max(currentIndex, lastIndex);
+                const idsToSelect = paginatedOrders.slice(start, end + 1).map(o => o.id);
+                
+                const newSet = new Set(selectedIds);
+                const isSelecting = !newSet.has(id);
+
+                idsToSelect.forEach(itemId => {
+                    if (isSelecting) {
+                        newSet.add(itemId);
+                    } else {
+                        newSet.delete(itemId);
+                    }
+                });
+                
+                setSelectedIds(newSet);
+                setLastSelectedId(id);
+                return;
+            }
+        }
+
         const newSet = new Set(selectedIds);
         if (newSet.has(id)) newSet.delete(id);
         else newSet.add(id);
         setSelectedIds(newSet);
+        setLastSelectedId(id);
     };
 
     const toggleSelectAll = () => {
@@ -1127,7 +1156,8 @@ const PaymentTracking: React.FC = () => {
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.has(order.id)}
-                                        onChange={() => toggleSelection(order.id)}
+                                        onClick={(e) => toggleSelection(order.id, e)}
+                                        onChange={() => {}}
                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
                                 </td>

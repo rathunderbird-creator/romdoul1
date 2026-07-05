@@ -52,14 +52,44 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         });
     };
 
+    const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+
     const handleSelect = (id: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
+
+        if (e && e.shiftKey && lastSelectedId) {
+            const currentIndex = paginatedTransactions.findIndex(t => t.id === id);
+            const lastIndex = paginatedTransactions.findIndex(t => t.id === lastSelectedId);
+
+            if (currentIndex !== -1 && lastIndex !== -1) {
+                const start = Math.min(currentIndex, lastIndex);
+                const end = Math.max(currentIndex, lastIndex);
+                const idsToSelect = paginatedTransactions.slice(start, end + 1).map(t => t.id);
+
+                const newSet = new Set(selectedIds);
+                const isSelecting = !newSet.has(id);
+
+                idsToSelect.forEach(itemId => {
+                    if (isSelecting) {
+                        newSet.add(itemId);
+                    } else {
+                        newSet.delete(itemId);
+                    }
+                });
+
+                setSelectedIds(newSet);
+                setLastSelectedId(id);
+                return;
+            }
+        }
+
         setSelectedIds(prev => {
             const next = new Set(prev);
             if (next.has(id)) next.delete(id);
             else next.add(id);
             return next;
         });
+        setLastSelectedId(id);
     };
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -783,7 +813,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             <input 
                                                 type="checkbox" 
                                                 checked={selectedIds.has(t.id)}
-                                                onChange={(e) => handleSelect(t.id, e as any)}
+                                                onClick={(e) => handleSelect(t.id, e)}
+                                                onChange={() => {}}
                                                 style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
                                             />
                                         </td>
