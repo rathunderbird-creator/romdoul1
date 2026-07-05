@@ -384,39 +384,39 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             }}>
                 <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.25)', boxShadow: '0 4px 20px -10px rgba(16, 185, 129, 0.15)', background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, transparent 100%)', zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1, padding: '4px' }}>
+                    <div style={{ position: 'relative', zIndex: 1, padding: '0px' }}>
                         <StatsCard
                             title="Total Income"
                             value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             icon={TrendingUp}
                             color="var(--color-blue)"
-                            style={{ padding: '12px', boxShadow: 'none', background: 'transparent' }}
+                            style={{ padding: '10px 12px', gap: '12px', boxShadow: 'none', background: 'transparent' }}
                         />
                     </div>
                 </div>
 
                 <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.25)', boxShadow: '0 4px 20px -10px rgba(239, 68, 68, 0.15)', background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, transparent 100%)', zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1, padding: '4px' }}>
+                    <div style={{ position: 'relative', zIndex: 1, padding: '0px' }}>
                         <StatsCard
                             title="Total Expense"
                             value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             icon={TrendingDown}
                             color="var(--color-red)"
-                            style={{ padding: '12px', boxShadow: 'none', background: 'transparent' }}
+                            style={{ padding: '10px 12px', gap: '12px', boxShadow: 'none', background: 'transparent' }}
                         />
                     </div>
                 </div>
 
                 <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: `1px solid ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`, boxShadow: `0 4px 20px -10px ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'}`, background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `linear-gradient(135deg, ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'} 0%, transparent 100%)`, zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1, padding: '4px' }}>
+                    <div style={{ position: 'relative', zIndex: 1, padding: '0px' }}>
                         <StatsCard
                             title="Net Balance"
                             value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             icon={DollarSign}
                             color={stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)'}
-                            style={{ padding: '12px', boxShadow: 'none', background: 'transparent' }}
+                            style={{ padding: '10px 12px', gap: '12px', boxShadow: 'none', background: 'transparent' }}
                         />
                     </div>
                 </div>

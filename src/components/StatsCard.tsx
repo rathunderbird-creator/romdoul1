@@ -21,7 +21,6 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, 
         <div 
             className={`glass-panel ${onClick ? 'clickable-card' : ''}`} 
             style={{ 
-                ...style,
                 padding: isMobile ? '12px' : '16px', 
                 display: 'flex', 
                 flexDirection: 'row', 
@@ -29,7 +28,8 @@ const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, trend, 
                 gap: '16px', 
                 backgroundColor: 'var(--color-surface)', // ensures clean card look
                 cursor: onClick ? 'pointer' : 'default',
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                ...style
             }}
             onClick={onClick}
         >
