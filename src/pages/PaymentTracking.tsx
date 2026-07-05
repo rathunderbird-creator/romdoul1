@@ -243,6 +243,7 @@ const PaymentTracking: React.FC = () => {
         { id: 'items', label: 'Products' },
         { id: 'total', label: 'Total' },
         { id: 'shippingCo', label: 'Shipping Co' },
+        { id: 'trackingId', label: 'Tracking ID' },
         { id: 'payBy', label: 'Pay By' },
         { id: 'received', label: 'Received' },
         { id: 'remaining', label: 'Remaining' },
@@ -257,7 +258,7 @@ const PaymentTracking: React.FC = () => {
             try { return JSON.parse(saved); } catch (e) {}
         }
         return [
-            'actions', 'date', 'settleDate', 'customer', 'phone', 'address', 'salesman', 'items', 'total', 'shippingCo', 'payBy', 'received', 'remaining', 'orderStatus', 'status', 'remark'
+            'actions', 'date', 'settleDate', 'customer', 'phone', 'address', 'salesman', 'items', 'total', 'shippingCo', 'trackingId', 'payBy', 'received', 'remaining', 'orderStatus', 'status', 'remark'
         ];
     });
 
@@ -279,6 +280,7 @@ const PaymentTracking: React.FC = () => {
             items: 200,
             total: 90,
             shippingCo: 110,
+            trackingId: 120,
             payBy: 90,
             received: 90,
             remaining: 90,
@@ -1167,6 +1169,9 @@ const PaymentTracking: React.FC = () => {
                                         )}
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.shipping?.company || '-'}</span>
                                     </div>
+                                </td>}
+                                {visibleColumns.includes('trackingId') && <td style={{ color: 'var(--color-text-main)', width: `var(--col-payment-trackingId-width, ${columnWidths.trackingId}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.trackingNumber || ''}>
+                                    {order.shipping?.trackingNumber || '-'}
                                 </td>}
                                 {visibleColumns.includes('payBy') && <td style={{ width: `var(--col-payment-payBy-width, ${columnWidths.payBy}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.paymentMethod}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
