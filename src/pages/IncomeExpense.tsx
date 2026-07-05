@@ -250,14 +250,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             const dateA = parseDate(a.date);
             const dateB = parseDate(b.date);
 
-            // 1. Sort by Date (newest first)
-            if (dateA.getTime() !== dateB.getTime()) {
-                return dateB.getTime() - dateA.getTime();
-            }
-
-            // 2. Sort by Type (Income always on top, Expense on bottom)
+            // 1. Sort by Type (Income always on top, Expense on bottom)
             if (a.type !== b.type) {
                 return a.type === 'Income' ? -1 : 1;
+            }
+
+            // 2. Sort by Date (newest first)
+            if (dateA.getTime() !== dateB.getTime()) {
+                return dateB.getTime() - dateA.getTime();
             }
 
             // 3. Order by newest transaction (created_at)
