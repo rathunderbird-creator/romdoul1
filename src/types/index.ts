@@ -161,6 +161,7 @@ export interface StoreContextType {
     addTransaction: (transaction: Omit<Transaction, 'id' | 'created_at'>) => Promise<void>;
     updateTransaction: (id: string, transaction: Partial<Transaction>) => Promise<void>;
     deleteTransaction: (id: string) => Promise<void>;
+    deleteTransactions: (ids: string[]) => Promise<void>;
 
     refreshData: (silent?: boolean) => Promise<void>;
     loadMoreOrders: () => Promise<void>;

@@ -776,6 +776,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    const deleteTransactions = async (ids: string[]) => {
+        try {
+            const { error } = await supabase.from('transactions').delete().in('id', ids);
+            if (error) throw error;
+            setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
+        } catch (error) {
+            console.error('Error deleting transactions:', error);
+            throw error;
+        }
+    };
+
     // Sales Actions
     const processSale = async (paymentMethod: Sale['paymentMethod'], discount: number = 0, customer?: Sale['customer']): Promise<Sale | undefined> => {
         if (cart.length === 0) return;
@@ -2447,6 +2458,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addTransaction,
             updateTransaction,
             deleteTransaction,
+            deleteTransactions,
             addOnlineOrder,
             updateOrderStatus,
             updateOrder,

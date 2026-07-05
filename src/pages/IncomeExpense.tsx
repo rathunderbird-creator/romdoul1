@@ -24,7 +24,7 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
-    const { addTransaction, updateTransaction, deleteTransaction, currentUser, refreshData, hasPermission, shippingCompanies, sales, paymentMethods } = useStore();
+    const { addTransaction, updateTransaction, deleteTransaction, deleteTransactions, currentUser, refreshData, hasPermission, shippingCompanies, sales, paymentMethods } = useStore();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
@@ -37,6 +37,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     };
 
     const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
     const toggleCardExpand = (id: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
@@ -47,6 +48,16 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             } else {
                 next.add(id);
             }
+            return next;
+        });
+    };
+
+    const handleSelect = (id: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
             return next;
         });
     };
@@ -364,6 +375,28 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         }
     };
 
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (confirm(`Are you sure you want to delete ${selectedIds.size} transaction(s)?`)) {
+            try {
+                await deleteTransactions(Array.from(selectedIds));
+                setSelectedIds(new Set());
+                await fetchTransactions();
+            } catch (error) {
+                console.error(error);
+                alert('Failed to delete transactions');
+            }
+        }
+    };
+
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            setSelectedIds(new Set(paginatedTransactions.map(t => t.id)));
+        } else {
+            setSelectedIds(new Set());
+        }
+    };
+
     if (!hasPermission('manage_income_expense')) {
         return (
             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
@@ -482,6 +515,17 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     )}
 
                     <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                        {selectedIds.size > 0 && currentUser?.roleId === 'admin' && (
+                            <button
+                                onClick={handleBulkDelete}
+                                className="secondary-button hover-lift"
+                                style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', color: 'white', backgroundColor: 'var(--color-red)', border: 'none' }}
+                                title="Delete Selected"
+                            >
+                                <Trash2 size={16} />
+                                {!isMobile && `Delete (${selectedIds.size})`}
+                            </button>
+                        )}
                         <button
                             disabled={isLoadingTransactions}
                             onClick={() => {
@@ -603,6 +647,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             return (
                                 <div key={t.id} className="mobile-order-card" style={{ cursor: 'pointer' }} onClick={() => toggleCardExpand(t.id)}>
                                     <div className="moc-header" style={{ paddingBottom: '12px', alignItems: 'flex-start' }}>
+                                        <div onClick={(e) => handleSelect(t.id, e)} style={{ marginTop: '2px', marginRight: '12px', display: 'flex', alignItems: 'center', height: '20px' }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedIds.has(t.id)}
+                                                onChange={() => {}}
+                                                style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                                            />
+                                        </div>
                                         <div
                                             className="moc-chevron"
                                             style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', marginTop: '2px', marginRight: '4px' }}
@@ -688,6 +740,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-surface)' }}>
+                                <th style={{ padding: '16px 20px', width: '40px', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={selectedIds.size === paginatedTransactions.length && paginatedTransactions.length > 0}
+                                        onChange={handleSelectAll}
+                                        style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                                    />
+                                </th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Date</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Type</th>
                                 <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
@@ -701,7 +761,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         <tbody>
                             {filteredTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} style={{ padding: '80px 20px' }}>
+                                    <td colSpan={8} style={{ padding: '80px 20px' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                                             <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                                 <Wallet size={36} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
@@ -718,7 +778,15 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         : null;
 
                                     return (
-                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s' }} className="table-row-hover">
+                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s', backgroundColor: selectedIds.has(t.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }} className="table-row-hover">
+                                        <td style={{ padding: '20px 20px', width: '40px' }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedIds.has(t.id)}
+                                                onChange={(e) => handleSelect(t.id, e as any)}
+                                                style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                                            />
+                                        </td>
                                         <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                         </td>
@@ -803,7 +871,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </tbody>
                         <tfoot>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold', borderTop: '2px solid var(--color-border)' }}>
-                                <td colSpan={6} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={7} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Income
                                 </td>
                                 <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-blue)', fontSize: '14px' }}>
@@ -812,7 +880,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                <td colSpan={6} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={7} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Expense
                                 </td>
                                 <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-red)', fontSize: '14px' }}>
@@ -821,7 +889,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-background)', fontWeight: '800', borderTop: '1px solid var(--color-border)' }}>
-                                <td colSpan={5} style={{ padding: '14px 20px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
+                                <td colSpan={6} style={{ padding: '14px 20px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
                                     Net Balance
                                 </td>
                                 <td style={{ padding: '14px 20px', textAlign: 'right', color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)', fontSize: '15px' }}>
