@@ -770,7 +770,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-surface)' }}>
-                                <th style={{ padding: '16px 20px', width: '40px', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>
+                                <th style={{ padding: '10px 12px', width: '40px', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>
                                     <input 
                                         type="checkbox" 
                                         checked={selectedIds.size === paginatedTransactions.length && paginatedTransactions.length > 0}
@@ -778,20 +778,20 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
                                     />
                                 </th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Date</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Type</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Shipping Co</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Description</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Pay By</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Amount</th>
-                                <th style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Actions</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Date</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Type</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Shipping Co</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Description</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Pay By</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Amount</th>
+                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} style={{ padding: '80px 20px' }}>
+                                    <td colSpan={8} style={{ padding: '40px 20px' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                                             <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                                 <Wallet size={36} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
@@ -809,7 +809,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
                                     return (
                                     <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s', backgroundColor: selectedIds.has(t.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }} className="table-row-hover">
-                                        <td style={{ padding: '20px 20px', width: '40px' }}>
+                                        <td style={{ padding: '10px 12px', width: '40px' }}>
                                             <input 
                                                 type="checkbox" 
                                                 checked={selectedIds.has(t.id)}
@@ -818,10 +818,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
                                             />
                                         </td>
-                                        <td style={{ padding: '20px', fontSize: '14px', fontWeight: 500, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                         </td>
-                                        <td style={{ padding: '16px' }}>
+                                        <td style={{ padding: '10px 12px' }}>
                                             <span style={{
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
@@ -837,10 +837,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 {t.type}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.category || '-'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.shipping_co ? (
                                                 <span style={{
                                                     display: 'inline-flex',
@@ -861,10 +861,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 </span>
                                             ) : '-'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             {t.description || '-'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                 {(t.pay_by || relatedOrder?.paymentMethod) && getPaymentLogo(t.pay_by || relatedOrder?.paymentMethod) && (
                                                     <img src={getPaymentLogo(t.pay_by || relatedOrder?.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
@@ -872,10 +872,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 <span style={{ color: getPaymentColor(t.pay_by || relatedOrder?.paymentMethod) }}>{t.pay_by ? t.pay_by : (relatedOrder ? relatedOrder.paymentMethod : '-')}</span>
                                             </div>
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '15px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', textAlign: 'right' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '14px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', textAlign: 'right' }}>
                                             {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
                                         </td>
-                                        <td style={{ padding: '16px', textAlign: 'center' }}>
+                                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
                                                 <button
                                                     onClick={() => handleOpenEditModal(t)}
@@ -902,28 +902,28 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </tbody>
                         <tfoot>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold', borderTop: '2px solid var(--color-border)' }}>
-                                <td colSpan={7} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={7} style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Income
                                 </td>
-                                <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-blue)', fontSize: '14px' }}>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-blue)', fontSize: '13px' }}>
                                     +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                <td colSpan={7} style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <td colSpan={7} style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     Total Expense
                                 </td>
-                                <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-red)', fontSize: '14px' }}>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-red)', fontSize: '13px' }}>
                                     -${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td></td>
                             </tr>
                             <tr style={{ backgroundColor: 'var(--color-background)', fontWeight: '800', borderTop: '1px solid var(--color-border)' }}>
-                                <td colSpan={6} style={{ padding: '14px 20px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
+                                <td colSpan={6} style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
                                     Net Balance
                                 </td>
-                                <td style={{ padding: '14px 20px', textAlign: 'right', color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)', fontSize: '15px' }}>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)', fontSize: '14px' }}>
                                     ${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td></td>
