@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -12,6 +12,7 @@ import { ShippingPointContent } from '../components/ShippingPointContent';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
+import IncomeExpense from './IncomeExpense';
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentLogo, getPaymentColor } from '../utils/payment';
@@ -399,6 +400,7 @@ const Orders: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'list' | 'pos'>(() => {
         return hasPermission('view_orders') ? 'list' : 'pos';
     });
+    const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
 
     console.log('Orders Debug:', {
         currentUser,
@@ -456,6 +458,23 @@ const Orders: React.FC = () => {
                             }}
                         >
                             <MapPin size={18} /> Shipping Points
+                        </button>
+                    )}
+                    {isAdmin && (
+                        <button
+                            onClick={() => setIsIncomeModalOpen(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: 'linear-gradient(135deg, #10B981, #059669)',
+                                color: 'white',
+                                fontWeight: 600, cursor: 'pointer', border: 'none',
+                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                                transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)'; }}
+                        >
+                            <Wallet size={18} /> Check Income
                         </button>
                     )}
                 </div>
@@ -3390,6 +3409,19 @@ const Orders: React.FC = () => {
                     tableName="custom_locations"
                     mapSource="google"
                 />
+            </Modal>
+            
+            {/* Income Expense Modal */}
+            <Modal
+                isOpen={isIncomeModalOpen}
+                onClose={() => setIsIncomeModalOpen(false)}
+                title="Income & Expense"
+                width="1200px"
+                height="90vh"
+                bodyPadding="0"
+                bodyOverflowY="auto"
+            >
+                <IncomeExpense isModal />
             </Modal>
         </div >
     );
