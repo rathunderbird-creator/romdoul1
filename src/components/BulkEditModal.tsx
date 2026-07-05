@@ -4,12 +4,12 @@ import { X, Calendar, Package, CreditCard } from 'lucide-react';
 interface BulkEditModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onApply: (field: 'date' | 'status' | 'paymentStatus', value: any) => Promise<void>;
+    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any) => Promise<void>;
     count: number;
 }
 
 const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply, count }) => {
-    const [field, setField] = useState<'date' | 'status' | 'paymentStatus'>('date');
+    const [field, setField] = useState<'date' | 'status' | 'paymentStatus' | 'settleDate'>('date');
     const [value, setValue] = useState<string>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -83,6 +83,26 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             Date
                         </button>
                         <button
+                            onClick={() => { setField('settleDate'); setValue(''); }}
+                            style={{
+                                flex: 1,
+                                padding: '10px',
+                                borderRadius: '8px',
+                                border: field === 'settleDate' ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                background: field === 'settleDate' ? 'var(--color-bg-primary)' : 'var(--color-surface)',
+                                color: field === 'settleDate' ? 'var(--color-primary)' : 'var(--color-text-main)',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '4px'
+                            }}
+                        >
+                            <Calendar size={18} />
+                            Settle Date
+                        </button>
+                        <button
                             onClick={() => { setField('status'); setValue(''); }}
                             style={{
                                 flex: 1,
@@ -129,7 +149,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
                         New Value
                     </label>
-                    {field === 'date' && (
+                    {(field === 'date' || field === 'settleDate') && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <input
                                 type="date"

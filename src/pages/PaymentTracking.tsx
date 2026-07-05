@@ -167,7 +167,7 @@ const PaymentTracking: React.FC = () => {
 
     const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
 
-    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus', value: any) => {
+    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any) => {
         if (selectedIds.size === 0) return;
 
         try {
@@ -176,6 +176,9 @@ const PaymentTracking: React.FC = () => {
 
             if (field === 'date') {
                 updates.date = new Date(value).toISOString();
+                await updateOrders(ids, updates);
+            } else if (field === 'settleDate') {
+                updates.settleDate = new Date(value).toISOString();
                 await updateOrders(ids, updates);
             } else if (field === 'status') {
                 updates.shipping = { status: value } as any;
