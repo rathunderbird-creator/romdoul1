@@ -424,11 +424,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
             {/* Unified Command Bar */}
             <div className="glass-panel" style={{ 
-                padding: isMobile ? '16px' : '20px', 
-                marginBottom: '24px', 
+                padding: isMobile ? '12px' : '16px', 
+                marginBottom: '16px', 
                 display: 'flex', 
                 flexDirection: isMobile ? 'column' : 'row',
-                gap: '16px', 
+                gap: '12px', 
                 alignItems: isMobile ? 'stretch' : 'center',
                 justifyContent: 'space-between',
                 backgroundColor: 'var(--color-surface)', 
@@ -437,19 +437,19 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
             }}>
                 {/* Left Side: Type Filters & Search */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', flex: 1 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', flex: 1 }}>
                     <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
                         <button
                             onClick={() => setFilterType('All')}
-                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 500, boxShadow: filterType === 'All' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 500, boxShadow: filterType === 'All' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                         >All</button>
                         <button
                             onClick={() => setFilterType('Income')}
-                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-blue)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-blue)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                         >Income</button>
                         <button
                             onClick={() => setFilterType('Expense')}
-                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 500, boxShadow: filterType === 'Expense' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
+                            style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 500, boxShadow: filterType === 'Expense' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
                         >Expense</button>
                     </div>
 
@@ -460,12 +460,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onChange={(e) => setFilterCategory(e.target.value)}
                             style={{
                                 width: '100%',
-                                padding: '12px 36px 12px 40px',
-                                borderRadius: '12px',
+                                padding: '10px 32px 10px 36px',
+                                borderRadius: '10px',
                                 border: '1px solid var(--color-border)',
                                 background: 'var(--color-background)',
                                 color: 'var(--color-text-main)',
-                                fontSize: '14px',
+                                fontSize: '13px',
                                 appearance: 'none',
                                 cursor: 'pointer',
                                 outline: 'none',
@@ -489,12 +489,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onChange={(e) => setFilterShippingCo(e.target.value)}
                             style={{
                                 width: '100%',
-                                padding: '12px 36px 12px 40px',
-                                borderRadius: '12px',
+                                padding: '10px 32px 10px 36px',
+                                borderRadius: '10px',
                                 border: '1px solid var(--color-border)',
                                 background: 'var(--color-background)',
                                 color: 'var(--color-text-main)',
-                                fontSize: '14px',
+                                fontSize: '13px',
                                 appearance: 'none',
                                 cursor: 'pointer',
                                 outline: 'none',
@@ -520,12 +520,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{
                                 width: '100%',
-                                padding: '12px 16px 12px 44px',
-                                borderRadius: '12px',
+                                padding: '10px 16px 10px 40px',
+                                borderRadius: '10px',
                                 border: '1px solid var(--color-border)',
                                 background: 'var(--color-background)',
                                 color: 'var(--color-text-main)',
-                                fontSize: '14px',
+                                fontSize: '13px',
                                 transition: 'all 0.2s',
                                 outline: 'none'
                             }}
@@ -551,7 +551,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 setFilterShippingCo('All');
                             }}
                             className="secondary-button"
-                            style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '42px', borderRadius: '10px' }}
+                            style={{ padding: '8px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '38px', borderRadius: '10px' }}
                             title="Clear Filters"
                         >
                             <FilterX size={16} />
@@ -570,13 +570,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 });
                             }}
                             className="secondary-button"
-                            style={{ padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '44px', width: '44px', borderRadius: '10px', flexShrink: 0 }}
+                            style={{ padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '38px', width: '38px', borderRadius: '10px', flexShrink: 0 }}
                             title="Refresh Transactions"
                         >
                             <RefreshCw id="ie-refresh-btn" size={20} />
                         </button>
 
-                        <button onClick={handleOpenAddModal} className="primary-button hover-lift" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', height: '44px', borderRadius: '10px', fontWeight: 600, boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)' }}>
+                        <button onClick={handleOpenAddModal} className="primary-button hover-lift" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', height: '38px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)' }}>
                             <Plus size={20} />
                             Add Transaction
                         </button>
