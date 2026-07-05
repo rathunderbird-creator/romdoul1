@@ -1386,7 +1386,7 @@ const Orders: React.FC = () => {
         }
     };
 
-    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus', value: any) => {
+    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any) => {
         if (selectedIds.size === 0) return;
 
         try {
@@ -1398,6 +1398,9 @@ const Orders: React.FC = () => {
                 await updateOrders(ids, updates);
             } else if (field === 'status') {
                 updates.shipping = { status: value } as any;
+                await updateOrders(ids, updates);
+            } else if (field === 'settleDate') {
+                updates.settleDate = value ? new Date(value).toISOString() : null as any;
                 await updateOrders(ids, updates);
             } else if (field === 'paymentStatus') {
                 const now = new Date().toISOString();
