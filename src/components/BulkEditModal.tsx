@@ -1,17 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Calendar, Package, CreditCard } from 'lucide-react';
 
 interface BulkEditModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any) => Promise<void>;
+    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string) => Promise<void>;
     count: number;
 }
 
 const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply, count }) => {
     const [field, setField] = useState<'date' | 'status' | 'paymentStatus' | 'settleDate'>('date');
     const [value, setValue] = useState<string>('');
+    const [settleDate, setSettleDate] = useState<string>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (field === 'paymentStatus' && (value === 'Paid' || value === 'Settled')) {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            setSettleDate(`${yyyy}-${mm}-${dd}`);
+        } else {
+            setSettleDate('');
+        }
+    }, [field, value]);
 
     if (!isOpen) return null;
 
@@ -19,7 +32,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
         if (!value) return;
         setIsSubmitting(true);
         try {
-            await onApply(field, value);
+            await onApply(field, value, settleDate);
             onClose();
         } catch (error) {
             console.error(error);
@@ -204,20 +217,66 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                         </select>
                     )}
                     {field === 'paymentStatus' && (
-                        <select
-                            value={value}
-                            onChange={(e) => setValue(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--color-border)',
-                                fontSize: '14px'
-                            }}
-                        >
-                            <option value="">Select Payment Status...</option>
-                            {paymentStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <select
+                                value={value}
+                                onChange={(e) => setValue(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--color-border)',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="">Select Payment Status...</option>
+                                {paymentStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+
+                            {(value === 'Paid' || value === 'Settled') && (
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                                        Settle Date
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input
+                                            type="date"
+                                            value={settleDate}
+                                            onChange={(e) => setSettleDate(e.target.value)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '12px',
+                                                borderRadius: '8px',
+                                                border: '1px solid var(--color-border)',
+                                                fontSize: '14px'
+                                            }}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                const now = new Date();
+                                                const yyyy = now.getFullYear();
+                                                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                                                const dd = String(now.getDate()).padStart(2, '0');
+                                                setSettleDate(`${yyyy}-${mm}-${dd}`);
+                                            }}
+                                            style={{
+                                                padding: '0 16px',
+                                                borderRadius: '8px',
+                                                border: '1px solid var(--color-primary)',
+                                                background: 'var(--color-surface)',
+                                                color: 'var(--color-primary)',
+                                                fontWeight: 500,
+                                                cursor: 'pointer',
+                                                fontSize: '13px',
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        >
+                                            Now
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
