@@ -3,7 +3,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit } from 'lucide-react';
+import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit, Trash2 } from 'lucide-react';
 import type { Sale } from '../types';
 import { PaymentStatusBadge, DateRangePicker, StatusBadge, SettlePaymentModal, POSInterface, BulkEditModal } from '../components';
 import { supabase } from '../lib/supabase';
@@ -32,7 +32,7 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrders, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
@@ -1396,6 +1396,25 @@ const PaymentTracking: React.FC = () => {
                         <button onClick={() => setIsBulkEditOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'var(--color-primary)', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                             <Edit size={18} /> Edit
                         </button>
+                        {currentUser?.roleId === 'admin' && (
+                            <button 
+                                onClick={async () => {
+                                    if (window.confirm(`Are you sure you want to delete ${selectedIds.size} selected orders?`)) {
+                                        try {
+                                            await deleteOrders(Array.from(selectedIds));
+                                            setSelectedIds(new Set());
+                                            showToast(`Deleted ${selectedIds.size} orders`, 'success');
+                                        } catch (error) {
+                                            console.error('Failed to delete orders:', error);
+                                            showToast('Failed to delete orders', 'error');
+                                        }
+                                    }
+                                }} 
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'var(--color-red)', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                            >
+                                <Trash2 size={18} /> Delete
+                            </button>
+                        )}
                     </div>
                 )
             }
