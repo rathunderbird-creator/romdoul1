@@ -679,7 +679,7 @@ const Dashboard: React.FC = () => {
                 {/* 4.5 Page Performance */}
                 <div style={{ marginBottom: '32px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>{t('dashboard.pagePerformance') || 'Page Performance'}</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>Page Performance</h3>
                         <select 
                             className="text-input" 
                             style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
