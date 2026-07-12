@@ -37,7 +37,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             subItems: [
                 { label: t('nav.allOrders'), path: '/orders' },
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping' },
-                { label: t('nav.allPayStatus'), path: '/payment-tracking' }
+                { label: t('nav.allPayStatus'), path: '/payment-tracking' },
+                { label: 'Deleted Orders', path: '/orders/deleted' }
             ]
         });
     }
