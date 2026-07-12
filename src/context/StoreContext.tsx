@@ -1617,16 +1617,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const deleteOrders = async (ids: string[]): Promise<void> => {
         try {
             // 1. Fetch DB orders and items directly since local `sales` state is now paginated/stale
-            const { data: dbOrders, error: ordersErr } = await supabase.from('sales').select('id, shipping_status').in('id', ids);
+            const { data: dbOrders, error: ordersErr } = await supabase.from('sales').select('*').in('id', ids);
             if (ordersErr) throw ordersErr;
 
-            const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('sale_id, product_id, quantity').in('sale_id', ids);
+            const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('*').in('sale_id', ids);
             if (itemsErr) throw itemsErr;
 
-            // 2. Restock Items based on real source of truth
             const ordersToDelete = dbOrders || [];
             const allItemsToDelete = dbItems || [];
 
+            // 1.5 Archive to deleted tables — pick only columns that exist in deleted_orders/deleted_sale_items
+            if (ordersToDelete.length > 0) {
+                const archiveOrders = ordersToDelete.map(o => ({
+                    id: o.id, total: o.total, discount: o.discount, date: o.date,
+                    payment_method: o.payment_method, type: o.type, salesman: o.salesman,
+                    customer_care: o.customer_care, remark: o.remark, amount_received: o.amount_received,
+                    settle_date: o.settle_date, payment_status: o.payment_status, order_status: o.order_status,
+                    shipping_company: o.shipping_company, tracking_number: o.tracking_number,
+                    shipping_status: o.shipping_status, shipping_cost: o.shipping_cost,
+                    customer_snapshot: o.customer_snapshot, page_source: o.page_source,
+                    last_edited_at: o.last_edited_at, last_edited_by: o.last_edited_by,
+                    created_at: o.created_at, daily_number: o.daily_number
+                }));
+                const { error: insOrdErr } = await supabase.from('deleted_orders').insert(archiveOrders);
+                if (insOrdErr) throw insOrdErr;
+            }
+            if (allItemsToDelete.length > 0) {
+                const archiveItems = allItemsToDelete.map(i => ({
+                    id: i.id, sale_id: i.sale_id, product_id: i.product_id,
+                    name: i.name, price: i.price, quantity: i.quantity,
+                    image: i.image, created_at: i.created_at
+                }));
+                const { error: insItemErr } = await supabase.from('deleted_sale_items').insert(archiveItems);
+                if (insItemErr) throw insItemErr;
+            }
+
+            // 2. Restock Items based on real source of truth
             for (const order of ordersToDelete) {
                 // Only restore stock if status is Shipped, Delivered, or Returned
                 // (Pending/Ordered means stock wasn't deducted yet, so don't increment)
@@ -1667,6 +1693,61 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             dispatchActivity({ action: 'order_deleted', description: `${ids.length} order(s) deleted`, userId: currentUser?.id, userName: currentUser?.name, metadata: { count: ids.length } });
         } catch (error) {
             console.error('Error deleting orders:', error);
+            throw error;
+        }
+    };
+
+    const restoreOrders = async (ids: string[]): Promise<void> => {
+        try {
+            const { data: dbOrders, error: ordersErr } = await supabase.from('deleted_orders').select('*').in('id', ids);
+            if (ordersErr) throw ordersErr;
+
+            const { data: dbItems, error: itemsErr } = await supabase.from('deleted_sale_items').select('*').in('sale_id', ids);
+            if (itemsErr) throw itemsErr;
+
+            const ordersToRestore = dbOrders || [];
+            const allItemsToRestore = dbItems || [];
+
+            // Remove deleted_at before inserting back to sales
+            const salesToInsert = ordersToRestore.map(({ deleted_at, ...rest }) => rest);
+
+            if (salesToInsert.length > 0) {
+                const { error: insOrdErr } = await supabase.from('sales').insert(salesToInsert);
+                if (insOrdErr) throw insOrdErr;
+            }
+
+            if (allItemsToRestore.length > 0) {
+                const { error: insItemErr } = await supabase.from('sale_items').insert(allItemsToRestore);
+                if (insItemErr) throw insItemErr;
+            }
+
+            // Deduct stock if it was previously restocked upon deletion
+            for (const order of ordersToRestore) {
+                const status = order.shipping_status || 'Pending';
+                if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
+                    const orderItems = allItemsToRestore.filter(item => item.sale_id === order.id);
+                    for (const item of orderItems) {
+                        const { data: originProduct } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
+                        if (originProduct) {
+                            await supabase.from('products').update({ stock: originProduct.stock - item.quantity }).eq('id', item.product_id);
+                        }
+                    }
+                }
+            }
+
+            // Delete from deleted tables
+            const BATCH_SIZE = 500;
+            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                const batch = ids.slice(i, i + BATCH_SIZE);
+                await supabase.from('deleted_sale_items').delete().in('sale_id', batch);
+                await supabase.from('deleted_orders').delete().in('id', batch);
+            }
+
+            setProductsUpdatedAt(Date.now());
+            setSalesUpdatedAt(Date.now());
+            dispatchActivity({ action: 'order_restored', description: `${ids.length} order(s) restored`, userId: currentUser?.id, userName: currentUser?.name, metadata: { count: ids.length } });
+        } catch (error) {
+            console.error('Error restoring orders:', error);
             throw error;
         }
     };
@@ -2464,6 +2545,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateOrder,
             updateOrders,
             deleteOrders,
+            restoreOrders,
             reorderRows,
             addCustomer,
             updateCustomer,

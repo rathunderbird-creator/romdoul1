@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User, Plus, Truck } from 'lucide-react';
+import { ShoppingBag, AlertTriangle, TrendingUp, RefreshCw, CreditCard, Package, User, Plus, Truck, Globe } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -51,6 +51,7 @@ const Dashboard: React.FC = () => {
     const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
     const [isLoadingSales, setIsLoadingSales] = React.useState(false);
     const [salesmanStatusFilter, setSalesmanStatusFilter] = React.useState<string>('All');
+    const [pageStatusFilter, setPageStatusFilter] = React.useState<string>('All');
 
     const fetchDashboardSales = React.useCallback(async () => {
         setIsLoadingSales(true);
@@ -198,7 +199,54 @@ const Dashboard: React.FC = () => {
         })).sort((a, b) => b.total - a.total);
     }, [filteredSales, salesmanStatusFilter]);
 
+    const pageStats = useMemo(() => {
+        const stats: Record<string, { 
+            count: number; 
+            total: number; 
+            soldItems: number; 
+            shippedDeliveredTotal: number;
+            statuses: Record<string, number>;
+        }> = {};
 
+        filteredSales.forEach(sale => {
+            const page = sale.pageSource || sale.customer?.page || 'Unknown Page';
+            const status = sale.shipping?.status || 'Pending';
+            
+            if (pageStatusFilter !== 'All' && status !== pageStatusFilter) return;
+
+            if (!stats[page]) {
+                stats[page] = { 
+                    count: 0, 
+                    total: 0, 
+                    soldItems: 0, 
+                    shippedDeliveredTotal: 0,
+                    statuses: {}
+                };
+            }
+            stats[page].count += 1;
+            stats[page].total += sale.total;
+
+            if (!stats[page].statuses[status]) {
+                stats[page].statuses[status] = 0;
+            }
+            stats[page].statuses[status] += 1;
+
+            if (status === 'Confirmed' || status === 'Shipped' || status === 'Delivered') {
+                stats[page].shippedDeliveredTotal += sale.total;
+                sale.items.forEach(item => {
+                    stats[page].soldItems += item.quantity;
+                });
+            }
+        });
+        return Object.entries(stats).map(([name, data]) => ({
+            name,
+            count: data.count,
+            total: data.total,
+            soldItems: data.soldItems,
+            shippedDeliveredTotal: data.shippedDeliveredTotal,
+            statuses: data.statuses
+        })).sort((a, b) => b.total - a.total);
+    }, [filteredSales, pageStatusFilter]);
 
     const pivotStats = useMemo(() => {
         const createPivot = () => ({
@@ -617,6 +665,104 @@ const Dashboard: React.FC = () => {
                                             localStorage.setItem('orders_statusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_searchTerm', '');
+                                            localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                            navigate('/orders');
+                                        }}
+                                    />
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                {/* 4.5 Page Performance */}
+                <div style={{ marginBottom: '32px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>{t('dashboard.pagePerformance') || 'Page Performance'}</h3>
+                        <select 
+                            className="text-input" 
+                            style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
+                            value={pageStatusFilter}
+                            onChange={(e) => setPageStatusFilter(e.target.value)}
+                        >
+                            <option value="All">{t('dashboard.allStatuses')}</option>
+                            <option value="Delivered">{t('status.delivered')}</option>
+                            <option value="Shipped">{t('status.shipped')}</option>
+                            <option value="Confirmed">{t('status.confirmed')}</option>
+                            <option value="Pending">{t('status.pending')}</option>
+                            <option value="Ordered">{t('status.ordered')}</option>
+                            <option value="Cancelled">{t('status.cancelled')}</option>
+                            <option value="Returned">{t('status.returned')}</option>
+                        </select>
+                    </div>
+                    {pageStats.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
+                    ) : (
+                        <div className="dashboard-flex-container" style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '16px'
+                        }}>
+                            {pageStats.map((s, index) => {
+                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Ordered', 'Cancelled', 'Returned', 'ReStock'];
+                                return (
+                                    <StatsCard
+                                        key={index}
+                                        title={s.name}
+                                        value={`$${s.shippedDeliveredTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        trend={
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                                                    <span style={{ color: '#1B3B6F', fontWeight: 600 }}>{s.soldItems} {t('dashboard.soldItems')}</span>
+                                                    {' | '}
+                                                    <span style={{ color: '#E65F2B', fontWeight: 600 }}>{s.count} {t('dashboard.orders')}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                                    {Object.entries(s.statuses)
+                                                        .sort((a, b) => {
+                                                            const indexA = STATUS_ORDER.indexOf(a[0]);
+                                                            const indexB = STATUS_ORDER.indexOf(b[0]);
+                                                            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                                                        })
+                                                        .map(([status, count]) => {
+                                                            let color = '#1D4ED8', bgColor = '#EFF6FF';
+                                                            if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
+                                                            else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
+                                                            else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
+                                                            else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
+                                                            else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+
+                                                            const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
+                                                            return (
+                                                                <span 
+                                                                    key={status} 
+                                                                    style={{
+                                                                        fontSize: '10px',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '4px',
+                                                                        backgroundColor: bgColor,
+                                                                        color: color,
+                                                                        fontWeight: 600,
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center'
+                                                                    }}
+                                                                >
+                                                                    {translatedStatus}: {count}
+                                                                </span>
+                                                            );
+                                                        })
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                        icon={Globe}
+                                        color="var(--color-primary)"
+                                        onClick={() => {
+                                            localStorage.setItem('orders_searchTerm', `"${s.name}"`);
+                                            localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_salesmanFilter', 'All');
                                             localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                             navigate('/orders');

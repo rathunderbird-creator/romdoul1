@@ -143,6 +143,7 @@ export interface StoreContextType {
     updateOrder: (id: string, updates: Partial<Sale>) => Promise<void>;
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => Promise<void>;
+    restoreOrders: (ids: string[]) => Promise<void>;
     reorderRows: (activeIds: string[], overId: string, leadId: string) => void;
 
     // Product Ordering

@@ -12,7 +12,9 @@ import { ShippingPointContent } from '../components/ShippingPointContent';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
+
 import IncomeExpense from './IncomeExpense';
+import { DeletedOrdersContent } from './DeletedOrders';
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentLogo, getPaymentColor } from '../utils/payment';
@@ -395,12 +397,15 @@ const Orders: React.FC = () => {
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+    const location = useLocation();
+    const navigate = useNavigate();
 
     // Tabs & View State
     const [activeTab, setActiveTab] = useState<'list' | 'pos'>(() => {
         return hasPermission('view_orders') ? 'list' : 'pos';
     });
     const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
+    const [isDeletedModalOpen, setIsDeletedModalOpen] = useState(false);
 
     console.log('Orders Debug:', {
         currentUser,
@@ -477,12 +482,26 @@ const Orders: React.FC = () => {
                             <Wallet size={18} /> Check Income
                         </button>
                     )}
+                    {canManage && (
+                        <button
+                            onClick={() => setIsDeletedModalOpen(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: 'var(--color-surface)',
+                                color: 'var(--color-red)',
+                                fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-red)',
+                                transition: 'all 0.2s ease',
+                            }}
+                        >
+                            <Trash2 size={18} /> Deleted Orders
+                        </button>
+                    )}
                 </div>
             )
         });
 
         return () => setHeaderContent(null);
-    }, [setHeaderContent, activeTab, hasPermission, isMobile]); // Added hasPermission dependency
+    }, [setHeaderContent, activeTab, hasPermission, isMobile, isAdmin, canManage, navigate]); // Added dependencies
 
     // Filters with Persistence
     const [statusFilter, setStatusFilter] = useState<string[]>(() => {
@@ -533,10 +552,6 @@ const Orders: React.FC = () => {
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
     const [shippingTargetStatus, setShippingTargetStatus] = useState<'Confirmed' | 'Shipped'>('Shipped');
     const [isShippingPointModalOpen, setIsShippingPointModalOpen] = useState(false);
-
-    const location = useLocation();
-    const navigate = useNavigate();
-
     useEffect(() => {
         if (location.state) {
             const state = location.state as any;
@@ -3422,6 +3437,19 @@ const Orders: React.FC = () => {
                 bodyOverflowY="auto"
             >
                 <IncomeExpense isModal />
+            </Modal>
+
+            {/* Deleted Orders Modal */}
+            <Modal
+                isOpen={isDeletedModalOpen}
+                onClose={() => setIsDeletedModalOpen(false)}
+                title="Deleted Orders"
+                width="1200px"
+                height="90vh"
+                bodyPadding="0"
+                bodyOverflowY="hidden"
+            >
+                <DeletedOrdersContent isModal />
             </Modal>
         </div >
     );
