@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -7,14 +7,15 @@ import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { POSInterface, StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal } from '../components';
-import { ShippingPointContent } from '../components/ShippingPointContent';
+import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 
-import IncomeExpense from './IncomeExpense';
-import { DeletedOrdersContent } from './DeletedOrders';
+const POSInterface = lazy(() => import('../components/POSInterface'));
+const ShippingPointContent = lazy(() => import('../components/ShippingPointContent').then(module => ({ default: module.ShippingPointContent })));
+const IncomeExpense = lazy(() => import('./IncomeExpense'));
+const DeletedOrdersContent = lazy(() => import('./DeletedOrders').then(module => ({ default: module.DeletedOrdersContent })));
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentLogo, getPaymentColor } from '../utils/payment';

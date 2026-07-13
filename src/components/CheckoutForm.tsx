@@ -7,7 +7,7 @@ import ConfigModal from './ConfigModal';
 import type { Sale, CartItem } from '../types';
 import LazyAvatar from './LazyAvatar';
 import ShippingPointSelector from './ShippingPointSelector';
-import cambodiaData from '../data/cambodia.json';
+
 import { sendTelegramOrderNotification } from '../utils/telegram';
 
 interface LocationInfo {
@@ -24,7 +24,6 @@ interface District extends LocationInfo {
 interface Province extends LocationInfo {
     districts?: District[];
 }
-const locationData = cambodiaData as Province[];
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -142,6 +141,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     };
 
     const [formData, setFormData] = useState(initialFormState);
+    const [locationData, setLocationData] = useState<Province[]>([]);
+    
+    useEffect(() => {
+        import('../data/cambodia.json').then((module) => {
+            setLocationData(module.default as Province[]);
+        });
+    }, []);
     const [productSelection, setProductSelection] = useState({ id: '', quantity: 1 });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);

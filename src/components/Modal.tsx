@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { type ReactNode, Suspense } from 'react';
 import { X } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
 
@@ -73,7 +73,13 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, width, 
                     display: 'flex',
                     flexDirection: 'column'
                 }}>
-                    {children}
+                    <Suspense fallback={
+                        <div style={{ padding: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--color-text-secondary)' }}>
+                            Loading...
+                        </div>
+                    }>
+                        {children}
+                    </Suspense>
                 </div>
             </div>
 
