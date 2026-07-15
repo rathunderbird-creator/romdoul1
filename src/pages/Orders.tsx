@@ -901,8 +901,11 @@ const Orders: React.FC = () => {
     const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
     const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
     const payStatusFilterRef = useClickOutside<HTMLDivElement>(() => setIsPayStatusOpen(false));
-    const [pageFilter, setPageFilter] = useState<string[]>([]);
+    const [pageFilter, setPageFilter] = useState<string[]>(() =>
+        JSON.parse(localStorage.getItem('orders_pageFilter') || '[]')
+    );
     const [isPageOpen, setIsPageOpen] = useState(false);
+    useEffect(() => { localStorage.setItem('orders_pageFilter', JSON.stringify(pageFilter)); }, [pageFilter]);
     const pageFilterRef = useClickOutside<HTMLDivElement>(() => setIsPageOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));

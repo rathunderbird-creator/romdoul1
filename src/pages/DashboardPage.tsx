@@ -451,6 +451,7 @@ const Dashboard: React.FC = () => {
                         localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                         localStorage.setItem('orders_salesmanFilter', 'All');
                         localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                        localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                         navigate('/orders');
                     }}
                 />
@@ -476,6 +477,7 @@ const Dashboard: React.FC = () => {
                                 localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                 localStorage.setItem('orders_salesmanFilter', 'All');
                                 localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                                 navigate('/orders');
                             }}
                         />
@@ -511,6 +513,7 @@ const Dashboard: React.FC = () => {
                                 localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                 localStorage.setItem('orders_salesmanFilter', 'All');
                                 localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                                 navigate('/orders');
                             }}
                         />
@@ -569,6 +572,7 @@ const Dashboard: React.FC = () => {
                                     localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_salesmanFilter', 'All');
                                     localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                     navigate('/orders');
                                 }}
@@ -666,6 +670,7 @@ const Dashboard: React.FC = () => {
                                             localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_searchTerm', '');
                                             localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                            localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                             navigate('/orders');
                                         }}
@@ -759,7 +764,8 @@ const Dashboard: React.FC = () => {
                                         icon={Globe}
                                         color="var(--color-primary)"
                                         onClick={() => {
-                                            localStorage.setItem('orders_searchTerm', `"${s.name}"`);
+                                            localStorage.setItem('orders_pageFilter', JSON.stringify([s.name]));
+                                            localStorage.setItem('orders_searchTerm', '');
                                             localStorage.setItem('orders_statusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_salesmanFilter', 'All');
@@ -842,6 +848,7 @@ const Dashboard: React.FC = () => {
                                             localStorage.setItem('orders_statusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_searchTerm', '');
+                                            localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                                             localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                             navigate('/orders');
                                         }}
@@ -926,6 +933,7 @@ const Dashboard: React.FC = () => {
                                     localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_salesmanFilter', 'All');
                                     localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
+                                    localStorage.setItem('orders_pageFilter', JSON.stringify([]));
                                     localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
                                     navigate('/orders');
                                 }}
