@@ -131,7 +131,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         address: orderToEdit?.customer?.address || '',
         amountReceived: orderToEdit?.amountReceived || '',
         settleDate: orderToEdit?.settleDate || '',
-        paymentMethod: orderToEdit?.paymentMethod || 'Cash',
+        paymentMethod: orderToEdit?.paymentMethod || ('' as any),
         paymentAfterDelivery: orderToEdit?.paymentStatus === 'Unpaid',
         discount: orderToEdit?.discount || '',
         enableDiscount: (orderToEdit?.discount || 0) > 0,
@@ -744,10 +744,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select
                                         className="search-input"
-                                        style={{ flex: 1, padding: '10px 12px', background: 'var(--color-bg)' }}
+                                        style={{ flex: 1, padding: '10px 12px', background: formData.paymentAfterDelivery ? 'var(--color-bg)' : 'white' }}
                                         value={formData.paymentMethod || ''}
                                         onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
-                                        disabled={true}
+                                        disabled={formData.paymentAfterDelivery}
                                     >
                                         <option value="">ជ្រើសរើសវិធីសាស្ត្រទូទាត់...</option>
                                         {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
