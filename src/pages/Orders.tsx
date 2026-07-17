@@ -466,7 +466,7 @@ const Orders: React.FC = () => {
                             <MapPin size={18} /> Shipping Points
                         </button>
                     )}
-                    {isAdmin && (
+                    {isAdmin && !isMobile && (
                         <button
                             onClick={() => setIsIncomeModalOpen(true)}
                             style={{
@@ -483,7 +483,7 @@ const Orders: React.FC = () => {
                             <Wallet size={18} /> Check Income
                         </button>
                     )}
-                    {canManage && (
+                    {canManage && !isMobile && (
                         <button
                             onClick={() => setIsDeletedModalOpen(true)}
                             style={{
