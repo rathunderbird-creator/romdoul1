@@ -1351,6 +1351,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        if (updates.paymentStatus === 'Cancel') {
+            const currentShippingStatus = updates.shipping?.status || existingOrder?.shipping?.status;
+            if (currentShippingStatus !== 'Returned') {
+                updates.shipping = { 
+                    ...(existingOrder?.shipping || {}), 
+                    ...(updates.shipping || {}), 
+                    status: 'Pending' 
+                } as any;
+            }
+        }
+
         // 1. Optimistic Local Update
         setSales(prev => prev.map(sale =>
             sale.id === id ? { ...sale, ...updates } : sale

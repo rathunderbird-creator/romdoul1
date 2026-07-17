@@ -267,19 +267,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         }
     }, [orderToEdit, currentUser]); // Added currentUser dependency
 
-    // Update payment status when checkbox changes
-    useEffect(() => {
-        if (formData.paymentAfterDelivery) {
-            setFormData(prev => ({
-                ...prev,
-                amountReceived: 0,
-                paymentMethod: '' as any,
-                paymentStatus: 'Unpaid'
-            }));
-        } else {
-            setFormData(prev => ({ ...prev, paymentMethod: '' as any, paymentStatus: 'Unpaid' }));
-        }
-    }, [formData.paymentAfterDelivery]);
+    // (Removed useEffect that was overwriting paymentStatus on load)
 
     const subtotal = React.useMemo(() => cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cartItems]);
     const discount = React.useMemo(() => formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0, [formData.enableDiscount, formData.discount]);
@@ -740,7 +728,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({
                                         ...formData,
                                         paymentAfterDelivery: e.target.checked,
-                                        paymentMethod: '' as any
+                                        paymentMethod: '' as any,
+                                        paymentStatus: 'Unpaid',
+                                        amountReceived: e.target.checked ? 0 : formData.amountReceived
                                     })}
                                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
