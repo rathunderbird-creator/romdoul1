@@ -119,6 +119,14 @@ export interface TelegramConfig {
     note?: string;
 }
 
+export interface BlockedCustomer {
+    phone: string;
+    name: string;
+    reason?: string;
+    blockedAt: string;
+    blockedBy?: string;
+}
+
 export interface StoreContextType {
     products: Product[];
     cart: CartItem[];
@@ -242,6 +250,12 @@ export interface StoreContextType {
     updateKhrExchangeRate: (rate: number) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
     updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => void;
+
+    // Blocked Customers (Scammer Blacklist)
+    blockedCustomers: BlockedCustomer[];
+    addBlockedCustomer: (customer: BlockedCustomer) => void;
+    removeBlockedCustomer: (phone: string) => void;
+    updateBlockedCustomer: (phone: string, updates: Partial<BlockedCustomer>) => void;
 
     // User & Role Management
     users: User[];

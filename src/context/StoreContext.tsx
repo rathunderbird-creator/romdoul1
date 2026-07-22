@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
-import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction, TelegramConfig } from '../types';
+import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction, TelegramConfig, BlockedCustomer } from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -31,6 +31,7 @@ interface ConfigState {
     telegramBotToken?: string;
     telegramChatId?: string;
     telegramConfigs?: TelegramConfig[];
+    blockedCustomers?: BlockedCustomer[];
 }
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -636,6 +637,26 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const removeCity = (name: string) => {
         updateConfig({ ...config, cities: config.cities.filter(c => c !== name) });
+    };
+
+    // --- Blocked Customers (Scammer Blacklist) ---
+    const addBlockedCustomer = (customer: BlockedCustomer) => {
+        const existing = config.blockedCustomers || [];
+        if (existing.some(c => c.phone === customer.phone)) return; // already blocked
+        updateConfig({ ...config, blockedCustomers: [...existing, customer] });
+    };
+
+    const removeBlockedCustomer = (phone: string) => {
+        const existing = config.blockedCustomers || [];
+        updateConfig({ ...config, blockedCustomers: existing.filter(c => c.phone !== phone) });
+    };
+
+    const updateBlockedCustomer = (phone: string, updates: Partial<BlockedCustomer>) => {
+        const existing = config.blockedCustomers || [];
+        updateConfig({
+            ...config,
+            blockedCustomers: existing.map(c => c.phone === phone ? { ...c, ...updates } : c)
+        });
     };
 
     const toggleProductPin = (productId: string) => {
@@ -1360,6 +1381,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     status: 'Pending' 
                 } as any;
             }
+        } else if (updates.paymentStatus === 'Get File') {
+            updates.shipping = { 
+                ...(existingOrder?.shipping || {}), 
+                ...(updates.shipping || {}), 
+                status: 'Delivered' 
+            } as any;
         }
 
         // 1. Optimistic Local Update
@@ -2623,6 +2650,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateCurrency,
             khrExchangeRate: config.khrExchangeRate || 4100,
             updateKhrExchangeRate,
+            blockedCustomers: config.blockedCustomers || [],
+            addBlockedCustomer,
+            removeBlockedCustomer,
+            updateBlockedCustomer,
             refreshData
         }}>
             {children}

@@ -97,9 +97,36 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
 
     return (
         <div style={{ display: 'flex', gap: '24px', height: '100%', flexDirection: isMobile ? 'column' : 'row', position: 'relative' }}>
-
             {/* Main Content Area: Grid or Checkout Form */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                {onCancelEdit && (
+                    <button
+                        onClick={() => {
+                            clearCart();
+                            if (onCancelEdit) onCancelEdit();
+                        }}
+                        style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            zIndex: 1100,
+                            background: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                            borderRadius: '50%',
+                            width: '36px',
+                            height: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'var(--color-text-main)'
+                        }}
+                        title="Close POS"
+                    >
+                        <X size={20} />
+                    </button>
+                )}
                 {viewMode === 'grid' ? (
                     <>
                         <div style={{ marginBottom: '16px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px', alignItems: isMobile ? 'stretch' : 'center', padding: '4px' }}>

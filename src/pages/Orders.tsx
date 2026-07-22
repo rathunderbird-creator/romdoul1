@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -385,7 +385,7 @@ const PayByModalComponent: React.FC<{
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer } = useStore();
 
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
@@ -602,6 +602,11 @@ const Orders: React.FC = () => {
     const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
     const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+    
+    // Scammer Modal State
+    const [isScammerModalOpen, setIsScammerModalOpen] = useState(false);
+    const [scammerTargetOrder, setScammerTargetOrder] = useState<Sale | null>(null);
+    const [scammerReason, setScammerReason] = useState('');
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -2786,7 +2791,17 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
-                                                            case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
+                                                            case 'customer': {
+                                                                const isScammer = blockedCustomers.some(bc => bc.phone === order.customer?.phone);
+                                                                return (
+                                                                    <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                            {order.customer?.name}
+                                                                            {isScammer && <AlertTriangle size={14} color="#EF4444" />}
+                                                                        </div>
+                                                                    </td>
+                                                                );
+                                                            }
                                                             case 'phone': {
                                                                 const operator = getOperatorForPhone(order.customer?.phone);
                                                                 return (
@@ -3083,6 +3098,9 @@ const Orders: React.FC = () => {
                             <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
                                 <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
                                 <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
+                                <button onClick={() => { setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                    <ShieldOff size={18} /> Mark as Scammer
+                                </button>
                                 <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                     <Trash2 size={18} /> Delete
                                 </button>
@@ -3306,6 +3324,13 @@ const Orders: React.FC = () => {
                                     >
                                         <ExternalLink size={16} /> Open
                                     </button>
+                                    <button
+                                        onClick={() => { setScammerTargetOrder(selectedOrder); setIsScammerModalOpen(true); setIsViewModalOpen(false); }}
+                                        style={{ background: 'none', border: '1px solid #FEE2E2', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                        title="Mark as Scammer"
+                                    >
+                                        <ShieldOff size={16} /> Block
+                                    </button>
                                     <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                                 </div>
                             </div>
@@ -3412,6 +3437,78 @@ const Orders: React.FC = () => {
                 onApply={handleBulkEdit}
                 count={selectedIds.size}
             />
+            {/* Scammer Modal */}
+            <Modal
+                isOpen={isScammerModalOpen}
+                onClose={() => { setIsScammerModalOpen(false); setScammerTargetOrder(null); setScammerReason(''); }}
+                title={scammerTargetOrder ? "Mark Customer as Scammer" : "Mark Customers as Scammers"}
+                width="400px"
+            >
+                <div style={{ padding: '20px' }}>
+                    <div style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                        {scammerTargetOrder ? (
+                            <>Are you sure you want to block <strong>{scammerTargetOrder.customer?.name}</strong> ({scammerTargetOrder.customer?.phone})?</>
+                        ) : (
+                            <>Are you sure you want to block <strong>{selectedIds.size}</strong> selected customer(s)?</>
+                        )}
+                        <br />They will be prevented from placing future orders.
+                    </div>
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--color-text-main)' }}>Reason (Optional)</label>
+                        <input
+                            type="text"
+                            value={scammerReason}
+                            onChange={(e) => setScammerReason(e.target.value)}
+                            className="form-input"
+                            placeholder="e.g. Fake order, refused delivery"
+                            autoFocus
+                        />
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => { setIsScammerModalOpen(false); setScammerTargetOrder(null); setScammerReason(''); }} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px' }}>
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (scammerTargetOrder) {
+                                    if (scammerTargetOrder.customer?.phone) {
+                                        addBlockedCustomer({
+                                            phone: scammerTargetOrder.customer.phone,
+                                            name: scammerTargetOrder.customer.name || 'Unknown',
+                                            reason: scammerReason,
+                                            blockedAt: new Date().toISOString(),
+                                            blockedBy: currentUser?.name
+                                        });
+                                        showToast('Customer marked as scammer', 'success');
+                                    }
+                                } else {
+                                    selectedIds.forEach(id => {
+                                        const order = sales.find(s => s.id === id);
+                                        if (order?.customer?.phone) {
+                                            addBlockedCustomer({
+                                                phone: order.customer.phone,
+                                                name: order.customer.name || 'Unknown',
+                                                reason: scammerReason,
+                                                blockedAt: new Date().toISOString(),
+                                                blockedBy: currentUser?.name
+                                            });
+                                        }
+                                    });
+                                    showToast(`${selectedIds.size} customer(s) marked as scammer`, 'success');
+                                    setSelectedIds(new Set());
+                                }
+                                setIsScammerModalOpen(false);
+                                setScammerTargetOrder(null);
+                                setScammerReason('');
+                            }}
+                            className="primary-button"
+                            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', background: '#DC2626' }}
+                        >
+                            Confirm Block
+                        </button>
+                    </div>
+                </div>
+            </Modal>
             {/* Shipping Points Modal */}
             <Modal
                 isOpen={isShippingPointModalOpen}

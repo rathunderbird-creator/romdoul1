@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, X, Plus, Calendar, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Settings, X, Plus, Calendar, MapPin, User, Phone, AlertTriangle } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
@@ -62,7 +62,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
 
     const isMobile = useMobile();
@@ -151,6 +151,126 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     const [productSelection, setProductSelection] = useState({ id: '', quantity: 1 });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
+
+    // --- Customer Autofill Suggestions ---
+    const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+    const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+    const phoneInputRef = useRef<HTMLDivElement>(null);
+    const nameInputRef = useRef<HTMLDivElement>(null);
+
+    // Build a deduplicated map of customers from past orders (most recent first)
+    const customerLookup = React.useMemo(() => {
+        const map = new Map<string, {
+            name: string;
+            phone: string;
+            city: string;
+            district: string;
+            commune: string;
+            village: string;
+            address: string;
+            page: string;
+            date: string;
+        }>();
+        // Sort sales by date descending so we keep the most recent customer info
+        const sorted = [...sales].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        for (const sale of sorted) {
+            if (sale.customer?.phone && !map.has(sale.customer.phone)) {
+                map.set(sale.customer.phone, {
+                    name: sale.customer.name || '',
+                    phone: sale.customer.phone,
+                    city: sale.customer.city || '',
+                    district: sale.customer.district || '',
+                    commune: sale.customer.commune || '',
+                    village: sale.customer.village || '',
+                    address: sale.customer.address || '',
+                    page: sale.customer.page || '',
+                    date: sale.date,
+                });
+            }
+        }
+        return map;
+    }, [sales]);
+
+    // Filter suggestions based on current phone input
+    const phoneSuggestions = React.useMemo(() => {
+        const query = formData.customerPhone.trim();
+        if (!query || query.length < 2) return [];
+        const results: { name: string; phone: string; city: string; district: string; commune: string; village: string; address: string; page: string; date: string }[] = [];
+        for (const [phone, cust] of customerLookup) {
+            if (phone.includes(query) && phone !== query) {
+                results.push(cust);
+            }
+            if (results.length >= 8) break;
+        }
+        return results;
+    }, [formData.customerPhone, customerLookup]);
+
+    // Filter suggestions based on current name input
+    const nameSuggestions = React.useMemo(() => {
+        const query = formData.customerName.trim().toLowerCase();
+        if (!query || query.length < 2) return [];
+        const results: { name: string; phone: string; city: string; district: string; commune: string; village: string; address: string; page: string; date: string }[] = [];
+        const seen = new Set<string>();
+        for (const [, cust] of customerLookup) {
+            if (cust.name.toLowerCase().includes(query) && !seen.has(cust.phone)) {
+                results.push(cust);
+                seen.add(cust.phone);
+            }
+            if (results.length >= 8) break;
+        }
+        return results;
+    }, [formData.customerName, customerLookup]);
+
+    // Apply a selected customer suggestion to autofill all fields
+    const applyCustomerSuggestion = useCallback((cust: { name: string; phone: string; city: string; district: string; commune: string; village: string; address: string; page: string }) => {
+        // Parse the saved full address to extract just the street/house part
+        // The stored address is the full preview: "street, commune, district, city"
+        // We need to strip out the structured parts to get just the street detail
+        let streetAddress = cust.address || '';
+        const partsToRemove = [cust.city, cust.district, cust.commune, cust.village].filter(Boolean);
+        partsToRemove.forEach(part => {
+            if (streetAddress.includes(part)) {
+                streetAddress = streetAddress.replace(part, '');
+            }
+        });
+        streetAddress = streetAddress.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim();
+        streetAddress = streetAddress.split(',').map(s => s.trim()).filter(Boolean).join(', ');
+
+        setFormData(prev => ({
+            ...prev,
+            customerName: cust.name,
+            customerPhone: cust.phone,
+            city: cust.city,
+            district: cust.district,
+            commune: cust.commune,
+            village: cust.village,
+            address: streetAddress,
+            pageName: cust.page || prev.pageName,
+        }));
+        setShowPhoneSuggestions(false);
+        setShowNameSuggestions(false);
+    }, []);
+
+    // --- Scammer Detection ---
+    const detectedScammer = React.useMemo(() => {
+        const phone = formData.customerPhone.trim();
+        if (!phone || phone.length < 3) return null;
+        return blockedCustomers.find(bc => bc.phone === phone) || null;
+    }, [formData.customerPhone, blockedCustomers]);
+
+    // Close suggestions when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (phoneInputRef.current && !phoneInputRef.current.contains(e.target as Node)) {
+                setShowPhoneSuggestions(false);
+            }
+            if (nameInputRef.current && !nameInputRef.current.contains(e.target as Node)) {
+                setShowNameSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const cleanCityPreview = formData.city ? formData.city.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim() : '';
     const addressPreviewText = [formData.address, formData.commune, formData.district, cleanCityPreview].filter(Boolean).join(', ');
@@ -299,6 +419,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     const handleSubmit = async () => {
         if (isSubmitting) return;
 
+        // Block scammer orders
+        if (detectedScammer) {
+            showToast('⛔ អតិថិជននេះស្ថិតក្នុងបញ្ជីខ្មៅ (Scammer)! មិនអាចបង្កើតការកម្ម៉ង់បានទេ។', 'error');
+            return;
+        }
+
         if (!formData.customerName) {
             showToast('Customer name is required', 'error');
             return;
@@ -437,8 +563,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     {!isMobile && (
                         <>
                             <button onClick={onCancel} disabled={isSubmitting} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
-                            <button onClick={handleSubmit} disabled={isSubmitting} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.2)', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
-                                {isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
+                            <button onClick={handleSubmit} disabled={isSubmitting || !!detectedScammer} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: detectedScammer ? 'none' : '0 4px 10px rgba(239, 68, 68, 0.2)', cursor: (isSubmitting || detectedScammer) ? 'not-allowed' : 'pointer', opacity: (isSubmitting || detectedScammer) ? 0.5 : 1, background: detectedScammer ? '#9CA3AF' : undefined }}>
+                                {detectedScammer ? '⛔ Scammer — Blocked' : isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
                             </button>
                         </>
                     )}
@@ -459,6 +585,48 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         <h3 style={{ fontSize: '16px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', paddingBottom: '12px', marginBottom: '20px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             ព័ត៌មានអតិថិជន
                         </h3>
+
+                        {/* Scammer Warning Banner */}
+                        {detectedScammer && (
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '12px',
+                                padding: '14px 16px',
+                                background: 'linear-gradient(135deg, #FEF2F2, #FEE2E2)',
+                                border: '2px solid #EF4444',
+                                borderRadius: '12px',
+                                marginBottom: '20px',
+                                animation: 'pulse 2s infinite'
+                            }}>
+                                <div style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '50%',
+                                    background: '#EF4444',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    <AlertTriangle size={20} color="white" />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 700, fontSize: '14px', color: '#DC2626', marginBottom: '4px' }}>
+                                        ⛔ អតិថិជន Scammer — បានបិទការកម្ម៉ង់
+                                    </div>
+                                    <div style={{ fontSize: '13px', color: '#991B1B', lineHeight: 1.5 }}>
+                                        <strong>{detectedScammer.name}</strong> ({detectedScammer.phone}) ស្ថិតក្នុងបញ្ជីខ្មៅ។
+                                        {detectedScammer.reason && (
+                                            <><br />មូលហេតុ: {detectedScammer.reason}</>
+                                        )}
+                                        {detectedScammer.blockedBy && (
+                                            <><br />បានបិទដោយ: {detectedScammer.blockedBy} — {new Date(detectedScammer.blockedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '20px', marginBottom: isMobile ? '12px' : '20px' }}>
                                 <div style={{ marginBottom: '0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -536,13 +704,129 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         />
                                     )}
                                 </div>
-                            <div>
+                            <div ref={nameInputRef} style={{ position: 'relative' }}>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ឈ្មោះអតិថិជន <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="បញ្ចូលឈ្មោះ" />
+                                <input
+                                    className="search-input"
+                                    style={{ width: '100%', padding: '10px 12px' }}
+                                    value={formData.customerName}
+                                    onChange={e => {
+                                        setFormData({ ...formData, customerName: e.target.value });
+                                        setShowNameSuggestions(true);
+                                    }}
+                                    onFocus={() => setShowNameSuggestions(true)}
+                                    placeholder="បញ្ចូលឈ្មោះ"
+                                    autoComplete="off"
+                                />
+                                {showNameSuggestions && nameSuggestions.length > 0 && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        zIndex: 1000,
+                                        background: 'white',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: '0 0 10px 10px',
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                        maxHeight: '240px',
+                                        overflowY: 'auto',
+                                        marginTop: '-1px'
+                                    }}>
+                                        <div style={{ padding: '6px 12px', fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <User size={12} /> អតិថិជនមុន
+                                        </div>
+                                        {nameSuggestions.map((cust, idx) => (
+                                            <div
+                                                key={`name-${cust.phone}-${idx}`}
+                                                onClick={() => applyCustomerSuggestion(cust)}
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    cursor: 'pointer',
+                                                    borderBottom: idx < nameSuggestions.length - 1 ? '1px solid var(--color-border)' : 'none',
+                                                    transition: 'background 0.15s',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px'
+                                                }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-primary-light)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                                            >
+                                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <User size={14} color="var(--color-primary)" />
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cust.name}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        📞 {cust.phone}{cust.city ? ` · ${cust.city}` : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <div>
+                            <div ref={phoneInputRef} style={{ position: 'relative' }}>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>លេខទូរស័ព្ទ <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value.replace(/\D/g, '') })} placeholder="០១២..." />
+                                <input
+                                    className="search-input"
+                                    style={{ width: '100%', padding: '10px 12px' }}
+                                    value={formData.customerPhone}
+                                    onChange={e => {
+                                        setFormData({ ...formData, customerPhone: e.target.value.replace(/\D/g, '') });
+                                        setShowPhoneSuggestions(true);
+                                    }}
+                                    onFocus={() => setShowPhoneSuggestions(true)}
+                                    placeholder="០១២..."
+                                    autoComplete="off"
+                                />
+                                {showPhoneSuggestions && phoneSuggestions.length > 0 && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        zIndex: 1000,
+                                        background: 'white',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: '0 0 10px 10px',
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                        maxHeight: '240px',
+                                        overflowY: 'auto',
+                                        marginTop: '-1px'
+                                    }}>
+                                        <div style={{ padding: '6px 12px', fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Phone size={12} /> លេខទូរស័ព្ទដែលធ្លាប់កម្ម៉ង់
+                                        </div>
+                                        {phoneSuggestions.map((cust, idx) => (
+                                            <div
+                                                key={`phone-${cust.phone}-${idx}`}
+                                                onClick={() => applyCustomerSuggestion(cust)}
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    cursor: 'pointer',
+                                                    borderBottom: idx < phoneSuggestions.length - 1 ? '1px solid var(--color-border)' : 'none',
+                                                    transition: 'background 0.15s',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px'
+                                                }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-primary-light)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                                            >
+                                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <Phone size={14} color="var(--color-primary)" />
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cust.phone}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        👤 {cust.name}{cust.city ? ` · ${cust.city}` : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ប្រភពទំព័រ <span style={{ color: '#EF4444' }}>*</span></label>
@@ -886,8 +1170,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             {isMobile && (
                 <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
                     <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>បោះបង់</button>
-                    <button onClick={handleSubmit} disabled={isSubmitting} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)', opacity: isSubmitting ? 0.7 : 1 }}>
-                        {isSubmitting ? 'កំពុងរក្សាទុក...' : (orderToEdit ? 'កែប្រែការកម្ម៉ង់' : 'បញ្ជាក់ការកម្ម៉ង់')}
+                    <button onClick={handleSubmit} disabled={isSubmitting || !!detectedScammer} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: detectedScammer ? 'none' : '0 4px 12px rgba(239, 68, 68, 0.2)', opacity: (isSubmitting || detectedScammer) ? 0.5 : 1, background: detectedScammer ? '#9CA3AF' : undefined }}>
+                        {detectedScammer ? '⛔ Scammer' : isSubmitting ? 'កំពុងរក្សាទុក...' : (orderToEdit ? 'កែប្រែការកម្ម៉ង់' : 'បញ្ជាក់ការកម្ម៉ង់')}
                     </button>
                 </div>
             )}
