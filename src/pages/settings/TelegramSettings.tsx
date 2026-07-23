@@ -61,9 +61,9 @@ const TelegramSettings: React.FC = () => {
                 telegramConfigs: mergedConfigs
             });
             showToast('Telegram Configuration committed!', 'success');
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            showToast('Failed to commit Telegram configuration', 'error');
+            showToast('Failed to commit Telegram configuration: ' + (error.message || 'Unknown error'), 'error');
         }
     }, [localState, updateStoreProfile, showToast]);
 

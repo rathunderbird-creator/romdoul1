@@ -2565,7 +2565,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     note: tc.note
                 }));
                 const { error } = await supabase.from('telegram_notifications').upsert(upsertData);
-                if (error) console.error("Error upserting telegram configs:", error);
+                if (error) {
+                    console.error("Error upserting telegram configs:", error);
+                    throw new Error("Database error saving telegram config: " + error.message);
+                }
             }
             
             newConfig.telegramConfigs = telegramConfigs;
