@@ -1443,9 +1443,9 @@ const PaymentTracking: React.FC = () => {
                                             await deleteOrders(Array.from(selectedIds));
                                             setSelectedIds(new Set());
                                             showToast(`Deleted ${selectedIds.size} orders`, 'success');
-                                        } catch (error) {
+                                        } catch (error: any) {
                                             console.error('Failed to delete orders:', error);
-                                            showToast('Failed to delete orders', 'error');
+                                            showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
                                         }
                                     }
                                 }} 

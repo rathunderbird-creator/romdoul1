@@ -663,10 +663,15 @@ const Orders: React.FC = () => {
 
     const handleBulkDelete = async () => {
         if (confirm(`Are you sure you want to delete ${selectedIds.size} orders ? `)) {
-            await deleteOrders(Array.from(selectedIds));
-            setSelectedIds(new Set());
-            showToast('Orders deleted successfully', 'success');
-            await fetchOrders();
+            try {
+                await deleteOrders(Array.from(selectedIds));
+                setSelectedIds(new Set());
+                showToast('Orders deleted successfully', 'success');
+                await fetchOrders();
+            } catch (error: any) {
+                console.error('Failed to delete orders:', error);
+                showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
+            }
         }
     };
 
@@ -1422,9 +1427,9 @@ const Orders: React.FC = () => {
                 setSelectedIds(new Set());
                 showToast('Orders deleted and stock restored', 'success');
                 await fetchOrders();
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to delete orders:', error);
-                showToast('Failed to delete orders', 'error');
+                showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
             }
         }
     };
