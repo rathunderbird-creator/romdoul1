@@ -279,7 +279,21 @@ ALTER TABLE public.custom_locations DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shipping_rules DISABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- 6. STORAGE
+-- 6. TELEGRAM NOTIFICATIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS telegram_notifications (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    name TEXT NOT NULL,
+    bot_token TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    trigger_statuses TEXT[] DEFAULT '{}',
+    note TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================================
+-- 7. STORAGE BUCKETS (If applicable)
 -- ============================================================
 
 INSERT INTO storage.buckets (id, name, public) VALUES ('products', 'products', true) ON CONFLICT (id) DO NOTHING;

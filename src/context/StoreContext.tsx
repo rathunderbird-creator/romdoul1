@@ -257,14 +257,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             };
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
-            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
+            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult] = await Promise.all([
                 supabase.from('products').select('id, name, model, price, purchase_cost, stock, category, low_stock_threshold, image, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
                 supabase.from('restocks').select('*').order('date', { ascending: false }).limit(50),
-                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50)
+                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
+                supabase.from('telegram_notifications').select('*')
             ]);
 
             console.log('Fetched Sales Count:', salesResult.data?.length);
@@ -450,6 +451,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // If it's another error (e.g. network), do nothing to DB, retain current state fallback
             } else if (configResult.data) {
                 const loadedConfig = configResult.data.data;
+                
+                // Inject telegram configs from their own table
+                if (telegramConfigsResult?.data) {
+                    loadedConfig.telegramConfigs = telegramConfigsResult.data.map((tc: any) => ({
+                        id: tc.id,
+                        name: tc.name,
+                        botToken: tc.bot_token,
+                        chatId: tc.chat_id,
+                        triggerStatuses: tc.trigger_statuses || [],
+                        note: tc.note || ''
+                    }));
+                }
+
                 const needsMigration = !loadedConfig.cities ||
                     loadedConfig.cities.length === 0 ||
                     loadedConfig.cities.includes('Phnom Penh') ||
@@ -2525,7 +2539,37 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => {
-        updateConfig({ ...config, ...data });
+        const { telegramConfigs, ...restData } = data;
+        let newConfig = { ...config, ...restData };
+        
+        if (telegramConfigs !== undefined) {
+            // First, find what's deleted
+            const currentIds = config.telegramConfigs?.map(c => c.id) || [];
+            const newIds = telegramConfigs.map(c => c.id);
+            const deletedIds = currentIds.filter(id => !newIds.includes(id));
+            
+            if (deletedIds.length > 0) {
+                await supabase.from('telegram_notifications').delete().in('id', deletedIds);
+            }
+            
+            // Upsert remaining
+            if (telegramConfigs.length > 0) {
+                const upsertData = telegramConfigs.map(tc => ({
+                    id: tc.id,
+                    name: tc.name,
+                    bot_token: tc.botToken,
+                    chat_id: tc.chatId,
+                    trigger_statuses: tc.triggerStatuses,
+                    note: tc.note
+                }));
+                const { error } = await supabase.from('telegram_notifications').upsert(upsertData);
+                if (error) console.error("Error upserting telegram configs:", error);
+            }
+            
+            newConfig.telegramConfigs = telegramConfigs;
+        }
+
+        updateConfig(newConfig);
     };
 
     // Timezone

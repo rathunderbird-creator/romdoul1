@@ -8,7 +8,13 @@ import Login from './pages/Login';
 const Dashboard = lazy(() => import('./pages/DashboardPage'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const IncomeExpense = lazy(() => import('./pages/IncomeExpense'));
-const Settings = lazy(() => import('./pages/Settings'));
+const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'));
+const StoreProfileSettings = lazy(() => import('./pages/settings/StoreProfileSettings'));
+const GeneralSettings = lazy(() => import('./pages/settings/GeneralSettings'));
+const TelegramSettings = lazy(() => import('./pages/settings/TelegramSettings'));
+const SecuritySettings = lazy(() => import('./pages/settings/SecuritySettings'));
+const DatabaseSettings = lazy(() => import('./pages/settings/DatabaseSettings'));
+
 const Orders = lazy(() => import('./pages/Orders'));
 const DeletedOrders = lazy(() => import('./pages/DeletedOrders'));
 const Scammers = lazy(() => import('./pages/Scammers'));
@@ -97,7 +103,14 @@ const ProtectedApp = () => {
           </Route>
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><Settings /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><SettingsLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="store-profile" replace />} />
+            <Route path="store-profile" element={<StoreProfileSettings />} />
+            <Route path="general" element={<GeneralSettings />} />
+            <Route path="telegram" element={<TelegramSettings />} />
+            <Route path="security" element={<SecuritySettings />} />
+            <Route path="database" element={<DatabaseSettings />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
