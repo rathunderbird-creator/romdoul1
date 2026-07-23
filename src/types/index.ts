@@ -8,6 +8,8 @@ export interface Product {
     lowStockThreshold?: number;
     image: string;
     category: string;
+    invoiceNumber?: string;
+    supplier?: string;
     createdAt?: string;
 }
 

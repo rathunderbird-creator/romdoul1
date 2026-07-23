@@ -258,7 +258,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, price, purchase_cost, stock, category, low_stock_threshold, image, created_at').order('created_at', { ascending: false }),
+                supabase.from('products').select('id, name, model, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
@@ -279,6 +279,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     stock: Number(p.stock),
                     price: Number(p.price),
                     purchaseCost: Number(p.purchase_cost || 0),
+                    invoiceNumber: p.invoice_number,
+                    supplier: p.supplier,
                     createdAt: p.created_at
                 })));
             }
@@ -962,7 +964,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             low_stock_threshold: newProduct.lowStockThreshold,
             image: newProduct.image,
             category: newProduct.category,
-            model: newProduct.model
+            model: newProduct.model,
+            invoice_number: newProduct.invoiceNumber,
+            supplier: newProduct.supplier
         };
 
         const { error } = await supabase.from('products').insert(dbProduct);
@@ -986,6 +990,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateProduct = async (id: string, updates: Partial<Product>) => {
+        if (updates.stock !== undefined) {
+            updates.stock = Math.max(0, updates.stock);
+        }
         setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
 
         // Map updates to DB structure
@@ -993,11 +1000,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.name !== undefined) dbUpdates.name = updates.name;
         if (updates.price !== undefined) dbUpdates.price = updates.price;
         if (updates.purchaseCost !== undefined) dbUpdates.purchase_cost = updates.purchaseCost;
-        if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
+        if (updates.stock !== undefined) dbUpdates.stock = Math.max(0, updates.stock);
         if (updates.lowStockThreshold !== undefined) dbUpdates.low_stock_threshold = updates.lowStockThreshold;
         if (updates.image !== undefined) dbUpdates.image = updates.image;
         if (updates.category !== undefined) dbUpdates.category = updates.category;
         if (updates.model !== undefined) dbUpdates.model = updates.model;
+        if (updates.invoiceNumber !== undefined) dbUpdates.invoice_number = updates.invoiceNumber;
+        if (updates.supplier !== undefined) dbUpdates.supplier = updates.supplier;
 
         await supabase.from('products').update(dbUpdates).eq('id', id);
         setProductsUpdatedAt(Date.now());
@@ -1230,13 +1239,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
-                        if (p.id === item.id) return { ...p, stock: p.stock - item.quantity };
+                        if (p.id === item.id) return { ...p, stock: Math.max(0, p.stock - item.quantity) };
                         return p;
                     }));
                     // DB
                     const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
                     if (current) {
-                        await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
+                        await supabase.from('products').update({ stock: Math.max(0, current.stock - item.quantity) }).eq('id', item.id);
                     }
 
                     // Deduct specific inventory items (FIFO)
@@ -1782,7 +1791,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     for (const item of orderItems) {
                         const { data: originProduct } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
                         if (originProduct) {
-                            await supabase.from('products').update({ stock: originProduct.stock - item.quantity }).eq('id', item.product_id);
+                            await supabase.from('products').update({ stock: Math.max(0, originProduct.stock - item.quantity) }).eq('id', item.product_id);
                         }
                     }
                 }

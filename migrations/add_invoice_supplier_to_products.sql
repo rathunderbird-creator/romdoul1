@@ -1,0 +1,3 @@
+ALTER TABLE public.products
+ADD COLUMN IF NOT EXISTS invoice_number TEXT,
+ADD COLUMN IF NOT EXISTS supplier TEXT;

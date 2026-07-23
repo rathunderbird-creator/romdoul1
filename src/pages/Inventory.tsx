@@ -302,7 +302,9 @@ const Inventory: React.FC = () => {
         stock: 0,
         lowStockThreshold: 5,
         category: categories[0] || 'Portable',
-        image: 'https://placehold.co/300x300'
+        image: 'https://placehold.co/300x300',
+        invoiceNumber: '',
+        supplier: ''
     };
     const [formData, setFormData] = useState<ProductFormState>(initialFormState);
 
@@ -822,6 +824,8 @@ const Inventory: React.FC = () => {
                                     {canViewFinancials && renderHeader('Cost of Purchase', 'purchaseCost' as any)}
                                     {renderHeader('Sell Price', 'price', undefined, true)}
                                     {renderHeader('Stock', 'stock', undefined, true)}
+                                    {renderHeader('Invoice Number', 'invoiceNumber', undefined, true)}
+                                    {renderHeader('Supplier', 'supplier', undefined, true)}
                                     {canViewFinancials && renderHeader('Total Value', 'totalValue')}
                                     {canManageInventory && <th style={{ textAlign: 'right' }}>Actions</th>}
                                     {!sortConfig && <th style={{ width: '40px' }} />}
@@ -889,6 +893,12 @@ const Inventory: React.FC = () => {
                                                         }} 
                                                         canEdit={canManageInventory} 
                                                     />
+                                                </td>
+                                                <td>
+                                                    <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>{product.invoiceNumber || '—'}</span>
+                                                </td>
+                                                <td>
+                                                    <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>{product.supplier || '—'}</span>
                                                 </td>
                                                 {canViewFinancials && (
                                                     <td style={{ color: 'var(--color-text-secondary)' }}>
@@ -1169,7 +1179,7 @@ const Inventory: React.FC = () => {
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Stock</label>
-                                        <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.stock ? '#EF4444' : undefined }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value === '' ? '' : Number(e.target.value) })} />
+                                        <input className="search-input" type="number" min="0" style={{ width: '100%', borderColor: formErrors.stock ? '#EF4444' : undefined }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value === '' ? '' : Math.max(0, Number(e.target.value)) })} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
@@ -1183,7 +1193,31 @@ const Inventory: React.FC = () => {
                                         />
                                     </div>
                                 </div>
-                                <div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
+                                        <input
+                                            className="search-input"
+                                            type="text"
+                                            style={{ width: '100%' }}
+                                            placeholder="INV-001"
+                                            value={formData.invoiceNumber || ''}
+                                            onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier</label>
+                                        <input
+                                            className="search-input"
+                                            type="text"
+                                            style={{ width: '100%' }}
+                                            placeholder="Supplier Name"
+                                            value={formData.supplier || ''}
+                                            onChange={e => setFormData({ ...formData, supplier: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '16px' }}>
                                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Image</label>
                                     <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
                                         {formData.image && (

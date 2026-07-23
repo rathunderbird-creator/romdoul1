@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS products (
     low_stock_threshold NUMERIC DEFAULT 5,
     image TEXT,
     category TEXT,
+    invoice_number TEXT,
+    supplier TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
