@@ -270,7 +270,7 @@ const DeliveryTracking: React.FC = () => {
         if (!telegramBotToken || !telegramChatId) return;
         const sequenceNumber = sales.findIndex(s => s.id === order.id) + 1;
         try {
-            await sendTelegramOrderNotification(telegramBotToken, telegramChatId, order, sequenceNumber);
+            await sendTelegramOrderNotification(telegramBotToken, telegramChatId, order, sequenceNumber, undefined);
             showToast('Follow up notification sent to Telegram', 'success');
         } catch (error: any) {
             showToast(`Failed to send Telegram message: ${error.message}`, 'error');

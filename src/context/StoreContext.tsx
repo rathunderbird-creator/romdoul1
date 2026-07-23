@@ -460,6 +460,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         botToken: tc.bot_token,
                         chatId: tc.chat_id,
                         triggerStatuses: tc.trigger_statuses || [],
+                        messageTemplate: tc.message_template || '',
                         note: tc.note || ''
                     }));
                 }
@@ -2560,6 +2561,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     bot_token: tc.botToken,
                     chat_id: tc.chatId,
                     trigger_statuses: tc.triggerStatuses,
+                    message_template: tc.messageTemplate,
                     note: tc.note
                 }));
                 const { error } = await supabase.from('telegram_notifications').upsert(upsertData);

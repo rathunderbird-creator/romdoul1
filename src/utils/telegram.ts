@@ -5,7 +5,8 @@ export const sendTelegramOrderNotification = async (
     botToken: string,
     chatIds: string,
     order: any,
-    sequenceNumber: number
+    sequenceNumber: number,
+    messageTemplate?: string
 ) => {
     if (!botToken || !chatIds) return;
 
@@ -21,7 +22,26 @@ export const sendTelegramOrderNotification = async (
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
 
-        const htmlMessage = `
+        let htmlMessage = '';
+
+        if (messageTemplate && messageTemplate.trim() !== '') {
+            // Process custom template
+            const itemsList = order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (<b>$${(item.price * item.quantity).toFixed(2)}</b>)`).join('\n');
+            
+            htmlMessage = messageTemplate
+                .replace(/{order_no}/g, String(sequenceNumber).padStart(2, '0'))
+                .replace(/{customer_name}/g, escapeHtml(order.customer?.name || 'Unknown'))
+                .replace(/{phone}/g, escapeHtml(order.customer?.phone || 'N/A'))
+                .replace(/{page}/g, escapeHtml(order.customer?.page || 'N/A'))
+                .replace(/{address}/g, escapeHtml(order.customer?.address || 'N/A'))
+                .replace(/{items}/g, itemsList)
+                .replace(/{total}/g, `$${(order.total || 0).toFixed(2)}`)
+                .replace(/{shipping_company}/g, escapeHtml(order.shipping?.company || 'N/A'))
+                .replace(/{salesman}/g, escapeHtml(order.salesman || 'N/A'))
+                .replace(/{remark}/g, escapeHtml(order.remark || 'None'));
+        } else {
+            // Default template
+            htmlMessage = `
 🚀 <b>Order Information</b>
 
 #️⃣ <b>Order No:</b> ${String(sequenceNumber).padStart(2, '0')}
@@ -33,12 +53,13 @@ export const sendTelegramOrderNotification = async (
 📦 <b>Items:</b>
 ${order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (<b>$${(item.price * item.quantity).toFixed(2)}</b>)`).join('\n')}
 
-💰 <b>Total:</b> <b>$${order.total.toFixed(2)}</b>
+💰 <b>Total:</b> <b>$${(order.total || 0).toFixed(2)}</b>
 🚚 <b>Shipping:</b> ${escapeHtml(order.shipping?.company || 'N/A')}
 👤 <b>Salesman:</b> ${escapeHtml(order.salesman || 'N/A')}
 📝 <b>Remark:</b> ${escapeHtml(order.remark || 'None')}
 -------------------------
 `.trim();
+        }
         
         const results = [];
         for (const chatId of idList) {
@@ -123,4 +144,31 @@ export const sendTelegramTestMessage = async (botToken: string, chatIds: string)
     }
 
     return true;
+};
+
+/**
+ * Sends a test message using a custom template.
+ */
+export const sendTelegramTestTemplateMessage = async (botToken: string, chatIds: string, messageTemplate: string) => {
+    // Create a dummy order
+    const dummyOrder = {
+        customer: {
+            name: 'John Doe',
+            phone: '012345678',
+            page: 'Facebook Page',
+            address: 'Phnom Penh, Cambodia'
+        },
+        items: [
+            { name: 'Product A', quantity: 2, price: 15.00 },
+            { name: 'Product B', quantity: 1, price: 20.00 }
+        ],
+        total: 50.00,
+        shipping: {
+            company: 'J&T'
+        },
+        salesman: 'Alice',
+        remark: 'This is a test order'
+    };
+
+    return sendTelegramOrderNotification(botToken, chatIds, dummyOrder, 99, messageTemplate);
 };

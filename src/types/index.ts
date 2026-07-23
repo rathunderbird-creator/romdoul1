@@ -116,6 +116,7 @@ export interface TelegramConfig {
     botToken: string;
     chatId: string;
     triggerStatuses: string[];
+    messageTemplate?: string;
     note?: string;
 }
 

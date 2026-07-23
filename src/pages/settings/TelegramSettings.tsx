@@ -18,6 +18,7 @@ const TelegramSettings: React.FC = () => {
 
     const [visibleTokens, setVisibleTokens] = useState<Record<number, boolean>>({});
     const [statusDropdownOpen, setStatusDropdownOpen] = useState<Record<number, boolean>>({});
+    const [templateDropdownOpen, setTemplateDropdownOpen] = useState<Record<number, boolean>>({});
 
     const originalStateRef = useRef<{ telegramConfigs: TelegramConfig[] }>({ telegramConfigs: [] });
 
@@ -254,6 +255,12 @@ const TelegramSettings: React.FC = () => {
                                 />
                             </div>
                                 <button
+                                    onClick={() => setTemplateDropdownOpen(prev => ({ ...prev, [index]: !prev[index] }))}
+                                    style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
+                                >
+                                    Template
+                                </button>
+                                <button
                                     onClick={async () => {
                                         if (!config.botToken || !config.chatId) {
                                             showToast('Please enter Bot Token and Chat ID first', 'error');
@@ -279,6 +286,49 @@ const TelegramSettings: React.FC = () => {
                                     Commit
                                 </button>
                         </div>
+                        {templateDropdownOpen[index] && (
+                            <div style={{ marginTop: '8px', padding: '16px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Message Template</label>
+                                <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+                                    Available variables: <code>{`{order_no}`}</code>, <code>{`{customer_name}`}</code>, <code>{`{phone}`}</code>, <code>{`{address}`}</code>, <code>{`{page}`}</code>, <code>{`{items}`}</code>, <code>{`{total}`}</code>, <code>{`{shipping_company}`}</code>, <code>{`{salesman}`}</code>, <code>{`{remark}`}</code>
+                                </p>
+                                <textarea
+                                    value={config.messageTemplate || ''}
+                                    onChange={(e) => {
+                                        const newConfigs = [...localState.telegramConfigs];
+                                        newConfigs[index] = { ...newConfigs[index], messageTemplate: e.target.value };
+                                        setLocalState({ ...localState, telegramConfigs: newConfigs });
+                                    }}
+                                    placeholder="Leave empty to use the default message format."
+                                    className="search-input"
+                                    style={{ width: '100%', padding: '12px', minHeight: '150px', resize: 'vertical', fontFamily: 'monospace', fontSize: '13px' }}
+                                />
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                                    <button
+                                        onClick={async () => {
+                                            if (!config.botToken || !config.chatId) {
+                                                showToast('Please enter Bot Token and Chat ID first', 'error');
+                                                return;
+                                            }
+                                            if (!config.messageTemplate) {
+                                                showToast('Please enter a message template to test', 'error');
+                                                return;
+                                            }
+                                            try {
+                                                const { sendTelegramTestTemplateMessage } = await import('../../utils/telegram');
+                                                await sendTelegramTestTemplateMessage(config.botToken, config.chatId, config.messageTemplate);
+                                                showToast('Test template message sent!', 'success');
+                                            } catch (err: any) {
+                                                showToast(err.message || 'Failed to send test message', 'error');
+                                            }
+                                        }}
+                                        style={{ padding: '8px 16px', fontSize: '13px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                        Test Template
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     );
                 })}

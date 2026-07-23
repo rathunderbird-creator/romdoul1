@@ -510,7 +510,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         const matchingConfigs = telegramConfigs.filter(c => c.triggerStatuses.includes(formData.shippingStatus));
                         matchingConfigs.forEach(config => {
                             if (config.botToken && config.chatId) {
-                                sendTelegramOrderNotification(config.botToken, config.chatId, orderCopy, orderCopy.orderIndex || 0).catch(err => {
+                                sendTelegramOrderNotification(config.botToken, config.chatId, orderCopy, orderCopy.orderIndex || 0, config.messageTemplate).catch(err => {
                                     console.error('Failed to send Telegram notification:', err);
                                 });
                             }
@@ -529,7 +529,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     const matchingConfigs = telegramConfigs.filter(c => c.triggerStatuses.includes(formData.shippingStatus));
                     matchingConfigs.forEach(config => {
                         if (config.botToken && config.chatId) {
-                            sendTelegramOrderNotification(config.botToken, config.chatId, createdSale, sequenceNumber).catch(err => {
+                            sendTelegramOrderNotification(config.botToken, config.chatId, createdSale, sequenceNumber, config.messageTemplate).catch(err => {
                                 console.error('Failed to send Telegram notification:', err);
                                 showToast(`Telegram Error: ${err.message}`, 'error');
                             });

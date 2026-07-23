@@ -333,3 +333,17 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO users (id, name, email, role_id, pin)
 VALUES ('admin', 'Admin', 'admin@pos.com', 'admin', '1234')
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- 8. TELEGRAM NOTIFICATIONS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS telegram_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    bot_token TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    trigger_statuses TEXT[] DEFAULT '{}',
+    message_template TEXT,
+    note TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
