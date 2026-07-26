@@ -256,7 +256,8 @@ export interface StoreContextType {
 
     // Blocked Customers (Scammer Blacklist)
     blockedCustomers: BlockedCustomer[];
-    addBlockedCustomer: (customer: BlockedCustomer) => void;
+    addBlockedCustomer: (customer: BlockedCustomer) => Promise<void>;
+    addBlockedCustomers: (customers: BlockedCustomer[]) => Promise<void>;
     removeBlockedCustomer: (phone: string) => void;
     updateBlockedCustomer: (phone: string, updates: Partial<BlockedCustomer>) => void;
 

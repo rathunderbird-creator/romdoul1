@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -385,7 +384,7 @@ const PayByModalComponent: React.FC<{
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer } = useStore();
 
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
@@ -1318,7 +1317,17 @@ const Orders: React.FC = () => {
             acc[status] = (acc[status] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
-        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts, statusCounts, payStatusCounts };
+        const productCounts = filteredOrders.reduce((acc, order) => {
+            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
+            if (!isCancelled) {
+                order.items.forEach(item => {
+                    const name = item.name || 'Unknown Product';
+                    acc[name] = (acc[name] || 0) + item.quantity;
+                });
+            }
+            return acc;
+        }, {} as Record<string, number>);
+        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts, statusCounts, payStatusCounts, productCounts };
     }, [filteredOrders, totalCount]);
 
     const handleOpenAdd = () => {
@@ -2797,7 +2806,8 @@ const Orders: React.FC = () => {
                                                                 );
                                                             case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
                                                             case 'customer': {
-                                                                const isScammer = blockedCustomers.some(bc => bc.phone === order.customer?.phone);
+                                                                const orderPhone = order.customer?.phone?.trim() || '';
+                                                                const isScammer = blockedCustomers.some(bc => bc.phone.trim() === orderPhone);
                                                                 return (
                                                                     <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -3103,9 +3113,31 @@ const Orders: React.FC = () => {
                             <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
                                 <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
                                 <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
-                                <button onClick={() => { setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                    <ShieldOff size={18} /> Mark as Scammer
-                                </button>
+                                {Array.from(selectedIds).some(id => {
+                                    const order = filteredOrders.find(o => o.id === id);
+                                    const phone = order?.customer?.phone;
+                                    return phone && blockedCustomers.some(bc => bc.phone === phone.trim());
+                                }) ? (
+                                    <button onClick={() => {
+                                        let count = 0;
+                                        selectedIds.forEach(id => {
+                                            const order = filteredOrders.find(o => o.id === id);
+                                            const phone = order?.customer?.phone;
+                                            if (phone && blockedCustomers.some(bc => bc.phone === phone.trim())) {
+                                                removeBlockedCustomer(phone.trim());
+                                                count++;
+                                            }
+                                        });
+                                        showToast(`Unblocked ${count} customer(s)`, 'success');
+                                        setSelectedIds(new Set());
+                                    }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#ECFCCB', color: '#65A30D', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                        <ShieldCheck size={18} /> Unblock
+                                    </button>
+                                ) : (
+                                    <button onClick={() => { setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                        <ShieldOff size={18} /> Mark as Scammer
+                                    </button>
+                                )}
                                 <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                     <Trash2 size={18} /> Delete
                                 </button>
@@ -3209,6 +3241,33 @@ const Orders: React.FC = () => {
                                                 );
                                             });
                                         })()}
+                                    </div>
+                                </>
+                            )}
+                            
+                            {Object.values(stats.productCounts).some(c => c > 0) && (
+                                <>
+                                    <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
+                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {Object.entries(stats.productCounts)
+                                            .sort(([, a], [, b]) => b - a)
+                                            .map(([name, count]) => (
+                                                <span key={name} style={{
+                                                    backgroundColor: '#F3F4F6',
+                                                    color: '#4B5563',
+                                                    padding: '1px 5px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
+                                                    fontWeight: 600,
+                                                    whiteSpace: 'nowrap',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '2px',
+                                                    border: '1px solid #E5E7EB'
+                                                }}>
+                                                    {name}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                </span>
+                                            ))}
                                     </div>
                                 </>
                             )}
@@ -3329,13 +3388,26 @@ const Orders: React.FC = () => {
                                     >
                                         <ExternalLink size={16} /> Open
                                     </button>
-                                    <button
-                                        onClick={() => { setScammerTargetOrder(selectedOrder); setIsScammerModalOpen(true); setIsViewModalOpen(false); }}
-                                        style={{ background: 'none', border: '1px solid #FEE2E2', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-                                        title="Mark as Scammer"
-                                    >
-                                        <ShieldOff size={16} /> Block
-                                    </button>
+                                    {selectedOrder.customer?.phone && blockedCustomers.some(bc => bc.phone === selectedOrder.customer!.phone.trim()) ? (
+                                        <button
+                                            onClick={() => {
+                                                removeBlockedCustomer(selectedOrder.customer!.phone.trim());
+                                                showToast('Customer unblocked', 'success');
+                                            }}
+                                            style={{ background: 'none', border: '1px solid #ECFCCB', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#65A30D', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                            title="Unblock Scammer"
+                                        >
+                                            <ShieldCheck size={16} /> Unblock
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => { setScammerTargetOrder(selectedOrder); setIsScammerModalOpen(true); setIsViewModalOpen(false); }}
+                                            style={{ background: 'none', border: '1px solid #FEE2E2', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                            title="Mark as Scammer"
+                                        >
+                                            <ShieldOff size={16} /> Block
+                                        </button>
+                                    )}
                                     <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                                 </div>
                             </div>
@@ -3474,11 +3546,11 @@ const Orders: React.FC = () => {
                             Cancel
                         </button>
                         <button
-                            onClick={() => {
+                            onClick={async () => {
                                 if (scammerTargetOrder) {
                                     if (scammerTargetOrder.customer?.phone) {
-                                        addBlockedCustomer({
-                                            phone: scammerTargetOrder.customer.phone,
+                                        await addBlockedCustomer({
+                                            phone: scammerTargetOrder.customer.phone.trim(),
                                             name: scammerTargetOrder.customer.name || 'Unknown',
                                             reason: scammerReason,
                                             blockedAt: new Date().toISOString(),
@@ -3487,11 +3559,12 @@ const Orders: React.FC = () => {
                                         showToast('Customer marked as scammer', 'success');
                                     }
                                 } else {
+                                    const customersToBlock: any[] = [];
                                     selectedIds.forEach(id => {
                                         const order = sales.find(s => s.id === id);
                                         if (order?.customer?.phone) {
-                                            addBlockedCustomer({
-                                                phone: order.customer.phone,
+                                            customersToBlock.push({
+                                                phone: order.customer.phone.trim(),
                                                 name: order.customer.name || 'Unknown',
                                                 reason: scammerReason,
                                                 blockedAt: new Date().toISOString(),
@@ -3499,15 +3572,18 @@ const Orders: React.FC = () => {
                                             });
                                         }
                                     });
-                                    showToast(`${selectedIds.size} customer(s) marked as scammer`, 'success');
-                                    setSelectedIds(new Set());
+                                    if (customersToBlock.length > 0) {
+                                        await addBlockedCustomers(customersToBlock);
+                                        showToast(`${customersToBlock.length} customer(s) marked as scammers`, 'success');
+                                    }
                                 }
                                 setIsScammerModalOpen(false);
                                 setScammerTargetOrder(null);
                                 setScammerReason('');
+                                setSelectedIds(new Set());
                             }}
                             className="primary-button"
-                            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', background: '#DC2626' }}
+                            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', background: '#EF4444', border: 'none', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
                         >
                             Confirm Block
                         </button>

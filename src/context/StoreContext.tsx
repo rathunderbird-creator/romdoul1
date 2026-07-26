@@ -656,11 +656,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, cities: config.cities.filter(c => c !== name) });
     };
 
-    // --- Blocked Customers (Scammer Blacklist) ---
-    const addBlockedCustomer = (customer: BlockedCustomer) => {
+    const addBlockedCustomer = async (customer: BlockedCustomer) => {
         const existing = config.blockedCustomers || [];
         if (existing.some(c => c.phone === customer.phone)) return; // already blocked
-        updateConfig({ ...config, blockedCustomers: [...existing, customer] });
+        try {
+            await updateConfig({ ...config, blockedCustomers: [...existing, customer] });
+        } catch (error: any) {
+            alert("Failed to mark scammer: " + error.message);
+        }
+    };
+
+    const addBlockedCustomers = async (customers: BlockedCustomer[]) => {
+        const existing = config.blockedCustomers || [];
+        const newCustomers = customers.filter(c => !existing.some(e => e.phone === c.phone));
+        if (newCustomers.length === 0) return;
+        try {
+            await updateConfig({ ...config, blockedCustomers: [...existing, ...newCustomers] });
+        } catch (error: any) {
+            alert("Failed to mark scammers: " + error.message);
+        }
     };
 
     const removeBlockedCustomer = (phone: string) => {
@@ -2710,6 +2724,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateKhrExchangeRate,
             blockedCustomers: config.blockedCustomers || [],
             addBlockedCustomer,
+            addBlockedCustomers,
             removeBlockedCustomer,
             updateBlockedCustomer,
             refreshData
