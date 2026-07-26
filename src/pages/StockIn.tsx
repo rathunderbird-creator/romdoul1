@@ -126,6 +126,23 @@ const StockIn: React.FC = () => {
 
     const totalQuantityIn = useMemo(() => filteredRecords.reduce((sum, r) => sum + r.quantity, 0), [filteredRecords]);
     const totalCost = useMemo(() => filteredRecords.reduce((sum, r) => sum + (r.unit_price * r.quantity), 0), [filteredRecords]);
+    const productSummary = useMemo(() => {
+        const summary: Record<string, { quantity: number; productId: string; name: string }> = {};
+        filteredRecords.forEach(r => {
+            if (!summary[r.product_name]) {
+                summary[r.product_name] = { quantity: 0, productId: r.product_id, name: r.product_name };
+            }
+            summary[r.product_name].quantity += r.quantity;
+        });
+        return Object.values(summary).map((data) => {
+            const product = products.find(p => p.id === data.productId);
+            return {
+                name: data.name,
+                quantity: data.quantity,
+                stock: product ? product.stock : 0
+            };
+        }).sort((a, b) => b.quantity - a.quantity);
+    }, [filteredRecords, products]);
 
     const filteredProducts = useMemo(() => {
         if (!productSearch.trim()) return products.slice(0, 20);
@@ -302,6 +319,34 @@ const StockIn: React.FC = () => {
                 <StatsCard title="Total Records" value={filteredRecords.length} icon={Calendar} color="#3B82F6" trend={dateRange.start ? `Filtered by date` : 'All time'} />
                 <StatsCard title="Total Units Added" value={totalQuantityIn.toLocaleString()} icon={TrendingUp} color="#10B981" trend={`Across ${filteredRecords.length} entries`} />
                 <StatsCard title="Total Cost" value={`$${totalCost.toLocaleString()}`} icon={DollarSign} color="#F59E0B" trend="Purchase cost of stock-in" />
+            </div>
+
+            {/* Products Summary Cards */}
+            <div style={{ marginBottom: '32px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px', color: 'var(--color-text-main)' }}>Products Summary</h3>
+                {productSummary.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No products found</div>
+                ) : (
+                    <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '12px'
+                    }}>
+                        {productSummary.map((product, index) => (
+                            <div key={index} className="glass-panel" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', minWidth: 'fit-content' }}>
+                                <div style={{ backgroundColor: 'color-mix(in srgb, #8B5CF6 15%, transparent)', color: '#8B5CF6', padding: '8px', borderRadius: '8px', display: 'flex' }}>
+                                    <Package size={18} />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>{product.name}</div>
+                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                                        {product.quantity} Units <span style={{ opacity: 0.5 }}>•</span> <span style={{ color: 'var(--color-primary)' }}>{product.stock} in stock</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Stock-In Form */}

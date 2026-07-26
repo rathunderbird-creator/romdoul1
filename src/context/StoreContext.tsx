@@ -2076,7 +2076,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
     const restockOrder = async (orderId: string): Promise<void> => {
-        setIsLoading(true);
         try {
             const localOrder = sales.find(s => s.id === orderId);
             let orderItems = localOrder?.items;
@@ -2193,13 +2192,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error restocking order:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const bulkRestockOrders = async (orderIds: string[]): Promise<void> => {
-        setIsLoading(true);
         try {
             // 1. Fetch DB items for all these orders
             const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('product_id, quantity, sale_id').in('sale_id', orderIds);
@@ -2329,8 +2325,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error bulk restocking orders:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 

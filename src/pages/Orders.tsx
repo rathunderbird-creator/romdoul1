@@ -384,7 +384,7 @@ const PayByModalComponent: React.FC<{
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer } = useStore();
 
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
@@ -482,20 +482,7 @@ const Orders: React.FC = () => {
                             <Wallet size={18} /> Check Income
                         </button>
                     )}
-                    {canManage && !isMobile && (
-                        <button
-                            onClick={() => setIsDeletedModalOpen(true)}
-                            style={{
-                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
-                                background: 'var(--color-surface)',
-                                color: 'var(--color-red)',
-                                fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-red)',
-                                transition: 'all 0.2s ease',
-                            }}
-                        >
-                            <Trash2 size={18} /> Deleted Orders
-                        </button>
-                    )}
+
                 </div>
             )
         });
@@ -660,7 +647,11 @@ const Orders: React.FC = () => {
         }
     };
 
-    const handleBulkDelete = async () => {
+    const handleBulkDelete = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         if (confirm(`Are you sure you want to delete ${selectedIds.size} orders ? `)) {
             try {
                 await deleteOrders(Array.from(selectedIds));
@@ -670,6 +661,24 @@ const Orders: React.FC = () => {
             } catch (error: any) {
                 console.error('Failed to delete orders:', error);
                 showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
+            }
+        }
+    };
+
+    const handleBulkRestock = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        if (confirm(`Are you sure you want to restock ${selectedIds.size} orders ? `)) {
+            try {
+                await bulkRestockOrders(Array.from(selectedIds));
+                setSelectedIds(new Set());
+                showToast('Orders restocked successfully', 'success');
+                await fetchOrders();
+            } catch (error: any) {
+                console.error('Failed to restock orders:', error);
+                showToast('Failed to restock orders: ' + (error.message || 'Unknown error'), 'error');
             }
         }
     };
@@ -3118,7 +3127,8 @@ const Orders: React.FC = () => {
                                     const phone = order?.customer?.phone;
                                     return phone && blockedCustomers.some(bc => bc.phone === phone.trim());
                                 }) ? (
-                                    <button onClick={() => {
+                                    <button type="button" onClick={(e) => {
+                                        e.preventDefault();
                                         let count = 0;
                                         selectedIds.forEach(id => {
                                             const order = filteredOrders.find(o => o.id === id);
@@ -3134,13 +3144,36 @@ const Orders: React.FC = () => {
                                         <ShieldCheck size={18} /> Unblock
                                     </button>
                                 ) : (
-                                    <button onClick={() => { setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                    <button type="button" onClick={(e) => { e.preventDefault(); setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                         <ShieldOff size={18} /> Mark as Scammer
                                     </button>
                                 )}
-                                <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                     <Trash2 size={18} /> Delete
                                 </button>
+                                { (() => {
+                                    const isRestockDisabled = Array.from(selectedIds).some(id => filteredOrders.find(o => o.id === id)?.shipping?.status === 'ReStock');
+                                    return (
+                                        <button 
+                                            type="button" 
+                                            onClick={isRestockDisabled ? undefined : handleBulkRestock} 
+                                            disabled={isRestockDisabled}
+                                            style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '8px', 
+                                                padding: '8px 16px', 
+                                                background: isRestockDisabled ? '#F3F4F6' : '#E0E7FF', 
+                                                color: isRestockDisabled ? '#9CA3AF' : '#4F46E5', 
+                                                borderRadius: '8px', 
+                                                border: 'none', 
+                                                cursor: isRestockDisabled ? 'not-allowed' : 'pointer', 
+                                                fontWeight: 500 
+                                            }}>
+                                            <RefreshCw size={18} /> Restock
+                                        </button>
+                                    );
+                                })() }
                             </div>
                         )
                     }
