@@ -113,6 +113,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     const [isSavingLocation, setIsSavingLocation] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [isPinnedListExpanded, setIsPinnedListExpanded] = useState(false);
+    const [isShutdownPanelExpanded, setIsShutdownPanelExpanded] = useState(false);
     const [isLocationSelectorsExpanded, setIsLocationSelectorsExpanded] = useState(true);
 
     // Modal states
@@ -1354,13 +1355,22 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                             flexDirection: 'column',
                             gap: '12px'
                         }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <AlertTriangle size={18} color="var(--color-danger, #ef4444)" />
-                                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                                    ទីតាំងផ្អាកជាបណ្តោះអាសន្ន (Shutdown Checkpoints) ({customLocations.filter(loc => loc.is_shutdown).length})
-                                </h3>
+                            <div 
+                                onClick={() => setIsShutdownPanelExpanded(!isShutdownPanelExpanded)}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <AlertTriangle size={18} color="var(--color-danger, #ef4444)" />
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                        ទីតាំងផ្អាកជាបណ្តោះអាសន្ន (Shutdown Checkpoints) ({customLocations.filter(loc => loc.is_shutdown).length})
+                                    </h3>
+                                </div>
+                                <div style={{ color: 'var(--color-text-secondary)' }}>
+                                    {isShutdownPanelExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                </div>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
+                            {isShutdownPanelExpanded && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
                                 {customLocations.filter(loc => loc.is_shutdown).map((loc, idx) => (
                                     <div 
                                         key={loc.id || loc.pcode + idx}
@@ -1430,6 +1440,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                     </div>
                                 ))}
                             </div>
+                            )}
                         </div>
                     )}
                 </div>

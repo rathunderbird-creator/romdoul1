@@ -680,47 +680,47 @@ const Inventory: React.FC = () => {
                 </div>
             )}
             {/* Premium Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.05)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6' }}><Package size={15} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
+                        <div style={{ padding: '4px', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6' }}><Package size={14} /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
                 </div>
                 
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(16, 185, 129, 0.05)' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02))', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 8px 32px rgba(16, 185, 129, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Stock Items</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981' }}><Boxes size={15} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Stock Items</span>
+                        <div style={{ padding: '4px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981' }}><Boxes size={14} /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalAllStock.toLocaleString()}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.totalAllStock.toLocaleString()}</div>
                 </div>
 
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02))', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444' }}><AlertTriangle size={15} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
+                        <div style={{ padding: '4px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444' }}><AlertTriangle size={14} /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#EF4444' }}>{stats.lowStock}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#EF4444' }}>{stats.lowStock}</div>
                 </div>
 
                 {canViewFinancials && (
-                    <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(245, 158, 11, 0.05)' }}>
+                    <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02))', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 8px 32px rgba(245, 158, 11, 0.05)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Value</span>
-                            <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}><DollarSign size={15} /></div>
+                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Value</span>
+                            <div style={{ padding: '4px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}><DollarSign size={14} /></div>
                         </div>
-                        <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString()}</div>
+                        <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString()}</div>
                     </div>
                 )}
 
-                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.02))', padding: '14px', borderRadius: '12px', border: '1px solid rgba(139, 92, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 32px rgba(139, 92, 246, 0.05)' }}>
+                <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.02))', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(139, 92, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 8px 32px rgba(139, 92, 246, 0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categories</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Layers size={15} /></div>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categories</span>
+                        <div style={{ padding: '4px', borderRadius: '8px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Layers size={14} /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.categoryCount}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--color-text-main)' }}>{stats.categoryCount}</div>
                 </div>
             </div>
 

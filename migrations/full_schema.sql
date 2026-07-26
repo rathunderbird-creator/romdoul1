@@ -390,3 +390,6 @@ CREATE TABLE IF NOT EXISTS deleted_sale_items (
     image TEXT,
     created_at TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS order_id TEXT;
