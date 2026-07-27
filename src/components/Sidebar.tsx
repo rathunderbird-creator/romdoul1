@@ -44,20 +44,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         });
     }
 
-    if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
-        navItems.push({
-            icon: Package,
-            label: t('nav.inventory'),
-            path: '/inventory',
-            subItems: [
-                { label: t('nav.allProducts'), path: '/inventory' },
-                { label: t('nav.stockIn'), path: '/inventory/stock-in' },
-                { label: t('nav.stockOut'), path: '/inventory/stock-out' },
-                { label: t('nav.returnsRestocks'), path: '/inventory/returns' }
-            ]
-        });
-    }
-
     if (hasPermission('manage_income_expense')) {
         navItems.push({
             icon: Wallet,
@@ -68,6 +54,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.income'), path: '/income-expense/income' },
                 { label: t('nav.expense'), path: '/income-expense/expense' },
                 { label: t('nav.revenue'), path: '/income-expense/revenue' }
+            ]
+        });
+    }
+
+    if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
+        navItems.push({
+            icon: Package,
+            label: t('nav.inventory'),
+            path: '/inventory',
+            subItems: [
+                { label: t('nav.allProducts'), path: '/inventory' },
+                { label: t('nav.stockIn'), path: '/inventory/stock-in' },
+                { label: t('nav.stockOut'), path: '/inventory/stock-out' },
+                { label: t('nav.returnsRestocks'), path: '/inventory/returns' }
             ]
         });
     }
