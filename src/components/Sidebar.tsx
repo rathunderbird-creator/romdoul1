@@ -174,8 +174,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     position: 'fixed',
                     left: 0,
                     top: 0,
-                    backgroundColor: 'var(--color-surface)',
-                    borderRight: '1px solid var(--color-border)',
+                    backgroundColor: '#000000',
+                    borderRight: '1px solid #1f2937',
                     display: 'flex',
                     flexDirection: 'column',
                     padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
@@ -214,7 +214,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                 marginLeft: 'auto',
                                 background: 'transparent',
                                 border: 'none',
-                                color: 'var(--color-text-muted)',
+                                color: '#9CA3AF',
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -305,7 +305,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     })}
                 </nav>
 
-                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #1f2937', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {canManageUsers && (
                         <NavLink
                             to="/users"
@@ -360,8 +360,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             padding: visualCollapsed ? '12px' : '12px 16px',
                             borderRadius: '8px',
                             background: 'transparent',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-secondary)',
+                            border: '1px solid #374151',
+                            color: '#9CA3AF',
                             cursor: 'pointer',
                             fontSize: '13px',
                             fontWeight: 500,
