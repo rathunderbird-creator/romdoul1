@@ -889,6 +889,7 @@ const Inventory: React.FC = () => {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
                                         <Pie
+                                            isAnimationActive={false}
                                             data={pieChartData}
                                             innerRadius={60}
                                             outerRadius={80}
@@ -904,15 +905,19 @@ const Inventory: React.FC = () => {
                                             contentStyle={{ background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }}
                                             itemStyle={{ color: 'var(--color-text-main)' }}
                                         />
-                                        <Legend 
-                                            layout="vertical" 
-                                            verticalAlign="middle" 
-                                            align="right"
-                                            iconType="circle"
-                                            wrapperStyle={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}
-                                        />
+                                        
                                     </PieChart>
                                 </ResponsiveContainer>
+                            </div>
+                            {/* Custom legend to avoid Recharts Legend infinite loop bug */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+                                {pieChartData.map((entry, index) => (
+                                    <div key={entry.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4'][index % 7], flexShrink: 0 }} />
+                                        <span style={{ color: 'var(--color-text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
+                                        <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{entry.value}</span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
