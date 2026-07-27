@@ -2,6 +2,7 @@ export interface Product {
     id: string;
     name: string;
     model: string;
+    sku?: string;
     price: number;
     purchaseCost?: number;
     stock: number;
@@ -268,7 +269,11 @@ export type Permission =
     | 'view_inventory_stock'
     | 'manage_income_expense'
     | 'manage_attendance'
-    | 'manage_payroll';
+    | 'manage_payroll'
+    | 'manage_hr'
+    | 'manage_crm'
+    | 'manage_procurement'
+    | 'manage_accounting';
 
 export interface Role {
     id: string;
@@ -288,4 +293,77 @@ export interface User {
     dailyTarget?: number;
     weeklyTarget?: number;
     monthlyTarget?: number;
+}
+
+// ==========================================
+// ERP: Accounting & Finance Types
+// ==========================================
+export interface ChartOfAccount {
+    id: string;
+    account_code: string;
+    account_name: string;
+    account_type: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
+    description?: string;
+    is_active: boolean;
+    created_at?: string;
+}
+
+export interface JournalEntryLine {
+    id?: string;
+    journal_entry_id?: string;
+    account_id: string;
+    debit: number;
+    credit: number;
+    created_at?: string;
+    // Joined field for UI convenience
+    account?: ChartOfAccount;
+}
+
+export interface JournalEntry {
+    id: string;
+    date: string; // YYYY-MM-DD
+    description?: string;
+    reference_id?: string;
+    created_at?: string;
+    lines?: JournalEntryLine[];
+}
+
+// ==========================================
+// ERP: Procurement Types
+// ==========================================
+export interface Supplier {
+    id: string;
+    name: string;
+    contact_name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    tax_id?: string;
+    is_active: boolean;
+    created_at?: string;
+}
+
+export interface PurchaseOrderItem {
+    id?: string;
+    purchase_order_id?: string;
+    product_id: string;
+    quantity: number;
+    unit_price: number;
+    created_at?: string;
+    // Joined field for UI
+    product?: Product;
+}
+
+export interface PurchaseOrder {
+    id: string;
+    supplier_id: string;
+    order_date: string;
+    expected_delivery_date?: string;
+    status: 'Draft' | 'Sent' | 'Received' | 'Cancelled';
+    total_amount: number;
+    notes?: string;
+    created_at?: string;
+    // Joined fields for UI
+    supplier?: Supplier;
+    items?: PurchaseOrderItem[];
 }

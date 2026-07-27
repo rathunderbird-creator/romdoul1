@@ -302,7 +302,8 @@ const Inventory: React.FC = () => {
         stock: 0,
         lowStockThreshold: 5,
         category: categories[0] || 'Portable',
-        image: 'https://placehold.co/300x300'
+        image: 'https://placehold.co/300x300',
+        sku: ''
     };
     const [formData, setFormData] = useState<ProductFormState>(initialFormState);
 
@@ -850,7 +851,9 @@ const Inventory: React.FC = () => {
                                                         </div>
                                                         <div>
                                                             <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{product.model}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                                                                {product.model} {product.sku ? ` | SKU: ${product.sku}` : ''}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -1150,11 +1153,23 @@ const Inventory: React.FC = () => {
                                         ))}
                                     </datalist>
                                 </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
-                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
+                                        <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
+                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>SKU</label>
+                                        <input 
+                                            className="search-input" 
+                                            style={{ width: '100%' }} 
+                                            placeholder="e.g. SKU-12345" 
+                                            value={formData.sku || ''} 
+                                            onChange={e => setFormData({ ...formData, sku: e.target.value })} 
+                                        />
+                                    </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     model TEXT,
+    sku TEXT,
     price NUMERIC DEFAULT 0,
     stock NUMERIC DEFAULT 0,
     low_stock_threshold NUMERIC DEFAULT 5,
@@ -111,7 +112,7 @@ VALUES (1, '{
             "id": "admin", 
             "name": "Administrator", 
             "description": "Full access to all features", 
-            "permissions": []
+            "permissions": ["manage_hr", "manage_crm", "manage_procurement", "manage_accounting"]
         }
     ],
     "storeName": "JBL Store Main",

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     model TEXT,
+    sku TEXT,
     price NUMERIC DEFAULT 0,
     purchase_cost NUMERIC DEFAULT 0,
     stock NUMERIC DEFAULT 0,

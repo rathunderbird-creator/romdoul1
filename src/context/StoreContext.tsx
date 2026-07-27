@@ -257,7 +257,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, price, purchase_cost, stock, category, low_stock_threshold, image, created_at').order('created_at', { ascending: false }),
+                supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
@@ -277,6 +277,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     stock: Number(p.stock),
                     price: Number(p.price),
                     purchaseCost: Number(p.purchase_cost || 0),
+                    sku: p.sku || '',
                     createdAt: p.created_at
                 })));
             }
@@ -926,7 +927,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             low_stock_threshold: newProduct.lowStockThreshold,
             image: newProduct.image,
             category: newProduct.category,
-            model: newProduct.model
+            model: newProduct.model,
+            sku: newProduct.sku
         };
 
         const { error } = await supabase.from('products').insert(dbProduct);
@@ -962,6 +964,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.image !== undefined) dbUpdates.image = updates.image;
         if (updates.category !== undefined) dbUpdates.category = updates.category;
         if (updates.model !== undefined) dbUpdates.model = updates.model;
+        if (updates.sku !== undefined) dbUpdates.sku = updates.sku;
 
         await supabase.from('products').update(dbUpdates).eq('id', id);
         setProductsUpdatedAt(Date.now());

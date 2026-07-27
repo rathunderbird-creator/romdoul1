@@ -25,7 +25,13 @@
     "shippingPoint": "ទីតាំងដឹកជញ្ជូន",
     "attendance": "វត្តមាន",
     "userManagement": "គ្រប់គ្រងអ្នកប្រើ",
-    "settings": "ការកំណត់"
+    "settings": "ការកំណត់",
+    "accounting": "គណនេយ្យ",
+    "chartOfAccounts": "តារាងគណនេយ្យ",
+    "journalEntries": "ទិនានុប្បវត្តិ",
+    "procurement": "លទ្ធកម្ម",
+    "suppliers": "អ្នកផ្គត់ផ្គង់",
+    "purchaseOrders": "ការបញ្ជាទិញទំនិញ"
   },
   "login": {
     "title": "ចូលប្រើ POS",

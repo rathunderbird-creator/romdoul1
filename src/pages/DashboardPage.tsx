@@ -432,6 +432,7 @@ const Dashboard: React.FC = () => {
                     `}</style>
             </div>
 
+
             {/* Sales & Orders Overview */}
             <div className="dashboard-flex-container" style={{
                 display: 'flex',

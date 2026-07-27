@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     model TEXT,
+    sku TEXT,
     price NUMERIC DEFAULT 0,
     stock NUMERIC DEFAULT 0,
     low_stock_threshold NUMERIC DEFAULT 5,
@@ -134,7 +135,7 @@ VALUES (1, '{
             "id": "admin", 
             "name": "Administrator", 
             "description": "Full access to all features", 
-            "permissions": ["view_dashboard", "manage_inventory", "process_sales", "view_reports", "manage_settings", "manage_users", "manage_orders", "create_orders", "view_orders", "view_inventory_stock", "manage_income_expense"]
+            "permissions": ["view_dashboard", "manage_inventory", "process_sales", "view_reports", "manage_settings", "manage_users", "manage_orders", "create_orders", "view_orders", "view_inventory_stock", "manage_income_expense", "manage_hr", "manage_crm", "manage_procurement", "manage_accounting"]
         }
     ],
     "storeName": "JBL Store Main",
@@ -239,10 +240,16 @@ ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
 -- 8. STORAGE BUCKET POLICIES (supabase_storage_setup.sql)
 -- ==========================================
 INSERT INTO storage.buckets (id, name, public) VALUES ('products', 'products', true) ON CONFLICT (id) DO NOTHING;
-
+DROP POLICY IF EXISTS "Allow public read access for products bucket" ON storage.objects;
 CREATE POLICY "Allow public read access for products bucket" ON storage.objects FOR SELECT TO public USING ( bucket_id = 'products' );
+
+DROP POLICY IF EXISTS "Allow public uploads to products bucket" ON storage.objects;
 CREATE POLICY "Allow public uploads to products bucket" ON storage.objects FOR INSERT TO public WITH CHECK ( bucket_id = 'products' );
+
+DROP POLICY IF EXISTS "Allow public updates to products bucket" ON storage.objects;
 CREATE POLICY "Allow public updates to products bucket" ON storage.objects FOR UPDATE TO public USING ( bucket_id = 'products' );
+
+DROP POLICY IF EXISTS "Allow public deletes from products bucket" ON storage.objects;
 CREATE POLICY "Allow public deletes from products bucket" ON storage.objects FOR DELETE TO public USING ( bucket_id = 'products' );
 
 -- ==========================================
@@ -250,3 +257,9 @@ CREATE POLICY "Allow public deletes from products bucket" ON storage.objects FOR
 -- Removes legacy data structure elements
 -- ==========================================
 UPDATE sale_items SET image = NULL;
+
+-- ==========================================
+-- 10. RECENT MIGRATIONS
+-- Safe to re-run column additions
+-- ==========================================
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;

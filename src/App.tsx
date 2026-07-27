@@ -31,6 +31,19 @@ const TopProducts = lazy(() => import('./pages/reports/TopProducts'));
 const ShippingReport = lazy(() => import('./pages/reports/ShippingReport'));
 const PurchaseCostReport = lazy(() => import('./pages/reports/PurchaseCostReport'));
 
+// ERP Pages
+const EmployeesPage = lazy(() => import('./pages/hr/EmployeesPage'));
+const LeavesPage = lazy(() => import('./pages/hr/LeavesPage'));
+const PayrollPage = lazy(() => import('./pages/hr/PayrollPage'));
+const LeadsPage = lazy(() => import('./pages/crm/LeadsPage'));
+const InteractionsPage = lazy(() => import('./pages/crm/InteractionsPage'));
+const QuotationsPage = lazy(() => import('./pages/crm/QuotationsPage'));
+const SuppliersPage = lazy(() => import('./pages/procurement/SuppliersPage'));
+const PurchaseOrdersPage = lazy(() => import('./pages/procurement/PurchaseOrdersPage'));
+const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
+const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
+const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
+
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -96,6 +109,23 @@ const ProtectedApp = () => {
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><Settings /></ProtectedRoute>} />
+
+          {/* ERP Routes */}
+          <Route path="/hr/employees" element={<ProtectedRoute requiredPermission="manage_hr"><EmployeesPage /></ProtectedRoute>} />
+          <Route path="/hr/leaves" element={<ProtectedRoute requiredPermission="manage_hr"><LeavesPage /></ProtectedRoute>} />
+          <Route path="/hr/payroll" element={<ProtectedRoute requiredPermission="manage_hr"><PayrollPage /></ProtectedRoute>} />
+          
+          <Route path="/crm/leads" element={<ProtectedRoute requiredPermission="manage_crm"><LeadsPage /></ProtectedRoute>} />
+          <Route path="/crm/interactions" element={<ProtectedRoute requiredPermission="manage_crm"><InteractionsPage /></ProtectedRoute>} />
+          <Route path="/crm/quotations" element={<ProtectedRoute requiredPermission="manage_crm"><QuotationsPage /></ProtectedRoute>} />
+
+          <Route path="/procurement/suppliers" element={<ProtectedRoute requiredPermission="manage_procurement"><SuppliersPage /></ProtectedRoute>} />
+          <Route path="/procurement/purchase-orders" element={<ProtectedRoute requiredPermission="manage_procurement"><PurchaseOrdersPage /></ProtectedRoute>} />
+
+          <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
+          <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
+          <Route path="/accounting/payments" element={<ProtectedRoute requiredPermission="manage_accounting"><PaymentsPage /></ProtectedRoute>} />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

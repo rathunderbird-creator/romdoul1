@@ -25,7 +25,13 @@
     "shippingPoint": "Shipping Points",
     "attendance": "Attendance",
     "userManagement": "User Management",
-    "settings": "Settings"
+    "settings": "Settings",
+    "accounting": "Accounting",
+    "chartOfAccounts": "Chart of Accounts",
+    "journalEntries": "Journal Entries",
+    "procurement": "Procurement",
+    "suppliers": "Suppliers",
+    "purchaseOrders": "Purchase Orders"
   },
   "login": {
     "title": "POS Login",

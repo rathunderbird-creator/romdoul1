@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -35,10 +35,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             label: t('nav.orders'),
             path: '/orders',
             subItems: [
-                { label: t('nav.allOrders'), path: '/orders' },
-                { label: t('nav.shippingDelivery'), path: '/orders/shipping' },
-                { label: t('nav.allPayStatus'), path: '/payment-tracking' },
-                { label: 'Deleted Orders', path: '/orders/deleted' }
+                { label: t('nav.allOrders'), path: '/orders', icon: List },
+                { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
+                { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
+                { label: 'Deleted Orders', path: '/orders/deleted', icon: Trash2 }
             ]
         });
     }
@@ -49,10 +49,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             label: t('nav.inventory'),
             path: '/inventory',
             subItems: [
-                { label: t('nav.allProducts'), path: '/inventory' },
-                { label: t('nav.stockIn'), path: '/inventory/stock-in' },
-                { label: t('nav.stockOut'), path: '/inventory/stock-out' },
-                { label: t('nav.returnsRestocks'), path: '/inventory/returns' }
+                { label: t('nav.allProducts'), path: '/inventory', icon: PackageSearch },
+                { label: t('nav.stockIn'), path: '/inventory/stock-in', icon: ArrowDownToLine },
+                { label: t('nav.stockOut'), path: '/inventory/stock-out', icon: ArrowUpFromLine },
+                { label: t('nav.returnsRestocks'), path: '/inventory/returns', icon: RotateCcw }
             ]
         });
     }
@@ -63,10 +63,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             label: t('nav.incomeExpense'),
             path: '/income-expense',
             subItems: [
-                { label: t('nav.allTransactions'), path: '/income-expense' },
-                { label: t('nav.income'), path: '/income-expense/income' },
-                { label: t('nav.expense'), path: '/income-expense/expense' },
-                { label: t('nav.revenue'), path: '/income-expense/revenue' }
+                { label: t('nav.allTransactions'), path: '/income-expense', icon: ArrowRightLeft },
+                { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
+                { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
+                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign }
             ]
         });
     }
@@ -79,19 +79,72 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         navItems.push({ icon: CalendarClock, label: t('nav.attendance'), path: '/attendance' });
     }
 
+
+
+    if (hasPermission('manage_hr')) {
+        navItems.push({
+            icon: Briefcase,
+            label: 'HR & Payroll',
+            path: '/hr',
+            subItems: [
+                { label: 'Employees', path: '/hr/employees', icon: Users },
+                { label: 'Leaves', path: '/hr/leaves', icon: CalendarOff },
+                { label: 'Payroll', path: '/hr/payroll', icon: Banknote }
+            ]
+        });
+    }
+
+    if (hasPermission('manage_crm')) {
+        navItems.push({
+            icon: HeartHandshake,
+            label: 'CRM',
+            path: '/crm',
+            subItems: [
+                { label: 'Leads', path: '/crm/leads', icon: UserPlus },
+                { label: 'Interactions', path: '/crm/interactions', icon: MessageSquare },
+                { label: 'Quotations', path: '/crm/quotations', icon: FileText }
+            ]
+        });
+    }
+
+    if (hasPermission('manage_procurement')) {
+        navItems.push({
+            icon: ShoppingCart,
+            label: 'Procurement',
+            path: '/procurement',
+            subItems: [
+                { label: 'Suppliers', path: '/procurement/suppliers', icon: Building2 },
+                { label: 'Purchase Orders', path: '/procurement/purchase-orders', icon: FileCheck }
+            ]
+        });
+    }
+
+    if (hasPermission('manage_accounting')) {
+        navItems.push({
+            icon: Calculator,
+            label: 'Accounting',
+            path: '/accounting',
+            subItems: [
+                { label: 'Chart of Accounts', path: '/accounting/chart-of-accounts', icon: Network },
+                { label: 'Journal Entries', path: '/accounting/journal-entries', icon: BookOpen },
+                { label: 'Payments', path: '/accounting/payments', icon: CreditCard }
+            ]
+        });
+    }
+
     if (hasPermission('view_reports')) {
         navItems.push({
             icon: PieChart,
             label: t('nav.reportsCenter'),
             path: '/reports',
             subItems: [
-                { label: t('nav.salesOverview'), path: '/reports/sales' },
-                { label: t('nav.topProducts'), path: '/reports/products' },
-                { label: t('nav.inventory'), path: '/reports/inventory' },
-                { label: t('nav.financials'), path: '/reports/financials' },
-                { label: t('nav.staffPerformance'), path: '/reports/staff' },
-                { label: t('nav.shippingCompanies'), path: '/reports/shipping' },
-                { label: t('nav.purchaseCost'), path: '/reports/purchase-cost' },
+                { label: t('nav.salesOverview'), path: '/reports/sales', icon: BarChart3 },
+                { label: t('nav.topProducts'), path: '/reports/products', icon: Award },
+                { label: t('nav.inventory'), path: '/reports/inventory', icon: Package },
+                { label: t('nav.financials'), path: '/reports/financials', icon: DollarSign },
+                { label: t('nav.staffPerformance'), path: '/reports/staff', icon: Users },
+                { label: t('nav.shippingCompanies'), path: '/reports/shipping', icon: Truck },
+                { label: t('nav.purchaseCost'), path: '/reports/purchase-cost', icon: Banknote },
             ]
         });
     }
@@ -173,8 +226,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     position: 'fixed',
                     left: 0,
                     top: 0,
-                    backgroundColor: 'var(--color-surface)',
-                    borderRight: '1px solid var(--color-border)',
+                    backgroundColor: 'black',
+                    borderRight: '1px solid #333',
                     display: 'flex',
                     flexDirection: 'column',
                     padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
@@ -194,7 +247,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         justifyContent: 'center',
                         fontWeight: 'bold',
                         fontSize: '16px',
-                        color: 'white',
+                        color: 'black',
                         flexShrink: 0,
                         overflow: 'hidden'
                     }}>
@@ -292,7 +345,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                                         }
                                                     }}
                                                     className={isSubActive ? "sidebar-subitem active-sublink" : "sidebar-subitem"}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
                                                 >
+                                                    {subItem.icon && <subItem.icon size={16} />}
                                                     {subItem.label}
                                                 </NavLink>
                                             );
@@ -304,7 +359,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     })}
                 </nav>
 
-                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {canManageUsers && (
                         <NavLink
                             to="/users"
@@ -359,8 +414,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             padding: visualCollapsed ? '12px' : '12px 16px',
                             borderRadius: '8px',
                             background: 'transparent',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-secondary)',
+                            border: '1px solid #333',
+                            color: '#9CA3AF',
                             cursor: 'pointer',
                             fontSize: '13px',
                             fontWeight: 500,
