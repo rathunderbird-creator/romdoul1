@@ -704,7 +704,7 @@ const Inventory: React.FC = () => {
             )}
             {/* Premium Stats Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <div className="stats-card hover-lift" style={{ background: '#1C1D2A', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
                         <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
@@ -713,7 +713,7 @@ const Inventory: React.FC = () => {
                 </div>
 
                 {canViewFinancials && (
-                    <div className="stats-card hover-lift" style={{ background: '#1C1D2A', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Inventory Value</span>
                             <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -722,7 +722,7 @@ const Inventory: React.FC = () => {
                     </div>
                 )}
 
-                <div className="stats-card hover-lift" style={{ background: '#1C1D2A', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
                         <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>{stats.lowStock}</div>
@@ -730,7 +730,7 @@ const Inventory: React.FC = () => {
                     <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B' }}><AlertTriangle size={18} /></div>
                 </div>
 
-                <div className="stats-card hover-lift" style={{ background: '#1C1D2A', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Out Of Stock</span>
                         <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>{products.filter(p => p.stock === 0).length}</div>
@@ -748,7 +748,7 @@ const Inventory: React.FC = () => {
                         placeholder="Search products..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ width: '100%', paddingLeft: '44px', height: '40px', background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', color: 'var(--color-text-main)', fontSize: '14px', outline: 'none' }}
+                        style={{ width: '100%', paddingLeft: '44px', height: '40px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', fontSize: '14px', outline: 'none' }}
                     />
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -758,7 +758,7 @@ const Inventory: React.FC = () => {
                             if (e.target.value === 'All') setColumnFilters(prev => ({ ...prev, categories: new Set() }));
                             else setColumnFilters(prev => ({ ...prev, categories: new Set([e.target.value]) }));
                         }}
-                        style={{ background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', color: 'var(--color-text-main)', padding: '0 32px 0 16px', height: '40px', appearance: 'none', cursor: 'pointer', fontSize: '13px' }}
+                        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', padding: '0 32px 0 16px', height: '40px', appearance: 'none', cursor: 'pointer', fontSize: '13px' }}
                     >
                         <option value="All">All Categories</option>
                         {categories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -772,7 +772,7 @@ const Inventory: React.FC = () => {
                             if (val === 'In Stock') setColumnFilters(prev => ({ ...prev, stockMin: '1', stockMax: '' }));
                             if (val === 'Out of Stock') setColumnFilters(prev => ({ ...prev, stockMin: '', stockMax: '0' }));
                         }}
-                        style={{ background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', color: 'var(--color-text-main)', padding: '0 32px 0 16px', height: '40px', appearance: 'none', cursor: 'pointer', fontSize: '13px' }}
+                        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', padding: '0 32px 0 16px', height: '40px', appearance: 'none', cursor: 'pointer', fontSize: '13px' }}
                     >
                         <option value="All">All Status</option>
                         <option value="In Stock">In Stock</option>
@@ -784,10 +784,10 @@ const Inventory: React.FC = () => {
             {/* Layout Split */}
             <div style={{ display: 'flex', gap: '24px', flexDirection: isMobile ? 'column' : 'row' }}>
                 <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                    <div style={{ background: '#1C1D2A', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', overflow: 'auto' }}>
+                    <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
                             <thead>
-                                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     <th style={{ padding: '16px', fontWeight: 600 }}>Product Name</th>
                                     <th style={{ padding: '16px', fontWeight: 600 }}>SKU</th>
                                     <th style={{ padding: '16px', fontWeight: 600 }}>Category</th>
@@ -799,7 +799,7 @@ const Inventory: React.FC = () => {
                             </thead>
                             <tbody>
                                 {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
-                                    <tr key={product.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} className="hover-bg">
+                                    <tr key={product.id} style={{ borderBottom: '1px solid var(--color-border)' }} className="hover-bg">
                                         <td style={{ padding: '12px 16px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                 <div style={{ width: '32px', height: '32px', borderRadius: '6px', background: 'white', display: 'flex', alignItems: 'center', justifyItems: 'center', overflow: 'hidden', padding: '2px', flexShrink: 0 }}>
@@ -855,7 +855,7 @@ const Inventory: React.FC = () => {
                             </tbody>
                         </table>
                         
-                        <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)' }}>
                             <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                 Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length}
                             </span>
@@ -863,14 +863,14 @@ const Inventory: React.FC = () => {
                                 <button
                                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                                     disabled={currentPage === 1}
-                                    style={{ padding: '6px 12px', borderRadius: '6px', background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.05)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                                    style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
                                 >
                                     Previous
                                 </button>
                                 <button
                                     onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
                                     disabled={currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
-                                    style={{ padding: '6px 12px', borderRadius: '6px', background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.05)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer' }}
+                                    style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer' }}
                                 >
                                     Next
                                 </button>
@@ -881,7 +881,7 @@ const Inventory: React.FC = () => {
                 
                 {!isMobile && (
                     <div style={{ width: '300px', flexShrink: 0 }}>
-                        <div style={{ background: '#1C1D2A', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px' }}>
+                        <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', padding: '20px' }}>
                             <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)' }}>By Category</h3>
                             <p style={{ margin: 0, marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Product distribution</p>
                             
@@ -902,7 +902,7 @@ const Inventory: React.FC = () => {
                                             ))}
                                         </Pie>
                                         <RechartsTooltip 
-                                            contentStyle={{ background: '#1C1D2A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }}
+                                            contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
                                             itemStyle={{ color: 'var(--color-text-main)' }}
                                         />
                                         
