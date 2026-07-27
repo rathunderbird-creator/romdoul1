@@ -428,7 +428,7 @@ div:has(> svg) .search-input {
   padding: 6px;
   border-radius: 8px;
   transition: all 0.2s;
-  color: var(--color-text-secondary);
+  color: #9CA3AF;
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;

@@ -8,9 +8,16 @@ import Login from './pages/Login';
 const Dashboard = lazy(() => import('./pages/DashboardPage'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const IncomeExpense = lazy(() => import('./pages/IncomeExpense'));
-const Settings = lazy(() => import('./pages/Settings'));
+const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'));
+const StoreProfileSettings = lazy(() => import('./pages/settings/StoreProfileSettings'));
+const GeneralSettings = lazy(() => import('./pages/settings/GeneralSettings'));
+const TelegramSettings = lazy(() => import('./pages/settings/TelegramSettings'));
+const SecuritySettings = lazy(() => import('./pages/settings/SecuritySettings'));
+const DatabaseSettings = lazy(() => import('./pages/settings/DatabaseSettings'));
+
 const Orders = lazy(() => import('./pages/Orders'));
 const DeletedOrders = lazy(() => import('./pages/DeletedOrders'));
+const Scammers = lazy(() => import('./pages/Scammers'));
 const PaymentTracking = lazy(() => import('./pages/PaymentTracking'));
 const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
@@ -86,6 +93,7 @@ const ProtectedApp = () => {
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
           <Route path="/orders/shipping" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
           <Route path="/orders/deleted" element={<ProtectedRoute requiredPermission="manage_orders"><DeletedOrders /></ProtectedRoute>} />
+          <Route path="/orders/scammers" element={<ProtectedRoute requiredPermission="manage_orders"><Scammers /></ProtectedRoute>} />
           <Route path="/orders/:id" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrderDetailPage /></ProtectedRoute>} />
 
           {/* These pages seem to be work in progress or not fully guarded in Sidebar yet, 
@@ -108,7 +116,14 @@ const ProtectedApp = () => {
           </Route>
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><Settings /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><SettingsLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="store-profile" replace />} />
+            <Route path="store-profile" element={<StoreProfileSettings />} />
+            <Route path="general" element={<GeneralSettings />} />
+            <Route path="telegram" element={<TelegramSettings />} />
+            <Route path="security" element={<SecuritySettings />} />
+            <Route path="database" element={<DatabaseSettings />} />
+          </Route>
 
           {/* ERP Routes */}
           <Route path="/hr/employees" element={<ProtectedRoute requiredPermission="manage_hr"><EmployeesPage /></ProtectedRoute>} />
@@ -125,7 +140,6 @@ const ProtectedApp = () => {
           <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
           <Route path="/accounting/payments" element={<ProtectedRoute requiredPermission="manage_accounting"><PaymentsPage /></ProtectedRoute>} />
-
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

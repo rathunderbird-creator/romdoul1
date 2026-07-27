@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -38,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
                 { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
+                { label: 'Scammers', path: '/orders/scammers', icon: AlertTriangle },
                 { label: 'Deleted Orders', path: '/orders/deleted', icon: Trash2 }
             ]
         });
@@ -70,7 +71,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             ]
         });
     }
-
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
     }
@@ -226,8 +226,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     position: 'fixed',
                     left: 0,
                     top: 0,
+<<<<<<< HEAD
                     backgroundColor: 'black',
                     borderRight: '1px solid #333',
+=======
+                    backgroundColor: '#000000',
+                    borderRight: '1px solid #1f2937',
+>>>>>>> 2254c6f154abbee703dbad2049d7fb2d55aeae59
                     display: 'flex',
                     flexDirection: 'column',
                     padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
@@ -266,7 +271,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                 marginLeft: 'auto',
                                 background: 'transparent',
                                 border: 'none',
-                                color: 'var(--color-text-muted)',
+                                color: '#9CA3AF',
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -359,7 +364,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     })}
                 </nav>
 
+<<<<<<< HEAD
                 <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+=======
+                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #1f2937', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+>>>>>>> 2254c6f154abbee703dbad2049d7fb2d55aeae59
                     {canManageUsers && (
                         <NavLink
                             to="/users"
@@ -414,7 +423,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             padding: visualCollapsed ? '12px' : '12px 16px',
                             borderRadius: '8px',
                             background: 'transparent',
+<<<<<<< HEAD
                             border: '1px solid #333',
+=======
+                            border: '1px solid #374151',
+>>>>>>> 2254c6f154abbee703dbad2049d7fb2d55aeae59
                             color: '#9CA3AF',
                             cursor: 'pointer',
                             fontSize: '13px',

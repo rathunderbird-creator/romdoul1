@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ArrowUp, Search, Package, TrendingDown, Calendar, Minus, X, Truck, Edit2, Trash2 } from 'lucide-react';
+import { ArrowUp, Search, Package, TrendingDown, Calendar, Minus, X, Truck, Edit2, Trash2, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -10,6 +11,7 @@ import StatsCard from '../components/StatsCard';
 import DateRangePicker from '../components/DateRangePicker';
 import Modal from '../components/Modal';
 import { getShippingCoColor } from '../utils/orderUtils';
+import { getShippingLogo } from '../utils/shipping';
 
 interface StockOutRecord {
     id: string;
@@ -18,6 +20,7 @@ interface StockOutRecord {
     quantity: number;
     reason: string;
     reference_id: string;
+    order_id: string;
     note: string;
     shipping_co: string;
     customer_name: string;
@@ -49,7 +52,22 @@ const StockOut: React.FC = () => {
     const [records, setRecords] = useState<StockOutRecord[]>([]);
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [searchTerm, setSearchTerm] = useState('');
+    const [reasonFilter, setReasonFilter] = useState('');
+    const [shippingCoFilter, setShippingCoFilter] = useState('');
+    const [productFilter, setProductFilter] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(100);
+    
+    // Selection state
+    const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
+
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, reasonFilter, shippingCoFilter, productFilter, dateRange, itemsPerPage]);
 
     // Form state
     const [showForm, setShowForm] = useState(false);
@@ -57,6 +75,7 @@ const StockOut: React.FC = () => {
     const [quantity, setQuantity] = useState<number | string>('');
     const [reason, setReason] = useState('Shipped');
     const [referenceId, setReferenceId] = useState('');
+    const [orderId, setOrderId] = useState('');
     const [note, setNote] = useState('');
     const [shippingCo, setShippingCo] = useState('');
     const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
@@ -69,6 +88,7 @@ const StockOut: React.FC = () => {
     const [editQuantity, setEditQuantity] = useState<number | string>('');
     const [editReason, setEditReason] = useState('');
     const [editReferenceId, setEditReferenceId] = useState('');
+    const [editOrderId, setEditOrderId] = useState('');
     const [editNote, setEditNote] = useState('');
     const [editShippingCo, setEditShippingCo] = useState('');
     const [editDate, setEditDate] = useState('');
@@ -122,21 +142,54 @@ const StockOut: React.FC = () => {
         fetchRecords();
     }, [dateRange]);
 
+    const uniqueShippingCos = useMemo(() => Array.from(new Set(records.map(r => r.shipping_co).filter(Boolean))).sort(), [records]);
+    const uniqueProducts = useMemo(() => Array.from(new Set(records.map(r => r.product_name).filter(Boolean))).sort(), [records]);
+
     const filteredRecords = useMemo(() => {
-        if (!searchTerm.trim()) return records;
-        const q = searchTerm.trim().toLowerCase();
-        return records.filter(r =>
-            r.product_name.toLowerCase().includes(q) ||
-            (r.reason || '').toLowerCase().includes(q) ||
-            (r.reference_id || '').toLowerCase().includes(q) ||
-            (r.shipping_co || '').toLowerCase().includes(q) ||
-            (r.note || '').toLowerCase().includes(q) ||
-            (r.customer_name || '').toLowerCase().includes(q) ||
-            (r.customer_phone || '').toLowerCase().includes(q)
-        );
-    }, [records, searchTerm]);
+        return records.filter(r => {
+            if (reasonFilter && r.reason !== reasonFilter) return false;
+            if (shippingCoFilter && r.shipping_co !== shippingCoFilter) return false;
+            if (productFilter && r.product_name !== productFilter) return false;
+            if (!searchTerm.trim()) return true;
+            const q = searchTerm.trim().toLowerCase();
+            return (
+                r.product_name.toLowerCase().includes(q) ||
+                (r.reason || '').toLowerCase().includes(q) ||
+                (r.reference_id || '').toLowerCase().includes(q) ||
+                (r.order_id || '').toLowerCase().includes(q) ||
+                (r.shipping_co || '').toLowerCase().includes(q) ||
+                (r.note || '').toLowerCase().includes(q) ||
+                (r.customer_name || '').toLowerCase().includes(q) ||
+                (r.customer_phone || '').toLowerCase().includes(q)
+            );
+        });
+    }, [records, searchTerm, reasonFilter, shippingCoFilter, productFilter]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredRecords.length / itemsPerPage));
+    const paginatedRecords = useMemo(() => {
+        const from = (currentPage - 1) * itemsPerPage;
+        const to = from + itemsPerPage;
+        return filteredRecords.slice(from, to);
+    }, [filteredRecords, currentPage, itemsPerPage]);
 
     const totalQuantityOut = useMemo(() => filteredRecords.reduce((sum, r) => sum + r.quantity, 0), [filteredRecords]);
+    const productSummary = useMemo(() => {
+        const summary: Record<string, { quantity: number; productId: string; name: string }> = {};
+        filteredRecords.forEach(r => {
+            if (!summary[r.product_name]) {
+                summary[r.product_name] = { quantity: 0, productId: r.product_id, name: r.product_name };
+            }
+            summary[r.product_name].quantity += r.quantity;
+        });
+        return Object.values(summary).map((data) => {
+            const product = products.find(p => p.id === data.productId);
+            return {
+                name: data.name,
+                quantity: data.quantity,
+                stock: product ? product.stock : 0
+            };
+        }).sort((a, b) => b.quantity - a.quantity);
+    }, [filteredRecords, products]);
 
     // Group by reason for stats
     const shippedCount = useMemo(() => filteredRecords.filter(r => r.reason === 'Shipped' || r.reason === 'Delivered').reduce((sum, r) => sum + r.quantity, 0), [filteredRecords]);
@@ -155,9 +208,12 @@ const StockOut: React.FC = () => {
     const clearFilters = () => {
         setDateRange({ start: '', end: '' });
         setSearchTerm('');
+        setReasonFilter('');
+        setShippingCoFilter('');
+        setProductFilter('');
     };
 
-    const hasActiveFilters = dateRange.start || dateRange.end || searchTerm;
+    const hasActiveFilters = dateRange.start || dateRange.end || searchTerm || reasonFilter || shippingCoFilter || productFilter;
 
     const handleStockOut = async () => {
         if (!selectedProductId || !quantity || Number(quantity) <= 0) {
@@ -188,6 +244,7 @@ const StockOut: React.FC = () => {
                 quantity: Number(quantity),
                 reason: reason,
                 reference_id: referenceId.trim(),
+                order_id: orderId.trim(),
                 note: note.trim(),
                 shipping_co: shippingCo.trim(),
                 customer_name: customerName.trim(),
@@ -207,6 +264,7 @@ const StockOut: React.FC = () => {
             setQuantity('');
             setReason('Shipped');
             setReferenceId('');
+            setOrderId('');
             setNote('');
             setShippingCo('');
             setCustomerName('');
@@ -225,6 +283,7 @@ const StockOut: React.FC = () => {
         setEditQuantity(record.quantity);
         setEditReason(record.reason || 'Other');
         setEditReferenceId(record.reference_id || '');
+        setEditOrderId(record.order_id || '');
         setEditNote(record.note || '');
         setEditShippingCo(record.shipping_co || '');
         setEditDate(record.movement_date);
@@ -244,6 +303,7 @@ const StockOut: React.FC = () => {
                 quantity: Number(editQuantity),
                 reason: editReason,
                 reference_id: editReferenceId.trim(),
+                order_id: editOrderId.trim(),
                 note: editNote.trim(),
                 shipping_co: editShippingCo.trim(),
                 customer_name: editCustomerName.trim(),
@@ -306,6 +366,49 @@ const StockOut: React.FC = () => {
         );
     };
 
+    const toggleSelection = (id: string) => {
+        const newSet = new Set(selectedRecordIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedRecordIds(newSet);
+    };
+
+    const toggleAll = () => {
+        if (selectedRecordIds.size === paginatedRecords.length && paginatedRecords.length > 0) {
+            setSelectedRecordIds(new Set());
+        } else {
+            setSelectedRecordIds(new Set(paginatedRecords.map(r => r.id)));
+        }
+    };
+
+    const handleExport = () => {
+        if (selectedRecordIds.size === 0) {
+            showToast('Please select at least one record to export', 'error');
+            return;
+        }
+
+        const recordsToExport = records.filter(r => selectedRecordIds.has(r.id));
+        const exportData = recordsToExport.map(r => ({
+            'Date': new Date(r.movement_date).toLocaleDateString(),
+            'Product': r.product_name,
+            'Quantity': r.quantity,
+            'Reason': r.reason || 'Other',
+            'Reference': r.reference_id || '',
+            'Customer Name': r.customer_name || '',
+            'Customer Phone': r.customer_phone || '',
+            'Shipping Co': r.shipping_co || '',
+            'Order ID': r.order_id || '',
+            'Note': r.note || ''
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Stock Out');
+        XLSX.writeFile(wb, `StockOut_Export_${new Date().getTime()}.xlsx`);
+        showToast('Export successful', 'success');
+        setSelectedRecordIds(new Set());
+    };
+
     const inputStyle: React.CSSProperties = { width: '100%', height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '14px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' };
 
     return (
@@ -317,14 +420,13 @@ const StockOut: React.FC = () => {
                     <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>Track products that left inventory (shipped, delivered, damaged, etc.).</p>
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
-                    <DateRangePicker value={dateRange} onChange={setDateRange} compact={!isMobile} />
-                    {hasActiveFilters && (
+                    {selectedRecordIds.size > 0 && (
                         <button
-                            onClick={clearFilters}
+                            onClick={handleExport}
                             className="secondary-button"
-                            style={{ height: '42px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#EF4444', borderColor: '#EF4444' }}
+                            style={{ height: '42px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
-                            <X size={14} /> Clear
+                            <Download size={18} /> Export ({selectedRecordIds.size})
                         </button>
                     )}
                     <button
@@ -342,6 +444,34 @@ const StockOut: React.FC = () => {
                 <StatsCard title="Total Records" value={filteredRecords.length} icon={Calendar} color="#3B82F6" trend={dateRange.start ? `Filtered by date` : 'All time'} />
                 <StatsCard title="Total Units Out" value={totalQuantityOut.toLocaleString()} icon={TrendingDown} color="#EF4444" trend={`Across ${filteredRecords.length} entries`} />
                 <StatsCard title="Shipped / Delivered" value={shippedCount.toLocaleString()} icon={Truck} color="#10B981" trend="Units shipped or delivered" />
+            </div>
+
+            {/* Products Summary Cards */}
+            <div style={{ marginBottom: '32px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px', color: 'var(--color-text-main)' }}>Products Summary</h3>
+                {productSummary.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">No products found</div>
+                ) : (
+                    <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '12px'
+                    }}>
+                        {productSummary.map((product, index) => (
+                            <div key={index} className="glass-panel" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', minWidth: 'fit-content' }}>
+                                <div style={{ backgroundColor: 'color-mix(in srgb, #8B5CF6 15%, transparent)', color: '#8B5CF6', padding: '8px', borderRadius: '8px', display: 'flex' }}>
+                                    <Package size={18} />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>{product.name}</div>
+                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                                        {product.quantity} Units <span style={{ opacity: 0.5 }}>•</span> <span style={{ color: 'var(--color-primary)' }}>{product.stock} in stock</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Stock-Out Form */}
@@ -475,12 +605,24 @@ const StockOut: React.FC = () => {
                             </datalist>
                         </div>
 
-                        {/* Reference ID */}
+                        {/* Order ID */}
                         <div>
-                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Reference / Order ID</label>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Order ID</label>
                             <input
                                 type="text"
                                 placeholder="e.g., ORD-12345"
+                                value={orderId}
+                                onChange={(e) => setOrderId(e.target.value)}
+                                style={inputStyle}
+                            />
+                        </div>
+
+                        {/* Reference ID */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Reference</label>
+                            <input
+                                type="text"
+                                placeholder="e.g., REF-123"
                                 value={referenceId}
                                 onChange={(e) => setReferenceId(e.target.value)}
                                 style={inputStyle}
@@ -516,19 +658,66 @@ const StockOut: React.FC = () => {
 
             {/* Records Table */}
             <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)' }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10, gap: '12px' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', position: 'sticky', top: 0, background: 'var(--color-surface)', zIndex: 10, gap: '12px' }}>
                     <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: '#EF4444', whiteSpace: 'nowrap' }}>
                         <ArrowUp size={16} /> Stock-Out History ({filteredRecords.length})
                     </h3>
-                    <div style={{ position: 'relative', maxWidth: '300px', flex: 1 }}>
-                        <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                        <input
-                            type="text"
-                            placeholder="Search by product, reason, reference..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none' }}
-                        />
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto', flex: 1, justifyContent: 'flex-end' }}>
+                        <div style={{ position: 'relative', maxWidth: isMobile ? '100%' : '250px', flex: 1 }}>
+                            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search by product, reason, reference..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none' }}
+                            />
+                        </div>
+                        <select
+                            value={productFilter}
+                            onChange={(e) => setProductFilter(e.target.value)}
+                            style={{ height: '32px', padding: '0 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
+                        >
+                            <option value="">All Products</option>
+                            {uniqueProducts.map(p => (
+                                <option key={p} value={p}>{p}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={shippingCoFilter}
+                            onChange={(e) => setShippingCoFilter(e.target.value)}
+                            style={{ height: '32px', padding: '0 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
+                        >
+                            <option value="">All Shipping</option>
+                            {uniqueShippingCos.map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={reasonFilter}
+                            onChange={(e) => setReasonFilter(e.target.value)}
+                            style={{ height: '32px', padding: '0 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
+                        >
+                            <option value="">All Reasons</option>
+                            <option value="Shipped">Shipped</option>
+                            <option value="Delivered">Delivered</option>
+                            <option value="Damaged">Damaged</option>
+                            <option value="Warranty Return">Warranty Return</option>
+                            <option value="Sample / Demo">Sample / Demo</option>
+                            <option value="Lost">Lost</option>
+                            <option value="Expired">Expired</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} compact={true} />
+                        {hasActiveFilters && (
+                            <button
+                                onClick={clearFilters}
+                                className="secondary-button"
+                                style={{ height: '32px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#EF4444', borderColor: '#EF4444' }}
+                            >
+                                <X size={14} /> Clear
+                            </button>
+                        )}
                     </div>
                 </div>
                 {isLoading ? (
@@ -545,6 +734,14 @@ const StockOut: React.FC = () => {
                     <table className="spreadsheet-table">
                         <thead>
                             <tr>
+                                <th style={{ width: '40px', textAlign: 'center' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={paginatedRecords.length > 0 && selectedRecordIds.size === paginatedRecords.length} 
+                                        onChange={toggleAll}
+                                        style={{ cursor: 'pointer' }}
+                                    />
+                                </th>
                                 <th>Date</th>
                                 <th>Product</th>
                                 <th style={{ textAlign: 'center' }}>Qty</th>
@@ -552,14 +749,23 @@ const StockOut: React.FC = () => {
                                 <th>Customer</th>
                                 <th>Phone</th>
                                 <th>Shipping Co</th>
+                                <th>Order ID</th>
                                 <th>Reference</th>
                                 <th>Note</th>
                                 {isAdmin && <th style={{ textAlign: 'center' }}>Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredRecords.map(record => (
+                            {paginatedRecords.map(record => (
                                 <tr key={record.id}>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={selectedRecordIds.has(record.id)} 
+                                            onChange={() => toggleSelection(record.id)}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                    </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                                         {new Date(record.movement_date + 'T00:00:00').toLocaleDateString()}
                                     </td>
@@ -575,7 +781,15 @@ const StockOut: React.FC = () => {
                                         {record.customer_phone || '-'}
                                     </td>
                                     <td style={{ fontSize: "12px", color: getShippingCoColor(record.shipping_co || "") }}>
-                                        {record.shipping_co || "-"}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {record.shipping_co && getShippingLogo(record.shipping_co) && (
+                                                <img src={getShippingLogo(record.shipping_co)!} alt="shipping logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                            )}
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{record.shipping_co || "-"}</span>
+                                        </div>
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 500 }}>
+                                        {record.order_id || '-'}
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
                                         {record.reference_id || '-'}
@@ -606,7 +820,66 @@ const StockOut: React.FC = () => {
                                 </tr>
                             ))}
                         </tbody>
+                        <tfoot>
+                            <tr style={{ background: 'var(--color-bg)', fontWeight: 600 }}>
+                                <td colSpan={3} style={{ textAlign: 'right', padding: '12px' }}>Total:</td>
+                                <td style={{ textAlign: 'center', color: '#EF4444', fontSize: '14px' }}>-{totalQuantityOut.toLocaleString()}</td>
+                                <td colSpan={isAdmin ? 7 : 6}></td>
+                            </tr>
+                        </tfoot>
                     </table>
+                )}
+
+                {/* Pagination Controls */}
+                {filteredRecords.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)', flexWrap: 'wrap', gap: '12px' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredRecords.length)} to {Math.min(currentPage * itemsPerPage, filteredRecords.length)} of {filteredRecords.length} entries
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <select 
+                                    value={itemsPerPage} 
+                                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--color-border)', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
+                                >
+                                    {[100, 200, 500].map(n => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                        background: currentPage === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', margin: '0 8px' }}>
+                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    style={{
+                                        padding: '6px', borderRadius: '6px', border: '1px solid var(--color-border)',
+                                        background: currentPage === totalPages ? 'var(--color-bg)' : 'var(--color-surface)',
+                                        color: currentPage === totalPages ? 'var(--color-text-muted)' : 'var(--color-text-main)',
+                                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
 
@@ -630,7 +903,11 @@ const StockOut: React.FC = () => {
                         </select>
                     </div>
                     <div>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Reference / Order ID</label>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Order ID</label>
+                        <input type="text" value={editOrderId} onChange={(e) => setEditOrderId(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Reference</label>
                         <input type="text" value={editReferenceId} onChange={(e) => setEditReferenceId(e.target.value)} style={inputStyle} />
                     </div>
                     <div>

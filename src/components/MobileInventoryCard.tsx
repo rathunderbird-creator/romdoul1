@@ -90,7 +90,15 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                         </div>
                         <div className="mic-stat-item">
                             <span className="mic-stat-label">Model</span>
-                            <span className="mic-stat-value">{product.model}</span>
+                            <span className="mic-stat-value">{product.model || '—'}</span>
+                        </div>
+                        <div className="mic-stat-item">
+                            <span className="mic-stat-label">Invoice Number</span>
+                            <span className="mic-stat-value">{product.invoiceNumber || '—'}</span>
+                        </div>
+                        <div className="mic-stat-item">
+                            <span className="mic-stat-label">Supplier</span>
+                            <span className="mic-stat-value">{product.supplier || '—'}</span>
                         </div>
                     </div>
 

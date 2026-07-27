@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS products (
     low_stock_threshold NUMERIC DEFAULT 5,
     image TEXT,
     category TEXT,
+    invoice_number TEXT,
+    supplier TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -280,7 +282,21 @@ ALTER TABLE public.custom_locations DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shipping_rules DISABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- 6. STORAGE
+-- 6. TELEGRAM NOTIFICATIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS telegram_notifications (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    name TEXT NOT NULL,
+    bot_token TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    trigger_statuses TEXT[] DEFAULT '{}',
+    note TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================================
+-- 7. STORAGE BUCKETS (If applicable)
 -- ============================================================
 
 INSERT INTO storage.buckets (id, name, public) VALUES ('products', 'products', true) ON CONFLICT (id) DO NOTHING;
@@ -320,3 +336,61 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO users (id, name, email, role_id, pin)
 VALUES ('admin', 'Admin', 'admin@pos.com', 'admin', '1234')
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- 8. TELEGRAM NOTIFICATIONS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS telegram_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    bot_token TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    trigger_statuses TEXT[] DEFAULT '{}',
+    message_template TEXT,
+    note TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================================
+-- 9. DELETED ORDERS ARCHIVE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS deleted_orders (
+    id TEXT PRIMARY KEY,
+    total NUMERIC DEFAULT 0,
+    discount NUMERIC DEFAULT 0,
+    date TIMESTAMP WITH TIME ZONE,
+    payment_method TEXT,
+    type TEXT,
+    salesman TEXT,
+    customer_care TEXT,
+    remark TEXT,
+    amount_received NUMERIC DEFAULT 0,
+    settle_date TIMESTAMP WITH TIME ZONE,
+    payment_status TEXT,
+    order_status TEXT,
+    shipping_company TEXT,
+    tracking_number TEXT,
+    shipping_status TEXT,
+    shipping_cost NUMERIC DEFAULT 0,
+    customer_snapshot JSONB,
+    page_source TEXT,
+    last_edited_at TIMESTAMP WITH TIME ZONE,
+    last_edited_by TEXT,
+    created_at TIMESTAMP WITH TIME ZONE,
+    daily_number INTEGER,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS deleted_sale_items (
+    id TEXT PRIMARY KEY,
+    sale_id TEXT REFERENCES deleted_orders(id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    price NUMERIC DEFAULT 0,
+    quantity NUMERIC DEFAULT 1,
+    image TEXT,
+    created_at TIMESTAMP WITH TIME ZONE
+);
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS order_id TEXT;

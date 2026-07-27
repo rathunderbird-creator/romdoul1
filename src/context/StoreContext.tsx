@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
-import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction, TelegramConfig } from '../types';
+import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction, TelegramConfig, BlockedCustomer } from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -31,6 +31,7 @@ interface ConfigState {
     telegramBotToken?: string;
     telegramChatId?: string;
     telegramConfigs?: TelegramConfig[];
+    blockedCustomers?: BlockedCustomer[];
 }
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -256,14 +257,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             };
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
-            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, created_at').order('created_at', { ascending: false }),
+            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult] = await Promise.all([
+                supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
                 supabase.from('restocks').select('*').order('date', { ascending: false }).limit(50),
-                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50)
+                supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
+                supabase.from('telegram_notifications').select('*')
             ]);
 
             console.log('Fetched Sales Count:', salesResult.data?.length);
@@ -278,6 +280,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     price: Number(p.price),
                     purchaseCost: Number(p.purchase_cost || 0),
                     sku: p.sku || '',
+                    invoiceNumber: p.invoice_number,
+                    supplier: p.supplier,
                     createdAt: p.created_at
                 })));
             }
@@ -450,6 +454,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // If it's another error (e.g. network), do nothing to DB, retain current state fallback
             } else if (configResult.data) {
                 const loadedConfig = configResult.data.data;
+                
+                // Inject telegram configs from their own table
+                if (telegramConfigsResult?.data) {
+                    loadedConfig.telegramConfigs = telegramConfigsResult.data.map((tc: any) => ({
+                        id: tc.id,
+                        name: tc.name,
+                        botToken: tc.bot_token,
+                        chatId: tc.chat_id,
+                        triggerStatuses: tc.trigger_statuses || [],
+                        messageTemplate: tc.message_template || '',
+                        note: tc.note || ''
+                    }));
+                }
+
                 const needsMigration = !loadedConfig.cities ||
                     loadedConfig.cities.length === 0 ||
                     loadedConfig.cities.includes('Phnom Penh') ||
@@ -637,6 +655,40 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const removeCity = (name: string) => {
         updateConfig({ ...config, cities: config.cities.filter(c => c !== name) });
+    };
+
+    const addBlockedCustomer = async (customer: BlockedCustomer) => {
+        const existing = config.blockedCustomers || [];
+        if (existing.some(c => c.phone === customer.phone)) return; // already blocked
+        try {
+            await updateConfig({ ...config, blockedCustomers: [...existing, customer] });
+        } catch (error: any) {
+            alert("Failed to mark scammer: " + error.message);
+        }
+    };
+
+    const addBlockedCustomers = async (customers: BlockedCustomer[]) => {
+        const existing = config.blockedCustomers || [];
+        const newCustomers = customers.filter(c => !existing.some(e => e.phone === c.phone));
+        if (newCustomers.length === 0) return;
+        try {
+            await updateConfig({ ...config, blockedCustomers: [...existing, ...newCustomers] });
+        } catch (error: any) {
+            alert("Failed to mark scammers: " + error.message);
+        }
+    };
+
+    const removeBlockedCustomer = (phone: string) => {
+        const existing = config.blockedCustomers || [];
+        updateConfig({ ...config, blockedCustomers: existing.filter(c => c.phone !== phone) });
+    };
+
+    const updateBlockedCustomer = (phone: string, updates: Partial<BlockedCustomer>) => {
+        const existing = config.blockedCustomers || [];
+        updateConfig({
+            ...config,
+            blockedCustomers: existing.map(c => c.phone === phone ? { ...c, ...updates } : c)
+        });
     };
 
     const toggleProductPin = (productId: string) => {
@@ -928,7 +980,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             image: newProduct.image,
             category: newProduct.category,
             model: newProduct.model,
-            sku: newProduct.sku
+            sku: newProduct.sku,
+            invoice_number: newProduct.invoiceNumber,
+            supplier: newProduct.supplier
         };
 
         const { error } = await supabase.from('products').insert(dbProduct);
@@ -952,6 +1006,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateProduct = async (id: string, updates: Partial<Product>) => {
+        if (updates.stock !== undefined) {
+            updates.stock = Math.max(0, updates.stock);
+        }
         setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
 
         // Map updates to DB structure
@@ -959,12 +1016,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.name !== undefined) dbUpdates.name = updates.name;
         if (updates.price !== undefined) dbUpdates.price = updates.price;
         if (updates.purchaseCost !== undefined) dbUpdates.purchase_cost = updates.purchaseCost;
-        if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
+        if (updates.stock !== undefined) dbUpdates.stock = Math.max(0, updates.stock);
         if (updates.lowStockThreshold !== undefined) dbUpdates.low_stock_threshold = updates.lowStockThreshold;
         if (updates.image !== undefined) dbUpdates.image = updates.image;
         if (updates.category !== undefined) dbUpdates.category = updates.category;
         if (updates.model !== undefined) dbUpdates.model = updates.model;
         if (updates.sku !== undefined) dbUpdates.sku = updates.sku;
+        if (updates.invoiceNumber !== undefined) dbUpdates.invoice_number = updates.invoiceNumber;
+        if (updates.supplier !== undefined) dbUpdates.supplier = updates.supplier;
 
         await supabase.from('products').update(dbUpdates).eq('id', id);
         setProductsUpdatedAt(Date.now());
@@ -1197,13 +1256,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
-                        if (p.id === item.id) return { ...p, stock: p.stock - item.quantity };
+                        if (p.id === item.id) return { ...p, stock: Math.max(0, p.stock - item.quantity) };
                         return p;
                     }));
                     // DB
                     const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
                     if (current) {
-                        await supabase.from('products').update({ stock: current.stock - item.quantity }).eq('id', item.id);
+                        await supabase.from('products').update({ stock: Math.max(0, current.stock - item.quantity) }).eq('id', item.id);
                     }
 
                     // Deduct specific inventory items (FIFO)
@@ -1352,6 +1411,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (data) {
                 existingOrder = mapSaleEntity(data) as any;
             }
+        }
+
+        if (updates.paymentStatus === 'Cancel') {
+            const currentShippingStatus = updates.shipping?.status || existingOrder?.shipping?.status;
+            if (currentShippingStatus !== 'Returned') {
+                updates.shipping = { 
+                    ...(existingOrder?.shipping || {}), 
+                    ...(updates.shipping || {}), 
+                    status: 'Pending' 
+                } as any;
+            }
+        } else if (updates.paymentStatus === 'Get File') {
+            updates.shipping = { 
+                ...(existingOrder?.shipping || {}), 
+                ...(updates.shipping || {}), 
+                status: 'Delivered' 
+            } as any;
         }
 
         // 1. Optimistic Local Update
@@ -1732,7 +1808,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     for (const item of orderItems) {
                         const { data: originProduct } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
                         if (originProduct) {
-                            await supabase.from('products').update({ stock: originProduct.stock - item.quantity }).eq('id', item.product_id);
+                            await supabase.from('products').update({ stock: Math.max(0, originProduct.stock - item.quantity) }).eq('id', item.product_id);
                         }
                     }
                 }
@@ -2003,7 +2079,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
     const restockOrder = async (orderId: string): Promise<void> => {
-        setIsLoading(true);
         try {
             const localOrder = sales.find(s => s.id === orderId);
             let orderItems = localOrder?.items;
@@ -2120,13 +2195,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error restocking order:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
     const bulkRestockOrders = async (orderIds: string[]): Promise<void> => {
-        setIsLoading(true);
         try {
             // 1. Fetch DB items for all these orders
             const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('product_id, quantity, sale_id').in('sale_id', orderIds);
@@ -2256,8 +2328,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch (error) {
             console.error('Error bulk restocking orders:', error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -2490,7 +2560,41 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => {
-        updateConfig({ ...config, ...data });
+        const { telegramConfigs, ...restData } = data;
+        let newConfig = { ...config, ...restData };
+        
+        if (telegramConfigs !== undefined) {
+            // First, find what's deleted
+            const currentIds = config.telegramConfigs?.map(c => c.id) || [];
+            const newIds = telegramConfigs.map(c => c.id);
+            const deletedIds = currentIds.filter(id => !newIds.includes(id));
+            
+            if (deletedIds.length > 0) {
+                await supabase.from('telegram_notifications').delete().in('id', deletedIds);
+            }
+            
+            // Upsert remaining
+            if (telegramConfigs.length > 0) {
+                const upsertData = telegramConfigs.map(tc => ({
+                    id: tc.id,
+                    name: tc.name,
+                    bot_token: tc.botToken,
+                    chat_id: tc.chatId,
+                    trigger_statuses: tc.triggerStatuses,
+                    message_template: tc.messageTemplate,
+                    note: tc.note
+                }));
+                const { error } = await supabase.from('telegram_notifications').upsert(upsertData);
+                if (error) {
+                    console.error("Error upserting telegram configs:", error);
+                    throw new Error("Database error saving telegram config: " + error.message);
+                }
+            }
+            
+            newConfig.telegramConfigs = telegramConfigs;
+        }
+
+        updateConfig(newConfig);
     };
 
     // Timezone
@@ -2615,6 +2719,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateCurrency,
             khrExchangeRate: config.khrExchangeRate || 4100,
             updateKhrExchangeRate,
+            blockedCustomers: config.blockedCustomers || [],
+            addBlockedCustomer,
+            addBlockedCustomers,
+            removeBlockedCustomer,
+            updateBlockedCustomer,
             refreshData
         }}>
             {children}

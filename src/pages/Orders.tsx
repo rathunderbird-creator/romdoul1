@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -385,7 +384,7 @@ const PayByModalComponent: React.FC<{
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer } = useStore();
 
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
@@ -466,7 +465,7 @@ const Orders: React.FC = () => {
                             <MapPin size={18} /> Shipping Points
                         </button>
                     )}
-                    {isAdmin && (
+                    {isAdmin && !isMobile && (
                         <button
                             onClick={() => setIsIncomeModalOpen(true)}
                             style={{
@@ -483,20 +482,7 @@ const Orders: React.FC = () => {
                             <Wallet size={18} /> Check Income
                         </button>
                     )}
-                    {canManage && (
-                        <button
-                            onClick={() => setIsDeletedModalOpen(true)}
-                            style={{
-                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
-                                background: 'var(--color-surface)',
-                                color: 'var(--color-red)',
-                                fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-red)',
-                                transition: 'all 0.2s ease',
-                            }}
-                        >
-                            <Trash2 size={18} /> Deleted Orders
-                        </button>
-                    )}
+
                 </div>
             )
         });
@@ -602,6 +588,11 @@ const Orders: React.FC = () => {
     const [selectedOrder, setSelectedOrder] = useState<Sale | null>(null);
     const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+    
+    // Scammer Modal State
+    const [isScammerModalOpen, setIsScammerModalOpen] = useState(false);
+    const [scammerTargetOrder, setScammerTargetOrder] = useState<Sale | null>(null);
+    const [scammerReason, setScammerReason] = useState('');
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -656,12 +647,39 @@ const Orders: React.FC = () => {
         }
     };
 
-    const handleBulkDelete = async () => {
+    const handleBulkDelete = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         if (confirm(`Are you sure you want to delete ${selectedIds.size} orders ? `)) {
-            await deleteOrders(Array.from(selectedIds));
-            setSelectedIds(new Set());
-            showToast('Orders deleted successfully', 'success');
-            await fetchOrders();
+            try {
+                await deleteOrders(Array.from(selectedIds));
+                setSelectedIds(new Set());
+                showToast('Orders deleted successfully', 'success');
+                await fetchOrders();
+            } catch (error: any) {
+                console.error('Failed to delete orders:', error);
+                showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
+            }
+        }
+    };
+
+    const handleBulkRestock = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        if (confirm(`Are you sure you want to restock ${selectedIds.size} orders ? `)) {
+            try {
+                await bulkRestockOrders(Array.from(selectedIds));
+                setSelectedIds(new Set());
+                showToast('Orders restocked successfully', 'success');
+                await fetchOrders();
+            } catch (error: any) {
+                console.error('Failed to restock orders:', error);
+                showToast('Failed to restock orders: ' + (error.message || 'Unknown error'), 'error');
+            }
         }
     };
 
@@ -901,8 +919,11 @@ const Orders: React.FC = () => {
     const statusFilterRef = useClickOutside<HTMLDivElement>(() => setIsStatusFilterOpen(false));
     const salesmanFilterRef = useClickOutside<HTMLDivElement>(() => setIsSalesmanOpen(false));
     const payStatusFilterRef = useClickOutside<HTMLDivElement>(() => setIsPayStatusOpen(false));
-    const [pageFilter, setPageFilter] = useState<string[]>([]);
+    const [pageFilter, setPageFilter] = useState<string[]>(() =>
+        JSON.parse(localStorage.getItem('orders_pageFilter') || '[]')
+    );
     const [isPageOpen, setIsPageOpen] = useState(false);
+    useEffect(() => { localStorage.setItem('orders_pageFilter', JSON.stringify(pageFilter)); }, [pageFilter]);
     const pageFilterRef = useClickOutside<HTMLDivElement>(() => setIsPageOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
@@ -1305,7 +1326,17 @@ const Orders: React.FC = () => {
             acc[status] = (acc[status] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
-        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts, statusCounts, payStatusCounts };
+        const productCounts = filteredOrders.reduce((acc, order) => {
+            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
+            if (!isCancelled) {
+                order.items.forEach(item => {
+                    const name = item.name || 'Unknown Product';
+                    acc[name] = (acc[name] || 0) + item.quantity;
+                });
+            }
+            return acc;
+        }, {} as Record<string, number>);
+        return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts, statusCounts, payStatusCounts, productCounts };
     }, [filteredOrders, totalCount]);
 
     const handleOpenAdd = () => {
@@ -1414,9 +1445,9 @@ const Orders: React.FC = () => {
                 setSelectedIds(new Set());
                 showToast('Orders deleted and stock restored', 'success');
                 await fetchOrders();
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to delete orders:', error);
-                showToast('Failed to delete orders', 'error');
+                showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
             }
         }
     };
@@ -1717,7 +1748,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <User size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen') : salesmanFilter}
+                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen') : salesmanFilter}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1751,7 +1782,7 @@ const Orders: React.FC = () => {
                                                 }}
                                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                                 >
-                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
+                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen'}</span>
                                                 </label>
                                                 {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
                                                     <label key={s.id} style={{
@@ -1797,7 +1828,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Package size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: statusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {statusFilter.length === 0 ? 'All Order Status' : `${statusFilter.length} Selected`}
+                                                {statusFilter.length === 0 ? 'Order Status' : `${statusFilter.length} Selected`}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1983,7 +2014,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <CreditCard size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: payStatusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {payStatusFilter.length === 0 ? 'All Pay Status' : `${payStatusFilter.length} Selected`}
+                                                {payStatusFilter.length === 0 ? 'Pay Status' : `${payStatusFilter.length} Selected`}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -2185,24 +2216,32 @@ const Orders: React.FC = () => {
                                     <Filter size={16} /> Clear Filters
                                 </button>
 
+                                
+                                    </div>
+                                )}
+                                {
+                                    hasPermission('create_orders') && !isMobile && (
+                                        <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
+                                            <Plus size={18} /> New Order
+                                        </button>
+                                    )
+                                }
                                 {!isMobile && (
                                     <div ref={toolsMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                         <button
                                             onClick={() => setShowTools(!showTools)}
                                             style={{
-                                                padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                                padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                                                 background: showTools ? 'var(--color-primary)' : 'var(--color-surface)',
                                                 color: showTools ? 'white' : 'var(--color-text-main)',
                                                 cursor: 'pointer',
-                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                width: '100%', justifyContent: 'center', height: '40px',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                height: '40px', width: '40px',
                                                 transition: 'all 0.2s'
                                             }}
-                                            title="Toggle Tools"
+                                            title="Tools"
                                         >
                                             <Settings size={18} />
-                                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Tools</span>
-                                            <ChevronDown size={14} style={{ transform: showTools ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                                         </button>
 
                                         {showTools && (
@@ -2385,15 +2424,6 @@ const Orders: React.FC = () => {
                                                 )}
                                             </div>
                                         )}
-                                    </div>
-                                )}
-                                {
-                                    hasPermission('create_orders') && !isMobile && (
-                                        <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
-                                            <Plus size={18} /> New Order
-                                        </button>
-                                    )
-                                }
                             </div>
                         )}
                     </div >
@@ -2783,7 +2813,18 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
-                                                            case 'customer': return <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>{order.customer?.name}</td>;
+                                                            case 'customer': {
+                                                                const orderPhone = order.customer?.phone?.trim() || '';
+                                                                const isScammer = blockedCustomers.some(bc => bc.phone.trim() === orderPhone);
+                                                                return (
+                                                                    <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                            {order.customer?.name}
+                                                                            {isScammer && <AlertTriangle size={14} color="#EF4444" />}
+                                                                        </div>
+                                                                    </td>
+                                                                );
+                                                            }
                                                             case 'phone': {
                                                                 const operator = getOperatorForPhone(order.customer?.phone);
                                                                 return (
@@ -3080,9 +3121,58 @@ const Orders: React.FC = () => {
                             <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
                                 <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
                                 <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
-                                <button onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                {Array.from(selectedIds).some(id => {
+                                    const order = filteredOrders.find(o => o.id === id);
+                                    const phone = order?.customer?.phone;
+                                    return phone && blockedCustomers.some(bc => bc.phone === phone.trim());
+                                }) ? (
+                                    <button type="button" onClick={(e) => {
+                                        e.preventDefault();
+                                        let count = 0;
+                                        selectedIds.forEach(id => {
+                                            const order = filteredOrders.find(o => o.id === id);
+                                            const phone = order?.customer?.phone;
+                                            if (phone && blockedCustomers.some(bc => bc.phone === phone.trim())) {
+                                                removeBlockedCustomer(phone.trim());
+                                                count++;
+                                            }
+                                        });
+                                        showToast(`Unblocked ${count} customer(s)`, 'success');
+                                        setSelectedIds(new Set());
+                                    }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#ECFCCB', color: '#65A30D', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                        <ShieldCheck size={18} /> Unblock
+                                    </button>
+                                ) : (
+                                    <button type="button" onClick={(e) => { e.preventDefault(); setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                        <ShieldOff size={18} /> Mark as Scammer
+                                    </button>
+                                )}
+                                <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                     <Trash2 size={18} /> Delete
                                 </button>
+                                { (() => {
+                                    const isRestockDisabled = Array.from(selectedIds).some(id => filteredOrders.find(o => o.id === id)?.shipping?.status === 'ReStock');
+                                    return (
+                                        <button 
+                                            type="button" 
+                                            onClick={isRestockDisabled ? undefined : handleBulkRestock} 
+                                            disabled={isRestockDisabled}
+                                            style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '8px', 
+                                                padding: '8px 16px', 
+                                                background: isRestockDisabled ? '#F3F4F6' : '#E0E7FF', 
+                                                color: isRestockDisabled ? '#9CA3AF' : '#4F46E5', 
+                                                borderRadius: '8px', 
+                                                border: 'none', 
+                                                cursor: isRestockDisabled ? 'not-allowed' : 'pointer', 
+                                                fontWeight: 500 
+                                            }}>
+                                            <RefreshCw size={18} /> Restock
+                                        </button>
+                                    );
+                                })() }
                             </div>
                         )
                     }
@@ -3183,6 +3273,33 @@ const Orders: React.FC = () => {
                                                 );
                                             });
                                         })()}
+                                    </div>
+                                </>
+                            )}
+                            
+                            {Object.values(stats.productCounts).some(c => c > 0) && (
+                                <>
+                                    <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
+                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {Object.entries(stats.productCounts)
+                                            .sort(([, a], [, b]) => b - a)
+                                            .map(([name, count]) => (
+                                                <span key={name} style={{
+                                                    backgroundColor: '#F3F4F6',
+                                                    color: '#4B5563',
+                                                    padding: '1px 5px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
+                                                    fontWeight: 600,
+                                                    whiteSpace: 'nowrap',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '2px',
+                                                    border: '1px solid #E5E7EB'
+                                                }}>
+                                                    {name}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                </span>
+                                            ))}
                                     </div>
                                 </>
                             )}
@@ -3303,6 +3420,26 @@ const Orders: React.FC = () => {
                                     >
                                         <ExternalLink size={16} /> Open
                                     </button>
+                                    {selectedOrder.customer?.phone && blockedCustomers.some(bc => bc.phone === selectedOrder.customer!.phone.trim()) ? (
+                                        <button
+                                            onClick={() => {
+                                                removeBlockedCustomer(selectedOrder.customer!.phone.trim());
+                                                showToast('Customer unblocked', 'success');
+                                            }}
+                                            style={{ background: 'none', border: '1px solid #ECFCCB', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#65A30D', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                            title="Unblock Scammer"
+                                        >
+                                            <ShieldCheck size={16} /> Unblock
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => { setScammerTargetOrder(selectedOrder); setIsScammerModalOpen(true); setIsViewModalOpen(false); }}
+                                            style={{ background: 'none', border: '1px solid #FEE2E2', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                            title="Mark as Scammer"
+                                        >
+                                            <ShieldOff size={16} /> Block
+                                        </button>
+                                    )}
                                     <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                                 </div>
                             </div>
@@ -3409,6 +3546,82 @@ const Orders: React.FC = () => {
                 onApply={handleBulkEdit}
                 count={selectedIds.size}
             />
+            {/* Scammer Modal */}
+            <Modal
+                isOpen={isScammerModalOpen}
+                onClose={() => { setIsScammerModalOpen(false); setScammerTargetOrder(null); setScammerReason(''); }}
+                title={scammerTargetOrder ? "Mark Customer as Scammer" : "Mark Customers as Scammers"}
+                width="400px"
+            >
+                <div style={{ padding: '20px' }}>
+                    <div style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                        {scammerTargetOrder ? (
+                            <>Are you sure you want to block <strong>{scammerTargetOrder.customer?.name}</strong> ({scammerTargetOrder.customer?.phone})?</>
+                        ) : (
+                            <>Are you sure you want to block <strong>{selectedIds.size}</strong> selected customer(s)?</>
+                        )}
+                        <br />They will be prevented from placing future orders.
+                    </div>
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--color-text-main)' }}>Reason (Optional)</label>
+                        <input
+                            type="text"
+                            value={scammerReason}
+                            onChange={(e) => setScammerReason(e.target.value)}
+                            className="form-input"
+                            placeholder="e.g. Fake order, refused delivery"
+                            autoFocus
+                        />
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => { setIsScammerModalOpen(false); setScammerTargetOrder(null); setScammerReason(''); }} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px' }}>
+                            Cancel
+                        </button>
+                        <button
+                            onClick={async () => {
+                                if (scammerTargetOrder) {
+                                    if (scammerTargetOrder.customer?.phone) {
+                                        await addBlockedCustomer({
+                                            phone: scammerTargetOrder.customer.phone.trim(),
+                                            name: scammerTargetOrder.customer.name || 'Unknown',
+                                            reason: scammerReason,
+                                            blockedAt: new Date().toISOString(),
+                                            blockedBy: currentUser?.name
+                                        });
+                                        showToast('Customer marked as scammer', 'success');
+                                    }
+                                } else {
+                                    const customersToBlock: any[] = [];
+                                    selectedIds.forEach(id => {
+                                        const order = sales.find(s => s.id === id);
+                                        if (order?.customer?.phone) {
+                                            customersToBlock.push({
+                                                phone: order.customer.phone.trim(),
+                                                name: order.customer.name || 'Unknown',
+                                                reason: scammerReason,
+                                                blockedAt: new Date().toISOString(),
+                                                blockedBy: currentUser?.name
+                                            });
+                                        }
+                                    });
+                                    if (customersToBlock.length > 0) {
+                                        await addBlockedCustomers(customersToBlock);
+                                        showToast(`${customersToBlock.length} customer(s) marked as scammers`, 'success');
+                                    }
+                                }
+                                setIsScammerModalOpen(false);
+                                setScammerTargetOrder(null);
+                                setScammerReason('');
+                                setSelectedIds(new Set());
+                            }}
+                            className="primary-button"
+                            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', background: '#EF4444', border: 'none', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
+                        >
+                            Confirm Block
+                        </button>
+                    </div>
+                </div>
+            </Modal>
             {/* Shipping Points Modal */}
             <Modal
                 isOpen={isShippingPointModalOpen}

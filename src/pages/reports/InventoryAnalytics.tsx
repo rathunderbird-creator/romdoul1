@@ -87,6 +87,7 @@ const InventoryAnalytics: React.FC = () => {
                                     outerRadius={100}
                                     paddingAngle={5}
                                     dataKey="value"
+                                    isAnimationActive={false}
                                 >
                                     {categoryData.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
