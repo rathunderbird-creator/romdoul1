@@ -1748,7 +1748,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <User size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen') : salesmanFilter}
+                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen') : salesmanFilter}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1782,7 +1782,7 @@ const Orders: React.FC = () => {
                                                 }}
                                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                                 >
-                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
+                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen'}</span>
                                                 </label>
                                                 {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
                                                     <label key={s.id} style={{
@@ -1828,7 +1828,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Package size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: statusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {statusFilter.length === 0 ? 'All Order Status' : `${statusFilter.length} Selected`}
+                                                {statusFilter.length === 0 ? 'Order Status' : `${statusFilter.length} Selected`}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -2014,7 +2014,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <CreditCard size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: payStatusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {payStatusFilter.length === 0 ? 'All Pay Status' : `${payStatusFilter.length} Selected`}
+                                                {payStatusFilter.length === 0 ? 'Pay Status' : `${payStatusFilter.length} Selected`}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -2216,24 +2216,32 @@ const Orders: React.FC = () => {
                                     <Filter size={16} /> Clear Filters
                                 </button>
 
+                                
+                                    </div>
+                                )}
+                                {
+                                    hasPermission('create_orders') && !isMobile && (
+                                        <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
+                                            <Plus size={18} /> New Order
+                                        </button>
+                                    )
+                                }
                                 {!isMobile && (
                                     <div ref={toolsMenuRef} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
                                         <button
                                             onClick={() => setShowTools(!showTools)}
                                             style={{
-                                                padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                                padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                                                 background: showTools ? 'var(--color-primary)' : 'var(--color-surface)',
                                                 color: showTools ? 'white' : 'var(--color-text-main)',
                                                 cursor: 'pointer',
-                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                width: '100%', justifyContent: 'center', height: '40px',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                height: '40px', width: '40px',
                                                 transition: 'all 0.2s'
                                             }}
-                                            title="Toggle Tools"
+                                            title="Tools"
                                         >
                                             <Settings size={18} />
-                                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Tools</span>
-                                            <ChevronDown size={14} style={{ transform: showTools ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                                         </button>
 
                                         {showTools && (
@@ -2416,15 +2424,6 @@ const Orders: React.FC = () => {
                                                 )}
                                             </div>
                                         )}
-                                    </div>
-                                )}
-                                {
-                                    hasPermission('create_orders') && !isMobile && (
-                                        <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
-                                            <Plus size={18} /> New Order
-                                        </button>
-                                    )
-                                }
                             </div>
                         )}
                     </div >

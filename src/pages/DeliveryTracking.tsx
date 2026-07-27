@@ -879,7 +879,7 @@ const DeliveryTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen') : salesmanFilter}
+                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen') : salesmanFilter}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -908,7 +908,7 @@ const DeliveryTracking: React.FC = () => {
                                 }}
                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                 >
-                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'All Salesmen'}</span>
+                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen'}</span>
                                 </label>
                                 {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
                                     <label key={s.id} style={{
