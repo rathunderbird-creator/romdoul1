@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useStore } from '../context/StoreContext';
-import { useAttendance } from '../hooks/useAttendance';
-import type { StaffAttendance } from '../types';
+import { useStore } from '../../context/StoreContext';
+import { useAttendance } from '../../hooks/useAttendance';
+import type { User as UserType, StaffAttendance } from '../../types';
 import { Calendar, CheckCircle2, AlertCircle, UserCheck, Play, Square, Edit2, User, DollarSign, Check, X } from 'lucide-react';
-import Payroll from './Payroll';
+import Payroll from '../Payroll';
 
 // Helper to get initials
 const getInitials = (name: string) => {
@@ -217,7 +217,7 @@ const Attendance: React.FC = () => {
                     <div>
                         <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>Present Today</h3>
                         <p style={{ fontSize: '24px', fontWeight: '800', color: 'var(--color-success)' }}>
-                            {attendances.filter(a => a.status === 'Present').length} <span style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontWeight: 600 }}>/ {staff.length}</span>
+                            {attendances.filter((a: StaffAttendance) => a.status === 'Present').length} <span style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontWeight: 600 }}>/ {staff.length}</span>
                         </p>
                     </div>
                 </div>
@@ -228,7 +228,7 @@ const Attendance: React.FC = () => {
                     <div>
                         <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>Absent / Leave</h3>
                         <p style={{ fontSize: '24px', fontWeight: '800', color: 'var(--color-danger)' }}>
-                            {attendances.filter(a => a.status === 'Absent' || a.status === 'Leave').length}
+                            {attendances.filter((a: StaffAttendance) => a.status === 'Absent' || a.status === 'Leave').length}
                         </p>
                     </div>
                 </div>
@@ -260,8 +260,8 @@ const Attendance: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {staff.map((user) => {
-                                    const attRecord = attendances.find(a => a.userId === user.id);
+                                {staff.map((user: UserType) => {
+                                    const attRecord = attendances.find((a: StaffAttendance) => a.userId === user.id);
                                     const isSaving = savingId === user.id;
                                     const statusColor = attRecord ? getStatusColor(attRecord.status) : 'var(--color-border)';
                                     const statusBg = attRecord ? getStatusBg(attRecord.status) : 'var(--color-surface)';
@@ -334,15 +334,15 @@ const Attendance: React.FC = () => {
                                                                 type="time"
                                                                 autoFocus
                                                                 value={editingTime.value}
-                                                                onChange={(e) => setEditingTime({ ...editingTime, value: e.target.value })}
+                                                                onChange={(e) => setEditingTime(prev => prev ? { ...prev, value: e.target.value } : null)}
                                                                 style={{ width: '105px', border: '1px solid var(--color-primary)', background: 'transparent', outline: 'none', color: 'var(--color-text)', fontSize: '14px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px' }}
                                                                 onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') handleTimeChange(user.id, 'clockIn', editingTime.value);
+                                                                    if (e.key === 'Enter' && editingTime) handleTimeChange(user.id, 'clockIn', editingTime.value);
                                                                     if (e.key === 'Escape') setEditingTime(null);
                                                                 }}
                                                             />
                                                             <button 
-                                                                onClick={() => handleTimeChange(user.id, 'clockIn', editingTime.value)}
+                                                                onClick={() => editingTime && handleTimeChange(user.id, 'clockIn', editingTime.value)}
                                                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', background: 'var(--color-success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                                                                 title="Save"
                                                             ><Check size={16} /></button>
@@ -379,15 +379,15 @@ const Attendance: React.FC = () => {
                                                                 type="time"
                                                                 autoFocus
                                                                 value={editingTime.value}
-                                                                onChange={(e) => setEditingTime({ ...editingTime, value: e.target.value })}
+                                                                onChange={(e) => setEditingTime(prev => prev ? { ...prev, value: e.target.value } : null)}
                                                                 style={{ width: '105px', border: '1px solid var(--color-primary)', background: 'transparent', outline: 'none', color: 'var(--color-text)', fontSize: '14px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px' }}
                                                                 onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') handleTimeChange(user.id, 'clockOut', editingTime.value);
+                                                                    if (e.key === 'Enter' && editingTime) handleTimeChange(user.id, 'clockOut', editingTime.value);
                                                                     if (e.key === 'Escape') setEditingTime(null);
                                                                 }}
                                                             />
                                                             <button 
-                                                                onClick={() => handleTimeChange(user.id, 'clockOut', editingTime.value)}
+                                                                onClick={() => editingTime && handleTimeChange(user.id, 'clockOut', editingTime.value)}
                                                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', background: 'var(--color-success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                                                                 title="Save"
                                                             ><Check size={16} /></button>

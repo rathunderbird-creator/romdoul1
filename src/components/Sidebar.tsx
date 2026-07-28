@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -44,20 +44,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         });
     }
 
-    if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
-        navItems.push({
-            icon: Package,
-            label: t('nav.inventory'),
-            path: '/inventory',
-            subItems: [
-                { label: t('nav.allProducts'), path: '/inventory', icon: PackageSearch },
-                { label: t('nav.stockIn'), path: '/inventory/stock-in', icon: ArrowDownToLine },
-                { label: t('nav.stockOut'), path: '/inventory/stock-out', icon: ArrowUpFromLine },
-                { label: t('nav.returnsRestocks'), path: '/inventory/returns', icon: RotateCcw }
-            ]
-        });
-    }
-
     if (hasPermission('manage_income_expense')) {
         navItems.push({
             icon: Wallet,
@@ -71,22 +57,43 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             ]
         });
     }
-    if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
+
+    if (hasPermission('manage_procurement')) {
+        navItems.push({
+            icon: ShoppingCart,
+            label: 'Purchasing',
+            path: '/procurement',
+            subItems: [
+                { label: 'Purchase Orders', path: '/procurement/purchase-orders', icon: FileCheck },
+                { label: 'Suppliers', path: '/procurement/suppliers', icon: Building2 },
+                { label: 'Receiving', path: '/procurement/receiving', icon: PackageCheck }
+            ]
+        });
     }
 
-    if (hasPermission('manage_attendance')) {
-        navItems.push({ icon: CalendarClock, label: t('nav.attendance'), path: '/attendance' });
+    if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
+        navItems.push({
+            icon: Package,
+            label: t('nav.inventory'),
+            path: '/inventory',
+            subItems: [
+                { label: 'Products', path: '/inventory', icon: PackageSearch },
+                { label: 'Categories', path: '/inventory/categories', icon: Tags },
+                { label: 'Warehouses', path: '/inventory/warehouses', icon: Warehouse },
+                { label: 'Stock Movements', path: '/inventory/stock-movements', icon: ArrowRightLeft },
+                { label: t('nav.stockIn'), path: '/inventory/stock-in', icon: ArrowDownToLine },
+                { label: t('nav.stockOut'), path: '/inventory/stock-out', icon: ArrowUpFromLine },
+                { label: t('nav.returnsRestocks'), path: '/inventory/returns', icon: RotateCcw }
+            ]
+        });
     }
-
-
-
-    if (hasPermission('manage_hr')) {
+    if (hasPermission('manage_hr') || hasPermission('manage_attendance')) {
         navItems.push({
             icon: Briefcase,
             label: 'HR & Payroll',
             path: '/hr',
             subItems: [
+                { label: 'Attendance', path: '/hr/attendance', icon: CalendarClock },
                 { label: 'Employees', path: '/hr/employees', icon: Users },
                 { label: 'Leaves', path: '/hr/leaves', icon: CalendarOff },
                 { label: 'Payroll', path: '/hr/payroll', icon: Banknote }
@@ -107,17 +114,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         });
     }
 
-    if (hasPermission('manage_procurement')) {
-        navItems.push({
-            icon: ShoppingCart,
-            label: 'Procurement',
-            path: '/procurement',
-            subItems: [
-                { label: 'Suppliers', path: '/procurement/suppliers', icon: Building2 },
-                { label: 'Purchase Orders', path: '/procurement/purchase-orders', icon: FileCheck }
-            ]
-        });
-    }
+
 
     if (hasPermission('manage_accounting')) {
         navItems.push({
@@ -130,6 +127,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: 'Payments', path: '/accounting/payments', icon: CreditCard }
             ]
         });
+    }
+
+    if (hasPermission('view_dashboard')) {
+        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
     }
 
     if (hasPermission('view_reports')) {
@@ -226,13 +227,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     position: 'fixed',
                     left: 0,
                     top: 0,
-<<<<<<< HEAD
                     backgroundColor: 'black',
                     borderRight: '1px solid #333',
-=======
-                    backgroundColor: '#000000',
-                    borderRight: '1px solid #1f2937',
->>>>>>> 2254c6f154abbee703dbad2049d7fb2d55aeae59
                     display: 'flex',
                     flexDirection: 'column',
                     padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
@@ -364,11 +360,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     })}
                 </nav>
 
-<<<<<<< HEAD
                 <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-=======
-                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #1f2937', display: 'flex', flexDirection: 'column', gap: '8px' }}>
->>>>>>> 2254c6f154abbee703dbad2049d7fb2d55aeae59
                     {canManageUsers && (
                         <NavLink
                             to="/users"
@@ -423,11 +415,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             padding: visualCollapsed ? '12px' : '12px 16px',
                             borderRadius: '8px',
                             background: 'transparent',
-<<<<<<< HEAD
                             border: '1px solid #333',
-=======
-                            border: '1px solid #374151',
->>>>>>> 2254c6f154abbee703dbad2049d7fb2d55aeae59
                             color: '#9CA3AF',
                             cursor: 'pointer',
                             fontSize: '13px',

@@ -263,3 +263,141 @@ UPDATE sale_items SET image = NULL;
 -- Safe to re-run column additions
 -- ==========================================
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
+
+-- ==========================================
+-- 11. ERP MODULES
+-- ==========================================
+
+-- Procurement: Suppliers
+CREATE TABLE IF NOT EXISTS public.suppliers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    contact_name TEXT,
+    email TEXT,
+    phone TEXT,
+    address TEXT,
+    tax_id TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Procurement: Purchase Orders
+CREATE TABLE IF NOT EXISTS public.purchase_orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supplier_id UUID REFERENCES public.suppliers(id) ON DELETE RESTRICT,
+    order_date DATE NOT NULL,
+    expected_delivery_date DATE,
+    status TEXT DEFAULT 'Draft',
+    total_amount NUMERIC(12, 2) DEFAULT 0,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Procurement: Purchase Order Items
+CREATE TABLE IF NOT EXISTS public.purchase_order_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    purchase_order_id UUID REFERENCES public.purchase_orders(id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES public.products(id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_price NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- HR: Staff Attendance
+CREATE TABLE IF NOT EXISTS public.staff_attendance (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    status TEXT NOT NULL,
+    clock_in TEXT,
+    clock_out TEXT,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Accounting: Chart of Accounts
+CREATE TABLE IF NOT EXISTS public.chart_of_accounts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    account_code TEXT NOT NULL UNIQUE,
+    account_name TEXT NOT NULL,
+    account_type TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Accounting: Journal Entries
+CREATE TABLE IF NOT EXISTS public.journal_entries (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    date DATE NOT NULL,
+    description TEXT,
+    reference_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Accounting: Journal Entry Lines
+CREATE TABLE IF NOT EXISTS public.journal_entry_lines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    journal_entry_id UUID REFERENCES public.journal_entries(id) ON DELETE CASCADE,
+    account_id UUID REFERENCES public.chart_of_accounts(id) ON DELETE RESTRICT,
+    debit NUMERIC(12, 2) DEFAULT 0,
+    credit NUMERIC(12, 2) DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- CRM: Leads
+CREATE TABLE IF NOT EXISTS public.crm_leads (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    status TEXT DEFAULT 'New',
+    source TEXT,
+    assigned_to TEXT REFERENCES public.users(id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- CRM: Interactions
+CREATE TABLE IF NOT EXISTS public.crm_interactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    lead_id UUID REFERENCES public.crm_leads(id) ON DELETE CASCADE,
+    type TEXT,
+    date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    notes TEXT,
+    created_by TEXT REFERENCES public.users(id) ON DELETE SET NULL
+);
+
+-- CRM: Quotations
+CREATE TABLE IF NOT EXISTS public.crm_quotations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    lead_id UUID REFERENCES public.crm_leads(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    valid_until DATE,
+    total_amount NUMERIC(12, 2) DEFAULT 0,
+    status TEXT DEFAULT 'Draft',
+    created_by TEXT REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- CRM: Quotation Items
+CREATE TABLE IF NOT EXISTS public.crm_quotation_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quotation_id UUID REFERENCES public.crm_quotations(id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES public.products(id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_price NUMERIC(12, 2) NOT NULL DEFAULT 0
+);
+
+-- Disable RLS on new tables
+ALTER TABLE public.suppliers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_order_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.staff_attendance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chart_of_accounts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_entries DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_entry_lines DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_leads DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_interactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_quotations DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_quotation_items DISABLE ROW LEVEL SECURITY;

@@ -23,10 +23,13 @@ const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
-const Attendance = lazy(() => import('./pages/Attendance'));
+const AttendancePage = lazy(() => import('./pages/hr/AttendancePage'));
 const ReturnsRestocks = lazy(() => import('./pages/ReturnsRestocks'));
 const StockIn = lazy(() => import('./pages/StockIn'));
 const StockOut = lazy(() => import('./pages/StockOut'));
+const CategoriesPage = lazy(() => import('./pages/inventory/CategoriesPage'));
+const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
+const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
 const Revenue = lazy(() => import('./pages/Revenue'));
 
 const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
@@ -47,6 +50,7 @@ const InteractionsPage = lazy(() => import('./pages/crm/InteractionsPage'));
 const QuotationsPage = lazy(() => import('./pages/crm/QuotationsPage'));
 const SuppliersPage = lazy(() => import('./pages/procurement/SuppliersPage'));
 const PurchaseOrdersPage = lazy(() => import('./pages/procurement/PurchaseOrdersPage'));
+const ReceivingPage = lazy(() => import('./pages/procurement/ReceivingPage'));
 const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
@@ -83,6 +87,9 @@ const ProtectedApp = () => {
           <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
           <Route path="/inventory" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><Inventory /></ProtectedRoute>} />
+          <Route path="/inventory/categories" element={<ProtectedRoute requiredPermission="manage_inventory"><CategoriesPage /></ProtectedRoute>} />
+          <Route path="/inventory/warehouses" element={<ProtectedRoute requiredPermission="manage_inventory"><WarehousesPage /></ProtectedRoute>} />
+          <Route path="/inventory/stock-movements" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockMovementsPage /></ProtectedRoute>} />
           <Route path="/inventory/stock-in" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockIn /></ProtectedRoute>} />
           <Route path="/inventory/stock-out" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockOut /></ProtectedRoute>} />
           <Route path="/inventory/returns" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><ReturnsRestocks /></ProtectedRoute>} />
@@ -102,7 +109,8 @@ const ProtectedApp = () => {
           <Route path="/payment-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><PaymentTracking /></ProtectedRoute>} />
 
           <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
-          <Route path="/attendance" element={<ProtectedRoute requiredPermissions={['manage_attendance']}><Attendance /></ProtectedRoute>} />
+          {/* HR & Payroll */}
+          <Route path="/hr/attendance" element={<ProtectedRoute requiredPermission="manage_attendance"><AttendancePage /></ProtectedRoute>} />
 
           <Route path="/reports" element={<ProtectedRoute requiredPermission="view_reports"><ReportsLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="sales" replace />} />
@@ -136,6 +144,7 @@ const ProtectedApp = () => {
 
           <Route path="/procurement/suppliers" element={<ProtectedRoute requiredPermission="manage_procurement"><SuppliersPage /></ProtectedRoute>} />
           <Route path="/procurement/purchase-orders" element={<ProtectedRoute requiredPermission="manage_procurement"><PurchaseOrdersPage /></ProtectedRoute>} />
+          <Route path="/procurement/receiving" element={<ProtectedRoute requiredPermission="manage_procurement"><ReceivingPage /></ProtectedRoute>} />
 
           <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
