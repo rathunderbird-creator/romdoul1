@@ -80,8 +80,8 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchSuppliers]);
 
-    const fetchPurchaseOrders = useCallback(async () => {
-        setIsLoading(true);
+    const fetchPurchaseOrders = useCallback(async (silent = false) => {
+        if (!silent) setIsLoading(true);
         try {
             const { data, error } = await supabase
                 .from('purchase_orders')
@@ -94,7 +94,7 @@ export const useProcurement = () => {
             console.error('Failed to fetch purchase orders:', error);
             showToast('Failed to fetch purchase orders: ' + error.message, 'error');
         } finally {
-            setIsLoading(false);
+            if (!silent) setIsLoading(false);
         }
     }, [showToast]);
 
@@ -159,7 +159,7 @@ export const useProcurement = () => {
             }
 
             showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
-            await fetchPurchaseOrders();
+            await fetchPurchaseOrders(true); // silent fetch
         } catch (error: any) {
             console.error('Failed to save purchase order:', error);
             showToast('Failed to save purchase order: ' + error.message, 'error');

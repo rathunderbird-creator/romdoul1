@@ -777,6 +777,11 @@ const Inventory: React.FC = () => {
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('stock')}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Stock {sortConfig?.key === 'stock' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
+                            {canViewFinancials && (
+                                <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('totalValue')}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Total Value {sortConfig?.key === 'totalValue' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                </th>
+                            )}
                             <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
                             {canManageInventory && <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>}
                         </tr>
@@ -821,6 +826,11 @@ const Inventory: React.FC = () => {
                                             canEdit={canManageInventory} 
                                         /> pcs
                                     </td>
+                                    {canViewFinancials && (
+                                        <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827' }}>
+                                            ${(product.price * product.stock).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                    )}
                                     <td style={{ padding: '16px' }}>
                                         <span style={{ 
                                             display: 'inline-block',

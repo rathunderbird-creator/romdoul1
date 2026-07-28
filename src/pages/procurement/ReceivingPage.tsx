@@ -41,7 +41,7 @@ const ReceivingPage: React.FC = () => {
             await savePurchaseOrder({ ...po, status: 'Received' }, po.items || []);
             
             showToast(`PO-${po.id.substring(0,8).toUpperCase()} received successfully!`, 'success');
-            fetchPurchaseOrders();
+            fetchPurchaseOrders(true);
         } catch (error: any) {
             showToast('Error receiving PO: ' + error.message, 'error');
         } finally {
