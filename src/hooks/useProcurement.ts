@@ -100,23 +100,48 @@ export const useProcurement = () => {
 
     const savePurchaseOrder = useCallback(async (po: Partial<PurchaseOrder>, items: Partial<PurchaseOrderItem>[]) => {
         try {
-            const { data: insertedPO, error: poError } = await supabase
-                .from('purchase_orders')
-                .insert([{
-                    supplier_id: po.supplier_id,
-                    order_date: po.order_date,
-                    expected_delivery_date: po.expected_delivery_date,
-                    status: po.status,
-                    total_amount: po.total_amount,
-                    notes: po.notes
-                }])
-                .select()
-                .single();
+            let currentPoId = po.id;
+            
+            if (currentPoId) {
+                // Update
+                const { error: poError } = await supabase
+                    .from('purchase_orders')
+                    .update({
+                        supplier_id: po.supplier_id,
+                        order_date: po.order_date,
+                        expected_delivery_date: po.expected_delivery_date,
+                        status: po.status,
+                        total_amount: po.total_amount,
+                        notes: po.notes
+                    })
+                    .eq('id', currentPoId);
                 
-            if (poError) throw poError;
+                if (poError) throw poError;
+
+                // Delete old items
+                await supabase.from('purchase_order_items').delete().eq('purchase_order_id', currentPoId);
+
+            } else {
+                // Insert
+                const { data: insertedPO, error: poError } = await supabase
+                    .from('purchase_orders')
+                    .insert([{
+                        supplier_id: po.supplier_id,
+                        order_date: po.order_date,
+                        expected_delivery_date: po.expected_delivery_date,
+                        status: po.status,
+                        total_amount: po.total_amount,
+                        notes: po.notes
+                    }])
+                    .select()
+                    .single();
+                    
+                if (poError) throw poError;
+                currentPoId = insertedPO.id;
+            }
 
             const itemsToInsert = items.map(item => ({
-                purchase_order_id: insertedPO.id,
+                purchase_order_id: currentPoId,
                 product_id: item.product_id,
                 quantity: item.quantity || 0,
                 unit_price: item.unit_price || 0
@@ -127,11 +152,13 @@ export const useProcurement = () => {
                 .insert(itemsToInsert);
 
             if (itemsError) {
-                await supabase.from('purchase_orders').delete().eq('id', insertedPO.id);
+                if (!po.id) {
+                    await supabase.from('purchase_orders').delete().eq('id', currentPoId);
+                }
                 throw itemsError;
             }
 
-            showToast('Purchase Order created successfully', 'success');
+            showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
             await fetchPurchaseOrders();
         } catch (error: any) {
             console.error('Failed to save purchase order:', error);

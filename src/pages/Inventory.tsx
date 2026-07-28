@@ -446,11 +446,6 @@ const Inventory: React.FC = () => {
                         <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: 'var(--color-text-main)' }}>Inventory</h1>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0, marginTop: '4px' }}>{filteredAndSortedProducts ? filteredAndSortedProducts.length : 0} products</p>
                     </div>
-                    {canManageInventory && (
-                        <button onClick={openAddModalCallback} className="primary-button hover-lift" style={{ height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>
-                            <Plus size={16} /> Add Product
-                        </button>
-                    )}
                 </div>
             )
         });
@@ -703,277 +698,142 @@ const Inventory: React.FC = () => {
                     />
                 </div>
             )}
-            {/* Premium Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</span>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>{stats.totalProducts}</div>
-                    </div>
-                    <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6' }}><Package size={18} /></div>
+            {/* Minimalist Stats Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Products</span>
+                    <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalProducts}</div>
                 </div>
-
-                {canViewFinancials && (
-                    <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Inventory Value</span>
-                            <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </div>
-                        <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', color: '#10B981' }}><DollarSign size={18} /></div>
-                    </div>
-                )}
-
-                <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Low Stock</span>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>{stats.lowStock}</div>
-                    </div>
-                    <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B' }}><AlertTriangle size={18} /></div>
+                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #10B981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>In Stock</span>
+                    <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock > 0).length}</div>
                 </div>
-
-                <div className="stats-card hover-lift" style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Out Of Stock</span>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-main)' }}>{products.filter(p => p.stock === 0).length}</div>
-                    </div>
-                    <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444' }}><X size={18} /></div>
+                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #F59E0B', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Low Stock</span>
+                    <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.lowStock}</div>
+                </div>
+                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #EF4444', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Out of Stock</span>
+                    <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock === 0).length}</div>
                 </div>
             </div>
 
-            {/* Unified Command Bar */}
-            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: '16px', marginBottom: '16px' }}>
-                <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
-                    <Search size={16} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                    <input
-                        type="text"
-                        placeholder="Search products..."
+            {/* Simple Search Bar */}
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '24px' }}>
+                <div style={{ flex: 1, position: 'relative', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                    <Search size={18} color="var(--color-text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input 
+                        type="text" 
+                        placeholder="Search products by name or SKU..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ width: '100%', paddingLeft: '44px', height: '40px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', fontSize: '14px', outline: 'none' }}
+                        style={{ width: '100%', padding: '12px 16px 12px 44px', background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', color: '#111827' }}
                     />
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <select
-                        value={columnFilters.categories.size > 0 ? Array.from(columnFilters.categories)[0] : 'All'}
-                        onChange={(e) => {
-                            if (e.target.value === 'All') setColumnFilters(prev => ({ ...prev, categories: new Set() }));
-                            else setColumnFilters(prev => ({ ...prev, categories: new Set([e.target.value]) }));
-                        }}
-                        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', padding: '0 32px 0 16px', height: '40px', appearance: 'none', cursor: 'pointer', fontSize: '13px' }}
-                    >
-                        <option value="All">All Categories</option>
-                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-
-                    <select
-                        value={columnFilters.stockMin === '1' ? 'In Stock' : columnFilters.stockMax === '0' ? 'Out of Stock' : 'All'}
-                        onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === 'All') setColumnFilters(prev => ({ ...prev, stockMin: '', stockMax: '' }));
-                            if (val === 'In Stock') setColumnFilters(prev => ({ ...prev, stockMin: '1', stockMax: '' }));
-                            if (val === 'Out of Stock') setColumnFilters(prev => ({ ...prev, stockMin: '', stockMax: '0' }));
-                        }}
-                        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', padding: '0 32px 0 16px', height: '40px', appearance: 'none', cursor: 'pointer', fontSize: '13px' }}
-                    >
-                        <option value="All">All Status</option>
-                        <option value="In Stock">In Stock</option>
-                        <option value="Out of Stock">Out of Stock</option>
-                    </select>
-                </div>
+                {canManageInventory && (
+                    <button onClick={openAddModalCallback} style={{ background: '#4F46E5', color: '#ffffff', border: 'none', borderRadius: '8px', padding: '0 20px', height: '42px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}>
+                        <Plus size={18} />
+                        Add Product
+                    </button>
+                )}
             </div>
 
-            {/* Layout Split */}
-            <div style={{ display: 'flex', gap: '24px', flexDirection: isMobile ? 'column' : 'row' }}>
-                <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                    <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    <th style={{ padding: '16px', fontWeight: 600 }}>Product Name</th>
-                                    <th style={{ padding: '16px', fontWeight: 600 }}>SKU</th>
-                                    <th style={{ padding: '16px', fontWeight: 600 }}>Category</th>
-                                    <th style={{ padding: '16px', fontWeight: 600 }}>Price</th>
-                                    <th style={{ padding: '16px', fontWeight: 600 }}>Stock</th>
-                                    <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
-                                    {canManageInventory && <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>}
+            {/* Table */}
+            <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                    <thead>
+                        <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
+                            <th style={{ padding: '16px', fontWeight: 600 }}>SKU</th>
+                            <th style={{ padding: '16px', fontWeight: 600 }}>Product Name</th>
+                            <th style={{ padding: '16px', fontWeight: 600 }}>Category</th>
+                            {canViewFinancials && <th style={{ padding: '16px', fontWeight: 600 }}>Cost</th>}
+                            <th style={{ padding: '16px', fontWeight: 600 }}>Sell Price</th>
+                            <th style={{ padding: '16px', fontWeight: 600 }}>Stock</th>
+                            <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
+                            {canManageInventory && <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => {
+                            const isOutOfStock = product.stock === 0;
+                            const isLowStock = product.stock > 0 && product.stock < (product.lowStockThreshold || 5);
+                            return (
+                                <tr key={product.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                    <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#4B5563' }}>
+                                        {product.sku || 'N/A'}
+                                    </td>
+                                    <td style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ width: '24px', height: '24px', borderRadius: '4px', background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <Package size={14} color="#6366f1" />
+                                        </div>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{product.name}</span>
+                                    </td>
+                                    <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
+                                        {product.category}
+                                    </td>
+                                    {canViewFinancials && (
+                                        <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
+                                            ${(product.purchaseCost || 0).toFixed(2)}
+                                        </td>
+                                    )}
+                                    <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827' }}>
+                                        ${product.price.toFixed(2)}
+                                    </td>
+                                    <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
+                                        {product.stock} pcs
+                                    </td>
+                                    <td style={{ padding: '16px' }}>
+                                        <span style={{ 
+                                            display: 'inline-block',
+                                            padding: '4px 12px', 
+                                            borderRadius: '16px', 
+                                            fontSize: '10px', 
+                                            fontWeight: 800,
+                                            textTransform: 'uppercase',
+                                            backgroundColor: isOutOfStock ? '#FEE2E2' : (isLowStock ? '#FEF3C7' : '#D1FAE5'),
+                                            color: isOutOfStock ? '#EF4444' : (isLowStock ? '#F59E0B' : '#10B981'),
+                                        }}>
+                                            {isOutOfStock ? 'Out of Stock' : (isLowStock ? 'Low Stock' : 'In Stock')}
+                                        </span>
+                                    </td>
+                                    {canManageInventory && (
+                                        <td style={{ padding: '16px', textAlign: 'right' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                                                <button onClick={() => updateProduct(product.id, { stock: 0 })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
+                                                    <AlertTriangle size={14} />
+                                                </button>
+                                                <button onClick={() => promptDelete(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title="Delete">
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    )}
                                 </tr>
-                            </thead>
-                            <tbody>
-                                        {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => (
-                                            <SortableProductRow
-                                                key={product.id}
-                                                id={product.id}
-                                                isDraggable={!sortConfig}
-                                                className={selectedIds.has(product.id) ? 'selected' : ''}
-                                            >
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedIds.has(product.id)}
-                                                        onChange={() => toggleSelection(product.id)}
-                                                        style={{ cursor: 'pointer' }}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                        <div data-preview-anchor onMouseEnter={handleImageHover} onMouseLeave={handleImageLeave} style={{ flexShrink: 0, cursor: 'pointer' }}>
-                                                            <LazyAvatar productId={product.id} initialImage={product.image} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: 'white', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }} />
-                                                        </div>
-                                                        <div>
-                                                            <div style={{ fontWeight: 600 }}>{product.name}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
-                                                                {product.model} {product.sku ? ` | SKU: ${product.sku}` : ''}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td style={{ color: 'var(--color-text-secondary)', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                                    {product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
-                                                </td>
-                                                <td>
-                                                    <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)' }}>
-                                                        {product.category}
-                                                    </span>
-                                                </td>
-                                                {canViewFinancials && (
-                                                    <td style={{ color: 'var(--color-text-secondary)' }}>
-                                                        ${product.purchaseCost || 0}
-                                                    </td>
-                                                )}
-                                                <td>
-                                                    <InlineEditCell 
-                                                        value={product.price} 
-                                                        type="price" 
-                                                        onSave={(val) => {
-                                                            updateProduct(product.id, { price: val });
-                                                            showToast(`Updated price for ${product.name}`, 'success');
-                                                        }} 
-                                                        canEdit={canManageInventory} 
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <InlineEditCell 
-                                                        value={product.stock} 
-                                                        type="stock" 
-                                                        isLowStock={product.stock < (product.lowStockThreshold || 5)}
-                                                        onSave={(val) => {
-                                                            updateProduct(product.id, { stock: val });
-                                                            showToast(`Updated stock for ${product.name}`, 'success');
-                                                        }} 
-                                                        canEdit={canManageInventory} 
-                                                    />
-                                                </td>
-                                                {canViewFinancials && (
-                                                    <td style={{ color: 'var(--color-text-secondary)' }}>
-                                                        ${(product.price * product.stock).toLocaleString()}
-                                                    </td>
-                                                )}
-                                                {canManageInventory && (
-                                                    <td style={{ textAlign: 'right' }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                            <button
-                                                                onClick={() => {
-                                                                    setAddStockProduct(product);
-                                                                    setAddStockAmount('');
-                                                                    setAddStockCost(product.purchaseCost || 0);
-                                                                }}
-                                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#10B981', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                                className="hover-primary"
-                                                                title="Add Stock"
-                                                            >
-                                                                <Plus size={16} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => openEditModal(product)}
-                                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                                className="hover-primary"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit2 size={16} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => promptDelete(product.id)}
-                                                                style={{ padding: '6px', borderRadius: '6px', backgroundColor: 'transparent', color: '#EF4444', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                                className="hover-danger"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 size={16} />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                )}
-                                            </SortableProductRow>
-                                        ))}
-                            </tbody>
-                        </table>
-                        
-                        <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)' }}>
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length}
-                            </span>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                    disabled={currentPage === 1}
-                                    style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
-                                >
-                                    Previous
-                                </button>
-                                <button
-                                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
-                                    disabled={currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage)}
-                                    style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) ? 'not-allowed' : 'pointer' }}
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        </div>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                        Showing {filteredAndSortedProducts.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length}
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            style={{ padding: '6px 12px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--color-border)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                        >
+                            Previous
+                        </button>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
+                            disabled={currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0}
+                            style={{ padding: '6px 12px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--color-border)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'not-allowed' : 'pointer' }}
+                        >
+                            Next
+                        </button>
                     </div>
                 </div>
-                
-                {!isMobile && (
-                    <div style={{ width: '300px', flexShrink: 0 }}>
-                        <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', padding: '20px' }}>
-                            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)' }}>By Category</h3>
-                            <p style={{ margin: 0, marginTop: '4px', fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '24px' }}>Product distribution</p>
-                            
-                            <div style={{ height: '220px' }}>
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            isAnimationActive={false}
-                                            data={pieChartData}
-                                            innerRadius={60}
-                                            outerRadius={80}
-                                            paddingAngle={5}
-                                            dataKey="value"
-                                            stroke="none"
-                                        >
-                                            {pieChartData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4'][index % 7]} />
-                                            ))}
-                                        </Pie>
-                                        <RechartsTooltip 
-                                            contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
-                                            itemStyle={{ color: 'var(--color-text-main)' }}
-                                        />
-                                        
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            {/* Custom legend to avoid Recharts Legend infinite loop bug */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-                                {pieChartData.map((entry, index) => (
-                                    <div key={entry.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4'][index % 7], flexShrink: 0 }} />
-                                        <span style={{ color: 'var(--color-text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
-                                        <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{entry.value}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Add/Edit Modal */}

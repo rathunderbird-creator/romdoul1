@@ -1,9 +1,23 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Mail, Phone, MapPin } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2 } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
-import { Modal } from '../../components';
+import { Modal, StatusBadge } from '../../components';
 import { useProcurement } from '../../hooks/useProcurement';
 import type { Supplier } from '../../types';
+
+// Helper for generating avatar color based on name
+const stringToColor = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 70%, 45%)`;
+};
+
+const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+};
 
 const SuppliersPage = () => {
     const { setHeaderContent } = useHeader();
@@ -11,6 +25,7 @@ const SuppliersPage = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
     const [formData, setFormData] = useState<Partial<Supplier>>({
         name: '',
         contact_name: '',
@@ -36,6 +51,16 @@ const SuppliersPage = () => {
     useEffect(() => {
         fetchSuppliers();
     }, [fetchSuppliers]);
+
+    const filteredSuppliers = useMemo(() => {
+        if (!searchQuery.trim()) return suppliers;
+        const query = searchQuery.toLowerCase();
+        return suppliers.filter(s => 
+            s.name.toLowerCase().includes(query) || 
+            (s.email && s.email.toLowerCase().includes(query)) ||
+            (s.contact_name && s.contact_name.toLowerCase().includes(query))
+        );
+    }, [suppliers, searchQuery]);
 
     const handleOpenModal = (supplier?: Supplier) => {
         if (supplier) {
@@ -65,71 +90,119 @@ const SuppliersPage = () => {
     };
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Suppliers Directory</h2>
+        <div className="page-container fade-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div style={{ flex: 1, minWidth: '300px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                        <input 
+                            type="text" 
+                            className="input-field" 
+                            placeholder="Search suppliers by name, contact, or email..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: '12px', border: '1px solid var(--color-border)' }}
+                        />
+                    </div>
+                </div>
                 <button 
                     className="primary-button" 
                     onClick={() => handleOpenModal()}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', fontWeight: 500, boxShadow: 'var(--shadow-sm)' }}
                 >
-                    <Plus size={18} /> Add Supplier
+                    <Plus size={18} /> New Supplier
                 </button>
             </div>
 
-            <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '12px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
+                <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
-                        <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                            <th style={{ padding: '16px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Supplier</th>
-                            <th style={{ padding: '16px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Contact Info</th>
-                            <th style={{ padding: '16px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Tax ID</th>
-                            <th style={{ padding: '16px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Status</th>
-                            <th style={{ padding: '16px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right' }}>Actions</th>
+                        <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Supplier</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Contact Details</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Tax Info</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Status</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={5} style={{ padding: '24px', textAlign: 'center' }}>Loading...</td></tr>
-                        ) : suppliers.length === 0 ? (
-                            <tr><td colSpan={5} style={{ padding: '24px', textAlign: 'center' }}>No suppliers found</td></tr>
-                        ) : (
-                            suppliers.map(supplier => (
-                                <tr key={supplier.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    <td style={{ padding: '16px' }}>
-                                        <div style={{ fontWeight: '600' }}>{supplier.name}</div>
-                                        {supplier.contact_name && <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>Contact: {supplier.contact_name}</div>}
-                                    </td>
-                                    <td style={{ padding: '16px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                            {supplier.phone && <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Phone size={14} /> {supplier.phone}</span>}
-                                            {supplier.email && <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Mail size={14} /> {supplier.email}</span>}
-                                            {supplier.address && <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} /> {supplier.address}</span>}
+                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading suppliers...</td></tr>
+                        ) : filteredSuppliers.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', color: 'var(--color-text-secondary)' }}>
+                                        <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--color-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Building2 size={32} style={{ opacity: 0.5 }} />
                                         </div>
-                                    </td>
-                                    <td style={{ padding: '16px', color: 'var(--color-text-secondary)' }}>{supplier.tax_id || '-'}</td>
-                                    <td style={{ padding: '16px' }}>
-                                        <span style={{
-                                            padding: '4px 8px', borderRadius: '4px', fontSize: '12px',
-                                            backgroundColor: supplier.is_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                            color: supplier.is_active ? 'var(--color-green)' : 'var(--color-red)'
-                                        }}>
-                                            {supplier.is_active ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '16px', textAlign: 'right' }}>
-                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                        <div>
+                                            <h3 style={{ color: 'var(--color-text-main)', marginBottom: '4px', fontSize: '16px' }}>No suppliers found</h3>
+                                            <p style={{ fontSize: '14px' }}>{searchQuery ? 'Try adjusting your search terms.' : 'Get started by adding your first supplier.'}</p>
+                                        </div>
+                                        {!searchQuery && (
                                             <button 
                                                 className="secondary-button" 
-                                                style={{ padding: '8px', borderRadius: '6px' }}
+                                                onClick={() => handleOpenModal()}
+                                                style={{ padding: '8px 16px', borderRadius: '8px', marginTop: '8px' }}
+                                            >
+                                                Add Supplier
+                                            </button>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        ) : (
+                            filteredSuppliers.map(supplier => (
+                                <tr key={supplier.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease' }} className="hover-highlight">
+                                    <td style={{ padding: '16px 24px', borderRight: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                            <div style={{ 
+                                                width: '40px', height: '40px', borderRadius: '10px', 
+                                                backgroundColor: stringToColor(supplier.name), 
+                                                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontWeight: 'bold', fontSize: '14px', boxShadow: 'var(--shadow-sm)'
+                                            }}>
+                                                {getInitials(supplier.name)}
+                                            </div>
+                                            <div>
+                                                <div style={{ fontWeight: '600', fontSize: '15px' }}>{supplier.name}</div>
+                                                {supplier.contact_name && <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>Contact: {supplier.contact_name}</div>}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '16px 24px', borderRight: 'none' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                            {supplier.phone ? <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Phone size={14} style={{ opacity: 0.7 }} /> {supplier.phone}</span> : null}
+                                            {supplier.email ? <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Mail size={14} style={{ opacity: 0.7 }} /> {supplier.email}</span> : null}
+                                            {supplier.address ? <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><MapPin size={14} style={{ opacity: 0.7 }} /> <span style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{supplier.address}</span></span> : null}
+                                            {!supplier.phone && !supplier.email && !supplier.address && <span style={{ fontStyle: 'italic', opacity: 0.5 }}>No contact info</span>}
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', borderRight: 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontFamily: 'monospace', background: 'var(--color-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
+                                                {supplier.tax_id || 'N/A'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '16px 24px', borderRight: 'none' }}>
+                                        <StatusBadge status={supplier.is_active ? 'Active' : 'Inactive'} />
+                                    </td>
+                                    <td style={{ padding: '16px 24px', textAlign: 'right', borderRight: 'none' }}>
+                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', opacity: 0.8 }} className="actions-group">
+                                            <button 
+                                                className="secondary-button" 
+                                                style={{ padding: '8px', borderRadius: '8px', background: 'var(--color-bg)' }}
                                                 onClick={() => handleOpenModal(supplier)}
+                                                title="Edit Supplier"
                                             >
                                                 <Edit size={16} />
                                             </button>
                                             <button 
                                                 className="danger-button" 
-                                                style={{ padding: '8px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-red)', border: 'none' }}
+                                                style={{ padding: '8px', borderRadius: '8px', background: 'var(--color-red-light)', color: 'var(--color-red)', border: 'none' }}
                                                 onClick={() => handleDelete(supplier.id)}
+                                                title="Delete Supplier"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -145,91 +218,117 @@ const SuppliersPage = () => {
             <Modal 
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
-                title={editingSupplier ? 'Edit Supplier' : 'New Supplier'}
+                title={editingSupplier ? 'Edit Supplier Details' : 'Register New Supplier'}
             >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Supplier Name *</label>
-                        <input 
-                            type="text" 
-                            className="input-field" 
-                            style={{ width: '100%', padding: '10px' }}
-                            value={formData.name || ''} 
-                            onChange={(e) => setFormData({...formData, name: e.target.value})} 
-                            placeholder="Company Name"
-                        />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Contact Person</label>
-                            <input 
-                                type="text" 
-                                className="input-field" 
-                                style={{ width: '100%', padding: '10px' }}
-                                value={formData.contact_name || ''} 
-                                onChange={(e) => setFormData({...formData, contact_name: e.target.value})} 
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Tax ID</label>
-                            <input 
-                                type="text" 
-                                className="input-field" 
-                                style={{ width: '100%', padding: '10px' }}
-                                value={formData.tax_id || ''} 
-                                onChange={(e) => setFormData({...formData, tax_id: e.target.value})} 
-                            />
-                        </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Email</label>
-                            <input 
-                                type="email" 
-                                className="input-field" 
-                                style={{ width: '100%', padding: '10px' }}
-                                value={formData.email || ''} 
-                                onChange={(e) => setFormData({...formData, email: e.target.value})} 
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Phone</label>
-                            <input 
-                                type="text" 
-                                className="input-field" 
-                                style={{ width: '100%', padding: '10px' }}
-                                value={formData.phone || ''} 
-                                onChange={(e) => setFormData({...formData, phone: e.target.value})} 
-                            />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px 0', minWidth: '500px' }}>
+                    
+                    <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Building2 size={16} /> Company Information
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Supplier Name *</label>
+                                <input 
+                                    type="text" 
+                                    className="input-field" 
+                                    style={{ width: '100%', padding: '10px 12px' }}
+                                    value={formData.name || ''} 
+                                    onChange={(e) => setFormData({...formData, name: e.target.value})} 
+                                    placeholder="Enter company or individual name"
+                                    autoFocus
+                                />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Contact Person</label>
+                                    <input 
+                                        type="text" 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px 12px' }}
+                                        value={formData.contact_name || ''} 
+                                        onChange={(e) => setFormData({...formData, contact_name: e.target.value})} 
+                                        placeholder="Full name"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Tax ID / VAT</label>
+                                    <input 
+                                        type="text" 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px 12px', fontFamily: 'monospace' }}
+                                        value={formData.tax_id || ''} 
+                                        onChange={(e) => setFormData({...formData, tax_id: e.target.value})} 
+                                        placeholder="Optional"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Address</label>
-                        <textarea 
-                            className="input-field" 
-                            style={{ width: '100%', padding: '10px', minHeight: '60px' }}
-                            value={formData.address || ''} 
-                            onChange={(e) => setFormData({...formData, address: e.target.value})} 
-                        />
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input 
-                            type="checkbox" 
-                            checked={formData.is_active} 
-                            onChange={(e) => setFormData({...formData, is_active: e.target.checked})} 
-                        />
-                        <span>Active</span>
-                    </label>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px' }}>Cancel</button>
+                    <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <MapPin size={16} /> Contact Details
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Email Address</label>
+                                    <input 
+                                        type="email" 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px 12px' }}
+                                        value={formData.email || ''} 
+                                        onChange={(e) => setFormData({...formData, email: e.target.value})} 
+                                        placeholder="contact@company.com"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Phone Number</label>
+                                    <input 
+                                        type="text" 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px 12px' }}
+                                        value={formData.phone || ''} 
+                                        onChange={(e) => setFormData({...formData, phone: e.target.value})} 
+                                        placeholder="+855 ..."
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Physical Address</label>
+                                <textarea 
+                                    className="input-field" 
+                                    style={{ width: '100%', padding: '10px 12px', minHeight: '80px', resize: 'vertical' }}
+                                    value={formData.address || ''} 
+                                    onChange={(e) => setFormData({...formData, address: e.target.value})} 
+                                    placeholder="Full street address..."
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                            <input 
+                                type="checkbox" 
+                                checked={formData.is_active} 
+                                onChange={(e) => setFormData({...formData, is_active: e.target.checked})} 
+                                style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }}
+                            />
+                            <span style={{ fontWeight: 500 }}>Active Supplier</span>
+                        </label>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px' }}>Cancel</button>
                         <button 
                             className="primary-button" 
                             onClick={handleSave} 
                             disabled={!formData.name}
-                            style={{ padding: '10px 16px', borderRadius: '8px' }}
+                            style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
-                            Save
+                            {editingSupplier ? 'Save Changes' : 'Register Supplier'}
                         </button>
                     </div>
                 </div>
