@@ -7,6 +7,9 @@ export interface Product {
     purchaseCost?: number;
     stock: number;
     lowStockThreshold?: number;
+    unitOfMeasure?: string;
+    lowStockAlert?: boolean;
+    reorderLevel?: number;
     image: string;
     category: string;
     invoiceNumber?: string;

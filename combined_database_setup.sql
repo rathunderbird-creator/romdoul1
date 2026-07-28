@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS products (
     price NUMERIC DEFAULT 0,
     stock NUMERIC DEFAULT 0,
     low_stock_threshold NUMERIC DEFAULT 5,
+    unit_of_measure TEXT DEFAULT 'PCS',
+    low_stock_alert BOOLEAN DEFAULT true,
+    reorder_level NUMERIC DEFAULT 5,
     image TEXT,
     category TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

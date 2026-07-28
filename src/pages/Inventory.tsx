@@ -278,14 +278,15 @@ const Inventory: React.FC = () => {
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(20);
+    const [itemsPerPage, setItemsPerPage] = useState(100);
 
     // Form State
-    type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold' | 'purchaseCost'> & {
+    type ProductFormState = Omit<Product, 'id' | 'price' | 'stock' | 'lowStockThreshold' | 'purchaseCost' | 'reorderLevel'> & {
         price: number | string;
         purchaseCost: number | string;
         stock: number | string;
         lowStockThreshold: number | string;
+        reorderLevel: number | string;
     };
 
     const initialFormState: ProductFormState = useMemo(() => ({
@@ -295,6 +296,9 @@ const Inventory: React.FC = () => {
         purchaseCost: 0,
         stock: 0,
         lowStockThreshold: 5,
+        reorderLevel: 5,
+        lowStockAlert: true,
+        unitOfMeasure: 'PCS',
         category: categories[0] || 'Portable',
         image: 'https://placehold.co/300x300',
         sku: '',
@@ -457,7 +461,10 @@ const Inventory: React.FC = () => {
         setFormData({
             ...product,
             purchaseCost: product.purchaseCost ?? 0,
-            lowStockThreshold: product.lowStockThreshold ?? 5
+            lowStockThreshold: product.lowStockThreshold ?? 5,
+            reorderLevel: product.reorderLevel ?? 5,
+            unitOfMeasure: product.unitOfMeasure ?? 'PCS',
+            lowStockAlert: product.lowStockAlert ?? true
         });
         setIsModalOpen(true);
     };
@@ -482,8 +489,9 @@ const Inventory: React.FC = () => {
             ...formData,
             price: Number(formData.price),
             purchaseCost: Number(formData.purchaseCost || 0),
-            stock: Number(formData.stock),
-            lowStockThreshold: Number(formData.lowStockThreshold)
+            stock: Number(formData.stock || 0),
+            lowStockThreshold: Number(formData.lowStockThreshold || 5),
+            reorderLevel: Number(formData.reorderLevel || 5)
         };
 
         if (editingProduct) {
@@ -699,7 +707,7 @@ const Inventory: React.FC = () => {
                 </div>
             )}
             {/* Minimalist Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: canViewFinancials ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Products</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalProducts}</div>
@@ -716,6 +724,12 @@ const Inventory: React.FC = () => {
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Out of Stock</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock === 0).length}</div>
                 </div>
+                {canViewFinancials && (
+                    <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #8B5CF6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Value</span>
+                        <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>${stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                )}
             </div>
 
             {/* Simple Search Bar */}
@@ -743,12 +757,26 @@ const Inventory: React.FC = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
-                            <th style={{ padding: '16px', fontWeight: 600 }}>SKU</th>
-                            <th style={{ padding: '16px', fontWeight: 600 }}>Product Name</th>
-                            <th style={{ padding: '16px', fontWeight: 600 }}>Category</th>
-                            {canViewFinancials && <th style={{ padding: '16px', fontWeight: 600 }}>Cost</th>}
-                            <th style={{ padding: '16px', fontWeight: 600 }}>Sell Price</th>
-                            <th style={{ padding: '16px', fontWeight: 600 }}>Stock</th>
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('sku')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>SKU {sortConfig?.key === 'sku' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Product Name {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('category')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Category {sortConfig?.key === 'category' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
+                            {canViewFinancials && (
+                                <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('purchaseCost')}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Cost {sortConfig?.key === 'purchaseCost' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                </th>
+                            )}
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('price')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Sell Price {sortConfig?.key === 'price' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('stock')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Stock {sortConfig?.key === 'stock' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
                             <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
                             {canManageInventory && <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>}
                         </tr>
@@ -777,10 +805,21 @@ const Inventory: React.FC = () => {
                                         </td>
                                     )}
                                     <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827' }}>
-                                        ${product.price.toFixed(2)}
+                                        <InlineEditCell 
+                                            value={product.price} 
+                                            type="price" 
+                                            onSave={(val) => updateProduct(product.id, { price: val })} 
+                                            canEdit={canManageInventory} 
+                                        />
                                     </td>
                                     <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
-                                        {product.stock} pcs
+                                        <InlineEditCell 
+                                            value={product.stock} 
+                                            type="stock" 
+                                            onSave={(val) => updateProduct(product.id, { stock: val })} 
+                                            isLowStock={isLowStock} 
+                                            canEdit={canManageInventory} 
+                                        /> pcs
                                     </td>
                                     <td style={{ padding: '16px' }}>
                                         <span style={{ 
@@ -801,6 +840,9 @@ const Inventory: React.FC = () => {
                                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                                                 <button onClick={() => updateProduct(product.id, { stock: 0 })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
                                                     <AlertTriangle size={14} />
+                                                </button>
+                                                <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title="Edit Product">
+                                                    <Edit2 size={14} />
                                                 </button>
                                                 <button onClick={() => promptDelete(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title="Delete">
                                                     <Trash2 size={14} />
@@ -848,53 +890,7 @@ const Inventory: React.FC = () => {
                                 <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{editingProduct ? 'Edit Product' : 'Add New Product'}</h3>
                                 <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                             </div>
-                            <div style={{ display: 'grid', gap: '16px', marginBottom: '12px' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Name *</label>
-                                    <input 
-                                        list="product-names"
-                                        className="search-input" 
-                                        style={{ width: '100%', borderColor: formErrors.name ? '#EF4444' : undefined }} 
-                                        placeholder="e.g. JBL Flip 6" 
-                                        value={formData.name} 
-                                        onChange={e => {
-                                            const newName = e.target.value;
-                                            const normalizedNewName = newName.trim().toLowerCase();
-                                            
-                                            // Find all matching products
-                                            const matches = products.filter(p => (p.name || '').trim().toLowerCase() === normalizedNewName);
-                                            // Prefer a match that actually has a real image
-                                            const isPlaceholder = (url: string | undefined) => !url || url.includes('placeholder.com') || url.includes('placehold.co');
-                                            const referenceProduct = matches.find(p => !isPlaceholder(p.image)) || matches[0];
-                                            
-                                            setFormData(prev => {
-                                                if (referenceProduct && !editingProduct) {
-                                                    return { 
-                                                        ...prev, 
-                                                        name: newName,
-                                                        image: isPlaceholder(referenceProduct.image) ? 'https://placehold.co/300x300' : referenceProduct.image,
-                                                        category: referenceProduct.category,
-                                                        price: referenceProduct.price,
-                                                        purchaseCost: referenceProduct.purchaseCost || 0
-                                                    };
-                                                }
-                                                return { ...prev, name: newName };
-                                            });
-                                        }} 
-                                    />
-                                    <datalist id="product-names">
-                                        {Array.from(new Set(products.map(p => p.name))).sort().map(name => (
-                                            <option key={name} value={name} />
-                                        ))}
-                                    </datalist>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
-                                        <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
-                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>SKU</label>
                                         <input 
@@ -905,56 +901,86 @@ const Inventory: React.FC = () => {
                                             onChange={e => setFormData({ ...formData, sku: e.target.value })} 
                                         />
                                     </div>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Cost of Purchase ($)</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Name *</label>
+                                        <input 
+                                            list="product-names"
+                                            className="search-input" 
+                                            style={{ width: '100%', borderColor: formErrors.name ? '#EF4444' : undefined }} 
+                                            placeholder="e.g. JBL Flip 6" 
+                                            value={formData.name} 
+                                            onChange={e => {
+                                                const newName = e.target.value;
+                                                const normalizedNewName = newName.trim().toLowerCase();
+                                                
+                                                const matches = products.filter(p => (p.name || '').trim().toLowerCase() === normalizedNewName);
+                                                const isPlaceholder = (url: string | undefined) => !url || url.includes('placeholder.com') || url.includes('placehold.co');
+                                                const referenceProduct = matches.find(p => !isPlaceholder(p.image)) || matches[0];
+                                                
+                                                setFormData(prev => {
+                                                    if (referenceProduct && !editingProduct) {
+                                                        return { 
+                                                            ...prev, 
+                                                            name: newName,
+                                                            image: isPlaceholder(referenceProduct.image) ? 'https://placehold.co/300x300' : referenceProduct.image,
+                                                            category: referenceProduct.category,
+                                                            price: referenceProduct.price,
+                                                            purchaseCost: referenceProduct.purchaseCost || 0
+                                                        };
+                                                    }
+                                                    return { ...prev, name: newName };
+                                                });
+                                            }} 
+                                        />
+                                        {formErrors.name && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.name}</p>}
+                                        <datalist id="product-names">
+                                            {Array.from(new Set(products.map(p => p.name))).sort().map(name => (
+                                                <option key={name} value={name} />
+                                            ))}
+                                        </datalist>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
+                                        <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
+                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '42px', padding: '0 12px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid var(--color-border)', cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={formData.lowStockAlert} onChange={e => setFormData({ ...formData, lowStockAlert: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+                                            <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>Enable alerts for this product</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Cost Price ($)</label>
                                         <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.purchaseCost ? '#EF4444' : undefined }} placeholder="0.00" value={formData.purchaseCost} onChange={e => setFormData({ ...formData, purchaseCost: e.target.value === '' ? '' : Number(e.target.value) })} />
                                         {formErrors.purchaseCost && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.purchaseCost}</p>}
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Sell Price ($) *</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Selling Price ($) *</label>
                                         <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.price ? '#EF4444' : undefined }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value === '' ? '' : Number(e.target.value) })} />
                                         {formErrors.price && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.price}</p>}
                                     </div>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Stock</label>
-                                        <input className="search-input" type="number" min="0" style={{ width: '100%', borderColor: formErrors.stock ? '#EF4444' : undefined }} placeholder="0" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value === '' ? '' : Math.max(0, Number(e.target.value)) })} />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
-                                        <input
-                                            className="search-input"
-                                            type="number"
-                                            style={{ width: '100%' }}
-                                            placeholder="5"
-                                            value={formData.lowStockThreshold}
-                                            onChange={e => setFormData({ ...formData, lowStockThreshold: e.target.value === '' ? '' : Number(e.target.value) })}
-                                        />
-                                    </div>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
-                                        <input
-                                            className="search-input"
-                                            type="text"
-                                            style={{ width: '100%' }}
-                                            placeholder="INV-001"
-                                            value={formData.invoiceNumber || ''}
-                                            onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                                        />
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Unit of Measure</label>
+                                        <select className="search-input" style={{ width: '100%' }} value={formData.unitOfMeasure} onChange={e => setFormData({ ...formData, unitOfMeasure: e.target.value })}>
+                                            <option value="PCS">PCS</option>
+                                            <option value="BOX">BOX</option>
+                                            <option value="KG">KG</option>
+                                            <option value="LITER">LITER</option>
+                                            <option value="METER">METER</option>
+                                        </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier</label>
-                                        <input
-                                            className="search-input"
-                                            type="text"
-                                            style={{ width: '100%' }}
-                                            placeholder="Supplier Name"
-                                            value={formData.supplier || ''}
-                                            onChange={e => setFormData({ ...formData, supplier: e.target.value })}
-                                        />
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Reorder Level</label>
+                                        <input className="search-input" type="number" min="0" style={{ width: '100%' }} placeholder="e.g. 5" value={formData.reorderLevel} onChange={e => setFormData({ ...formData, reorderLevel: e.target.value === '' ? '' : Math.max(0, Number(e.target.value)) })} disabled={!formData.lowStockAlert} />
                                     </div>
                                 </div>
                                 <div style={{ marginTop: '16px' }}>
@@ -1029,8 +1055,7 @@ const Inventory: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
                                 <button onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button onClick={handleSave} className="primary-button" style={{ padding: '10px 24px' }}>{editingProduct ? 'Save Changes' : 'Add Product'}</button>
                             </div>
