@@ -707,10 +707,14 @@ const Inventory: React.FC = () => {
                 </div>
             )}
             {/* Minimalist Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: canViewFinancials ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: canViewFinancials ? 'repeat(6, 1fr)' : 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Products</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalProducts}</div>
+                </div>
+                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #3B82F6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Stock</span>
+                    <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalAllStock.toLocaleString()}</div>
                 </div>
                 <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #10B981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>In Stock</span>

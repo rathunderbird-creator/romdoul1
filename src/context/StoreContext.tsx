@@ -982,10 +982,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             model: newProduct.model,
             sku: newProduct.sku,
             invoice_number: newProduct.invoiceNumber,
-            supplier: newProduct.supplier,
-            unit_of_measure: newProduct.unitOfMeasure,
-            low_stock_alert: newProduct.lowStockAlert,
-            reorder_level: newProduct.reorderLevel
+            supplier: newProduct.supplier
         };
 
         const { error } = await supabase.from('products').insert(dbProduct);
@@ -1027,9 +1024,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.sku !== undefined) dbUpdates.sku = updates.sku;
         if (updates.invoiceNumber !== undefined) dbUpdates.invoice_number = updates.invoiceNumber;
         if (updates.supplier !== undefined) dbUpdates.supplier = updates.supplier;
-        if (updates.unitOfMeasure !== undefined) dbUpdates.unit_of_measure = updates.unitOfMeasure;
-        if (updates.lowStockAlert !== undefined) dbUpdates.low_stock_alert = updates.lowStockAlert;
-        if (updates.reorderLevel !== undefined) dbUpdates.reorder_level = updates.reorderLevel;
 
         await supabase.from('products').update(dbUpdates).eq('id', id);
         setProductsUpdatedAt(Date.now());

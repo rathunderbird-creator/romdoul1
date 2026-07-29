@@ -697,7 +697,7 @@ const Orders: React.FC = () => {
         { id: 'items', label: 'Products' },
         { id: 'total', label: 'Total' },
         { id: 'payBy', label: 'Pay By' },
-        { id: 'balance', label: 'Balance' },
+        { id: 'balance', label: 'Pending Balance' },
         { id: 'status', label: 'Order Status' },
         { id: 'received', label: 'Received' },
         { id: 'payStatus', label: 'Pay Status' },
@@ -3276,33 +3276,7 @@ const Orders: React.FC = () => {
                                     </div>
                                 </>
                             )}
-                            
-                            {Object.values(stats.productCounts).some(c => c > 0) && (
-                                <>
-                                    <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
-                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                        {Object.entries(stats.productCounts)
-                                            .sort(([, a], [, b]) => b - a)
-                                            .map(([name, count]) => (
-                                                <span key={name} style={{
-                                                    backgroundColor: '#F3F4F6',
-                                                    color: '#4B5563',
-                                                    padding: '1px 5px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '10px',
-                                                    fontWeight: 600,
-                                                    whiteSpace: 'nowrap',
-                                                    display: 'inline-flex',
-                                                    alignItems: 'center',
-                                                    gap: '2px',
-                                                    border: '1px solid #E5E7EB'
-                                                }}>
-                                                    {name}: <strong style={{ fontSize: '11px' }}>{count}</strong>
-                                                </span>
-                                            ))}
-                                    </div>
-                                </>
-                            )}
+
                         </div>
 
 
