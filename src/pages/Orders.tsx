@@ -2465,8 +2465,8 @@ const Orders: React.FC = () => {
                                             if (status === 'ReStock') {
                                                 updateOrder(id, { paymentStatus: 'Cancel' });
                                                 restockOrder(id);
-                                            } else if (status === 'Returned') {
-                                                updateOrder(id, { paymentStatus: 'Cancel' });
+                                            } else if (status === 'Returned' || status === 'Cancelled') {
+                                                updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined });
                                             }
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
@@ -2950,8 +2950,8 @@ const Orders: React.FC = () => {
                                                                                 if (newStatus === 'ReStock') {
                                                                                     updateOrder(order.id, { paymentStatus: 'Cancel' });
                                                                                     restockOrder(order.id);
-                                                                                } else if (newStatus === 'Returned') {
-                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel' });
+                                                                                } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
+                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined });
                                                                                 }
                                                                             }}
                                                                         />

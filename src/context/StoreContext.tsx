@@ -1415,7 +1415,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         if (updates.paymentStatus === 'Cancel') {
             const currentShippingStatus = updates.shipping?.status || existingOrder?.shipping?.status;
-            if (currentShippingStatus !== 'Returned') {
+            if (currentShippingStatus !== 'Returned' && currentShippingStatus !== 'Cancelled') {
                 updates.shipping = { 
                     ...(existingOrder?.shipping || {}), 
                     ...(updates.shipping || {}), 

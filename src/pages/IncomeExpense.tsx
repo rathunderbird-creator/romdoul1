@@ -436,7 +436,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     }
 
     return (
-        <div style={{ paddingBottom: '40px', maxWidth: '1400px', margin: '0 auto' }}>
+        <div style={{ paddingBottom: '40px', maxWidth: '100%', margin: '0 auto' }}>
             {/* Premium Stats Grid */}
             <div style={{
                 display: 'grid',

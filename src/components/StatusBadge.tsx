@@ -49,7 +49,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         width: '100%'
     };
 
-    const options = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'];
+    const options = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
 
     // Update position when opening
     useEffect(() => {

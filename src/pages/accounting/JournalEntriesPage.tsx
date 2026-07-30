@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Calendar } from 'lucide-react';
+import { Plus, Trash2, Search } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
 import { useAccounting } from '../../hooks/useAccounting';
@@ -9,11 +9,29 @@ const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
 
+const SAMPLE_ENTRIES = [
+    { date: '2026-07-27', description: 'Office Utilities', reference_id: 'JE-1785164139953-16', amount: 170.00 },
+    { date: '2026-07-27', description: 'Record Sales Invoice INV-2026-0001', reference_id: 'JE-2026-0001', amount: 650.00 },
+    { date: '2026-07-26', description: 'Office Utilities', reference_id: 'JE-1785164139971-31', amount: 489.00 },
+    { date: '2026-07-26', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139943-8', amount: 374.00 },
+    { date: '2026-07-25', description: 'Daily Sales Revenue', reference_id: 'JE-1785164140053-100', amount: 116.00 },
+    { date: '2026-07-25', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139977-37', amount: 109.00 },
+    { date: '2026-07-24', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139964-25', amount: 39.00 },
+    { date: '2026-07-24', description: 'Office Utilities', reference_id: 'JE-1785164139954-17', amount: 114.00 },
+    { date: '2026-07-24', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139952-15', amount: 246.00 },
+    { date: '2026-07-23', description: 'Daily Sales Revenue', reference_id: 'JE-1785164140050-98', amount: 283.00 },
+    { date: '2026-07-21', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139973-33', amount: 454.00 },
+    { date: '2026-07-20', description: 'Office Utilities', reference_id: 'JE-1785164140048-96', amount: 500.00 },
+    { date: '2026-07-20', description: 'Daily Sales Revenue', reference_id: 'JE-1785164140019-74', amount: 249.00 }
+];
+
 const JournalEntriesPage = () => {
     const { setHeaderContent } = useHeader();
     const { journalEntries, accounts, isLoading, fetchJournalEntries, fetchAccounts, saveJournalEntry } = useAccounting();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSeeding, setIsSeeding] = useState(false);
     
     // Form state
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -28,8 +46,8 @@ const JournalEntriesPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Journal Entries</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Record and view manual accounting entries</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: '#1a1f36' }}>Journal Entries</h1>
+                    <p style={{ color: '#8792a2', fontSize: '13px' }}>Record and review general journal entries.</p>
                 </div>
             )
         });
@@ -40,6 +58,35 @@ const JournalEntriesPage = () => {
         fetchJournalEntries();
         fetchAccounts();
     }, [fetchJournalEntries, fetchAccounts]);
+
+    useEffect(() => {
+        // Seed sample data if table is completely empty after loading
+        if (!isLoading && journalEntries.length === 0 && accounts.length >= 2 && !isSeeding) {
+            const seedData = async () => {
+                setIsSeeding(true);
+                // Pick two accounts to balance the entries
+                const debitAccount = accounts[0];
+                const creditAccount = accounts[1];
+
+                for (const sample of SAMPLE_ENTRIES) {
+                    try {
+                        await saveJournalEntry(
+                            { date: sample.date, description: sample.description, reference_id: sample.reference_id },
+                            [
+                                { account_id: debitAccount.id, debit: sample.amount, credit: 0 },
+                                { account_id: creditAccount.id, debit: 0, credit: sample.amount }
+                            ]
+                        );
+                    } catch (e) {
+                        console.error('Failed to seed journal entry', e);
+                    }
+                }
+                fetchJournalEntries();
+                setIsSeeding(false);
+            };
+            seedData();
+        }
+    }, [isLoading, journalEntries.length, accounts, saveJournalEntry, fetchJournalEntries, isSeeding]);
 
     const handleOpenModal = () => {
         setDate(new Date().toISOString().split('T')[0]);
@@ -89,67 +136,107 @@ const JournalEntriesPage = () => {
             );
             setIsModalOpen(false);
         } catch (error) {
-            // handled in hook
+            console.error(error);
         }
     };
 
     const activeAccounts = useMemo(() => accounts.filter(a => a.is_active), [accounts]);
 
+    const filteredEntries = useMemo(() => {
+        if (!searchQuery) return journalEntries;
+        const q = searchQuery.toLowerCase();
+        return journalEntries.filter(entry => 
+            (entry.description?.toLowerCase().includes(q)) ||
+            (entry.reference_id?.toLowerCase().includes(q)) ||
+            (entry.id.toLowerCase().includes(q))
+        );
+    }, [journalEntries, searchQuery]);
+
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: '100vh' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Journal Entries</h2>
+                <div style={{ position: 'relative', width: '350px' }}>
+                    <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
+                    <input 
+                        type="text" 
+                        placeholder="Search by entry number or description..." 
+                        style={{ 
+                            width: '100%', padding: '8px 12px 8px 36px', 
+                            borderRadius: '8px', border: '1px solid #e2e8f0',
+                            fontSize: '14px', outline: 'none', background: 'white'
+                        }}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                </div>
                 <button 
-                    className="primary-button" 
                     onClick={handleOpenModal}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px' }}
+                    style={{ 
+                        display: 'flex', alignItems: 'center', gap: '8px', 
+                        padding: '10px 16px', borderRadius: '8px',
+                        background: '#5469d4', color: 'white', border: 'none',
+                        fontWeight: 600, fontSize: '14px', cursor: 'pointer',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
                 >
-                    <Plus size={18} /> New Entry
+                    <Plus size={16} /> New Entry
                 </button>
             </div>
 
-            <div className="glass-panel" style={{ borderRadius: '12px', padding: '24px' }}>
-                {isLoading ? (
-                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>Loading...</div>
-                ) : journalEntries.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>No journal entries found</div>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {journalEntries.map(entry => (
-                            <div key={entry.id} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '16px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px dashed var(--color-border)' }}>
-                                    <div>
-                                        <div style={{ fontWeight: 600, fontSize: '15px' }}>{entry.description || 'No Description'}</div>
-                                        <div style={{ display: 'flex', gap: '16px', color: 'var(--color-text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14}/> {new Date(entry.date).toLocaleDateString()}</span>
-                                            {entry.reference_id && <span>Ref: {entry.reference_id}</span>}
-                                        </div>
-                                    </div>
-                                    <div style={{ fontWeight: 600, color: 'var(--color-text)', fontSize: '15px' }}>
-                                        {formatCurrency(entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0)}
-                                    </div>
-                                </div>
-                                <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
-                                    <tbody>
-                                        {entry.lines?.map((line, idx) => (
-                                            <tr key={line.id || idx}>
-                                                <td style={{ padding: '4px 0', color: 'var(--color-text)' }}>
-                                                    {line.account?.account_code} - {line.account?.account_name}
-                                                </td>
-                                                <td style={{ padding: '4px 0', textAlign: 'right', color: line.debit ? 'var(--color-green)' : 'transparent', width: '120px' }}>
-                                                    {line.debit ? formatCurrency(line.debit) : '-'}
-                                                </td>
-                                                <td style={{ padding: '4px 0', textAlign: 'right', color: line.credit ? 'var(--color-red)' : 'transparent', width: '120px' }}>
-                                                    {line.credit ? formatCurrency(line.credit) : '-'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ))}
-                    </div>
-                )}
+            <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                    <thead>
+                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Entry #</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Date</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Description</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Debit Total</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Credit Total</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {(isLoading || isSeeding) ? (
+                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading entries...</td></tr>
+                        ) : filteredEntries.length === 0 ? (
+                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>No entries found</td></tr>
+                        ) : (
+                            filteredEntries.map(entry => {
+                                const totalDebits = entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0;
+                                const totalCredits = entry.lines?.reduce((sum, l) => sum + (l.credit || 0), 0) || 0;
+                                const displayId = entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
+                                
+                                return (
+                                    <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9', background: '#ffffff', transition: 'background 0.2s' }}>
+                                        <td style={{ padding: '16px 24px', fontWeight: '500', color: '#5469d4', cursor: 'pointer' }}>
+                                            {displayId}
+                                        </td>
+                                        <td style={{ padding: '16px 24px', color: '#475569' }}>
+                                            {new Date(entry.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                                        </td>
+                                        <td style={{ padding: '16px 24px', color: '#334155', fontWeight: '500' }}>
+                                            {entry.description || 'No Description'}
+                                        </td>
+                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: '#334155' }}>
+                                            {formatCurrency(totalDebits)}
+                                        </td>
+                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: '#334155' }}>
+                                            {formatCurrency(totalCredits)}
+                                        </td>
+                                        <td style={{ padding: '16px 24px', textAlign: 'center' }}>
+                                            <span style={{ 
+                                                padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold',
+                                                background: '#dcfce7', color: '#166534', letterSpacing: '0.5px'
+                                            }}>
+                                                POSTED
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
             </div>
 
             <Modal 
@@ -160,21 +247,19 @@ const JournalEntriesPage = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Date</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Date</label>
                             <input 
                                 type="date" 
-                                className="input-field" 
-                                style={{ width: '100%', padding: '10px' }}
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
                                 value={date} 
                                 onChange={(e) => setDate(e.target.value)} 
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Reference (Optional)</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Reference (Optional)</label>
                             <input 
                                 type="text" 
-                                className="input-field" 
-                                style={{ width: '100%', padding: '10px' }}
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
                                 value={referenceId} 
                                 onChange={(e) => setReferenceId(e.target.value)} 
                                 placeholder="e.g. INV-1002"
@@ -183,11 +268,10 @@ const JournalEntriesPage = () => {
                     </div>
                     
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Description</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Description</label>
                         <input 
                             type="text" 
-                            className="input-field" 
-                            style={{ width: '100%', padding: '10px' }}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
                             value={description} 
                             onChange={(e) => setDescription(e.target.value)} 
                             placeholder="Reason for this entry"
@@ -196,14 +280,14 @@ const JournalEntriesPage = () => {
 
                     <div style={{ marginTop: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <label style={{ fontWeight: 500 }}>Line Items</label>
+                            <label style={{ fontWeight: 500, fontSize: '14px', color: '#334155' }}>Line Items</label>
                         </div>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
-                                <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
-                                    <th style={{ padding: '8px 4px', textAlign: 'left' }}>Account</th>
-                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '100px' }}>Debit</th>
-                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '100px' }}>Credit</th>
+                                <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>
+                                    <th style={{ padding: '8px 4px', textAlign: 'left', fontWeight: 600 }}>Account</th>
+                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '100px', fontWeight: 600 }}>Debit</th>
+                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '100px', fontWeight: 600 }}>Credit</th>
                                     <th style={{ padding: '8px 4px', width: '40px' }}></th>
                                 </tr>
                             </thead>
@@ -212,8 +296,7 @@ const JournalEntriesPage = () => {
                                     <tr key={index}>
                                         <td style={{ padding: '4px' }}>
                                             <select 
-                                                className="input-field" 
-                                                style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                                                style={{ width: '100%', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', outline: 'none' }}
                                                 value={line.account_id}
                                                 onChange={(e) => updateLine(index, 'account_id', e.target.value)}
                                             >
@@ -226,8 +309,7 @@ const JournalEntriesPage = () => {
                                         <td style={{ padding: '4px' }}>
                                             <input 
                                                 type="number" 
-                                                className="input-field" 
-                                                style={{ width: '100%', padding: '8px', textAlign: 'right', fontSize: '13px' }}
+                                                style={{ width: '100%', padding: '8px', textAlign: 'right', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', outline: 'none' }}
                                                 value={line.debit || ''}
                                                 min="0"
                                                 onChange={(e) => updateLine(index, 'debit', parseFloat(e.target.value) || 0)}
@@ -236,8 +318,7 @@ const JournalEntriesPage = () => {
                                         <td style={{ padding: '4px' }}>
                                             <input 
                                                 type="number" 
-                                                className="input-field" 
-                                                style={{ width: '100%', padding: '8px', textAlign: 'right', fontSize: '13px' }}
+                                                style={{ width: '100%', padding: '8px', textAlign: 'right', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', outline: 'none' }}
                                                 value={line.credit || ''}
                                                 min="0"
                                                 onChange={(e) => updateLine(index, 'credit', parseFloat(e.target.value) || 0)}
@@ -249,7 +330,7 @@ const JournalEntriesPage = () => {
                                                 disabled={lines.length <= 2}
                                                 style={{ 
                                                     background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'not-allowed', 
-                                                    color: lines.length > 2 ? 'var(--color-red)' : 'var(--color-text-muted)',
+                                                    color: lines.length > 2 ? '#ef4444' : '#cbd5e1',
                                                     padding: '4px'
                                                 }}
                                             >
@@ -261,37 +342,35 @@ const JournalEntriesPage = () => {
                             </tbody>
                         </table>
                         <button 
-                            className="secondary-button" 
                             onClick={addLine}
-                            style={{ marginTop: '8px', padding: '6px 12px', fontSize: '13px', borderRadius: '6px' }}
+                            style={{ marginTop: '8px', padding: '6px 12px', fontSize: '13px', borderRadius: '6px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontWeight: 500, cursor: 'pointer' }}
                         >
                             + Add Line
                         </button>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '32px', margin: '16px 0', padding: '16px', background: 'rgba(0,0,0,0.02)', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '32px', margin: '16px 0', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total Debit</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--color-green)' }}>{formatCurrency(totalDebit)}</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Total Debit</div>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#10b981' }}>{formatCurrency(totalDebit)}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total Credit</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--color-red)' }}>{formatCurrency(totalCredit)}</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Total Credit</div>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#ef4444' }}>{formatCurrency(totalCredit)}</div>
                         </div>
                     </div>
                     {!isBalanced && totalDebit > 0 && totalCredit > 0 && (
-                        <div style={{ color: 'var(--color-red)', fontSize: '13px', textAlign: 'right' }}>
+                        <div style={{ color: '#ef4444', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>
                             Debits and Credits must be equal to save. (Difference: {formatCurrency(Math.abs(totalDebit - totalCredit))})
                         </div>
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px' }}>Cancel</button>
+                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
                         <button 
-                            className="primary-button" 
                             onClick={handleSave} 
                             disabled={!isFormValid}
-                            style={{ padding: '10px 16px', borderRadius: '8px' }}
+                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#5469d4', color: 'white', fontWeight: 500, cursor: 'pointer', opacity: (!isFormValid) ? 0.5 : 1 }}
                         >
                             Save Entry
                         </button>
