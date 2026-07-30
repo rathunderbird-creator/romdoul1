@@ -616,10 +616,10 @@ const DeliveryTracking: React.FC = () => {
                             itemQuery = itemQuery.lte('sales.date', end.toISOString());
                         }
 
-                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(50);
                         const { data: itemMatches } = await itemQuery;
                         if (itemMatches && itemMatches.length > 0) {
-                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id))).slice(0, 50);
                         }
                     }
 

@@ -1033,7 +1033,6 @@ const Orders: React.FC = () => {
                         if (pageFilter.length > 0) {
                             itemQuery = itemQuery.in('sales.page_source', pageFilter);
                         }
-                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(500);
                         
                         if (dateRange.start) {
                             const start = new Date(dateRange.start);
@@ -1047,12 +1046,12 @@ const Orders: React.FC = () => {
                         }
 
                         // Order by sale_id descending to get newest first before the limit kicks in
-                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(200);
+                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(50);
 
                         const { data: itemMatches } = await itemQuery;
 
                         if (itemMatches && itemMatches.length > 0) {
-                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id)));
+                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id))).slice(0, 50);
                         }
                     }
 
@@ -1164,10 +1163,10 @@ const Orders: React.FC = () => {
                             .from('sale_items')
                             .select('sale_id')
                             .ilike('name', `%${esc}%`)
-                            .limit(200);
+                            .limit(50);
                         
                         if (colItemMatches && colItemMatches.length > 0) {
-                            const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id)));
+                            const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id))).slice(0, 50);
                             query = query.in('id', ids);
                         } else {
                             query = query.eq('id', 'NO_MATCH');
@@ -2920,7 +2919,7 @@ const Orders: React.FC = () => {
                                                                             readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
                                                                             disabledOptions={
                                                                                 (order.shipping?.status === 'Shipped')
-                                                                                    ? ['Ordered', 'Pending', 'Confirmed']
+                                                                                    ? ['Ordered', 'Pending', 'Confirmed', 'Cancelled']
                                                                                     : ['Delivered', 'Returned']
                                                                             }
                                                                             onChange={(newStatus: string) => {

@@ -182,7 +182,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
                                     disabledOptions={
                                         (order.shipping?.status === 'Shipped')
-                                            ? ['Ordered', 'Pending', 'Confirmed']
+                                            ? ['Ordered', 'Pending', 'Confirmed', 'Cancelled']
                                             : ['Delivered', 'Returned']
                                     }
                                     onChange={(newStatus) => onUpdateStatus(order.id, newStatus)}

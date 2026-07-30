@@ -3,11 +3,24 @@ import { useStore } from '../context/StoreContext';
 import type { User, Role, Permission } from '../types';
 import { Plus, Edit2, Trash2, Shield, User as UserIcon, Check, Lock } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
-
+import { useHeader } from '../context/HeaderContext';
 const UserManagement: React.FC = () => {
     const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole, refreshData } = useStore();
     const { showToast } = useToast();
+    const { setHeaderContent } = useHeader();
     const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
+
+    React.useEffect(() => {
+        setHeaderContent({
+            title: (
+                <div style={{ marginBottom: '8px' }}>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>User Management</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage user accounts and roles</p>
+                </div>
+            )
+        });
+        return () => setHeaderContent(null);
+    }, [setHeaderContent]);
 
     React.useEffect(() => {
         refreshData(true);
@@ -147,9 +160,7 @@ const UserManagement: React.FC = () => {
     };
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '24px', color: 'var(--color-text)' }}>User Management</h1>
-
+        <div style={{ padding: '24px', maxWidth: '100%', margin: '0 auto' }}>
             <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', borderBottom: '1px solid var(--color-border)' }}>
                 <button
                     onClick={() => setActiveTab('users')}
