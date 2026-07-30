@@ -161,64 +161,76 @@ const UserManagement: React.FC = () => {
 
     return (
         <div style={{ padding: '24px', maxWidth: '100%', margin: '0 auto' }}>
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', borderBottom: '1px solid var(--color-border)' }}>
-                <button
-                    onClick={() => setActiveTab('users')}
-                    style={{
-                        padding: '12px 24px',
-                        borderBottom: activeTab === 'users' ? '2px solid var(--color-primary)' : 'none',
-                        color: activeTab === 'users' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                        fontWeight: activeTab === 'users' ? 'bold' : 'normal',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                    }}
-                >
-                    <UserIcon size={18} /> Users
-                </button>
-                <button
-                    onClick={() => setActiveTab('roles')}
-                    style={{
-                        padding: '12px 24px',
-                        borderBottom: activeTab === 'roles' ? '2px solid var(--color-primary)' : 'none',
-                        color: activeTab === 'roles' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                        fontWeight: activeTab === 'roles' ? 'bold' : 'normal',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                    }}
-                >
-                    <Shield size={18} /> Roles & Permissions
-                </button>
-            </div>
-
-            {activeTab === 'users' ? (
-                <div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                    <button
+                        onClick={() => setActiveTab('users')}
+                        style={{
+                            padding: '12px 24px',
+                            borderBottom: activeTab === 'users' ? '2px solid var(--color-primary)' : 'none',
+                            color: activeTab === 'users' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                            fontWeight: activeTab === 'users' ? 'bold' : 'normal',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}
+                    >
+                        <UserIcon size={18} /> Users
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('roles')}
+                        style={{
+                            padding: '12px 24px',
+                            borderBottom: activeTab === 'roles' ? '2px solid var(--color-primary)' : 'none',
+                            color: activeTab === 'roles' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                            fontWeight: activeTab === 'roles' ? 'bold' : 'normal',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}
+                    >
+                        <Shield size={18} /> Roles & Permissions
+                    </button>
+                </div>
+                
+                <div style={{ paddingBottom: '12px' }}>
+                    {activeTab === 'users' ? (
                         <button
                             onClick={() => handleOpenUserModal()}
                             style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'var(--color-primary)',
-                                color: 'white',
-                                padding: '10px 16px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontWeight: 500
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                background: 'var(--color-primary)', color: 'white',
+                                padding: '8px 16px', borderRadius: '8px',
+                                border: 'none', cursor: 'pointer', fontWeight: 500
                             }}
                         >
                             <Plus size={18} /> Add User
                         </button>
-                    </div>
+                    ) : (
+                        <button
+                            onClick={() => handleOpenRoleModal()}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                background: 'var(--color-primary)', color: 'white',
+                                padding: '8px 16px', borderRadius: '8px',
+                                border: 'none', cursor: 'pointer', fontWeight: 500
+                            }}
+                        >
+                            <Plus size={18} /> Add Role
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {activeTab === 'users' ? (
+                <div>
+
 
                     <div style={{ background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -284,25 +296,7 @@ const UserManagement: React.FC = () => {
                 </div>
             ) : (
                 <div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-                        <button
-                            onClick={() => handleOpenRoleModal()}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'var(--color-primary)',
-                                color: 'white',
-                                padding: '10px 16px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontWeight: 500
-                            }}
-                        >
-                            <Plus size={18} /> Add Role
-                        </button>
-                    </div>
+
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
                         {roles.map(role => (
