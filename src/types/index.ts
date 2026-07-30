@@ -274,6 +274,32 @@ export interface StoreContextType {
     addRole: (role: Omit<Role, 'id'>) => Promise<void>;
     updateRole: (id: string, role: Partial<Role>) => Promise<void>;
     deleteRole: (id: string) => Promise<void>;
+
+    // Warehouses
+    warehouses: Warehouse[];
+    warehouseStock: WarehouseStock[];
+    addWarehouse: (warehouse: Omit<Warehouse, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateWarehouse: (id: string, updates: Partial<Warehouse>) => Promise<void>;
+    deleteWarehouse: (id: string) => Promise<void>;
+}
+
+export interface Warehouse {
+    id: string;
+    name: string;
+    address?: string;
+    contact?: string;
+    capacity?: number;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface WarehouseStock {
+    id: string;
+    warehouseId: string;
+    productId: string;
+    quantity: number;
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 

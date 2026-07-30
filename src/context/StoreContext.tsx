@@ -2,7 +2,22 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
-import type { Product, CartItem, Sale, StoreContextType, Customer, User, Role, Permission, Restock, Transaction, TelegramConfig, BlockedCustomer } from '../types';
+import type { 
+    Product, 
+    CartItem, 
+    Sale, 
+    StoreContextType, 
+    Customer, 
+    User, 
+    Role, 
+    Permission, 
+    Restock, 
+    Transaction, 
+    TelegramConfig, 
+    BlockedCustomer,
+    Warehouse,
+    WarehouseStock
+} from '../types';
 
 interface ConfigState {
     shippingCompanies: string[];
@@ -56,6 +71,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [users, setUsers] = useState<User[]>([]); // Added users state
+    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+    const [warehouseStock, setWarehouseStock] = useState<WarehouseStock[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [hasMoreOrders, setHasMoreOrders] = useState(true);
@@ -257,7 +274,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             };
 
             // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
-            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult] = await Promise.all([
+            const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult, warehousesResult, warehouseStockResult] = await Promise.all([
                 supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at').order('created_at', { ascending: false }),
                 supabase.from('customers').select('id, name, phone'),
                 fetchAllSales(),
@@ -265,7 +282,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 supabase.from('users').select('*'),
                 supabase.from('restocks').select('*').order('date', { ascending: false }).limit(50),
                 supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
-                supabase.from('telegram_notifications').select('*')
+                supabase.from('telegram_notifications').select('*'),
+                supabase.from('warehouses').select('*').order('created_at', { ascending: true }),
+                supabase.from('warehouse_stock').select('*')
             ]);
 
             console.log('Fetched Sales Count:', salesResult.data?.length);
@@ -283,6 +302,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     invoiceNumber: p.invoice_number,
                     supplier: p.supplier,
                     createdAt: p.created_at
+                })));
+            }
+
+            // Warehouses
+            if (warehousesResult.data) {
+                setWarehouses(warehousesResult.data.map((w: any) => ({
+                    ...w,
+                    createdAt: w.created_at,
+                    updatedAt: w.updated_at
+                })));
+            }
+
+            if (warehouseStockResult.data) {
+                setWarehouseStock(warehouseStockResult.data.map((ws: any) => ({
+                    ...ws,
+                    warehouseId: ws.warehouse_id,
+                    productId: ws.product_id,
+                    createdAt: ws.created_at,
+                    updatedAt: ws.updated_at
                 })));
             }
 
@@ -2612,6 +2650,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // Authentication logic moved to top
 
+    // Warehouse Operations
+    const addWarehouse = async (warehouse: Omit<Warehouse, 'id' | 'createdAt' | 'updatedAt'>) => {
+        const { data, error } = await supabase.from('warehouses').insert([warehouse]).select().single();
+        if (error) throw error;
+        setWarehouses(prev => [...prev, { ...data, createdAt: data.created_at, updatedAt: data.updated_at }]);
+    };
+
+    const updateWarehouse = async (id: string, updates: Partial<Warehouse>) => {
+        const { error } = await supabase.from('warehouses').update(updates).eq('id', id);
+        if (error) throw error;
+        setWarehouses(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
+    };
+
+    const deleteWarehouse = async (id: string) => {
+        const { error } = await supabase.from('warehouses').delete().eq('id', id);
+        if (error) throw error;
+        setWarehouses(prev => prev.filter(w => w.id !== id));
+    };
+
     return (
         <StoreContext.Provider value={{
             products,
@@ -2632,6 +2689,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addRole,
             updateRole,
             deleteRole,
+            warehouses,
+            warehouseStock,
+            addWarehouse,
+            updateWarehouse,
+            deleteWarehouse,
             addToCart,
             removeFromCart,
             updateCartQuantity,

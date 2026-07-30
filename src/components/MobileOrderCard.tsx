@@ -179,7 +179,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             <div className="moc-status-control">
                                 <StatusBadge
                                     status={order.shipping?.status || 'Pending'}
-                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.paymentStatus === 'Cancel'}
+                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
                                     disabledOptions={
                                         (order.shipping?.status === 'Shipped')
                                             ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']

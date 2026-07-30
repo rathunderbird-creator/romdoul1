@@ -831,6 +831,7 @@ const DeliveryTracking: React.FC = () => {
         if (shippingStatus === 'Shipped') return 'shipped-row';
         if (shippingStatus === 'Delivered') return 'delivered-row';
         if (shippingStatus === 'Returned') return 'returned-row';
+        if (shippingStatus === 'Cancelled') return 'returned-row';
 
         // Secondary: Payment Status
         if (order.paymentStatus === 'Paid') return 'paid-settled-row';

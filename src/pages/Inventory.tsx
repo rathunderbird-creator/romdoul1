@@ -159,9 +159,18 @@ const Inventory: React.FC = () => {
 
     // State
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [hoverPreview, setHoverPreview] = useState<{ src: string; x: number; y: number } | null>(null);
+
+    React.useEffect(() => {
+        const fetchSuppliers = async () => {
+            const { data } = await supabase.from('suppliers').select('id, name').eq('is_active', true);
+            if (data) setSuppliers(data);
+        };
+        fetchSuppliers();
+    }, []);
 
     const handleImageHover = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const anchor = e.currentTarget;
@@ -775,6 +784,9 @@ const Inventory: React.FC = () => {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Cost {sortConfig?.key === 'purchaseCost' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                                 </th>
                             )}
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('supplier')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Supplier {sortConfig?.key === 'supplier' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('price')}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Sell Price {sortConfig?.key === 'price' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
@@ -813,6 +825,9 @@ const Inventory: React.FC = () => {
                                             ${(product.purchaseCost || 0).toFixed(2)}
                                         </td>
                                     )}
+                                    <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
+                                        {product.supplier || '-'}
+                                    </td>
                                     <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827' }}>
                                         <InlineEditCell 
                                             value={product.price} 
@@ -968,6 +983,16 @@ const Inventory: React.FC = () => {
                                             <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>Enable alerts for this product</span>
                                         </label>
                                     </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier</label>
+                                        <select className="search-input" style={{ width: '100%' }} value={formData.supplier || ''} onChange={e => setFormData({ ...formData, supplier: e.target.value })}>
+                                            <option value="">Select Supplier</option>
+                                            {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div></div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>

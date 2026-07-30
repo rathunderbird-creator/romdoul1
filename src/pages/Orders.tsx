@@ -1267,6 +1267,7 @@ const Orders: React.FC = () => {
         if (shippingStatus === 'Shipped') return 'shipped-row';
         if (shippingStatus === 'Delivered') return 'delivered-row';
         if (shippingStatus === 'Returned') return 'returned-row';
+        if (shippingStatus === 'Cancelled') return 'returned-row';
 
         // Secondary: Payment Status
         if (order.paymentStatus === 'Paid') return 'paid-settled-row';
@@ -2916,7 +2917,7 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.paymentStatus === 'Cancel'}
+                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
                                                                             disabledOptions={
                                                                                 (order.shipping?.status === 'Shipped')
                                                                                     ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']

@@ -19,6 +19,7 @@ interface StockOutRecord {
     product_name: string;
     quantity: number;
     reason: string;
+    supplier: string;
     reference_id: string;
     order_id: string;
     note: string;
@@ -28,6 +29,7 @@ interface StockOutRecord {
     movement_date: string;
     created_at: string;
     created_by: string;
+    warehouse_id?: string;
 }
 
 const REASON_OPTIONS = [
@@ -42,7 +44,7 @@ const REASON_OPTIONS = [
 ];
 
 const StockOut: React.FC = () => {
-    const { products, updateProduct, currentUser, shippingCompanies } = useStore();
+    const { products, updateProduct, currentUser, shippingCompanies, warehouses } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -50,7 +52,16 @@ const StockOut: React.FC = () => {
     const isAdmin = currentUser?.roleId === 'admin';
 
     const [records, setRecords] = useState<StockOutRecord[]>([]);
+    const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
+
+    useEffect(() => {
+        const fetchSuppliers = async () => {
+            const { data } = await supabase.from('suppliers').select('id, name').eq('is_active', true);
+            if (data) setSuppliers(data);
+        };
+        fetchSuppliers();
+    }, []);
     const [searchTerm, setSearchTerm] = useState('');
     const [reasonFilter, setReasonFilter] = useState('');
     const [shippingCoFilter, setShippingCoFilter] = useState('');
@@ -78,10 +89,12 @@ const StockOut: React.FC = () => {
     const [orderId, setOrderId] = useState('');
     const [note, setNote] = useState('');
     const [shippingCo, setShippingCo] = useState('');
+    const [supplier, setSupplier] = useState('');
     const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
     const [productSearch, setProductSearch] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
+    const [warehouseId, setWarehouseId] = useState('');
 
     // Edit modal state
     const [editRecord, setEditRecord] = useState<StockOutRecord | null>(null);
@@ -94,6 +107,8 @@ const StockOut: React.FC = () => {
     const [editDate, setEditDate] = useState('');
     const [editCustomerName, setEditCustomerName] = useState('');
     const [editCustomerPhone, setEditCustomerPhone] = useState('');
+    const [editWarehouseId, setEditWarehouseId] = useState('');
+    const [editSupplier, setEditSupplier] = useState('');
 
     useEffect(() => {
         setHeaderContent({
@@ -216,8 +231,8 @@ const StockOut: React.FC = () => {
     const hasActiveFilters = dateRange.start || dateRange.end || searchTerm || reasonFilter || shippingCoFilter || productFilter;
 
     const handleStockOut = async () => {
-        if (!selectedProductId || !quantity || Number(quantity) <= 0) {
-            showToast('Please select a product and enter a valid quantity', 'error');
+        if (!selectedProductId || !quantity || Number(quantity) <= 0 || !warehouseId) {
+            showToast('Please select a product, warehouse, and enter a valid quantity', 'error');
             return;
         }
 
@@ -243,6 +258,7 @@ const StockOut: React.FC = () => {
                 type: 'out',
                 quantity: Number(quantity),
                 reason: reason,
+                supplier: supplier,
                 reference_id: referenceId.trim(),
                 order_id: orderId.trim(),
                 note: note.trim(),
@@ -250,6 +266,7 @@ const StockOut: React.FC = () => {
                 customer_name: customerName.trim(),
                 customer_phone: customerPhone.trim(),
                 movement_date: movementDate,
+                warehouse_id: warehouseId,
                 created_by: currentUser?.id || 'unknown'
             });
 
@@ -258,7 +275,21 @@ const StockOut: React.FC = () => {
                 throw new Error(error.message);
             }
 
-            showToast(`Removed ${quantity} units from ${product.name}. New stock: ${newStock}`, 'success');
+            // Also update warehouse_stock
+            const { data: existingStock } = await supabase
+                .from('warehouse_stock')
+                .select('id, quantity')
+                .eq('warehouse_id', warehouseId)
+                .eq('product_id', product.id)
+                .single();
+
+            if (existingStock) {
+                await supabase.from('warehouse_stock').update({ quantity: existingStock.quantity - Number(quantity) }).eq('id', existingStock.id);
+            } else {
+                await supabase.from('warehouse_stock').insert({ warehouse_id: warehouseId, product_id: product.id, quantity: -Number(quantity) });
+            }
+
+            showToast(`Removed ${quantity} units of ${product.name}. New stock: ${newStock}`, 'success');
             dispatchActivity({ action: 'stock_out', description: `Stock-Out: ${quantity} × ${product.name}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: product.id, quantity: Number(quantity) } });
             setSelectedProductId('');
             setQuantity('');
@@ -289,6 +320,8 @@ const StockOut: React.FC = () => {
         setEditDate(record.movement_date);
         setEditCustomerName(record.customer_name || '');
         setEditCustomerPhone(record.customer_phone || '');
+        setEditWarehouseId(record.warehouse_id || '');
+        setEditSupplier(record.supplier || '');
     };
 
     const handleEditSave = async () => {
@@ -299,6 +332,29 @@ const StockOut: React.FC = () => {
         }
 
         try {
+            const product = products.find(p => p.id === editRecord.product_id);
+            if (product) {
+                const oldQty = editRecord.quantity;
+                const newQty = Number(editQuantity);
+                const qtyDiff = newQty - oldQty;
+
+                if (qtyDiff !== 0) {
+                    const newStock = product.stock - qtyDiff; // minus because it's stock out
+                    await updateProduct(product.id, { stock: newStock });
+
+                    // Update warehouse stock
+                    const warehouseIdToUpdate = editWarehouseId || editRecord.warehouse_id;
+                    if (warehouseIdToUpdate) {
+                        const { data: ws } = await supabase.from('warehouse_stock').select('id, quantity').eq('warehouse_id', warehouseIdToUpdate).eq('product_id', product.id).single();
+                        if (ws) {
+                            await supabase.from('warehouse_stock').update({ quantity: ws.quantity - qtyDiff }).eq('id', ws.id);
+                        } else {
+                            await supabase.from('warehouse_stock').insert({ warehouse_id: warehouseIdToUpdate, product_id: product.id, quantity: -qtyDiff });
+                        }
+                    }
+                }
+            }
+
             const updatedFields = {
                 quantity: Number(editQuantity),
                 reason: editReason,
@@ -308,7 +364,9 @@ const StockOut: React.FC = () => {
                 shipping_co: editShippingCo.trim(),
                 customer_name: editCustomerName.trim(),
                 customer_phone: editCustomerPhone.trim(),
-                movement_date: editDate
+                movement_date: editDate,
+                warehouse_id: editWarehouseId || undefined,
+                supplier: editSupplier
             };
 
             const { error } = await supabase
@@ -331,6 +389,20 @@ const StockOut: React.FC = () => {
         if (!confirm(`Delete stock-out record for "${record.product_name}" (${record.quantity} units)?`)) return;
 
         try {
+            // Revert product stock
+            const product = products.find(p => p.id === record.product_id);
+            if (product) {
+                await updateProduct(product.id, { stock: product.stock + record.quantity });
+                
+                // Revert warehouse stock
+                if (record.warehouse_id) {
+                    const { data: ws } = await supabase.from('warehouse_stock').select('id, quantity').eq('warehouse_id', record.warehouse_id).eq('product_id', product.id).single();
+                    if (ws) {
+                        await supabase.from('warehouse_stock').update({ quantity: ws.quantity + record.quantity }).eq('id', ws.id);
+                    }
+                }
+            }
+
             // Optimistic removal from local state
             setRecords(prev => prev.filter(r => r.id !== record.id));
 
@@ -629,6 +701,34 @@ const StockOut: React.FC = () => {
                             />
                         </div>
 
+                        {/* Supplier */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Supplier</label>
+                            <select
+                                value={supplier}
+                                onChange={(e) => setSupplier(e.target.value)}
+                                style={inputStyle}
+                            >
+                                <option value="">Select Supplier</option>
+                                {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                        {/* Warehouse */}
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Warehouse *</label>
+                            <select
+                                value={warehouseId}
+                                onChange={(e) => setWarehouseId(e.target.value)}
+                                style={inputStyle}
+                            >
+                                <option value="">Select Warehouse</option>
+                                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                            </select>
+                        </div>
+
                         {/* Note */}
                         <div>
                             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Note</label>
@@ -749,6 +849,7 @@ const StockOut: React.FC = () => {
                                 <th>Customer</th>
                                 <th>Phone</th>
                                 <th>Shipping Co</th>
+                                <th>Supplier</th>
                                 <th>Order ID</th>
                                 <th>Reference</th>
                                 <th>Note</th>
@@ -787,6 +888,9 @@ const StockOut: React.FC = () => {
                                             )}
                                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{record.shipping_co || "-"}</span>
                                         </div>
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 500 }}>
+                                        {record.supplier || '-'}
                                     </td>
                                     <td style={{ fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 500 }}>
                                         {record.order_id || '-'}
@@ -900,6 +1004,20 @@ const StockOut: React.FC = () => {
                             {REASON_OPTIONS.map(r => (
                                 <option key={r} value={r} style={{ color: getShippingCoColor(r) }}>{r}</option>
                             ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Supplier</label>
+                        <select value={editSupplier} onChange={(e) => setEditSupplier(e.target.value)} style={inputStyle}>
+                            <option value="">Select Supplier</option>
+                            {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Warehouse</label>
+                        <select value={editWarehouseId} onChange={(e) => setEditWarehouseId(e.target.value)} style={inputStyle}>
+                            <option value="">Select Warehouse</option>
+                            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                         </select>
                     </div>
                     <div>

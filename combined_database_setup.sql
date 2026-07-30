@@ -392,6 +392,28 @@ CREATE TABLE IF NOT EXISTS public.crm_quotation_items (
     unit_price NUMERIC(12, 2) NOT NULL DEFAULT 0
 );
 
+-- Warehouses
+CREATE TABLE IF NOT EXISTS public.warehouses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    address TEXT,
+    contact TEXT,
+    capacity INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Warehouse Stock
+CREATE TABLE IF NOT EXISTS public.warehouse_stock (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    warehouse_id UUID REFERENCES public.warehouses(id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES public.products(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    UNIQUE(warehouse_id, product_id)
+);
+
 -- Disable RLS on new tables
 ALTER TABLE public.suppliers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_orders DISABLE ROW LEVEL SECURITY;
@@ -404,3 +426,5 @@ ALTER TABLE public.crm_leads DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_interactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_quotations DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_quotation_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouses DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_stock DISABLE ROW LEVEL SECURITY;
