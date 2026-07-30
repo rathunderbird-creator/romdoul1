@@ -30,7 +30,7 @@ const TelegramSettings: React.FC = () => {
                 name: 'Main Group',
                 botToken: telegramBotToken || '',
                 chatId: telegramChatId || '',
-                triggerStatuses: ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned'],
+                triggerStatuses: ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned'],
                 note: ''
             }];
         }
@@ -94,7 +94,7 @@ const TelegramSettings: React.FC = () => {
                                 name: 'New Group',
                                 botToken: '',
                                 chatId: '',
-                                triggerStatuses: ['Ordered']
+                                triggerStatuses: ['Drafted']
                             };
                             setLocalState({ ...localState, telegramConfigs: [...(localState.telegramConfigs || []), newConfig] });
                         }}
@@ -204,7 +204,7 @@ const TelegramSettings: React.FC = () => {
                                                     onChange={(e) => {
                                                         const newConfigs = [...localState.telegramConfigs];
                                                         if (e.target.checked) {
-                                                            newConfigs[index] = { ...newConfigs[index], triggerStatuses: ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'] };
+                                                            newConfigs[index] = { ...newConfigs[index], triggerStatuses: ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'] };
                                                         } else {
                                                             newConfigs[index] = { ...newConfigs[index], triggerStatuses: [] };
                                                         }
@@ -214,7 +214,7 @@ const TelegramSettings: React.FC = () => {
                                                 />
                                                 All Statuses
                                             </label>
-                                            {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(status => (
+                                            {['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(status => (
                                                 <label key={status} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', cursor: 'pointer', fontSize: '13px' }}>
                                                     <input
                                                         type="checkbox"

@@ -39,7 +39,7 @@ const getStatusBorderColor = (s: string) => {
         case 'Cancelled': return '#DC2626';
         case 'Returned': return '#DC2626';
         case 'ReStock': return '#7E22CE';
-        case 'Ordered': return '#111827';
+        case 'Drafted': return '#111827';
         default: return '#4B5563';
     }
 };
@@ -1261,7 +1261,7 @@ const Orders: React.FC = () => {
 
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
-        if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Drafted') return 'ordered-row';
         if (shippingStatus === 'Confirmed') return 'confirmed-row';
         if (shippingStatus === 'Pending') return 'pending-row';
         if (shippingStatus === 'Shipped') return 'shipped-row';
@@ -1286,7 +1286,7 @@ const Orders: React.FC = () => {
 
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
-        if (shippingStatus === 'Ordered') return 'white';
+        if (shippingStatus === 'Drafted') return 'white';
         if (shippingStatus === 'Confirmed') return '#F0F9FF';
         if (shippingStatus === 'Pending') return '#FFFBEB';
         if (shippingStatus === 'Shipped') return '#EFF6FF';
@@ -1864,7 +1864,7 @@ const Orders: React.FC = () => {
                                                         checked={statusFilter.length === 7}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setStatusFilter(['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock']);
+                                                                setStatusFilter(['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock']);
                                                             } else {
                                                                 setStatusFilter([]);
                                                             }
@@ -1873,7 +1873,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                 </label>
-                                                {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
+                                                {['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -2749,7 +2749,7 @@ const Orders: React.FC = () => {
 
                                             return (
                                                 <tr key={order.id} className={rowClass}>
-                                                    <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Ordered' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
+                                                    <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Drafted' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
                                                         {isAdmin && (
                                                             <input
                                                                 type="checkbox"
@@ -2871,7 +2871,7 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <PaymentStatusBadge
                                                                             status={order.paymentStatus || 'Paid'}
-                                                                            disabledOptions={[]}
+                                                                            disabledOptions={['Cancel']}
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
@@ -2892,7 +2892,7 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 updateOrder(order.id, updates);
                                                                             }}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Ordered' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
+                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
                                                                         />
                                                                     </td>
                                                                 );
@@ -2916,10 +2916,10 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
+                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.paymentStatus === 'Cancel'}
                                                                             disabledOptions={
                                                                                 (order.shipping?.status === 'Shipped')
-                                                                                    ? ['Ordered', 'Pending', 'Confirmed', 'Cancelled']
+                                                                                    ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
                                                                                     : ['Delivered', 'Returned']
                                                                             }
                                                                             onChange={(newStatus: string) => {
@@ -3195,7 +3195,7 @@ const Orders: React.FC = () => {
                             </div>
                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                 {(() => {
-                                    const statuses = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
+                                    const statuses = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
                                     const getStatusColors = (s: string) => {
                                         switch (s) {
                                             case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
@@ -3205,7 +3205,7 @@ const Orders: React.FC = () => {
                                             case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626' };
                                             case 'Returned': return { bg: '#F3F4F6', color: '#DC2626' };
                                             case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE' };
-                                            case 'Ordered': return { bg: '#F3F4F6', color: '#111827' };
+                                            case 'Drafted': return { bg: '#F3F4F6', color: '#111827' };
                                             default: return { bg: '#F3F4F6', color: '#4B5563' };
                                         }
                                     };

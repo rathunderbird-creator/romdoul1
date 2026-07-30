@@ -150,7 +150,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
       case 'Delivered': return '#10B981';
       case 'Shipped': return '#3B82F6';
       case 'Confirmed': return '#6366F1';
-      case 'Ordered': return '#8B5CF6';
+      case 'Drafted': return '#8B5CF6';
       case 'Pending': return '#F59E0B';
       case 'Cancelled': return '#EF4444';
       case 'Returned': return '#EF4444';
@@ -164,7 +164,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
       case 'Delivered': return <CheckCircle size={14} />;
       case 'Shipped': return <Truck size={14} />;
       case 'Confirmed': return <CheckCircle size={14} />;
-      case 'Ordered': return <Package size={14} />;
+      case 'Drafted': return <Package size={14} />;
       case 'Pending': return <Clock size={14} />;
       case 'Cancelled': return <XCircle size={14} />;
       case 'Returned': return <RotateCcw size={14} />;

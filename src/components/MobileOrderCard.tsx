@@ -54,7 +54,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
             case 'Cancelled': return '#DC2626'; // Red
             case 'Returned': return '#DC2626'; // Red
             case 'ReStock': return '#7E22CE'; // Purple
-            case 'Ordered': return '#9CA3AF'; // Gray
+            case 'Drafted': return '#9CA3AF'; // Gray
             default: return '#4B5563'; // Gray
         }
     };
@@ -179,10 +179,10 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             <div className="moc-status-control">
                                 <StatusBadge
                                     status={order.shipping?.status || 'Pending'}
-                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.paymentStatus === 'Cancel'}
+                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.paymentStatus === 'Cancel'}
                                     disabledOptions={
                                         (order.shipping?.status === 'Shipped')
-                                            ? ['Ordered', 'Pending', 'Confirmed', 'Cancelled']
+                                            ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
                                             : ['Delivered', 'Returned']
                                     }
                                     onChange={(newStatus) => onUpdateStatus(order.id, newStatus)}
@@ -196,8 +196,8 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     status={order.paymentStatus || 'Paid'}
                                     onChange={(newStatus) => onUpdatePaymentStatus(order.id, newStatus)}
                                     // simplified readOnly logic for mobile
-                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Ordered' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
-                                    disabledOptions={[]}
+                                    readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
+                                    disabledOptions={['Cancel']}
                                 />
                             </div>
                         </div>

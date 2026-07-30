@@ -135,7 +135,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         paymentAfterDelivery: orderToEdit?.paymentStatus === 'Unpaid',
         discount: orderToEdit?.discount || '',
         enableDiscount: (orderToEdit?.discount || 0) > 0,
-        shippingStatus: orderToEdit?.shipping?.status || 'Ordered',
+        shippingStatus: orderToEdit?.shipping?.status || 'Drafted',
         paymentStatus: orderToEdit?.paymentStatus || 'Unpaid',
         date: orderToEdit?.date || new Date().toISOString()
     };
@@ -373,7 +373,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 paymentAfterDelivery: isCOD,
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
-                shippingStatus: orderToEdit.shipping?.status || 'Ordered',
+                shippingStatus: orderToEdit.shipping?.status || 'Drafted',
                 paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || ''
             });
@@ -986,7 +986,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {[{id: 'Ordered', name: 'Ordered'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Ordered'}>{s.name}</option>)}
+                                    {[{id: 'Drafted', name: 'Drafted'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Drafted'}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div>

@@ -26,7 +26,7 @@ const getStatusBorderColor = (s: string) => {
         case 'Cancelled': return '#DC2626';
         case 'Returned': return '#DC2626';
         case 'ReStock': return '#7E22CE';
-        case 'Ordered': return '#111827';
+        case 'Drafted': return '#111827';
         default: return '#4B5563';
     }
 };
@@ -721,7 +721,7 @@ const PaymentTracking: React.FC = () => {
 
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
-        if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Drafted') return 'ordered-row';
         if (shippingStatus === 'Confirmed') return 'confirmed-row';
         if (shippingStatus === 'Pending') return 'pending-row';
         if (shippingStatus === 'Shipped') return 'shipped-row';
@@ -1153,7 +1153,7 @@ const PaymentTracking: React.FC = () => {
                     <tbody>
                         {paginatedOrders.map((order) => (
                             <tr key={order.id} className={getRowClass(order)}>
-                                <td style={{ width: '40px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Ordered' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
+                                <td style={{ width: '40px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Drafted' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.has(order.id)}
@@ -1225,7 +1225,7 @@ const PaymentTracking: React.FC = () => {
                                         readOnly={order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered'}
                                         disabledOptions={
                                             (order.shipping?.status === 'Shipped')
-                                                ? ['Ordered', 'Pending', 'Confirmed']
+                                                ? ['Drafted', 'Pending', 'Confirmed']
                                                 : ['Delivered', 'Returned']
                                         }
                                         onChange={(newStatus: string) => {

@@ -196,7 +196,7 @@
     "amount": "Amount"
   },
   "status": {
-    "ordered": "Ordered",
+    "ordered": "Drafted",
     "confirmed": "Confirmed",
     "pending": "Pending",
     "shipped": "Shipped",

@@ -8,7 +8,7 @@ import type { Sale } from '../../types';
 
 
 const COLORS = ['#8B5CF6', '#EC4899', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#6B7280'];
-const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Ordered', 'Returned', 'Cancelled'];
+const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Drafted', 'Returned', 'Cancelled'];
 
 const ShippingReport: React.FC = () => {
     const { reportSales } = useOutletContext<any>();
@@ -72,7 +72,7 @@ const ShippingReport: React.FC = () => {
             if (status === 'Delivered') { r.delivered += 1; totalDel += 1; }
             else if (status === 'Shipped') r.shipped += 1;
             else if (status === 'Returned') r.returned += 1;
-            else if (status === 'Pending' || status === 'Ordered' || status === 'Confirmed') r.pending += 1;
+            else if (status === 'Pending' || status === 'Drafted' || status === 'Confirmed') r.pending += 1;
             else r.other += 1;
         });
 

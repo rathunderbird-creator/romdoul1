@@ -22,7 +22,7 @@ const getStatusBorderColor = (s: string) => {
         case 'Cancelled': return '#DC2626';
         case 'Returned': return '#DC2626';
         case 'ReStock': return '#7E22CE';
-        case 'Ordered': return '#111827';
+        case 'Drafted': return '#111827';
         default: return '#4B5563';
     }
 };
@@ -323,7 +323,7 @@ const DeliveryTracking: React.FC = () => {
         trackingNumber: '',
         cost: 0,
         staffName: '',
-        status: 'Pending' as 'Ordered' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
+        status: 'Pending' as 'Drafted' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
     });
 
 
@@ -746,7 +746,7 @@ const DeliveryTracking: React.FC = () => {
             trackingNumber: order.shipping?.trackingNumber || '',
             cost: order.shipping?.cost || 0,
             staffName: order.shipping?.staffName || '',
-            status: (order.shipping?.status || 'Pending') as 'Ordered' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
+            status: (order.shipping?.status || 'Pending') as 'Drafted' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock'
         });
         setIsEditModalOpen(true);
     };
@@ -754,7 +754,7 @@ const DeliveryTracking: React.FC = () => {
 
 
     const StatusStepper = ({ currentStatus }: { currentStatus: string }) => {
-        const steps = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered'];
+        const steps = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered'];
         const currentIdx = steps.indexOf(currentStatus);
         const isCancelled = currentStatus === 'Cancelled';
 
@@ -825,7 +825,7 @@ const DeliveryTracking: React.FC = () => {
 
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
-        if (shippingStatus === 'Ordered') return 'ordered-row';
+        if (shippingStatus === 'Drafted') return 'ordered-row';
         if (shippingStatus === 'Confirmed') return 'confirmed-row';
         if (shippingStatus === 'Pending') return 'pending-row';
         if (shippingStatus === 'Shipped') return 'shipped-row';
@@ -1108,14 +1108,14 @@ const DeliveryTracking: React.FC = () => {
                                         type="checkbox"
                                         checked={statusFilter.length === 8}
                                         onChange={(e) => {
-                                            if (e.target.checked) setStatusFilter(['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled']);
+                                            if (e.target.checked) setStatusFilter(['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled']);
                                             else setStatusFilter([]);
                                         }}
                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
                                     <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                 </label>
-                                {['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(s => {
+                                {['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(s => {
                                     const getStatusColors = (status: string) => {
                                         switch (status) {
                                             case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
@@ -1125,7 +1125,7 @@ const DeliveryTracking: React.FC = () => {
                                             case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626' };
                                             case 'Returned': return { bg: '#F3F4F6', color: '#DC2626' };
                                             case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE' };
-                                            case 'Ordered': return { bg: '#F3F4F6', color: '#111827' };
+                                            case 'Drafted': return { bg: '#F3F4F6', color: '#111827' };
                                             default: return { bg: '#F3F4F6', color: '#4B5563' };
                                         }
                                     };
@@ -1358,7 +1358,7 @@ const DeliveryTracking: React.FC = () => {
                         <tbody>
                             {paginatedOrders.map((order) => (
                                 <tr key={order.id} className={getRowClass(order)}>
-                                    <td style={{ width: '40px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Ordered' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
+                                    <td style={{ width: '40px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Drafted' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
                                         <input
                                             type="checkbox"
                                             checked={selectedIds.has(order.id)}
@@ -1485,7 +1485,7 @@ const DeliveryTracking: React.FC = () => {
                         </div>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                             {(() => {
-                                const statuses = ['Ordered', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
+                                const statuses = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
                                 const getStatusColors = (s: string) => {
                                     switch (s) {
                                         case 'Pending': return { bg: '#FEF3C7', color: '#D97706' };
@@ -1495,7 +1495,7 @@ const DeliveryTracking: React.FC = () => {
                                         case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626' };
                                         case 'Returned': return { bg: '#F3F4F6', color: '#DC2626' };
                                         case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE' };
-                                        case 'Ordered': return { bg: '#F3F4F6', color: '#111827' };
+                                        case 'Drafted': return { bg: '#F3F4F6', color: '#111827' };
                                         default: return { bg: '#F3F4F6', color: '#4B5563' };
                                     }
                                 };
@@ -1663,8 +1663,8 @@ const DeliveryTracking: React.FC = () => {
 
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Ordered' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
-                                        <option value="Ordered">Ordered</option>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Drafted' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
+                                        <option value="Drafted">Drafted</option>
                                         <option value="Pending">Pending</option>
                                         <option value="Confirmed">Confirmed</option>
                                         <option value="Shipped">Shipped</option>

@@ -23,7 +23,7 @@ const getStatusBorderColor = (s: string) => {
         case 'Cancelled': return '#DC2626';
         case 'Returned': return '#DC2626';
         case 'ReStock': return '#7E22CE';
-        case 'Ordered': return '#111827';
+        case 'Drafted': return '#111827';
         default: return '#4B5563';
     }
 };

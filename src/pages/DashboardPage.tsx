@@ -266,7 +266,7 @@ const Dashboard: React.FC = () => {
             const status = sale.shipping?.status;
             let field: 'ordered' | 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'returned' | 'restock' | null = null;
 
-            if (status === 'Ordered') field = 'ordered';
+            if (status === 'Drafted') field = 'ordered';
             else if (status === 'Confirmed') field = 'confirmed';
             else if (status === 'Pending') field = 'pending';
             else if (status === 'Shipped') field = 'shipped';
@@ -465,7 +465,7 @@ const Dashboard: React.FC = () => {
                     else if (stat.status === 'Cancelled' || stat.status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; } // red
                     else if (stat.status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; } // purple
                     else if (stat.status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; } // sky blue
-                    else if (stat.status === 'Ordered' || stat.status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; } // yellow
+                    else if (stat.status === 'Drafted' || stat.status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; } // yellow
 
                     return (
                         <StatsCard
@@ -601,7 +601,7 @@ const Dashboard: React.FC = () => {
                             <option value="Shipped">{t('status.shipped')}</option>
                             <option value="Confirmed">{t('status.confirmed')}</option>
                             <option value="Pending">{t('status.pending')}</option>
-                            <option value="Ordered">{t('status.ordered')}</option>
+                            <option value="Drafted">{t('status.ordered')}</option>
                             <option value="Cancelled">{t('status.cancelled')}</option>
                             <option value="Returned">{t('status.returned')}</option>
                         </select>
@@ -615,7 +615,7 @@ const Dashboard: React.FC = () => {
                             gap: '16px'
                         }}>
                             {salesmanStats.map((s, index) => {
-                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Ordered', 'Cancelled', 'Returned', 'ReStock'];
+                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
                                 return (
                                     <StatsCard
                                         key={index}
@@ -641,7 +641,7 @@ const Dashboard: React.FC = () => {
                                                             else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
                                                             else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
                                                             else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                            else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+                                                            else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
 
                                                             const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
                                                             return (
@@ -700,7 +700,7 @@ const Dashboard: React.FC = () => {
                             <option value="Shipped">{t('status.shipped')}</option>
                             <option value="Confirmed">{t('status.confirmed')}</option>
                             <option value="Pending">{t('status.pending')}</option>
-                            <option value="Ordered">{t('status.ordered')}</option>
+                            <option value="Drafted">{t('status.ordered')}</option>
                             <option value="Cancelled">{t('status.cancelled')}</option>
                             <option value="Returned">{t('status.returned')}</option>
                         </select>
@@ -714,7 +714,7 @@ const Dashboard: React.FC = () => {
                             gap: '16px'
                         }}>
                             {pageStats.map((s, index) => {
-                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Ordered', 'Cancelled', 'Returned', 'ReStock'];
+                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
                                 return (
                                     <StatsCard
                                         key={index}
@@ -740,7 +740,7 @@ const Dashboard: React.FC = () => {
                                                             else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
                                                             else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
                                                             else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                            else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+                                                            else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
 
                                                             const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
                                                             return (
@@ -796,7 +796,7 @@ const Dashboard: React.FC = () => {
                             gap: '16px'
                         }}>
                             {shippingStats.map((carrier, index) => {
-                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Ordered', 'Cancelled', 'Returned', 'ReStock'];
+                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
                                 return (
                                     <StatsCard
                                         key={index}
@@ -820,7 +820,7 @@ const Dashboard: React.FC = () => {
                                                             else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
                                                             else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
                                                             else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                            else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+                                                            else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
 
                                                             const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
                                                             return (
@@ -894,7 +894,7 @@ const Dashboard: React.FC = () => {
                                                 Confirmed: p.confirmed,
                                                 Shipped: p.shipped,
                                                 Delivered: p.delivered,
-                                                Ordered: p.ordered,
+                                                Drafted: p.ordered,
                                                 Cancelled: p.cancelled,
                                                 Returned: p.returned,
                                                 ReStock: p.restock
@@ -906,7 +906,7 @@ const Dashboard: React.FC = () => {
                                                     else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
                                                     else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
                                                     else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                    else if (status === 'Ordered' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
+                                                    else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
 
                                                     const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
                                                     return (
