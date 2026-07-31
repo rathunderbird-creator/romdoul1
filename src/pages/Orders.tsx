@@ -2436,7 +2436,7 @@ const Orders: React.FC = () => {
                         paddingBottom: '0'
                     }}>
                         {isMobile ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '80px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', padding: '8px', paddingBottom: '100px' }}>
                                 {paginatedOrders.map(order => (
                                     <MobileOrderCard
                                         key={order.id}
@@ -2498,28 +2498,45 @@ const Orders: React.FC = () => {
                                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>
                                 )}
 
+                                {/* Mobile FAB - New Order */}
+                                {hasPermission('create_orders') && (
+                                    <button
+                                        className="mobile-fab"
+                                        onClick={handleOpenAdd}
+                                        aria-label="New Order"
+                                    >
+                                        <Plus size={26} />
+                                    </button>
+                                )}
+
                                 {/* Mobile Summary Footer */}
                                 <div style={{
                                     position: 'fixed',
                                     bottom: 0,
                                     left: 0,
                                     right: 0,
-                                    background: 'white',
+                                    background: 'rgba(255,255,255,0.95)',
+                                    backdropFilter: 'blur(10px)',
+                                    WebkitBackdropFilter: 'blur(10px)',
                                     borderTop: '1px solid var(--color-border)',
-                                    padding: '16px',
+                                    padding: '12px 20px',
                                     zIndex: 100,
                                     display: 'flex',
                                     justifyContent: 'space-between',
                                     alignItems: 'center',
-                                    boxShadow: '0 -4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                    boxShadow: '0 -2px 10px rgba(0, 0, 0, 0.06)'
                                 }}>
                                     <div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total Orders</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{filteredOrders.length}</div>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Orders</div>
+                                        <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>{filteredOrders.length}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Page</div>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151' }}>{currentPage}/{Math.max(1, Math.ceil(totalCount / itemsPerPage))}</div>
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total Amount</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
+                                        <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-primary)' }}>
                                             ${filteredOrders.reduce((sum, order) => sum + order.total, 0).toFixed(2)}
                                         </div>
                                     </div>
