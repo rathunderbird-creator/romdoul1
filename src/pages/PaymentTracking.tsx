@@ -1067,8 +1067,8 @@ const PaymentTracking: React.FC = () => {
             </div>
 
             {/* Table */}
-            <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(100vh - 260px)' }}>
-                <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
+            <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+                <div style={{ flex: 1, overflow: 'auto' }}>
                 <table
                     className="spreadsheet-table"
                     style={{

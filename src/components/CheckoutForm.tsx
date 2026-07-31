@@ -507,7 +507,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 if (orderToEdit.shipping?.status !== formData.shippingStatus) {
                     const orderCopy = { ...orderToEdit, ...orderData, date: formData.date || orderToEdit.date } as Sale;
                     if (telegramConfigs && telegramConfigs.length > 0) {
-                        const matchingConfigs = telegramConfigs.filter(c => c.triggerStatuses.includes(formData.shippingStatus));
+                        const matchingConfigs = telegramConfigs.filter(c => 
+                            c.triggerStatuses?.includes(formData.shippingStatus) ||
+                            (formData.shippingStatus === 'Drafted' && c.triggerStatuses?.includes('Ordered'))
+                        );
                         matchingConfigs.forEach(config => {
                             if (config.botToken && config.chatId) {
                                 sendTelegramOrderNotification(config.botToken, config.chatId, orderCopy, orderCopy.orderIndex || 0, config.messageTemplate).catch(err => {
@@ -526,7 +529,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
                 // Send Telegram Notification
                 if (telegramConfigs && telegramConfigs.length > 0) {
-                    const matchingConfigs = telegramConfigs.filter(c => c.triggerStatuses.includes(formData.shippingStatus));
+                    const matchingConfigs = telegramConfigs.filter(c => 
+                        c.triggerStatuses?.includes(formData.shippingStatus) ||
+                        (formData.shippingStatus === 'Drafted' && c.triggerStatuses?.includes('Ordered'))
+                    );
                     matchingConfigs.forEach(config => {
                         if (config.botToken && config.chatId) {
                             sendTelegramOrderNotification(config.botToken, config.chatId, createdSale, sequenceNumber, config.messageTemplate).catch(err => {

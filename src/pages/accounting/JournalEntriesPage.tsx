@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Search } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
+import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
 import type { JournalEntryLine } from '../../types';
 
@@ -9,21 +10,7 @@ const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
 
-const SAMPLE_ENTRIES = [
-    { date: '2026-07-27', description: 'Office Utilities', reference_id: 'JE-1785164139953-16', amount: 170.00 },
-    { date: '2026-07-27', description: 'Record Sales Invoice INV-2026-0001', reference_id: 'JE-2026-0001', amount: 650.00 },
-    { date: '2026-07-26', description: 'Office Utilities', reference_id: 'JE-1785164139971-31', amount: 489.00 },
-    { date: '2026-07-26', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139943-8', amount: 374.00 },
-    { date: '2026-07-25', description: 'Daily Sales Revenue', reference_id: 'JE-1785164140053-100', amount: 116.00 },
-    { date: '2026-07-25', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139977-37', amount: 109.00 },
-    { date: '2026-07-24', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139964-25', amount: 39.00 },
-    { date: '2026-07-24', description: 'Office Utilities', reference_id: 'JE-1785164139954-17', amount: 114.00 },
-    { date: '2026-07-24', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139952-15', amount: 246.00 },
-    { date: '2026-07-23', description: 'Daily Sales Revenue', reference_id: 'JE-1785164140050-98', amount: 283.00 },
-    { date: '2026-07-21', description: 'Daily Sales Revenue', reference_id: 'JE-1785164139973-33', amount: 454.00 },
-    { date: '2026-07-20', description: 'Office Utilities', reference_id: 'JE-1785164140048-96', amount: 500.00 },
-    { date: '2026-07-20', description: 'Daily Sales Revenue', reference_id: 'JE-1785164140019-74', amount: 249.00 }
-];
+
 
 const JournalEntriesPage = () => {
     const { setHeaderContent } = useHeader();
@@ -31,7 +18,7 @@ const JournalEntriesPage = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [isSeeding, setIsSeeding] = useState(false);
+    const [dateRange, setDateRange] = useState({ start: '', end: '' });
     
     // Form state
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -59,34 +46,7 @@ const JournalEntriesPage = () => {
         fetchAccounts();
     }, [fetchJournalEntries, fetchAccounts]);
 
-    useEffect(() => {
-        // Seed sample data if table is completely empty after loading
-        if (!isLoading && journalEntries.length === 0 && accounts.length >= 2 && !isSeeding) {
-            const seedData = async () => {
-                setIsSeeding(true);
-                // Pick two accounts to balance the entries
-                const debitAccount = accounts[0];
-                const creditAccount = accounts[1];
 
-                for (const sample of SAMPLE_ENTRIES) {
-                    try {
-                        await saveJournalEntry(
-                            { date: sample.date, description: sample.description, reference_id: sample.reference_id },
-                            [
-                                { account_id: debitAccount.id, debit: sample.amount, credit: 0 },
-                                { account_id: creditAccount.id, debit: 0, credit: sample.amount }
-                            ]
-                        );
-                    } catch (e) {
-                        console.error('Failed to seed journal entry', e);
-                    }
-                }
-                fetchJournalEntries();
-                setIsSeeding(false);
-            };
-            seedData();
-        }
-    }, [isLoading, journalEntries.length, accounts, saveJournalEntry, fetchJournalEntries, isSeeding]);
 
     const handleOpenModal = () => {
         setDate(new Date().toISOString().split('T')[0]);
@@ -143,31 +103,61 @@ const JournalEntriesPage = () => {
     const activeAccounts = useMemo(() => accounts.filter(a => a.is_active), [accounts]);
 
     const filteredEntries = useMemo(() => {
-        if (!searchQuery) return journalEntries;
-        const q = searchQuery.toLowerCase();
-        return journalEntries.filter(entry => 
-            (entry.description?.toLowerCase().includes(q)) ||
-            (entry.reference_id?.toLowerCase().includes(q)) ||
-            (entry.id.toLowerCase().includes(q))
-        );
-    }, [journalEntries, searchQuery]);
+        let result = journalEntries;
+
+        if (dateRange.start) {
+            result = result.filter(e => e.date >= dateRange.start);
+        }
+        if (dateRange.end) {
+            result = result.filter(e => e.date <= dateRange.end);
+        }
+
+        if (searchQuery) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(entry => 
+                (entry.description?.toLowerCase().includes(q)) ||
+                (entry.reference_id?.toLowerCase().includes(q)) ||
+                (entry.id.toLowerCase().includes(q))
+            );
+        }
+        
+        return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [journalEntries, searchQuery, dateRange]);
 
     return (
         <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: '100vh' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <div style={{ position: 'relative', width: '350px' }}>
-                    <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
-                    <input 
-                        type="text" 
-                        placeholder="Search by entry number or description..." 
-                        style={{ 
-                            width: '100%', padding: '8px 12px 8px 36px', 
-                            borderRadius: '8px', border: '1px solid #e2e8f0',
-                            fontSize: '14px', outline: 'none', background: 'white'
-                        }}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', width: '350px' }}>
+                        <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
+                        <input 
+                            type="text" 
+                            placeholder="Search by entry number or description..." 
+                            style={{ 
+                                width: '100%', padding: '8px 12px 8px 36px', 
+                                borderRadius: '8px', border: '1px solid #e2e8f0',
+                                fontSize: '14px', outline: 'none', background: 'white'
+                            }}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    
+                    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '2px' }}>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
+                    
+                    {(dateRange.start || dateRange.end || searchQuery) && (
+                        <button 
+                            onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); }} 
+                            style={{ 
+                                padding: '8px 12px', borderRadius: '8px', fontSize: '13px', 
+                                color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500
+                            }}
+                        >
+                            Clear Filters
+                        </button>
+                    )}
                 </div>
                 <button 
                     onClick={handleOpenModal}
@@ -196,7 +186,7 @@ const JournalEntriesPage = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {(isLoading || isSeeding) ? (
+                        {isLoading ? (
                             <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading entries...</td></tr>
                         ) : filteredEntries.length === 0 ? (
                             <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>No entries found</td></tr>
