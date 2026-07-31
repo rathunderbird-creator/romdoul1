@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -70,7 +70,17 @@ const LoadingFallback = () => (
 );
 
 const ProtectedApp = () => {
-  const { currentUser, isLoading } = useStore();
+  const { currentUser, isLoading, refreshData } = useStore();
+
+  useEffect(() => {
+    if (currentUser) {
+      // Auto refresh every 20 minutes
+      const interval = setInterval(() => {
+        refreshData(true).catch(console.error);
+      }, 20 * 60 * 1000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser, refreshData]);
 
   if (isLoading) {
     return <LoadingFallback />;
