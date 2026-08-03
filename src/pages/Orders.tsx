@@ -2477,17 +2477,9 @@ const Orders: React.FC = () => {
                                             if (status === 'Paid' || status === 'Settled') {
                                                 updates.amountReceived = order.total;
                                                 updates.settleDate = new Date().toISOString();
-                                                if (status === 'Paid' && order.shipping?.status !== 'Delivered') {
-                                                    updates.shipping = { ...(order.shipping || {}), company: order.shipping?.company || '', trackingNumber: order.shipping?.trackingNumber || '', cost: order.shipping?.cost || 0, status: 'Shipped' };
-                                                }
                                             } else if (status === 'Cancel') {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
-                                                // Auto-set Order Status to Returned ONLY if 'Shipped' or 'Delivered'
-                                                const currentStatus = order.shipping?.status || 'Pending';
-                                                if (order.shipping && (currentStatus === 'Shipped' || currentStatus === 'Delivered')) {
-                                                    updates.shipping = { ...order.shipping, status: 'Returned' };
-                                                }
                                             } else {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
@@ -2902,11 +2894,6 @@ const Orders: React.FC = () => {
                                                                                 } else if (newStatus === 'Cancel') {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
-                                                                                    // Auto-set Order Status to Returned ONLY if 'Shipped' or 'Delivered'
-                                                                                    const currentStatus = order.shipping?.status || 'Pending';
-                                                                                    if (order.shipping && (currentStatus === 'Shipped' || currentStatus === 'Delivered')) {
-                                                                                        updates.shipping = { ...order.shipping, status: 'Returned' };
-                                                                                    }
                                                                                 } else {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
