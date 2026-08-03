@@ -42,6 +42,9 @@ const StockMovementsPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>('all');
     
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'movement_date', direction: 'desc' });
+
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(100);
@@ -107,8 +110,58 @@ const StockMovementsPage: React.FC = () => {
         );
     }, [movements, searchTerm]);
 
-    const totalPages = Math.ceil(filteredMovements.length / itemsPerPage);
-    const paginatedMovements = filteredMovements.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    const sortedMovements = useMemo(() => {
+        let sortableItems = [...filteredMovements];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue: any = a[sortConfig.key as keyof StockMovement];
+                let bValue: any = b[sortConfig.key as keyof StockMovement];
+                
+                if (sortConfig.key === 'movement_date') {
+                    aValue = new Date(a.movement_date || a.created_at).getTime();
+                    bValue = new Date(b.movement_date || b.created_at).getTime();
+                } else if (sortConfig.key === 'source') {
+                    aValue = a.type === 'in' ? a.source : a.reason;
+                    bValue = b.type === 'in' ? b.source : b.reason;
+                } else if (sortConfig.key === 'supplier') {
+                    aValue = a.supplier || a.customer_name;
+                    bValue = b.supplier || b.customer_name;
+                } else if (sortConfig.key === 'reference_id') {
+                    aValue = a.reference_id || a.note;
+                    bValue = b.reference_id || b.note;
+                } else if (sortConfig.key === 'warehouse_id') {
+                    aValue = warehouses.find(w => w.id === a.warehouse_id)?.name || '';
+                    bValue = warehouses.find(w => w.id === b.warehouse_id)?.name || '';
+                }
+                
+                if (aValue == null) aValue = '';
+                if (bValue == null) bValue = '';
+                
+                if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+                if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+                
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [filteredMovements, sortConfig, warehouses]);
+
+    const totalPages = Math.ceil(sortedMovements.length / itemsPerPage);
+    const paginatedMovements = sortedMovements.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
 
     const exportToExcel = () => {
         if (filteredMovements.length === 0) {
@@ -221,14 +274,14 @@ const StockMovementsPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Date</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Type</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Product</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Qty</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Warehouse</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Source / Reason</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Supplier / Customer</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Reference / Note</th>
+                                    <th onClick={() => handleSort('movement_date')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Date {sortConfig?.key === 'movement_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('type')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Type {sortConfig?.key === 'type' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('product_name')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Product {sortConfig?.key === 'product_name' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('quantity')} style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Qty {sortConfig?.key === 'quantity' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('warehouse_id')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Warehouse {sortConfig?.key === 'warehouse_id' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('source')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Source / Reason {sortConfig?.key === 'source' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('supplier')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Supplier / Customer {sortConfig?.key === 'supplier' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th onClick={() => handleSort('reference_id')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Reference / Note {sortConfig?.key === 'reference_id' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                 </tr>
                             </thead>
                             <tbody>
