@@ -1159,11 +1159,14 @@ const Orders: React.FC = () => {
                         query = query.ilike('tracking_number', `%${esc}%`);
                         break;
                     case 'items': {
-                        const { data: colItemMatches } = await supabase
-                            .from('sale_items')
-                            .select('sale_id')
-                            .ilike('name', `%${esc}%`)
-                            .limit(50);
+                        let itemQuery = supabase.from('sale_items').select('sale_id');
+                        const numVal = Number(v.trim());
+                        if (!isNaN(numVal) && v.trim() !== '') {
+                            itemQuery = itemQuery.or(`name.ilike.%${esc}%,quantity.eq.${numVal}`);
+                        } else {
+                            itemQuery = itemQuery.ilike('name', `%${esc}%`);
+                        }
+                        const { data: colItemMatches } = await itemQuery.limit(50);
                         
                         if (colItemMatches && colItemMatches.length > 0) {
                             const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id))).slice(0, 50);
