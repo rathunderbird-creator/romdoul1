@@ -167,6 +167,19 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
+    const deletePurchaseOrder = useCallback(async (id: string) => {
+        try {
+            const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
+            if (error) throw error;
+            showToast('Purchase Order deleted successfully', 'success');
+            await fetchPurchaseOrders(true);
+        } catch (error: any) {
+            console.error('Failed to delete purchase order:', error);
+            showToast('Failed to delete purchase order: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchPurchaseOrders]);
+
     return {
         suppliers,
         purchaseOrders,
@@ -175,6 +188,7 @@ export const useProcurement = () => {
         saveSupplier,
         deleteSupplier,
         fetchPurchaseOrders,
-        savePurchaseOrder
+        savePurchaseOrder,
+        deletePurchaseOrder
     };
 };

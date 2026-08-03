@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 // Removed unused Modal import
@@ -23,7 +23,7 @@ const getStatusConfig = (status: string) => {
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
     const { products } = useStore();
-    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder } = useProcurement();
+    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder } = useProcurement();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -70,6 +70,30 @@ const PurchaseOrdersPage = () => {
         setIsModalOpen(true);
     };
 
+    const handleEditPO = (po: any) => {
+        setEditingPOId(po.id);
+        setSupplierId(po.supplier_id);
+        setOrderDate(po.order_date ? po.order_date.split('T')[0] : '');
+        setExpectedDeliveryDate(po.expected_delivery_date ? po.expected_delivery_date.split('T')[0] : '');
+        setStatus(po.status || 'Draft');
+        setNotes(po.notes || '');
+        if (po.items && po.items.length > 0) {
+            setLines(po.items.map((i: any) => ({
+                product_id: i.product_id,
+                quantity: i.quantity,
+                unit_price: i.unit_price
+            })));
+        } else {
+            setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);
+        }
+        setIsModalOpen(true);
+    };
+
+    const handleDeletePO = async (id: string) => {
+        if (window.confirm('Are you sure you want to delete this purchase order?')) {
+            await deletePurchaseOrder(id);
+        }
+    };
 
 
     const addLine = () => {
@@ -184,6 +208,7 @@ const PurchaseOrdersPage = () => {
                                 <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Items</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontWeight: 600 }}>Total</th>
                                 <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Status</th>
+                                <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -222,6 +247,24 @@ const PurchaseOrdersPage = () => {
                                             }}>
                                                 {po.status}
                                             </span>
+                                        </td>
+                                        <td style={{ padding: '16px', textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                                <button 
+                                                    onClick={() => handleEditPO(po)}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '4px' }}
+                                                    title="Edit Purchase Order"
+                                                >
+                                                    <Edit size={18} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDeletePO(po.id)}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger)', padding: '4px' }}
+                                                    title="Delete Purchase Order"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
