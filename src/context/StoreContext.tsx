@@ -1132,6 +1132,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
             if (productError) throw productError;
 
+            // 3.5 Log to stock_movements
+            const { error: movementError } = await supabase.from('stock_movements').insert({
+                product_id: productId,
+                product_name: product.name,
+                type: 'in',
+                quantity: quantity,
+                unit_price: cost || product.purchaseCost || 0,
+                source: note?.startsWith('Received from PO') ? 'Purchase Order' : 'Inventory Adjustment',
+                note: note || '',
+                movement_date: new Date().toISOString().slice(0, 10),
+                created_by: currentUser?.id
+            });
+            if (movementError) console.error('Failed to log stock movement:', movementError);
+
+
             // 4. Update local state
             setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
             setRestocks([{
