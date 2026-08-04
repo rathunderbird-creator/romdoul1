@@ -1699,10 +1699,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             });
                         }
                     }
+                } else if (oldStatus === 'Shipped' && newStatus !== 'Shipped' && newStatus !== 'Delivered' && newStatus !== 'Returned') {
+                    // Delete stock-out records since the order is no longer shipped
+                    await supabase.from('stock_movements').delete().eq('reference_id', id).eq('type', 'out');
                 }
-            } else if (existingOrder && existingOrder.shipping?.status === 'Shipped' && updates.shipping?.status && updates.shipping.status !== 'Shipped' && updates.shipping.status !== 'Delivered' && updates.shipping.status !== 'Returned') {
-                // Delete stock-out records since the order is no longer shipped
-                await supabase.from('stock_movements').delete().eq('reference_id', id).eq('type', 'out');
             }
 
         } catch (error: any) {
