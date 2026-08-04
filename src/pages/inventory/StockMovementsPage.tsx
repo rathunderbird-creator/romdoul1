@@ -38,16 +38,36 @@ const StockMovementsPage: React.FC = () => {
     const [movements, setMovements] = useState<StockMovement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
-    const [searchTerm, setSearchTerm] = useState('');
-    const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>('all');
+    const [dateRange, setDateRange] = useState(() => {
+        const saved = localStorage.getItem('stock_movements_dateRange');
+        return saved ? JSON.parse(saved) : { start: '', end: '' };
+    });
+    const [searchTerm, setSearchTerm] = useState(() => {
+        return localStorage.getItem('stock_movements_searchTerm') || '';
+    });
+    const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>(() => {
+        return (localStorage.getItem('stock_movements_typeFilter') as any) || 'all';
+    });
     
     // Sorting state
-    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'movement_date', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(() => {
+        const saved = localStorage.getItem('stock_movements_sortConfig');
+        return saved ? JSON.parse(saved) : { key: 'movement_date', direction: 'desc' };
+    });
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(100);
+    const [itemsPerPage, setItemsPerPage] = useState(() => {
+        return Number(localStorage.getItem('stock_movements_itemsPerPage')) || 100;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('stock_movements_dateRange', JSON.stringify(dateRange));
+        localStorage.setItem('stock_movements_searchTerm', searchTerm);
+        localStorage.setItem('stock_movements_typeFilter', typeFilter);
+        localStorage.setItem('stock_movements_sortConfig', JSON.stringify(sortConfig));
+        localStorage.setItem('stock_movements_itemsPerPage', itemsPerPage.toString());
+    }, [dateRange, searchTerm, typeFilter, sortConfig, itemsPerPage]);
 
     useEffect(() => {
         setHeaderContent({
