@@ -21,7 +21,7 @@ const JournalEntriesPage = () => {
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     
     // Form state
-    const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [description, setDescription] = useState('');
     const [referenceId, setReferenceId] = useState('');
     const [lines, setLines] = useState<Partial<JournalEntryLine>[]>([
@@ -49,7 +49,7 @@ const JournalEntriesPage = () => {
 
 
     const handleOpenModal = () => {
-        setDate(new Date().toISOString().split('T')[0]);
+        setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setDescription('');
         setReferenceId('');
         setLines([

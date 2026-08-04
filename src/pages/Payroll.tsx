@@ -51,8 +51,9 @@ const Payroll: React.FC = () => {
         const [year, month] = selectedMonth.split('-');
         
         // Ensure accurate start and end dates of the selected month
-        const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split('T')[0];
-        const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0]; // last day of month
+        const startDate = \-\-01\;
+        const endDateDate = new Date(parseInt(year), parseInt(month), 0);
+        const endDate = \-\-\; // last day of month
         
         // This will trigger the fetch in the custom hook
         fetchAttendanceForPeriod(startDate, endDate);

@@ -13,7 +13,7 @@ const PaymentsPage: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     
     // Form state
-    const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [amount, setAmount] = useState<number | string>('');
     const [category, setCategory] = useState('');
     const [description, setDescription] = useState('');
@@ -90,7 +90,7 @@ const PaymentsPage: React.FC = () => {
                 <div style={{ display: 'flex', gap: '12px' }}>
                     <button className="secondary-button" onClick={() => { refreshData(); showToast('Refreshed payments', 'success'); }}>Refresh</button>
                     <button className="primary-button" onClick={() => {
-                        setDate(new Date().toISOString().split('T')[0]);
+                        setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
                         setAmount('');
                         setCategory('');
                         setDescription('');

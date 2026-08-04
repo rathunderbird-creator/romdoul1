@@ -195,7 +195,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         description: '',
         shipping_co: '',
         pay_by: '',
-        date: new Date().toISOString().split('T')[0]
+        date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
     });
 
     useEffect(() => {
@@ -323,7 +323,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             description: '',
             shipping_co: '',
             pay_by: '',
-            date: new Date().toISOString().split('T')[0]
+            date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
         });
         setEditingTransaction(null);
         setIsAddModalOpen(true);
@@ -340,7 +340,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             description: t.description || '',
             shipping_co: t.shipping_co || '',
             pay_by: t.pay_by || '',
-            date: parseDate(t.date).toISOString().split('T')[0]
+            date: (() => {
+                const pd = parseDate(t.date);
+                return new Date(pd.getTime() - pd.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+            })()
         });
         setIsAddModalOpen(true);
     };

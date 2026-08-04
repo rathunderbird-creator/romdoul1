@@ -40,7 +40,7 @@ const Dashboard: React.FC = () => {
             } catch (e) {}
         }
         const now = new Date();
-        const today = now.toISOString().split('T')[0];
+        const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
         return { start: today, end: today };
     });
 

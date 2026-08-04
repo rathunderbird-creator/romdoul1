@@ -1433,7 +1433,7 @@ const Orders: React.FC = () => {
         XLSX.utils.book_append_sheet(wb, ws, "Orders");
 
         // Generate filename with current date
-        const dateStr = new Date().toISOString().split('T')[0];
+        const dateStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
         XLSX.writeFile(wb, `Selected_Orders_Export_${dateStr}.xlsx`);
 
         showToast(`Exported ${selectedOrders.length} orders to Excel`, 'success');

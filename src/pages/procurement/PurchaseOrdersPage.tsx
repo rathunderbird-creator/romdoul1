@@ -32,7 +32,7 @@ const PurchaseOrdersPage = () => {
     // Form state
     const [editingPOId, setEditingPOId] = useState<string | null>(null);
     const [supplierId, setSupplierId] = useState('');
-    const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [orderDate, setOrderDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
     const [status, setStatus] = useState<'Draft' | 'Sent' | 'Received' | 'Cancelled'>('Draft');
     const [notes, setNotes] = useState('');
@@ -62,7 +62,7 @@ const PurchaseOrdersPage = () => {
     const handleOpenModal = () => {
         setEditingPOId(null);
         setSupplierId('');
-        setOrderDate(new Date().toISOString().split('T')[0]);
+        setOrderDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setExpectedDeliveryDate('');
         setStatus('Draft');
         setNotes('');

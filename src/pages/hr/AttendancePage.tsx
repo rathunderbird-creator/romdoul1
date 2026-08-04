@@ -29,7 +29,7 @@ const getCurrentTimeStr = () => {
 
 const AttendancePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const [selectedDate, setSelectedDate] = useState<string>(today);
     const { staff, attendances, isLoading, error, fetchAttendanceData, updateAttendance } = useAttendance();
     const [savingId, setSavingId] = useState<string | null>(null);
