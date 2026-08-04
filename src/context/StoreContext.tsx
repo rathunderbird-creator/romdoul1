@@ -1717,7 +1717,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Fetch missing orders from DB for accurate transaction logging
             const missingIds = ids.filter(id => !sales.find(s => s.id === id));
             if (missingIds.length > 0) {
-                const { data: dbOrders } = await supabase.from('sales').select('*').in('id', missingIds);
+                const { data: dbOrders } = await supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').in('id', missingIds);
                 if (dbOrders && dbOrders.length > 0) {
                     const mappedOrders = dbOrders.map(mapSaleEntity);
                     setSales(prev => [...prev, ...mappedOrders] as any);
@@ -1734,7 +1734,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 
                 // fallback to fetch it individually if not in stale cache
                 if (!currentOrder) {
-                    const { data } = await supabase.from('sales').select('*').eq('id', id).single();
+                    const { data } = await supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)').eq('id', id).single();
                     if (data) {
                         currentOrder = mapSaleEntity(data);
                         // Temp inject into sales array reference for `updateOrder` closure trick
