@@ -59,6 +59,11 @@ const generateUUID = () => {
     });
 };
 
+const getLocalYYYYMMDD = () => {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 // Initial Dummy Data
@@ -1141,7 +1146,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 unit_price: cost || product.purchaseCost || 0,
                 source: note?.startsWith('Received from PO') ? 'Purchase Order' : 'Inventory Adjustment',
                 note: note || '',
-                movement_date: new Date().toISOString().slice(0, 10),
+                movement_date: getLocalYYYYMMDD(),
                 created_by: currentUser?.id
             });
             if (movementError) console.error('Failed to log stock movement:', movementError);
@@ -1421,7 +1426,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             source: 'Order Shipped',
                             shipping_co: shippingCompany ?? (salesOrder.shipping?.company || ''),
                             note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
-                            movement_date: new Date().toISOString().slice(0, 10),
+                            movement_date: getLocalYYYYMMDD(),
                             created_by: currentUser?.id || 'unknown'
                         }));
 
@@ -1679,7 +1684,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 source: 'Order Shipped',
                                 shipping_co: updates.shipping?.company || existingOrder.shipping?.company || '',
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
-                                movement_date: new Date().toISOString().slice(0, 10),
+                                movement_date: getLocalYYYYMMDD(),
                                 created_by: currentUser?.id || 'unknown'
                             }));
 
@@ -2236,7 +2241,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     source: 'Customer Return',
                     shipping_co: localOrder?.shipping?.company || '',
                     note: r.note,
-                    movement_date: new Date().toISOString().slice(0, 10),
+                    movement_date: getLocalYYYYMMDD(),
                     created_by: currentUser?.id || 'unknown'
                 }));
                 await supabase.from('stock_movements').insert(stockMovements).then(({ error }) => {
@@ -2339,7 +2344,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     source: 'Customer Return',
                     shipping_co: '', // Bulk order returns mixed shipping companies
                     note: r.note,
-                    movement_date: new Date().toISOString().slice(0, 10),
+                    movement_date: getLocalYYYYMMDD(),
                     created_by: currentUser?.id || 'unknown'
                 }));
 

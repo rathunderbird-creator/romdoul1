@@ -90,7 +90,11 @@ const StockOut: React.FC = () => {
     const [note, setNote] = useState('');
     const [shippingCo, setShippingCo] = useState('');
     const [supplier, setSupplier] = useState('');
-    const [movementDate, setMovementDate] = useState(new Date().toISOString().slice(0, 10));
+    const getLocalYYYYMMDD = () => {
+        const d = new Date();
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+    const [movementDate, setMovementDate] = useState(getLocalYYYYMMDD());
     const [productSearch, setProductSearch] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
@@ -300,7 +304,7 @@ const StockOut: React.FC = () => {
             setShippingCo('');
             setCustomerName('');
             setCustomerPhone('');
-            setMovementDate(new Date().toISOString().slice(0, 10));
+            setMovementDate(getLocalYYYYMMDD());
             setProductSearch('');
             setShowForm(false);
             fetchRecords();

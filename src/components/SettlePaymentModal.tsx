@@ -26,9 +26,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     const [settleDate, setSettleDate] = useState<string>('');
 
     useEffect(() => {
+        const getLocalYYYYMMDD = () => {
+            const d = new Date();
+            return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        };
         if (isOpen) {
             setSelectedMethod(initialMethod || paymentMethods[0] || 'Cash');
-            setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+            setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : getLocalYYYYMMDD());
         }
     }, [isOpen, initialMethod, initialDate, paymentMethods]);
 
