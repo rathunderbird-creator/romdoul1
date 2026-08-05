@@ -23,7 +23,7 @@ const getStatusConfig = (status: string) => {
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
     const { products } = useStore();
-    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder } = useProcurement();
+    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment } = useProcurement();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -34,11 +34,21 @@ const PurchaseOrdersPage = () => {
     const [supplierId, setSupplierId] = useState('');
     const [orderDate, setOrderDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
+    const [paymentDueDate, setPaymentDueDate] = useState('');
     const [status, setStatus] = useState<'Draft' | 'Sent' | 'Received' | 'Cancelled'>('Draft');
     const [notes, setNotes] = useState('');
     const [lines, setLines] = useState<Partial<PurchaseOrderItem>[]>([
         { product_id: '', quantity: 1, unit_price: 0 }
     ]);
+    
+    // Payment Modal State
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [payingPOId, setPayingPOId] = useState('');
+    const [payingSupplierId, setPayingSupplierId] = useState('');
+    const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
+    const [paymentDate, setPaymentDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+    const [paymentNotes, setPaymentNotes] = useState('');
 
     useEffect(() => {
         setHeaderContent({
@@ -64,6 +74,7 @@ const PurchaseOrdersPage = () => {
         setSupplierId('');
         setOrderDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setExpectedDeliveryDate('');
+        setPaymentDueDate('');
         setStatus('Draft');
         setNotes('');
         setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);
@@ -75,6 +86,7 @@ const PurchaseOrdersPage = () => {
         setSupplierId(po.supplier_id);
         setOrderDate(po.order_date ? po.order_date.split('T')[0] : '');
         setExpectedDeliveryDate(po.expected_delivery_date ? po.expected_delivery_date.split('T')[0] : '');
+        setPaymentDueDate(po.payment_due_date ? po.payment_due_date.split('T')[0] : '');
         setStatus(po.status || 'Draft');
         setNotes(po.notes || '');
         if (po.items && po.items.length > 0) {
@@ -131,6 +143,7 @@ const PurchaseOrdersPage = () => {
                     supplier_id: supplierId, 
                     order_date: orderDate, 
                     expected_delivery_date: expectedDeliveryDate || undefined,
+                    payment_due_date: paymentDueDate || undefined,
                     status,
                     total_amount: totalAmount,
                     notes
@@ -138,6 +151,27 @@ const PurchaseOrdersPage = () => {
                 lines
             );
             setIsModalOpen(false);
+        } catch (error) {
+            // Error handled in hook
+        }
+    };
+
+    const handleOpenPaymentModal = (po: any) => {
+        setPayingPOId(po.id);
+        setPayingSupplierId(po.supplier_id);
+        const remaining = (po.total_amount || 0) - (po.amount_paid || 0);
+        setPaymentAmount(remaining > 0 ? remaining : 0);
+        setPaymentMethod('Cash');
+        setPaymentDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+        setPaymentNotes('');
+        setIsPaymentModalOpen(true);
+    };
+
+    const handleSavePayment = async () => {
+        if (!paymentAmount) return;
+        try {
+            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes);
+            setIsPaymentModalOpen(false);
         } catch (error) {
             // Error handled in hook
         }
@@ -205,9 +239,11 @@ const PurchaseOrdersPage = () => {
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Supplier</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Date</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Expected Date</th>
+                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Due Date</th>
                                 <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Items</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontWeight: 600 }}>Total</th>
                                 <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Status</th>
+                                <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Payment</th>
                                 <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Actions</th>
                             </tr>
                         </thead>
@@ -227,6 +263,9 @@ const PurchaseOrdersPage = () => {
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                                             {po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                                            {po.payment_due_date ? <span style={{ color: new Date(po.payment_due_date) < new Date() && po.payment_status !== 'Paid' ? 'var(--color-danger)' : 'inherit' }}>{new Date(po.payment_due_date).toLocaleDateString()}</span> : '-'}
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>
                                             {po.items?.reduce((sum, i) => sum + i.quantity, 0)}
@@ -249,7 +288,32 @@ const PurchaseOrdersPage = () => {
                                             </span>
                                         </td>
                                         <td style={{ padding: '16px', textAlign: 'center' }}>
+                                            <span style={{ 
+                                                display: 'inline-block',
+                                                padding: '4px 12px', 
+                                                borderRadius: '16px', 
+                                                fontSize: '11px', 
+                                                fontWeight: 700,
+                                                textTransform: 'uppercase',
+                                                backgroundColor: po.payment_status === 'Paid' ? 'rgba(34, 197, 94, 0.1)' : po.payment_status === 'Partial' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                                color: po.payment_status === 'Paid' ? 'var(--color-success)' : po.payment_status === 'Partial' ? '#f59e0b' : 'var(--color-danger)',
+                                                marginBottom: '4px'
+                                            }}>
+                                                {po.payment_status || 'Unpaid'}
+                                            </span>
+                                            {(po.amount_paid || 0) > 0 && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{formatCurrency(po.amount_paid || 0)} paid</div>}
+                                        </td>
+                                        <td style={{ padding: '16px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                                {po.payment_status !== 'Paid' && (
+                                                    <button 
+                                                        onClick={() => handleOpenPaymentModal(po)}
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981', padding: '4px' }}
+                                                        title="Record Payment"
+                                                    >
+                                                        <FileSignature size={18} />
+                                                    </button>
+                                                )}
                                                 <button 
                                                     onClick={() => handleEditPO(po)}
                                                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '4px' }}
@@ -336,7 +400,7 @@ const PurchaseOrdersPage = () => {
                                 </div>
                             </div>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Order Date *</label>
                                     <input 
@@ -355,6 +419,16 @@ const PurchaseOrdersPage = () => {
                                         style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
                                         value={expectedDeliveryDate} 
                                         onChange={(e) => setExpectedDeliveryDate(e.target.value)} 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Payment Due Date</label>
+                                    <input 
+                                        type="date" 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
+                                        value={paymentDueDate} 
+                                        onChange={(e) => setPaymentDueDate(e.target.value)} 
                                     />
                                 </div>
                             </div>
@@ -467,6 +541,97 @@ const PurchaseOrdersPage = () => {
                                     Save Order
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Payment Modal */}
+            {isPaymentModalOpen && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 10000,
+                    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+                }}>
+                    <div style={{
+                        background: '#ffffff',
+                        borderRadius: '24px',
+                        width: '100%',
+                        maxWidth: '500px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
+                        overflow: 'hidden',
+                        animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                    }}>
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
+                                Record Supplier Payment
+                            </h2>
+                            <button onClick={() => setIsPaymentModalOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Amount to Pay *</label>
+                                <input 
+                                    type="number" 
+                                    className="input-field" 
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
+                                    value={paymentAmount} 
+                                    onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || '')} 
+                                    min="0" step="0.01"
+                                />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Payment Date *</label>
+                                    <input 
+                                        type="date" 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
+                                        value={paymentDate} 
+                                        onChange={(e) => setPaymentDate(e.target.value)} 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Method</label>
+                                    <select 
+                                        className="input-field" 
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
+                                        value={paymentMethod}
+                                        onChange={(e) => setPaymentMethod(e.target.value)}
+                                    >
+                                        <option value="Cash">Cash</option>
+                                        <option value="Bank Transfer">Bank Transfer</option>
+                                        <option value="Credit Card">Credit Card</option>
+                                        <option value="Cheque">Cheque</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Notes</label>
+                                <textarea 
+                                    className="input-field" 
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', minHeight: '60px', fontSize: '14px' }}
+                                    value={paymentNotes} 
+                                    onChange={(e) => setPaymentNotes(e.target.value)} 
+                                />
+                            </div>
+                        </div>
+                        <div style={{ padding: '20px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: 'var(--color-surface)' }}>
+                            <button className="secondary-button" onClick={() => setIsPaymentModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 500 }}>
+                                Cancel
+                            </button>
+                            <button 
+                                className="primary-button" 
+                                onClick={handleSavePayment} 
+                                disabled={!paymentAmount || paymentAmount <= 0}
+                                style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 500 }}
+                            >
+                                Record Payment
+                            </button>
                         </div>
                     </div>
                 </div>

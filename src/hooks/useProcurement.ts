@@ -112,6 +112,9 @@ export const useProcurement = () => {
                         expected_delivery_date: po.expected_delivery_date,
                         status: po.status,
                         total_amount: po.total_amount,
+                        payment_status: po.payment_status || 'Unpaid',
+                        amount_paid: po.amount_paid || 0,
+                        payment_due_date: po.payment_due_date || null,
                         notes: po.notes
                     })
                     .eq('id', currentPoId);
@@ -131,6 +134,9 @@ export const useProcurement = () => {
                         expected_delivery_date: po.expected_delivery_date,
                         status: po.status,
                         total_amount: po.total_amount,
+                        payment_status: po.payment_status || 'Unpaid',
+                        amount_paid: po.amount_paid || 0,
+                        payment_due_date: po.payment_due_date || null,
                         notes: po.notes
                     }])
                     .select()
@@ -180,6 +186,52 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
+    const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string) => {
+        try {
+            // Log payment
+            const { error: paymentError } = await supabase.from('supplier_payments').insert([{
+                purchase_order_id: poId,
+                supplier_id: supplierId,
+                amount,
+                payment_date: new Date().toISOString().split('T')[0],
+                payment_method: paymentMethod,
+                notes
+            }]);
+            
+            if (paymentError) throw paymentError;
+
+            // Fetch current PO
+            const { data: po, error: fetchError } = await supabase
+                .from('purchase_orders')
+                .select('amount_paid, total_amount')
+                .eq('id', poId)
+                .single();
+                
+            if (fetchError || !po) throw fetchError || new Error('PO not found');
+
+            const newAmountPaid = (Number(po.amount_paid) || 0) + Number(amount);
+            const newPaymentStatus = newAmountPaid >= po.total_amount ? 'Paid' : 'Partial';
+
+            // Update PO
+            const { error: poUpdateError } = await supabase
+                .from('purchase_orders')
+                .update({
+                    amount_paid: newAmountPaid,
+                    payment_status: newPaymentStatus
+                })
+                .eq('id', poId);
+                
+            if (poUpdateError) throw poUpdateError;
+
+            showToast('Payment recorded successfully', 'success');
+            await fetchPurchaseOrders(true);
+        } catch (error: any) {
+            console.error('Failed to record payment:', error);
+            showToast('Failed to record payment: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchPurchaseOrders]);
+
     return {
         suppliers,
         purchaseOrders,
@@ -189,6 +241,7 @@ export const useProcurement = () => {
         deleteSupplier,
         fetchPurchaseOrders,
         savePurchaseOrder,
-        deletePurchaseOrder
+        deletePurchaseOrder,
+        recordSupplierPayment
     };
 };

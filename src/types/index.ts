@@ -408,9 +408,23 @@ export interface PurchaseOrder {
     expected_delivery_date?: string;
     status: 'Draft' | 'Sent' | 'Received' | 'Cancelled';
     total_amount: number;
+    payment_status?: 'Unpaid' | 'Partial' | 'Paid';
+    amount_paid?: number;
+    payment_due_date?: string;
     notes?: string;
     created_at?: string;
     // Joined fields for UI
     supplier?: Supplier;
     items?: PurchaseOrderItem[];
+}
+
+export interface SupplierPayment {
+    id: string;
+    purchase_order_id: string;
+    supplier_id: string;
+    amount: number;
+    payment_date: string;
+    payment_method?: string;
+    notes?: string;
+    created_at?: string;
 }

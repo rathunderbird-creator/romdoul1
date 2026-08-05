@@ -21,7 +21,7 @@ const getInitials = (name: string) => {
 
 const SuppliersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { suppliers, isLoading, fetchSuppliers, saveSupplier, deleteSupplier } = useProcurement();
+    const { suppliers, purchaseOrders, isLoading, fetchSuppliers, fetchPurchaseOrders, saveSupplier, deleteSupplier } = useProcurement();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -50,7 +50,36 @@ const SuppliersPage = () => {
 
     useEffect(() => {
         fetchSuppliers();
-    }, [fetchSuppliers]);
+        fetchPurchaseOrders();
+    }, [fetchSuppliers, fetchPurchaseOrders]);
+
+    // Calculate balances
+    const supplierBalances = useMemo(() => {
+        const balances: Record<string, { totalAmount: number, amountPaid: number, balance: number, overdue: boolean }> = {};
+        
+        suppliers.forEach(s => {
+            balances[s.id] = { totalAmount: 0, amountPaid: 0, balance: 0, overdue: false };
+        });
+
+        purchaseOrders.forEach(po => {
+            if (po.supplier_id && balances[po.supplier_id]) {
+                balances[po.supplier_id].totalAmount += (po.total_amount || 0);
+                balances[po.supplier_id].amountPaid += (po.amount_paid || 0);
+                
+                if (po.payment_status !== 'Paid' && po.payment_due_date) {
+                    if (new Date(po.payment_due_date) < new Date()) {
+                        balances[po.supplier_id].overdue = true;
+                    }
+                }
+            }
+        });
+
+        Object.keys(balances).forEach(id => {
+            balances[id].balance = balances[id].totalAmount - balances[id].amountPaid;
+        });
+
+        return balances;
+    }, [suppliers, purchaseOrders]);
 
     const filteredSuppliers = useMemo(() => {
         if (!searchQuery.trim()) return suppliers;
@@ -120,7 +149,7 @@ const SuppliersPage = () => {
                         <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
                             <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Supplier</th>
                             <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Contact Details</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Tax Info</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Financials</th>
                             <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Status</th>
                             <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right', borderBottom: '1px solid var(--color-border)', borderRight: 'none' }}>Actions</th>
                         </tr>
@@ -179,10 +208,15 @@ const SuppliersPage = () => {
                                         </div>
                                     </td>
                                     <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', borderRight: 'none' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontFamily: 'monospace', background: 'var(--color-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
-                                                {supplier.tax_id || 'N/A'}
-                                            </span>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <div style={{ fontSize: '13px' }}>
+                                                Balance: <span style={{ fontWeight: 600, color: supplierBalances[supplier.id]?.balance > 0 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                                                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(supplierBalances[supplier.id]?.balance || 0)}
+                                                </span>
+                                            </div>
+                                            {supplierBalances[supplier.id]?.overdue && (
+                                                <span style={{ fontSize: '11px', color: 'var(--color-danger)', fontWeight: 600 }}>OVERDUE PAYMENTS</span>
+                                            )}
                                         </div>
                                     </td>
                                     <td style={{ padding: '16px 24px', borderRight: 'none' }}>

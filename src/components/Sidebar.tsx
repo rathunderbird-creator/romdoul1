@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -80,10 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: 'Products', path: '/inventory', icon: PackageSearch },
                 { label: 'Categories', path: '/inventory/categories', icon: Tags },
                 { label: 'Warehouses', path: '/inventory/warehouses', icon: Warehouse },
-                { label: 'Stock Movements', path: '/inventory/stock-movements', icon: ArrowRightLeft },
-                { label: t('nav.stockIn'), path: '/inventory/stock-in', icon: ArrowDownToLine },
-                { label: t('nav.stockOut'), path: '/inventory/stock-out', icon: ArrowUpFromLine },
-                { label: t('nav.returnsRestocks'), path: '/inventory/returns', icon: RotateCcw }
+                { label: 'Stock Movements', path: '/inventory/stock-movements', icon: ArrowRightLeft }
             ]
         });
     }

@@ -24,9 +24,6 @@ const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
 const AttendancePage = lazy(() => import('./pages/hr/AttendancePage'));
-const ReturnsRestocks = lazy(() => import('./pages/ReturnsRestocks'));
-const StockIn = lazy(() => import('./pages/StockIn'));
-const StockOut = lazy(() => import('./pages/StockOut'));
 const CategoriesPage = lazy(() => import('./pages/inventory/CategoriesPage'));
 const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
 const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
@@ -100,9 +97,6 @@ const ProtectedApp = () => {
           <Route path="/inventory/categories" element={<ProtectedRoute requiredPermission="manage_inventory"><CategoriesPage /></ProtectedRoute>} />
           <Route path="/inventory/warehouses" element={<ProtectedRoute requiredPermission="manage_inventory"><WarehousesPage /></ProtectedRoute>} />
           <Route path="/inventory/stock-movements" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockMovementsPage /></ProtectedRoute>} />
-          <Route path="/inventory/stock-in" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockIn /></ProtectedRoute>} />
-          <Route path="/inventory/stock-out" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockOut /></ProtectedRoute>} />
-          <Route path="/inventory/returns" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><ReturnsRestocks /></ProtectedRoute>} />
           <Route path="/income-expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
           <Route path="/income-expense/income" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
           <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
