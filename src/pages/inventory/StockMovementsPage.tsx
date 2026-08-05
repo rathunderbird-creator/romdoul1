@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeftRight, Search, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { ArrowLeftRight, Search, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Download, PackagePlus, PackageMinus, Activity } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
 import { supabase } from '../../lib/supabase';
 import DateRangePicker from '../../components/DateRangePicker';
+import { StatsCard } from '../../components';
 
 interface StockMovement {
     id: string;
@@ -172,6 +173,21 @@ const StockMovementsPage: React.FC = () => {
         return sortableItems;
     }, [filteredMovements, sortConfig, warehouses]);
 
+    const stats = useMemo(() => {
+        let totalIn = 0;
+        let totalOut = 0;
+        filteredMovements.forEach(m => {
+            if (m.type === 'in') totalIn += m.quantity;
+            if (m.type === 'out') totalOut += m.quantity;
+        });
+        return {
+            totalMovements: filteredMovements.length,
+            totalIn,
+            totalOut,
+            netChange: totalIn - totalOut
+        };
+    }, [filteredMovements]);
+
     const totalPages = Math.ceil(sortedMovements.length / itemsPerPage);
     const paginatedMovements = sortedMovements.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
@@ -223,6 +239,38 @@ const StockMovementsPage: React.FC = () => {
     return (
         <div style={{ padding: isMobile ? '12px' : '24px' }}>
             <div className="fade-in">
+                {/* Summary Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                    <StatsCard 
+                        title="Total Records" 
+                        value={stats.totalMovements.toLocaleString()} 
+                        icon={Activity} 
+                        color="#6366f1"
+                        bgColor="rgba(99, 102, 241, 0.1)"
+                    />
+                    <StatsCard 
+                        title="Items Received (In)" 
+                        value={`+${stats.totalIn.toLocaleString()}`} 
+                        icon={PackagePlus} 
+                        color="#10B981"
+                        bgColor="rgba(16, 185, 129, 0.1)"
+                    />
+                    <StatsCard 
+                        title="Items Issued (Out)" 
+                        value={`-${stats.totalOut.toLocaleString()}`} 
+                        icon={PackageMinus} 
+                        color="#EF4444"
+                        bgColor="rgba(239, 68, 68, 0.1)"
+                    />
+                    <StatsCard 
+                        title="Net Stock Change" 
+                        value={`${stats.netChange > 0 ? '+' : ''}${stats.netChange.toLocaleString()}`} 
+                        icon={ArrowLeftRight} 
+                        color={stats.netChange > 0 ? '#10B981' : stats.netChange < 0 ? '#EF4444' : 'var(--color-text-secondary)'}
+                        bgColor={stats.netChange > 0 ? 'rgba(16, 185, 129, 0.1)' : stats.netChange < 0 ? 'rgba(239, 68, 68, 0.1)' : 'var(--color-bg)'}
+                    />
+                </div>
+
                 {/* Header Actions */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
