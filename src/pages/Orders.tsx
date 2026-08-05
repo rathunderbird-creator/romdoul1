@@ -2834,8 +2834,8 @@ const Orders: React.FC = () => {
                                                                 );
                                                             case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
                                                             case 'customer': {
-                                                                const orderPhone = order.customer?.phone?.trim() || '';
-                                                                const isScammer = blockedCustomers.some(bc => bc.phone.trim() === orderPhone);
+                                                                const orderPhone = String(order.customer?.phone || '').trim();
+                                                                const isScammer = blockedCustomers.some(bc => String(bc.phone || '').trim() === orderPhone);
                                                                 return (
                                                                     <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -3139,7 +3139,7 @@ const Orders: React.FC = () => {
                                 {Array.from(selectedIds).some(id => {
                                     const order = filteredOrders.find(o => o.id === id);
                                     const phone = order?.customer?.phone;
-                                    return phone && blockedCustomers.some(bc => bc.phone === phone.trim());
+                                    return phone && blockedCustomers.some(bc => String(bc.phone || '') === String(phone).trim());
                                 }) ? (
                                     <button type="button" onClick={(e) => {
                                         e.preventDefault();
@@ -3147,8 +3147,8 @@ const Orders: React.FC = () => {
                                         selectedIds.forEach(id => {
                                             const order = filteredOrders.find(o => o.id === id);
                                             const phone = order?.customer?.phone;
-                                            if (phone && blockedCustomers.some(bc => bc.phone === phone.trim())) {
-                                                removeBlockedCustomer(phone.trim());
+                                            if (phone && blockedCustomers.some(bc => String(bc.phone || '') === String(phone).trim())) {
+                                                removeBlockedCustomer(String(phone).trim());
                                                 count++;
                                             }
                                         });
@@ -3409,10 +3409,10 @@ const Orders: React.FC = () => {
                                     >
                                         <ExternalLink size={16} /> Open
                                     </button>
-                                    {selectedOrder.customer?.phone && blockedCustomers.some(bc => bc.phone === selectedOrder.customer!.phone.trim()) ? (
+                                    {selectedOrder.customer?.phone && blockedCustomers.some(bc => String(bc.phone || '') === String(selectedOrder.customer!.phone || '').trim()) ? (
                                         <button
                                             onClick={() => {
-                                                removeBlockedCustomer(selectedOrder.customer!.phone.trim());
+                                                removeBlockedCustomer(String(selectedOrder.customer!.phone || '').trim());
                                                 showToast('Customer unblocked', 'success');
                                             }}
                                             style={{ background: 'none', border: '1px solid #ECFCCB', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#65A30D', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
@@ -3571,7 +3571,7 @@ const Orders: React.FC = () => {
                                 if (scammerTargetOrder) {
                                     if (scammerTargetOrder.customer?.phone) {
                                         await addBlockedCustomer({
-                                            phone: scammerTargetOrder.customer.phone.trim(),
+                                            phone: String(scammerTargetOrder.customer.phone || '').trim(),
                                             name: scammerTargetOrder.customer.name || 'Unknown',
                                             reason: scammerReason,
                                             blockedAt: new Date().toISOString(),
@@ -3585,7 +3585,7 @@ const Orders: React.FC = () => {
                                         const order = sales.find(s => s.id === id);
                                         if (order?.customer?.phone) {
                                             customersToBlock.push({
-                                                phone: order.customer.phone.trim(),
+                                                phone: String(order.customer.phone || '').trim(),
                                                 name: order.customer.name || 'Unknown',
                                                 reason: scammerReason,
                                                 blockedAt: new Date().toISOString(),
