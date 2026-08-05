@@ -1197,7 +1197,8 @@ const Orders: React.FC = () => {
                     'status': 'shipping_status',
                     'payStatus': 'payment_status',
                     'remark': 'remark',
-                    'settleDate': 'settle_date'
+                    'settleDate': 'settle_date',
+                    'lastEdit': 'last_edited_at'
                 };
                 dbSortCol = map[sortConfig.key] || 'date';
             }
