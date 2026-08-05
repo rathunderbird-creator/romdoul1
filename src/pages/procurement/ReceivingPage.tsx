@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PackageCheck, Search, CheckCircle2 } from 'lucide-react';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useStore } from '../../context/StoreContext';
@@ -25,7 +25,11 @@ const ReceivingPage: React.FC = () => {
         );
     }, [purchaseOrders, searchTerm]);
 
+    const processingIds = useRef<Set<string>>(new Set());
+
     const handleReceive = async (po: any) => {
+        if (processingIds.current.has(po.id)) return;
+        processingIds.current.add(po.id);
         setReceivingId(po.id);
         try {
             // 1. Add stock for each item
@@ -45,6 +49,7 @@ const ReceivingPage: React.FC = () => {
         } catch (error: any) {
             showToast('Error receiving PO: ' + error.message, 'error');
         } finally {
+            processingIds.current.delete(po.id);
             setReceivingId(null);
         }
     };
