@@ -49,6 +49,8 @@ const Dashboard: React.FC = () => {
     }, [dateRange]);
 
     const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
+    const [stockInCount, setStockInCount] = React.useState(0);
+    const [stockOutCount, setStockOutCount] = React.useState(0);
     const [isLoadingSales, setIsLoadingSales] = React.useState(false);
     const [salesmanStatusFilter, setSalesmanStatusFilter] = React.useState<string>('All');
     const [pageStatusFilter, setPageStatusFilter] = React.useState<string>('All');
@@ -56,6 +58,21 @@ const Dashboard: React.FC = () => {
     const fetchDashboardSales = React.useCallback(async () => {
         setIsLoadingSales(true);
         try {
+            let invQuery = supabase.from('stock_movements').select('type, quantity');
+            if (dateRange.start) {
+                invQuery = invQuery.gte('movement_date', dateRange.start.split('T')[0]);
+            }
+            if (dateRange.end) {
+                invQuery = invQuery.lte('movement_date', dateRange.end.split('T')[0]);
+            }
+            const { data: invData } = await invQuery;
+            if (invData) {
+                const inTotal = invData.filter((d: any) => d.type === 'in').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
+                const outTotal = invData.filter((d: any) => d.type === 'out').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
+                setStockInCount(inTotal);
+                setStockOutCount(outTotal);
+            }
+
             let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
 
             if (dateRange.start) {
@@ -547,6 +564,22 @@ const Dashboard: React.FC = () => {
                     trend={t('dashboard.itemsRequireAttention')}
                     color="var(--color-red)"
                     onClick={() => navigate('/inventory')}
+                />
+                <StatsCard
+                    title="Stock-In (Qty)"
+                    value={stockInCount}
+                    icon={Package}
+                    color="#059669"
+                    bgColor="#D1FAE5"
+                    onClick={() => navigate('/stock-in')}
+                />
+                <StatsCard
+                    title="Stock-Out (Qty)"
+                    value={stockOutCount}
+                    icon={Package}
+                    color="#DC2626"
+                    bgColor="#FEE2E2"
+                    onClick={() => navigate('/stock-out')}
                 />
             </div>
 
