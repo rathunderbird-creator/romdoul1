@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Phone, Receipt, FileText, DollarSign, Wallet } from 'lucide-react';
+import { ArrowLeft, Building2, Phone, Receipt, FileText, DollarSign, Wallet , Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
@@ -181,6 +181,47 @@ const SupplierDetailsPage = () => {
         };
     }, [ledger]);
 
+    const handleDeleteLedgerEntry = async (entry: LedgerEntry) => {
+        if (!window.confirm(`Are you sure you want to delete this ${entry.type}? This action cannot be undone.`)) return;
+        
+        try {
+            if (entry.id.startsWith('po-')) {
+                const poId = entry.id.replace('po-', '');
+                const { error } = await supabase.from('purchase_orders').delete().eq('id', poId);
+                if (error) throw error;
+                setPurchaseOrders(prev => prev.filter(po => po.id !== poId));
+                showToast('Purchase order deleted', 'success');
+            } else if (entry.id.startsWith('pay-')) {
+                const payId = entry.id.replace('pay-', '');
+                
+                // Revert PO payment amount
+                const { data: payment, error: fetchErr } = await supabase.from('supplier_payments').select('*').eq('id', payId).single();
+                if (fetchErr) throw fetchErr;
+
+                if (payment && payment.purchase_order_id) {
+                    const { data: po } = await supabase.from('purchase_orders').select('amount_paid, total_amount').eq('id', payment.purchase_order_id).single();
+                    if (po) {
+                        const newAmountPaid = Math.max(0, (Number(po.amount_paid) || 0) - Number(payment.amount));
+                        const newPaymentStatus = newAmountPaid === 0 ? 'Unpaid' : (newAmountPaid >= po.total_amount ? 'Paid' : 'Partial');
+                        await supabase.from('purchase_orders').update({
+                            amount_paid: newAmountPaid,
+                            payment_status: newPaymentStatus
+                        }).eq('id', payment.purchase_order_id);
+                    }
+                }
+
+                const { error } = await supabase.from('supplier_payments').delete().eq('id', payId);
+                if (error) throw error;
+                
+                setPayments(prev => prev.filter(p => p.id !== payId));
+                showToast('Payment deleted', 'success');
+            }
+        } catch (err: any) {
+            console.error('Delete error', err);
+            showToast('Failed to delete: ' + err.message, 'error');
+        }
+    };
+
     const formatCurrency = (val: number) => {
         if (val === 0) return '$0.00';
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -268,12 +309,13 @@ const SupplierDetailsPage = () => {
                             <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-danger)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '100px' }}>ជំពាក់ (Debt)</th>
                             <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-primary)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '100px' }}>សង (Paid)</th>
                             <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '120px' }}>Clear Invoice</th>
+                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '80px' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {ledger.length === 0 ? (
                             <tr>
-                                <td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                <td colSpan={9} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', color: 'var(--color-text-secondary)' }}>
                                         <FileText size={32} style={{ opacity: 0.5 }} />
                                         <p>No transactions found for this supplier.</p>
@@ -293,10 +335,8 @@ const SupplierDetailsPage = () => {
                                             <span style={{ color: 'var(--color-primary)', fontWeight: 600, display: 'inline-flex', padding: '4px 10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '20px' }}>សង</span>
                                         )}
                                     </td>
-                                    <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>
-                                        <span style={{ background: 'var(--color-danger)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                                            {supplier.name.substring(0, 15)}
-                                        </span>
+                                    <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                        {supplier.name.substring(0, 15)}
                                     </td>
                                     <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-main)' }}>
                                         {entry.description}
@@ -312,6 +352,15 @@ const SupplierDetailsPage = () => {
                                     </td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.balance > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
                                         {formatCurrency(entry.balance)}
+                                    </td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                                        <button 
+                                            onClick={() => handleDeleteLedgerEntry(entry)}
+                                            style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', opacity: 0.7 }}
+                                            title="Delete Entry"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                     </td>
                                 </tr>
                             ))

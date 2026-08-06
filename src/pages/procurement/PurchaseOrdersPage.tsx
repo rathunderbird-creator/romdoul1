@@ -46,6 +46,7 @@ const PurchaseOrdersPage = () => {
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [payingPOId, setPayingPOId] = useState('');
     const [payingSupplierId, setPayingSupplierId] = useState('');
+    const [payingPORemaining, setPayingPORemaining] = useState<number>(0);
     const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
     const [paymentMethod, setPaymentMethod] = useState('Cash');
     const [paymentDate, setPaymentDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
@@ -164,6 +165,7 @@ const PurchaseOrdersPage = () => {
         setPayingPOId(po.id);
         setPayingSupplierId(po.supplier_id);
         const remaining = (po.total_amount || 0) - (po.amount_paid || 0);
+        setPayingPORemaining(remaining > 0 ? remaining : 0);
         setPaymentAmount(remaining > 0 ? remaining : 0);
         setPaymentMethod('Cash');
         setPaymentDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
@@ -604,6 +606,14 @@ const PurchaseOrdersPage = () => {
                                     onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || '')} 
                                     min="0" step="0.01"
                                 />
+                                {payingPORemaining > 0 && (
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining)}>Full</button>
+                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining * 0.75)}>75%</button>
+                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining * 0.5)}>50%</button>
+                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining * 0.25)}>25%</button>
+                                    </div>
+                                )}
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                 <div>

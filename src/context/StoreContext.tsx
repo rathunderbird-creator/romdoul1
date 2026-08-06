@@ -1118,11 +1118,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             if (restockError) throw restockError;
 
-            // 1. Fetch current product
+            // 2. Fetch current product
             const product = products.find(p => p.id === productId);
             if (!product) throw new Error("Product not found");
 
-            // 1.5 Insert into inventory_items
+            // 2.5 Insert into inventory_items
             const inventoryItems = Array.from({ length: quantity }).map(() => ({
                 product_id: productId,
                 cost_of_purchase: cost || product.purchaseCost || 0,
@@ -1151,23 +1151,58 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             });
             if (movementError) console.error('Failed to log stock movement:', movementError);
 
+            // 4. Update local state
+            setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
+            setProductsUpdatedAt(Date.now());
+        } catch (error: any) {
+            console.error("Error adding stock:", error);
+            alert(`Failed to add stock: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const adjustStock = async (productId: string, newStock: number, reason: string) => {
+        setIsLoading(true);
+        try {
+            const product = products.find(p => p.id === productId);
+            if (!product) throw new Error("Product not found");
+
+            const currentStock = product.stock;
+            const difference = newStock - currentStock;
+
+            if (difference === 0) return; // No change
+
+            // 1. Update product stock in DB
+            const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
+            if (productError) throw productError;
+
+            // 2. Log to stock_movements
+            const type = difference > 0 ? 'in' : 'out';
+            const { error: movementError } = await supabase.from('stock_movements').insert({
+                product_id: productId,
+                product_name: product.name,
+                type: type,
+                quantity: Math.abs(difference),
+                unit_price: product.purchaseCost || 0,
+                source: 'Manual Adjustment',
+                reason: 'Stock Count / Adjustment',
+                note: reason || `Adjusted from ${currentStock} to ${newStock}`,
+                movement_date: getLocalYYYYMMDD(),
+                created_by: currentUser?.id
+            });
+            
+            if (movementError) console.error('Failed to log stock adjustment movement:', movementError);
+
+            // 3. (Optional) If positive adjustment, we could add to inventory_items, 
+            // but for a generic adjustment, we'll just adjust the total stock for now.
 
             // 4. Update local state
             setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
-            setRestocks([{
-                id,
-                productId,
-                quantity,
-                cost: cost || 0,
-                date,
-                addedBy: currentUser?.name || 'Unknown',
-                note: note || ''
-            }, ...restocks]);
             setProductsUpdatedAt(Date.now());
-
-        } catch (error) {
-            console.error('Error adding stock:', error);
-            throw error;
+        } catch (error: any) {
+            console.error("Error adjusting stock:", error);
+            alert(`Failed to adjust stock: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -2737,6 +2772,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deleteProduct,
             deleteProducts,
             addStock, // Added addStock to context
+            adjustStock, // Added adjustStock to context
             transactions,
             addTransaction,
             updateTransaction,

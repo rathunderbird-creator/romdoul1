@@ -167,6 +167,7 @@ export interface StoreContextType {
 
     // Restock Management
     addStock: (productId: string, quantity: number, cost?: number, note?: string) => Promise<void>;
+    adjustStock: (productId: string, newStock: number, reason: string) => Promise<void>;
 
     // Customer Management
     addCustomer: (customer: Omit<Customer, 'id'>) => void;

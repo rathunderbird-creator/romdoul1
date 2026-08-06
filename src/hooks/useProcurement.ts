@@ -166,6 +166,7 @@ export const useProcurement = () => {
 
             showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
             await fetchPurchaseOrders(true); // silent fetch
+            return currentPoId;
         } catch (error: any) {
             console.error('Failed to save purchase order:', error);
             showToast('Failed to save purchase order: ' + error.message, 'error');
@@ -232,6 +233,36 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
+    const deleteSupplierPayment = useCallback(async (paymentId: string) => {
+        try {
+            // Wait, we need to revert PO amount_paid too. 
+            // Fetch payment to get PO id and amount
+            const { data: payment, error: fetchErr } = await supabase.from('supplier_payments').select('*').eq('id', paymentId).single();
+            if (fetchErr) throw fetchErr;
+
+            if (payment && payment.purchase_order_id) {
+                const { data: po } = await supabase.from('purchase_orders').select('amount_paid, total_amount').eq('id', payment.purchase_order_id).single();
+                if (po) {
+                    const newAmountPaid = Math.max(0, (Number(po.amount_paid) || 0) - Number(payment.amount));
+                    const newPaymentStatus = newAmountPaid === 0 ? 'Unpaid' : (newAmountPaid >= po.total_amount ? 'Paid' : 'Partial');
+                    await supabase.from('purchase_orders').update({
+                        amount_paid: newAmountPaid,
+                        payment_status: newPaymentStatus
+                    }).eq('id', payment.purchase_order_id);
+                }
+            }
+
+            const { error } = await supabase.from('supplier_payments').delete().eq('id', paymentId);
+            if (error) throw error;
+            showToast('Payment deleted successfully', 'success');
+            await fetchPurchaseOrders(true);
+        } catch (error: any) {
+            console.error('Failed to delete payment:', error);
+            showToast('Failed to delete payment: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchPurchaseOrders]);
+
     return {
         suppliers,
         purchaseOrders,
@@ -240,8 +271,9 @@ export const useProcurement = () => {
         saveSupplier,
         deleteSupplier,
         fetchPurchaseOrders,
-        savePurchaseOrder,
         deletePurchaseOrder,
-        recordSupplierPayment
+        savePurchaseOrder,
+        recordSupplierPayment,
+        deleteSupplierPayment
     };
 };
