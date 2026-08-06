@@ -411,6 +411,7 @@ export interface PurchaseOrder {
     payment_status?: 'Unpaid' | 'Partial' | 'Paid';
     amount_paid?: number;
     payment_due_date?: string;
+    invoice_number?: string;
     notes?: string;
     created_at?: string;
     // Joined fields for UI
@@ -427,4 +428,49 @@ export interface SupplierPayment {
     payment_method?: string;
     notes?: string;
     created_at?: string;
+}
+
+// ==========================================
+// ERP: HR & Payroll Types
+// ==========================================
+export interface Employee {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string;
+    phone?: string;
+    department?: string;
+    position?: string;
+    hire_date?: string;
+    base_salary: number;
+    status: string;
+    created_at?: string;
+}
+
+export interface LeaveRequest {
+    id: string;
+    employee_id: string;
+    leave_type: string;
+    start_date: string;
+    end_date: string;
+    status: string;
+    reason?: string;
+    created_at?: string;
+    // Joined field for UI
+    employee?: Employee;
+}
+
+export interface PayrollRun {
+    id: string;
+    employee_id: string;
+    month: string;
+    base_pay: number;
+    bonus: number;
+    deductions: number;
+    net_pay: number;
+    payment_status: string;
+    payment_date?: string;
+    created_at?: string;
+    // Joined field for UI
+    employee?: Employee;
 }

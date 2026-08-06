@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2, FileText } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal, StatusBadge } from '../../components';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -20,6 +21,7 @@ const getInitials = (name: string) => {
 };
 
 const SuppliersPage = () => {
+    const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { suppliers, purchaseOrders, isLoading, fetchSuppliers, fetchPurchaseOrders, saveSupplier, deleteSupplier } = useProcurement();
 
@@ -224,6 +226,14 @@ const SuppliersPage = () => {
                                     </td>
                                     <td style={{ padding: '16px 24px', textAlign: 'right', borderRight: 'none' }}>
                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', opacity: 0.8 }} className="actions-group">
+                                            <button 
+                                                className="primary-button" 
+                                                style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                onClick={() => navigate(`/procurement/suppliers/${supplier.id}`)}
+                                                title="View Ledger"
+                                            >
+                                                <FileText size={14} /> Ledger
+                                            </button>
                                             <button 
                                                 className="secondary-button" 
                                                 style={{ padding: '8px', borderRadius: '8px', background: 'var(--color-bg)' }}

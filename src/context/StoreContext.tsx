@@ -1309,8 +1309,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (salesOrder) {
             const oldStatus = salesOrder.shipping?.status || 'Pending';
 
-            // Case 1: Changing TO 'Shipped' (from non-shipped) -> DEDUCT Stock
-            if (status === 'Shipped' && oldStatus !== 'Shipped') {
+            const isStockOutStatus = (s: string) => ['Shipped', 'Delivered'].includes(s);
+
+            // Case 1: Changing TO 'Shipped' or 'Delivered' (from non-shipped) -> DEDUCT Stock
+            if (isStockOutStatus(status) && !isStockOutStatus(oldStatus)) {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1339,11 +1341,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                 }
             }
-            // Case 2: Changing FROM 'Shipped' (to non-shipped) -> RESTORE Stock
-            // EXCEPTION: If changing to 'Delivered' or 'Returned', do NOT restore stock automatically.
-            // 'Delivered' means the customer has it.
+            // Case 2: Changing FROM 'Shipped' or 'Delivered' (to non-shipped) -> RESTORE Stock
+            // EXCEPTION: If changing to 'Returned', do NOT restore stock automatically.
             // 'Returned' means it's on the way back but hasn't arrived. (Restock button in Inventory will restore it).
-            else if (oldStatus === 'Shipped' && status !== 'Shipped' && status !== 'Delivered' && status !== 'Returned') {
+            else if (isStockOutStatus(oldStatus) && !isStockOutStatus(status) && status !== 'Returned') {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1387,10 +1388,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         await supabase.from('sales').update(updates).eq('id', id);
 
-        // Log stock-out movement only when status changes to Shipped
-        if (salesOrder && status === 'Shipped') {
+        const isStockOutStatus = (s: string) => ['Shipped', 'Delivered'].includes(s);
+
+        // Log stock-out movement only when status changes to Shipped or Delivered
+        if (salesOrder && isStockOutStatus(status)) {
             const oldStatus = salesOrder.shipping?.status || 'Pending';
-            // Only log if this is a new transition
+            // Only log or update if this is a new transition
             if (oldStatus !== status) {
                 // Check if stock-out records already exist for this order
                 const { data: existingMovements } = await supabase.from('stock_movements')
@@ -1403,7 +1406,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     await supabase.from('stock_movements')
                         .update({
                             reason: status,
-                            source: 'Order Shipped',
+                            source: status === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
                             movement_date: getLocalYYYYMMDD()
                         })
                         .eq('reference_id', id)
@@ -1427,7 +1430,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             unit_price: item.price || 0,
                             reason: status,
                             reference_id: id,
-                            source: 'Order Shipped',
+                            source: status === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
                             shipping_co: shippingCompany ?? (salesOrder.shipping?.company || ''),
                             note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                             movement_date: getLocalYYYYMMDD(),
@@ -1645,11 +1648,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} updated`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id } });
             }
 
-            // 5. Log stock-out movement only when shipping status changes to Shipped
+            // 5. Log stock-out movement only when shipping status changes to Shipped or Delivered
             if (updates.shipping?.status && existingOrder) {
                 const newStatus = updates.shipping.status;
                 const oldStatus = existingOrder.shipping?.status || 'Pending';
-                if (newStatus === 'Shipped' && oldStatus !== newStatus) {
+                const isStockOutStatus = (s: string) => ['Shipped', 'Delivered'].includes(s);
+
+                if (isStockOutStatus(newStatus) && oldStatus !== newStatus) {
                     // Check if stock-out records already exist for this order
                     const { data: existingMovements } = await supabase.from('stock_movements')
                         .select('id')
@@ -1661,7 +1666,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         await supabase.from('stock_movements')
                             .update({
                                 reason: newStatus,
-                                source: 'Order Shipped',
+                                source: newStatus === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
                                 movement_date: getLocalYYYYMMDD()
                             })
                             .eq('reference_id', id)
@@ -1686,7 +1691,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 unit_price: item.price || 0,
                                 reason: newStatus,
                                 reference_id: id,
-                                source: 'Order Shipped',
+                                source: newStatus === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
                                 shipping_co: updates.shipping?.company || existingOrder.shipping?.company || '',
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                                 movement_date: getLocalYYYYMMDD(),
@@ -1699,8 +1704,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             });
                         }
                     }
-                } else if (oldStatus === 'Shipped' && newStatus !== 'Shipped' && newStatus !== 'Delivered' && newStatus !== 'Returned') {
-                    // Delete stock-out records since the order is no longer shipped
+                } else if (isStockOutStatus(oldStatus) && !isStockOutStatus(newStatus) && newStatus !== 'Returned') {
+                    // Delete stock-out records since the order is no longer shipped/delivered
                     await supabase.from('stock_movements').delete().eq('reference_id', id).eq('type', 'out');
                 }
             }

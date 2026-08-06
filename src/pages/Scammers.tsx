@@ -20,7 +20,7 @@ const Scammers: React.FC = () => {
     }, [setHeaderContent]);
 
     return (
-        <div className="page-container" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="page-container fade-in">
             <div className="glass-panel" style={{ padding: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

@@ -34,6 +34,7 @@ const PurchaseOrdersPage = () => {
     const [supplierId, setSupplierId] = useState('');
     const [orderDate, setOrderDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
+    const [invoiceNumber, setInvoiceNumber] = useState('');
     const [paymentDueDate, setPaymentDueDate] = useState('');
     const [status, setStatus] = useState<'Draft' | 'Sent' | 'Received' | 'Cancelled'>('Draft');
     const [notes, setNotes] = useState('');
@@ -74,6 +75,7 @@ const PurchaseOrdersPage = () => {
         setSupplierId('');
         setOrderDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setExpectedDeliveryDate('');
+        setInvoiceNumber('');
         setPaymentDueDate('');
         setStatus('Draft');
         setNotes('');
@@ -86,6 +88,7 @@ const PurchaseOrdersPage = () => {
         setSupplierId(po.supplier_id);
         setOrderDate(po.order_date ? po.order_date.split('T')[0] : '');
         setExpectedDeliveryDate(po.expected_delivery_date ? po.expected_delivery_date.split('T')[0] : '');
+        setInvoiceNumber(po.invoice_number || '');
         setPaymentDueDate(po.payment_due_date ? po.payment_due_date.split('T')[0] : '');
         setStatus(po.status || 'Draft');
         setNotes(po.notes || '');
@@ -143,6 +146,7 @@ const PurchaseOrdersPage = () => {
                     supplier_id: supplierId, 
                     order_date: orderDate, 
                     expected_delivery_date: expectedDeliveryDate || undefined,
+                    invoice_number: invoiceNumber || undefined,
                     payment_due_date: paymentDueDate || undefined,
                     status,
                     total_amount: totalAmount,
@@ -239,6 +243,7 @@ const PurchaseOrdersPage = () => {
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Supplier</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Date</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Expected Date</th>
+                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Invoice #</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Due Date</th>
                                 <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Items</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontWeight: 600 }}>Total</th>
@@ -263,6 +268,9 @@ const PurchaseOrdersPage = () => {
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                                             {po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                                            {po.invoice_number || '-'}
                                         </td>
                                         <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                                             {po.payment_due_date ? <span style={{ color: new Date(po.payment_due_date) < new Date() && po.payment_status !== 'Paid' ? 'var(--color-danger)' : 'inherit' }}>{new Date(po.payment_due_date).toLocaleDateString()}</span> : '-'}
@@ -429,6 +437,19 @@ const PurchaseOrdersPage = () => {
                                         style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
                                         value={paymentDueDate} 
                                         onChange={(e) => setPaymentDueDate(e.target.value)} 
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Invoice Number</label>
+                                    <input 
+                                        type="text" 
+                                        className="input-field" 
+                                        placeholder="Supplier Invoice #"
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
+                                        value={invoiceNumber} 
+                                        onChange={(e) => setInvoiceNumber(e.target.value)} 
                                     />
                                 </div>
                             </div>

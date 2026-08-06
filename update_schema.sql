@@ -18,3 +18,6 @@ CREATE TABLE IF NOT EXISTS public.supplier_payments (
 
 -- Disable RLS for new table
 ALTER TABLE public.supplier_payments DISABLE ROW LEVEL SECURITY;
+
+-- Add invoice_number to purchase_orders
+ALTER TABLE public.purchase_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT;
