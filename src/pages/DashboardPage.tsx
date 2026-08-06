@@ -461,7 +461,7 @@ const Dashboard: React.FC = () => {
                 marginBottom: '24px'
             }}>
                 <StatsCard
-                    title={t('dashboard.totalSales')}
+                    title={t('dashboard.totalOrders') || 'Total Orders'}
                     value={stats.totalSalesCount}
                     icon={ShoppingBag}
                     trend={t('dashboard.allOrders')}

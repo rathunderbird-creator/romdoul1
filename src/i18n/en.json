@@ -56,6 +56,7 @@
     "subtitle": "Overview of your store performance",
     "refreshData": "Refresh Data",
     "totalSales": "Total Sales",
+    "totalOrders": "Total Orders",
     "allOrders": "All orders",
     "paymentStatus": "Payment Status",
     "inventory": "Inventory",
