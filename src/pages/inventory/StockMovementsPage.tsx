@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeftRight, Search, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Download, PackagePlus, PackageMinus, Activity } from 'lucide-react';
+import { ArrowLeftRight, Search, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Download, PackagePlus, PackageMinus, Activity, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -31,10 +31,13 @@ interface StockMovement {
 }
 
 const StockMovementsPage: React.FC = () => {
-    const { warehouses } = useStore();
+    const { warehouses, products, updateProduct, currentUser } = useStore();
+    const isAdmin = currentUser?.roleId === 'admin';
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const isMobile = useMobile();
+
+    const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
 
     const [movements, setMovements] = useState<StockMovement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -117,6 +120,7 @@ const StockMovementsPage: React.FC = () => {
         setCurrentPage(1);
     }, [searchTerm, itemsPerPage]);
 
+
     const filteredMovements = useMemo(() => {
         if (!searchTerm) return movements;
         const q = searchTerm.toLowerCase();
@@ -190,6 +194,57 @@ const StockMovementsPage: React.FC = () => {
 
     const totalPages = Math.ceil(sortedMovements.length / itemsPerPage);
     const paginatedMovements = sortedMovements.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    const toggleSelection = (id: string) => {
+        const newSet = new Set(selectedRecordIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedRecordIds(newSet);
+    };
+
+    const toggleAll = () => {
+        if (selectedRecordIds.size === paginatedMovements.length && paginatedMovements.length > 0) {
+            setSelectedRecordIds(new Set());
+        } else {
+            setSelectedRecordIds(new Set(paginatedMovements.map(r => r.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedRecordIds.size} stock movement records? This will revert the inventory for these items.`)) return;
+
+        setIsLoading(true);
+        try {
+            const recordsToDelete = movements.filter(r => selectedRecordIds.has(r.id));
+            
+            for (const record of recordsToDelete) {
+                const product = products.find(p => p.id === record.product_id);
+                if (product) {
+                    const stockAdjustment = record.type === 'in' ? -record.quantity : record.quantity;
+                    await updateProduct(product.id, { stock: product.stock + stockAdjustment });
+                    
+                    if (record.warehouse_id) {
+                        const { data: ws } = await supabase.from('warehouse_stock').select('id, quantity').eq('warehouse_id', record.warehouse_id).eq('product_id', product.id).single();
+                        if (ws) {
+                            await supabase.from('warehouse_stock').update({ quantity: ws.quantity + stockAdjustment }).eq('id', ws.id);
+                        }
+                    }
+                }
+            }
+
+            const { error } = await supabase.from('stock_movements').delete().in('id', Array.from(selectedRecordIds));
+            if (error) throw error;
+
+            setMovements(prev => prev.filter(r => !selectedRecordIds.has(r.id)));
+            setSelectedRecordIds(new Set());
+            showToast(`Successfully deleted ${selectedRecordIds.size} records`, 'success');
+        } catch (err: any) {
+            showToast('Failed to delete records: ' + err.message, 'error');
+            fetchMovements();
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleSort = (key: string) => {
         let direction: 'asc' | 'desc' = 'asc';
@@ -320,9 +375,11 @@ const StockMovementsPage: React.FC = () => {
                         )}
                     </div>
                     
-                    <button onClick={exportToExcel} className="secondary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px' }}>
-                        <Download size={16} /> Export Excel
-                    </button>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button onClick={exportToExcel} className="secondary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px' }}>
+                            <Download size={16} /> Export Excel
+                        </button>
+                    </div>
                 </div>
 
                 {/* Table */}
@@ -342,6 +399,14 @@ const StockMovementsPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
+                                    <th style={{ width: '40px', padding: '12px 16px', textAlign: 'center' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={paginatedMovements.length > 0 && selectedRecordIds.size === paginatedMovements.length} 
+                                            onChange={toggleAll}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                    </th>
                                     <th onClick={() => handleSort('movement_date')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Date {sortConfig?.key === 'movement_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th onClick={() => handleSort('type')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Type {sortConfig?.key === 'type' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th onClick={() => handleSort('product_name')} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Product {sortConfig?.key === 'product_name' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
@@ -358,6 +423,14 @@ const StockMovementsPage: React.FC = () => {
                                     
                                     return (
                                         <tr key={record.id} style={{ borderBottom: '1px solid var(--color-border)' }} className="table-row">
+                                            <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={selectedRecordIds.has(record.id)} 
+                                                    onChange={() => toggleSelection(record.id)}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                            </td>
                                             <td style={{ padding: '12px 16px', fontSize: '13px' }}>
                                                 {new Date(record.movement_date || record.created_at).toLocaleDateString()}
                                             </td>
@@ -440,6 +513,32 @@ const StockMovementsPage: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Bottom Floating Actions */}
+            {isAdmin && selectedRecordIds.size > 0 && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '24px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'var(--color-surface, white)',
+                    padding: '12px 24px',
+                    borderRadius: '16px',
+                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    zIndex: 1000
+                }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', borderRight: '1px solid var(--color-border)', paddingRight: '16px' }}>
+                        {selectedRecordIds.size} Selected
+                    </div>
+                    <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                        <Trash2 size={18} /> Delete
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

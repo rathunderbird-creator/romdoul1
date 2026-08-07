@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
-// Removed unused Modal import
 import { useProcurement } from '../../hooks/useProcurement';
 import type { PurchaseOrderItem } from '../../types';
 
@@ -12,13 +11,24 @@ const formatCurrency = (amount: number) => {
 
 const getStatusConfig = (status: string) => {
     switch (status) {
-        case 'Draft': return { color: 'var(--color-text-secondary)', bg: 'rgba(156, 163, 175, 0.1)', icon: FileSignature };
+        case 'Draft': return { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)', icon: FileSignature };
         case 'Sent': return { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)', icon: Clock };
-        case 'Received': return { color: 'var(--color-success)', bg: 'rgba(34, 197, 94, 0.1)', icon: CheckCircle2 };
-        case 'Cancelled': return { color: 'var(--color-danger)', bg: 'rgba(239, 68, 68, 0.1)', icon: AlertCircle };
-        default: return { color: 'var(--color-text-secondary)', bg: 'rgba(156, 163, 175, 0.1)', icon: FileText };
+        case 'Received': return { color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', icon: CheckCircle2 };
+        case 'Cancelled': return { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', icon: AlertCircle };
+        default: return { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)', icon: FileText };
     }
 };
+
+const getPaymentConfig = (status: string) => {
+    switch (status) {
+        case 'Paid': return { color: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' };
+        case 'Partial': return { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)' };
+        default: return { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)' };
+    }
+};
+
+type StatusFilter = 'All' | 'Draft' | 'Sent' | 'Received' | 'Cancelled';
+type PaymentFilter = 'All' | 'Unpaid' | 'Partial' | 'Paid';
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
@@ -27,8 +37,9 @@ const PurchaseOrdersPage = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+    const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('All');
 
-    
     // Form state
     const [editingPOId, setEditingPOId] = useState<string | null>(null);
     const [supplierId, setSupplierId] = useState('');
@@ -71,6 +82,25 @@ const PurchaseOrdersPage = () => {
 
     const activeSuppliers = useMemo(() => suppliers.filter(s => s.is_active), [suppliers]);
 
+    // Summary stats
+    const summaryStats = useMemo(() => {
+        const totalPOs = purchaseOrders.length;
+        const totalValue = purchaseOrders.reduce((sum, po) => sum + (po.total_amount || 0), 0);
+        const totalPaid = purchaseOrders.reduce((sum, po) => sum + (po.amount_paid || 0), 0);
+        const unpaidCount = purchaseOrders.filter(po => po.payment_status !== 'Paid').length;
+        const overdueCount = purchaseOrders.filter(po => 
+            po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date()
+        ).length;
+        return { totalPOs, totalValue, totalPaid, outstanding: totalValue - totalPaid, unpaidCount, overdueCount };
+    }, [purchaseOrders]);
+
+    // Status counts for filter tabs
+    const statusCounts = useMemo(() => {
+        const counts: Record<string, number> = { All: purchaseOrders.length, Draft: 0, Sent: 0, Received: 0, Cancelled: 0 };
+        purchaseOrders.forEach(po => { if (counts[po.status] !== undefined) counts[po.status]++; });
+        return counts;
+    }, [purchaseOrders]);
+
     const handleOpenModal = () => {
         setEditingPOId(null);
         setSupplierId('');
@@ -111,7 +141,6 @@ const PurchaseOrdersPage = () => {
         }
     };
 
-
     const addLine = () => {
         setLines([...lines, { product_id: '', quantity: 1, unit_price: 0 }]);
     };
@@ -123,15 +152,12 @@ const PurchaseOrdersPage = () => {
     const updateLine = (index: number, field: keyof PurchaseOrderItem, value: any) => {
         const newLines = [...lines];
         newLines[index] = { ...newLines[index], [field]: value };
-        
-        // Auto-fill unit price if product is selected and price is 0
         if (field === 'product_id' && newLines[index].unit_price === 0) {
             const product = products.find(p => p.id === value);
             if (product) {
                 newLines[index].unit_price = product.purchaseCost || 0;
             }
         }
-        
         setLines(newLines);
     };
 
@@ -151,7 +177,7 @@ const PurchaseOrdersPage = () => {
                     payment_due_date: paymentDueDate || undefined,
                     status,
                     total_amount: totalAmount,
-                    notes
+                    notes: notes || undefined
                 },
                 lines
             );
@@ -186,157 +212,259 @@ const PurchaseOrdersPage = () => {
     // Filter Logic
     const filteredPOs = useMemo(() => {
         return purchaseOrders.filter(po => {
-            return po.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                   po.supplier?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+            // Status filter
+            if (statusFilter !== 'All' && po.status !== statusFilter) return false;
+            // Payment filter
+            if (paymentFilter !== 'All' && (po.payment_status || 'Unpaid') !== paymentFilter) return false;
+            // Search
+            if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase();
+                return po.id.toLowerCase().includes(q) || 
+                       po.supplier?.name?.toLowerCase().includes(q) ||
+                       (po.invoice_number || '').toLowerCase().includes(q);
+            }
+            return true;
         });
-    }, [purchaseOrders, searchQuery]);
+    }, [purchaseOrders, searchQuery, statusFilter, paymentFilter]);
 
+    const thStyle: React.CSSProperties = { padding: '14px 16px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' };
 
     return (
         <div className="page-container fade-in">
-            {/* Header Area */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
-                <div>
-                    <h1 style={{ fontSize: '28px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--color-primary)' }}>
-                        <FileText size={32} />
-                        Purchase Orders
-                    </h1>
+            {/* Summary Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
+                        <ShoppingCart size={20} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total POs</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700 }}>{summaryStats.totalPOs}</div>
+                    </div>
                 </div>
-                <button 
-                    className="primary-button" 
-                    onClick={handleOpenModal}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', borderRadius: '12px', fontWeight: 600, boxShadow: '0 4px 12px rgba(var(--color-primary-rgb), 0.3)' }}
-                >
-                    <Plus size={18} /> New Purchase Order
-                </button>
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #3b82f6, #60a5fa)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
+                        <Package size={20} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Value</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700 }}>{formatCurrency(summaryStats.totalValue)}</div>
+                    </div>
+                </div>
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #ef4444, #f87171)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
+                        <DollarSign size={20} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Outstanding</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, color: summaryStats.outstanding > 0 ? '#ef4444' : '#10b981' }}>{formatCurrency(summaryStats.outstanding)}</div>
+                    </div>
+                </div>
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #f59e0b, #fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
+                        <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Overdue</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, color: summaryStats.overdueCount > 0 ? '#ef4444' : 'var(--color-text)' }}>{summaryStats.overdueCount}</div>
+                    </div>
+                </div>
             </div>
 
-            {/* Simple Search Bar */}
-            <div style={{ marginBottom: '24px' }}>
-                <div style={{ position: 'relative', width: '100%', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                    <Search size={18} color="var(--color-text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input 
-                        type="text" 
-                        placeholder="Search PO number or supplier..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ width: '100%', padding: '12px 16px 12px 44px', background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', color: 'var(--color-text)' }}
-                    />
+            {/* Toolbar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    {/* Status filter tabs */}
+                    <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                        {(['All', 'Draft', 'Sent', 'Received', 'Cancelled'] as StatusFilter[]).map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setStatusFilter(tab)}
+                                style={{
+                                    padding: '7px 14px',
+                                    border: 'none',
+                                    background: statusFilter === tab ? 'var(--color-primary)' : 'transparent',
+                                    color: statusFilter === tab ? 'white' : 'var(--color-text-secondary)',
+                                    fontWeight: 600,
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                }}
+                            >
+                                {tab}
+                                <span style={{
+                                    background: statusFilter === tab ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)',
+                                    padding: '1px 7px',
+                                    borderRadius: '12px',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                }}>{statusCounts[tab] || 0}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Payment filter */}
+                    <select
+                        value={paymentFilter}
+                        onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
+                        style={{
+                            padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
+                        }}
+                    >
+                        <option value="All">All Payments</option>
+                        <option value="Unpaid">Unpaid</option>
+                        <option value="Partial">Partial</option>
+                        <option value="Paid">Paid</option>
+                    </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ position: 'relative', width: '260px' }}>
+                        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                        <input 
+                            type="text" 
+                            className="input-field"
+                            placeholder="Search PO, supplier, invoice..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
+                        />
+                    </div>
+                    <button 
+                        className="primary-button" 
+                        onClick={handleOpenModal}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontWeight: 600, boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}
+                    >
+                        <Plus size={18} /> New PO
+                    </button>
                 </div>
             </div>
 
-            {/* List Table */}
+            {/* Table */}
             {isLoading ? (
                 <div style={{ textAlign: 'center', padding: '60px', color: 'var(--color-text-secondary)' }}>
                     <div className="loader" style={{ margin: '0 auto 16px', width: '32px', height: '32px' }}></div>
                     Loading orders...
                 </div>
             ) : filteredPOs.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '60px', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', borderRadius: '16px' }}>
                     <FileText size={48} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)' }}>No Purchase Orders Found</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '8px' }}>No Purchase Orders Found</h3>
+                    <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                        {searchQuery || statusFilter !== 'All' || paymentFilter !== 'All' ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
+                    </p>
                 </div>
             ) : (
-                <div style={{ overflowX: 'auto', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
+                    <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                         <thead>
-                            <tr style={{ borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>PO #</th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Supplier</th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Date</th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Expected Date</th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Invoice #</th>
-                                <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600 }}>Due Date</th>
-                                <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Items</th>
-                                <th style={{ padding: '16px', textAlign: 'right', fontWeight: 600 }}>Total</th>
-                                <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Status</th>
-                                <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Payment</th>
-                                <th style={{ padding: '16px', textAlign: 'center', fontWeight: 600 }}>Actions</th>
+                            <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>PO #</th>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>Supplier</th>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>Expected</th>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>Invoice #</th>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>Due Date</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>Items</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>Payment</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredPOs.map(po => {
+                            {filteredPOs.map((po, idx) => {
                                 const statusCfg = getStatusConfig(po.status);
+                                const payCfg = getPaymentConfig(po.payment_status || 'Unpaid');
+                                const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();
+                                const paidPercent = po.total_amount > 0 ? Math.min(100, Math.round(((po.amount_paid || 0) / po.total_amount) * 100)) : 0;
                                 return (
-                                    <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-background)' }}>
-                                        <td style={{ padding: '16px', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>
+                                    <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined }} className="hover-highlight">
+                                        <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', fontFamily: 'monospace' }}>
                                             PO-{po.id.substring(0, 8).toUpperCase()}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                                            {po.supplier?.name}
+                                        <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
+                                            {po.supplier?.name || '—'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                                            {new Date(po.order_date).toLocaleDateString()}
+                                        <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                            {new Date(po.order_date).toLocaleDateString('en-GB').replace(/\//g, '-')}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                                            {po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString() : '-'}
+                                        <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                            {po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                                            {po.invoice_number || '-'}
+                                        <td style={{ padding: '14px 16px', fontSize: '13px', color: po.invoice_number ? 'var(--color-text)' : 'var(--color-text-muted)', fontFamily: po.invoice_number ? 'monospace' : undefined, fontWeight: po.invoice_number ? 500 : 400 }}>
+                                            {po.invoice_number || '—'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                                            {po.payment_due_date ? <span style={{ color: new Date(po.payment_due_date) < new Date() && po.payment_status !== 'Paid' ? 'var(--color-danger)' : 'inherit' }}>{new Date(po.payment_due_date).toLocaleDateString()}</span> : '-'}
+                                        <td style={{ padding: '14px 16px', fontSize: '13px' }}>
+                                            {po.payment_due_date ? (
+                                                <span style={{ color: isOverdue ? '#ef4444' : 'var(--color-text-secondary)', fontWeight: isOverdue ? 600 : 400 }}>
+                                                    {new Date(po.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-')}
+                                                    {isOverdue && <span style={{ fontSize: '10px', marginLeft: '4px' }}>⚠</span>}
+                                                </span>
+                                            ) : '—'}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>
-                                            {po.items?.reduce((sum, i) => sum + i.quantity, 0)}
+                                        <td style={{ padding: '14px 16px', fontSize: '13px', textAlign: 'center', fontWeight: 600, color: 'var(--color-text)' }}>
+                                            {po.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 0}
                                         </td>
-                                        <td style={{ padding: '16px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text)', textAlign: 'right' }}>
+                                        <td style={{ padding: '14px 16px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text)', textAlign: 'right' }}>
                                             {formatCurrency(po.total_amount)}
                                         </td>
-                                        <td style={{ padding: '16px', textAlign: 'center' }}>
+                                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                                             <span style={{ 
-                                                display: 'inline-block',
-                                                padding: '4px 12px', 
-                                                borderRadius: '16px', 
-                                                fontSize: '11px', 
-                                                fontWeight: 700,
-                                                textTransform: 'uppercase',
-                                                backgroundColor: statusCfg.bg,
-                                                color: statusCfg.color,
+                                                display: 'inline-block', padding: '3px 10px', borderRadius: '20px', 
+                                                fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
+                                                backgroundColor: statusCfg.bg, color: statusCfg.color,
                                             }}>
                                                 {po.status}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '16px', textAlign: 'center' }}>
-                                            <span style={{ 
-                                                display: 'inline-block',
-                                                padding: '4px 12px', 
-                                                borderRadius: '16px', 
-                                                fontSize: '11px', 
-                                                fontWeight: 700,
-                                                textTransform: 'uppercase',
-                                                backgroundColor: po.payment_status === 'Paid' ? 'rgba(34, 197, 94, 0.1)' : po.payment_status === 'Partial' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                color: po.payment_status === 'Paid' ? 'var(--color-success)' : po.payment_status === 'Partial' ? '#f59e0b' : 'var(--color-danger)',
-                                                marginBottom: '4px'
-                                            }}>
-                                                {po.payment_status || 'Unpaid'}
-                                            </span>
-                                            {(po.amount_paid || 0) > 0 && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{formatCurrency(po.amount_paid || 0)} paid</div>}
+                                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                            <div>
+                                                <span style={{ 
+                                                    display: 'inline-block', padding: '3px 10px', borderRadius: '20px', 
+                                                    fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
+                                                    backgroundColor: payCfg.bg, color: payCfg.color,
+                                                }}>
+                                                    {po.payment_status || 'Unpaid'}
+                                                </span>
+                                                {paidPercent > 0 && paidPercent < 100 && (
+                                                    <div style={{ marginTop: '6px' }}>
+                                                        <div style={{ width: '60px', height: '4px', borderRadius: '2px', background: 'var(--color-border)', margin: '0 auto', overflow: 'hidden' }}>
+                                                            <div style={{ width: `${paidPercent}%`, height: '100%', background: '#f59e0b', borderRadius: '2px' }} />
+                                                        </div>
+                                                        <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{paidPercent}%</div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
-                                        <td style={{ padding: '16px', textAlign: 'center' }}>
-                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                                 {po.payment_status !== 'Paid' && (
                                                     <button 
                                                         onClick={() => handleOpenPaymentModal(po)}
-                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981', padding: '4px' }}
+                                                        style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
                                                         title="Record Payment"
                                                     >
-                                                        <FileSignature size={18} />
+                                                        <DollarSign size={15} />
                                                     </button>
                                                 )}
                                                 <button 
                                                     onClick={() => handleEditPO(po)}
-                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '4px' }}
-                                                    title="Edit Purchase Order"
+                                                    style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
+                                                    title="Edit"
                                                 >
-                                                    <Edit size={18} />
+                                                    <Edit size={15} />
                                                 </button>
                                                 <button 
                                                     onClick={() => handleDeletePO(po.id)}
-                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger)', padding: '4px' }}
-                                                    title="Delete Purchase Order"
+                                                    style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
+                                                    title="Delete"
                                                 >
-                                                    <Trash2 size={18} />
+                                                    <Trash2 size={15} />
                                                 </button>
                                             </div>
                                         </td>
@@ -348,7 +476,7 @@ const PurchaseOrdersPage = () => {
                 </div>
             )}
 
-            {/* Premium Redesigned Modal Form */}
+            {/* PO Form Modal */}
             {isModalOpen && (
                 <div style={{
                     position: 'fixed', inset: 0, zIndex: 9999,
@@ -359,8 +487,8 @@ const PurchaseOrdersPage = () => {
                         background: '#ffffff',
                         borderRadius: '24px',
                         width: '100%',
-                        maxWidth: '900px',
-                        maxHeight: '90vh',
+                        maxWidth: '940px',
+                        maxHeight: '92vh',
                         display: 'flex',
                         flexDirection: 'column',
                         boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
@@ -368,200 +496,181 @@ const PurchaseOrdersPage = () => {
                         animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                     }}>
                         {/* Modal Header */}
-                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff' }}>
-                            <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
-                                {editingPOId ? 'Edit Purchase Order' : 'Create Purchase Order'}
-                            </h2>
-                            <button onClick={() => setIsModalOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
-                                <X size={20} />
+                        <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                    <FileText size={20} />
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
+                                        {editingPOId ? 'Edit Purchase Order' : 'New Purchase Order'}
+                                    </h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Fill in order details and add line items</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                                <X size={18} />
                             </button>
                         </div>
 
                         {/* Modal Body */}
-                        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Supplier *</label>
-                                    <select 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={supplierId}
-                                        onChange={(e) => setSupplierId(e.target.value)}
-                                    >
-                                        <option value="">Select Supplier</option>
-                                        {activeSuppliers.map(s => (
-                                            <option key={s.id} value={s.id}>{s.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Status</label>
-                                    <select 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={status}
-                                        onChange={(e) => setStatus(e.target.value as any)}
-                                    >
-                                        <option value="Draft">Draft</option>
-                                        <option value="Sent">Sent</option>
-                                        <option value="Received">Received</option>
-                                        <option value="Cancelled">Cancelled</option>
-                                    </select>
-                                </div>
-                            </div>
+                        <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Order Date *</label>
-                                    <input 
-                                        type="date" 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={orderDate} 
-                                        onChange={(e) => setOrderDate(e.target.value)} 
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Expected Delivery</label>
-                                    <input 
-                                        type="date" 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={expectedDeliveryDate} 
-                                        onChange={(e) => setExpectedDeliveryDate(e.target.value)} 
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Payment Due Date</label>
-                                    <input 
-                                        type="date" 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={paymentDueDate} 
-                                        onChange={(e) => setPaymentDueDate(e.target.value)} 
-                                    />
-                                </div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Invoice Number</label>
-                                    <input 
-                                        type="text" 
-                                        className="input-field" 
-                                        placeholder="Supplier Invoice #"
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={invoiceNumber} 
-                                        onChange={(e) => setInvoiceNumber(e.target.value)} 
-                                    />
+                            {/* Section: Order Information */}
+                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    <ShoppingCart size={15} /> Order Information
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier *</label>
+                                        <select 
+                                            className="input-field" 
+                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                            value={supplierId}
+                                            onChange={(e) => setSupplierId(e.target.value)}
+                                        >
+                                            <option value="">Select Supplier</option>
+                                            {activeSuppliers.map(s => (
+                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Status</label>
+                                        <select 
+                                            className="input-field" 
+                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                            value={status}
+                                            onChange={(e) => setStatus(e.target.value as any)}
+                                        >
+                                            <option value="Draft">Draft</option>
+                                            <option value="Sent">Sent</option>
+                                            <option value="Received">Received</option>
+                                            <option value="Cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Notes</label>
-                                <textarea 
-                                    className="input-field" 
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', minHeight: '60px', fontSize: '14px' }}
-                                    value={notes} 
-                                    onChange={(e) => setNotes(e.target.value)} 
-                                />
+                            {/* Section: Schedule & Dates */}
+                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    <Clock size={15} /> Schedule & Dates
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Order Date *</label>
+                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Expected Delivery</label>
+                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Due Date</label>
+                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={paymentDueDate} onChange={(e) => setPaymentDueDate(e.target.value)} />
+                                    </div>
+                                </div>
                             </div>
 
-                            <div style={{ marginTop: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                    <h3 style={{ fontSize: '15px', fontWeight: 600 }}>Line Items</h3>
+                            {/* Section: Reference & Notes */}
+                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    <FileSignature size={15} /> Reference & Notes
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
+                                        <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', fontFamily: 'monospace' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Notes</label>
+                                        <input type="text" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Line Items */}
+                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                    <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+                                        <Package size={15} /> Line Items
+                                        <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{lines.length}</span>
+                                    </h4>
                                     <button 
-                                        className="secondary-button" 
-                                        onClick={addLine}
-                                        style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px' }}
+                                        className="primary-button" 
+                                        onClick={addLine} 
+                                        style={{ padding: '7px 14px', fontSize: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}
                                     >
-                                        + Add Product
+                                        <Plus size={14} /> Add Product
                                     </button>
                                 </div>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                        <tr style={{ borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                            <th style={{ padding: '8px', textAlign: 'left' }}>Product</th>
-                                            <th style={{ padding: '8px', textAlign: 'right', width: '80px' }}>Qty</th>
-                                            <th style={{ padding: '8px', textAlign: 'right', width: '120px' }}>Unit Cost</th>
-                                            <th style={{ padding: '8px', textAlign: 'right', width: '120px' }}>Total</th>
-                                            <th style={{ padding: '8px', width: '40px' }}></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {lines.map((line, index) => (
-                                            <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <td style={{ padding: '8px' }}>
-                                                    <select 
-                                                        className="input-field" 
-                                                        style={{ width: '100%', padding: '8px', borderRadius: '6px', fontSize: '13px' }}
-                                                        value={line.product_id}
-                                                        onChange={(e) => updateLine(index, 'product_id', e.target.value)}
-                                                    >
-                                                        <option value="">Select...</option>
-                                                        {products.map(p => (
-                                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-                                                <td style={{ padding: '8px' }}>
-                                                    <input 
-                                                        type="number" 
-                                                        className="input-field" 
-                                                        style={{ width: '100%', padding: '8px', textAlign: 'right', borderRadius: '6px', fontSize: '13px' }}
-                                                        value={line.quantity || ''}
-                                                        min="1"
-                                                        onChange={(e) => updateLine(index, 'quantity', parseInt(e.target.value) || 0)}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: '8px' }}>
-                                                    <input 
-                                                        type="number" 
-                                                        className="input-field" 
-                                                        style={{ width: '100%', padding: '8px', textAlign: 'right', borderRadius: '6px', fontSize: '13px' }}
-                                                        value={line.unit_price === 0 && line.product_id === '' ? '' : line.unit_price}
-                                                        min="0" step="0.01"
-                                                        onChange={(e) => updateLine(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: '8px', textAlign: 'right', fontSize: '14px', fontWeight: 500 }}>
-                                                    {formatCurrency((line.quantity || 0) * (line.unit_price || 0))}
-                                                </td>
-                                                <td style={{ padding: '8px', textAlign: 'center' }}>
-                                                    <button 
-                                                        onClick={() => removeLine(index)} 
-                                                        disabled={lines.length <= 1}
-                                                        style={{ 
-                                                            background: 'none', border: 'none', cursor: lines.length > 1 ? 'pointer' : 'not-allowed', 
-                                                            color: lines.length > 1 ? 'var(--color-danger)' : 'var(--color-text-muted)',
-                                                            padding: '4px'
-                                                        }}
-                                                    >
-                                                        <X size={16} />
-                                                    </button>
-                                                </td>
+                                <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: '#ffffff' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
+                                                <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '36px', borderBottom: '1px solid var(--color-border)' }}>#</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Product</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '80px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Qty</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '120px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Unit Cost</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '120px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Subtotal</th>
+                                                <th style={{ padding: '10px 12px', width: '40px', borderBottom: '1px solid var(--color-border)' }}></th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {lines.map((line, index) => (
+                                                <tr key={index} style={{ borderBottom: index < lines.length - 1 ? '1px solid var(--color-border)' : undefined, background: index % 2 === 1 ? 'rgba(0,0,0,0.01)' : undefined }}>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{index + 1}</td>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <select className="input-field" style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.product_id} onChange={(e) => updateLine(index, 'product_id', e.target.value)}>
+                                                            <option value="">Select product...</option>
+                                                            {products.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <input type="number" className="input-field" style={{ width: '100%', padding: '8px 10px', textAlign: 'right', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.quantity || ''} min="1" onChange={(e) => updateLine(index, 'quantity', parseInt(e.target.value) || 0)} />
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <input type="number" className="input-field" style={{ width: '100%', padding: '8px 10px', textAlign: 'right', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.unit_price === 0 && line.product_id === '' ? '' : line.unit_price} min="0" step="0.01" onChange={(e) => updateLine(index, 'unit_price', parseFloat(e.target.value) || 0)} />
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>
+                                                        {formatCurrency((line.quantity || 0) * (line.unit_price || 0))}
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                                        <button 
+                                                            onClick={() => removeLine(index)} 
+                                                            disabled={lines.length <= 1} 
+                                                            style={{ 
+                                                                background: lines.length > 1 ? 'rgba(239,68,68,0.08)' : 'transparent', 
+                                                                border: 'none', 
+                                                                cursor: lines.length > 1 ? 'pointer' : 'not-allowed', 
+                                                                color: lines.length > 1 ? '#ef4444' : 'var(--color-text-muted)', 
+                                                                padding: '5px', borderRadius: '6px', transition: 'all 0.2s',
+                                                            }}
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
 
                         {/* Modal Footer */}
-                        <div style={{ padding: '20px 24px', borderTop: '1px solid var(--color-border)', background: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ fontSize: '16px', fontWeight: 600 }}>
-                                Total: <span style={{ color: 'var(--color-primary)', fontSize: '20px', marginLeft: '8px' }}>{formatCurrency(totalAmount)}</span>
+                        <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Total</span>
+                                <span style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{formatCurrency(totalAmount)}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
                             </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 500 }}>
-                                    Cancel
-                                </button>
-                                <button 
-                                    className="primary-button" 
-                                    onClick={handleSave} 
-                                    disabled={!isFormValid}
-                                    style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 500 }}
-                                >
-                                    Save Order
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px' }}>Cancel</button>
+                                <button className="primary-button" onClick={handleSave} disabled={!isFormValid} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <CheckCircle2 size={16} /> {editingPOId ? 'Update Order' : 'Create Order'}
                                 </button>
                             </div>
                         </div>
@@ -580,88 +689,97 @@ const PurchaseOrdersPage = () => {
                         background: '#ffffff',
                         borderRadius: '24px',
                         width: '100%',
-                        maxWidth: '500px',
+                        maxWidth: '520px',
                         display: 'flex',
                         flexDirection: 'column',
                         boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
                         overflow: 'hidden',
                         animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                     }}>
-                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
-                                Record Supplier Payment
-                            </h2>
-                            <button onClick={() => setIsPaymentModalOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
-                                <X size={20} />
+                        {/* Payment Header */}
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(16,185,129,0.04), rgba(52,211,153,0.04))' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #10b981, #34d399)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                    <DollarSign size={18} />
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Record Payment</h2>
+                                    <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>Supplier payment recording</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsPaymentModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <X size={18} />
                             </button>
                         </div>
-                        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {/* Remaining Balance Display */}
+                            {payingPORemaining > 0 && (
+                                <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.12)', borderRadius: '12px', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Remaining Balance</span>
+                                    <span style={{ fontSize: '20px', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(payingPORemaining)}</span>
+                                </div>
+                            )}
+
+                            {/* Amount Input */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Amount to Pay *</label>
-                                <input 
-                                    type="number" 
-                                    className="input-field" 
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                    value={paymentAmount} 
-                                    onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || '')} 
-                                    min="0" step="0.01"
-                                />
+                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Amount to Pay *</label>
+                                <input type="number" className="input-field" style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', fontSize: '16px', fontWeight: 600, border: '1px solid var(--color-border)' }} value={paymentAmount} onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || '')} min="0" step="0.01" />
                                 {payingPORemaining > 0 && (
-                                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining)}>Full</button>
-                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining * 0.75)}>75%</button>
-                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining * 0.5)}>50%</button>
-                                        <button className="secondary-button" style={{ padding: '6px 12px', fontSize: '12px', flex: 1 }} onClick={() => setPaymentAmount(payingPORemaining * 0.25)}>25%</button>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
+                                        {[
+                                            { label: 'Full', pct: 1, color: '#10b981' },
+                                            { label: '75%', pct: 0.75, color: '#3b82f6' },
+                                            { label: '50%', pct: 0.5, color: '#f59e0b' },
+                                            { label: '25%', pct: 0.25, color: '#8b5cf6' },
+                                        ].map(btn => (
+                                            <button 
+                                                key={btn.label}
+                                                onClick={() => setPaymentAmount(Math.round(payingPORemaining * btn.pct * 100) / 100)} 
+                                                style={{ 
+                                                    padding: '8px 6px', fontSize: '12px', fontWeight: 700, border: '1px solid var(--color-border)', borderRadius: '8px',
+                                                    background: Number(paymentAmount) === Math.round(payingPORemaining * btn.pct * 100) / 100 ? btn.color : 'var(--color-bg)',
+                                                    color: Number(paymentAmount) === Math.round(payingPORemaining * btn.pct * 100) / 100 ? 'white' : btn.color,
+                                                    cursor: 'pointer', transition: 'all 0.2s',
+                                                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+                                                }}
+                                            >
+                                                <span>{btn.label}</span>
+                                                <span style={{ fontSize: '10px', opacity: 0.8 }}>{formatCurrency(Math.round(payingPORemaining * btn.pct * 100) / 100)}</span>
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+
+                            {/* Date & Method */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Payment Date *</label>
-                                    <input 
-                                        type="date" 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={paymentDate} 
-                                        onChange={(e) => setPaymentDate(e.target.value)} 
-                                    />
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Date *</label>
+                                    <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Method</label>
-                                    <select 
-                                        className="input-field" 
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', fontSize: '14px' }}
-                                        value={paymentMethod}
-                                        onChange={(e) => setPaymentMethod(e.target.value)}
-                                    >
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Method</label>
+                                    <select className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                                         <option value="Cash">Cash</option>
                                         <option value="Bank Transfer">Bank Transfer</option>
-                                        <option value="Credit Card">Credit Card</option>
-                                        <option value="Cheque">Cheque</option>
+                                        <option value="On Credit">On Credit</option>
                                     </select>
                                 </div>
                             </div>
+
+                            {/* Notes */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>Notes</label>
-                                <textarea 
-                                    className="input-field" 
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', minHeight: '60px', fontSize: '14px' }}
-                                    value={paymentNotes} 
-                                    onChange={(e) => setPaymentNotes(e.target.value)} 
-                                />
+                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Notes</label>
+                                <textarea className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', minHeight: '60px', fontSize: '14px', border: '1px solid var(--color-border)', resize: 'vertical' }} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Optional payment notes..." />
                             </div>
                         </div>
-                        <div style={{ padding: '20px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: 'var(--color-surface)' }}>
-                            <button className="secondary-button" onClick={() => setIsPaymentModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 500 }}>
-                                Cancel
-                            </button>
-                            <button 
-                                className="primary-button" 
-                                onClick={handleSavePayment} 
-                                disabled={!paymentAmount || paymentAmount <= 0}
-                                style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 500 }}
-                            >
-                                Record Payment
+
+                        {/* Payment Footer */}
+                        <div style={{ padding: '18px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(0,0,0,0.01)' }}>
+                            <button className="secondary-button" onClick={() => setIsPaymentModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                            <button className="primary-button" onClick={handleSavePayment} disabled={!paymentAmount || paymentAmount <= 0} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <CheckCircle2 size={16} /> Record Payment
                             </button>
                         </div>
                     </div>

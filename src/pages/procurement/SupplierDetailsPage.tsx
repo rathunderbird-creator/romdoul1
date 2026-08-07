@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Phone, Receipt, FileText, DollarSign, Wallet , Trash2 } from 'lucide-react';
+import { ArrowLeft, Building2, Phone, Receipt, FileText, DollarSign, Trash2, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
@@ -12,10 +12,17 @@ interface LedgerEntry {
     type: 'Invoice' | 'Payment';
     description: string;
     reference: string;
+    invoiceNumber: string;
+    paymentMethod: string;
     debt: number;
     paid: number;
     balance: number;
 }
+
+const formatCurrency = (val: number) => {
+    if (val === 0) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+};
 
 const SupplierDetailsPage = () => {
     const { id } = useParams<{ id: string }>();
@@ -27,6 +34,8 @@ const SupplierDetailsPage = () => {
     const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [dateStart, setDateStart] = useState('');
+    const [dateEnd, setDateEnd] = useState('');
 
     useEffect(() => {
         if (!supplier) {
@@ -117,14 +126,13 @@ const SupplierDetailsPage = () => {
 
         // Map POs as Debt/Invoices
         purchaseOrders.forEach(po => {
-            // Create a description summarizing the items
             let desc = '';
             if (po.items && po.items.length > 0) {
                 const itemStrs = po.items.map((item: any) => {
                     const prodName = item.product?.name || 'Unknown Product';
                     return `${prodName}=${item.quantity}($${item.unit_price})`;
                 });
-                desc = `ទិញ ${itemStrs.join(', ')}`; // 'ទិញ' = Buy
+                desc = `ទិញ ${itemStrs.join(', ')}`;
             } else {
                 desc = `Purchase Order #${po.id.slice(0, 8)}`;
             }
@@ -132,9 +140,11 @@ const SupplierDetailsPage = () => {
             entries.push({
                 id: `po-${po.id}`,
                 date: po.order_date,
-                type: 'Invoice', // ជំពាក់
+                type: 'Invoice',
                 description: desc,
                 reference: po.id.slice(0, 8).toUpperCase(),
+                invoiceNumber: po.invoice_number || '',
+                paymentMethod: '',
                 debt: Number(po.total_amount) || 0,
                 paid: 0
             });
@@ -145,9 +155,11 @@ const SupplierDetailsPage = () => {
             entries.push({
                 id: `pay-${pay.id}`,
                 date: pay.payment_date,
-                type: 'Payment', // សង
-                description: `សង ${pay.amount}$ - ${pay.notes || (pay.purchase_order ? pay.purchase_order.id.slice(0, 8).toUpperCase() : 'General Payment')}`, // 'សង' = Pay
+                type: 'Payment',
+                description: `សង ${pay.amount}$ - ${pay.notes || (pay.purchase_order ? pay.purchase_order.id.slice(0, 8).toUpperCase() : 'General Payment')}`,
                 reference: pay.purchase_order ? pay.purchase_order.id.slice(0, 8).toUpperCase() : 'PAYMENT',
+                invoiceNumber: '',
+                paymentMethod: pay.payment_method || '',
                 debt: 0,
                 paid: Number(pay.amount) || 0
             });
@@ -167,19 +179,37 @@ const SupplierDetailsPage = () => {
             };
         });
 
-        // The user might want to see newest first, so we reverse it AFTER calculating the balance
+        // Reverse so newest is first
         return finalizedLedger.reverse();
     }, [purchaseOrders, payments]);
+
+    // Filter by date range
+    const filteredLedger = useMemo(() => {
+        return ledger.filter(entry => {
+            if (dateStart && entry.date < dateStart) return false;
+            if (dateEnd && entry.date > dateEnd) return false;
+            return true;
+        });
+    }, [ledger, dateStart, dateEnd]);
 
     const stats = useMemo(() => {
         const totalDebt = ledger.reduce((sum, entry) => sum + entry.debt, 0);
         const totalPaid = ledger.reduce((sum, entry) => sum + entry.paid, 0);
+        const paidPercent = totalDebt > 0 ? Math.min(100, Math.round((totalPaid / totalDebt) * 100)) : 0;
         return {
             totalDebt,
             totalPaid,
-            balance: totalDebt - totalPaid
+            balance: totalDebt - totalPaid,
+            paidPercent,
         };
     }, [ledger]);
+
+    // Totals for filtered view
+    const filteredTotals = useMemo(() => {
+        const totalDebt = filteredLedger.reduce((sum, e) => sum + e.debt, 0);
+        const totalPaid = filteredLedger.reduce((sum, e) => sum + e.paid, 0);
+        return { totalDebt, totalPaid };
+    }, [filteredLedger]);
 
     const handleDeleteLedgerEntry = async (entry: LedgerEntry) => {
         if (!window.confirm(`Are you sure you want to delete this ${entry.type}? This action cannot be undone.`)) return;
@@ -222,11 +252,6 @@ const SupplierDetailsPage = () => {
         }
     };
 
-    const formatCurrency = (val: number) => {
-        if (val === 0) return '$0.00';
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-    };
-
     if (isLoading) {
         return (
             <div className="page-container fade-in" style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}>
@@ -249,51 +274,97 @@ const SupplierDetailsPage = () => {
     return (
         <div className="page-container fade-in">
             {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Building2 size={24} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                {/* Supplier Info Card */}
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Building2 size={22} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Supplier</div>
+                        <div style={{ fontSize: '17px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.name}</div>
+                        {supplier.phone && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}><Phone size={10} />{supplier.phone}</div>}
+                    </div>
+                </div>
+
+                {/* Total Invoiced */}
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #ef4444, #f87171)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Receipt size={22} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Supplier Info</div>
-                        <div style={{ fontSize: '18px', fontWeight: 700 }}>{supplier.name}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', gap: '10px', marginTop: '4px' }}>
-                            {supplier.phone && <span><Phone size={10} style={{display: 'inline', marginRight: '2px'}}/>{supplier.phone}</span>}
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Invoiced</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(stats.totalDebt)}</div>
+                    </div>
+                </div>
+
+                {/* Total Paid */}
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #10b981, #34d399)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <DollarSign size={22} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Paid</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, color: '#10b981' }}>{formatCurrency(stats.totalPaid)}</div>
+                    </div>
+                </div>
+
+                {/* Balance with Progress */}
+                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px', background: stats.balance > 0 ? 'rgba(239, 68, 68, 0.03)' : undefined }}>
+                    <div style={{ position: 'relative', width: '48px', height: '48px', flexShrink: 0 }}>
+                        {/* SVG Progress Ring */}
+                        <svg width="48" height="48" viewBox="0 0 48 48" style={{ transform: 'rotate(-90deg)' }}>
+                            <circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-border)" strokeWidth="4" />
+                            <circle cx="24" cy="24" r="20" fill="none" 
+                                stroke={stats.paidPercent >= 100 ? '#10b981' : stats.paidPercent >= 50 ? '#3b82f6' : '#f59e0b'} 
+                                strokeWidth="4" 
+                                strokeDasharray={`${(stats.paidPercent / 100) * 125.66} 125.66`}
+                                strokeLinecap="round"
+                            />
+                        </svg>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+                            {stats.paidPercent}%
                         </div>
                     </div>
-                </div>
-
-                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Receipt size={24} />
-                    </div>
                     <div>
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Invoiced (Debt)</div>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(stats.totalDebt)}</div>
-                    </div>
-                </div>
-
-                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--color-success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <DollarSign size={24} />
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Paid</div>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-success)' }}>{formatCurrency(stats.totalPaid)}</div>
-                    </div>
-                </div>
-
-                <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: stats.balance > 0 ? 'rgba(239, 68, 68, 0.03)' : 'var(--color-bg)' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: stats.balance > 0 ? 'var(--color-danger)' : 'var(--color-success)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Wallet size={24} />
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Current Balance (Owed)</div>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: stats.balance > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Outstanding</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, color: stats.balance > 0 ? '#ef4444' : '#10b981' }}>
                             {formatCurrency(stats.balance)}
                         </div>
                     </div>
                 </div>
+            </div>
+
+            {/* Date Range Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                <Calendar size={16} color="var(--color-text-muted)" />
+                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Filter by date:</span>
+                <input 
+                    type="date" 
+                    value={dateStart} 
+                    onChange={(e) => setDateStart(e.target.value)} 
+                    className="input-field"
+                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }}
+                />
+                <span style={{ color: 'var(--color-text-muted)' }}>→</span>
+                <input 
+                    type="date" 
+                    value={dateEnd} 
+                    onChange={(e) => setDateEnd(e.target.value)} 
+                    className="input-field"
+                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }}
+                />
+                {(dateStart || dateEnd) && (
+                    <button 
+                        onClick={() => { setDateStart(''); setDateEnd(''); }}
+                        style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}
+                    >
+                        Clear
+                    </button>
+                )}
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginLeft: 'auto' }}>
+                    {filteredLedger.length} entries
+                </span>
             </div>
 
             {/* Ledger Table */}
@@ -301,19 +372,19 @@ const SupplierDetailsPage = () => {
                 <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
                         <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', width: '100px' }}>Date</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', width: '120px' }}>ប្រតិបត្តិការ (Type)</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', width: '140px' }}>ម្ចាស់លុយ (Supplier)</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>ពិពណ៌នា (Description)</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', width: '120px' }}>Invoice No</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-danger)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '100px' }}>ជំពាក់ (Debt)</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-primary)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '100px' }}>សង (Paid)</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '120px' }}>Clear Invoice</th>
-                            <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textAlign: 'right', width: '80px' }}>Actions</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>Date</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>Type</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '130px' }}>Supplier</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '110px' }}>Invoice No</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: '#ef4444', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '110px' }}>Debt (ជំពាក់)</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: '#3b82f6', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '110px' }}>Paid (សង)</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '120px' }}>Balance</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', width: '60px' }}></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {ledger.length === 0 ? (
+                        {filteredLedger.length === 0 ? (
                             <tr>
                                 <td colSpan={9} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', color: 'var(--color-text-secondary)' }}>
@@ -323,47 +394,84 @@ const SupplierDetailsPage = () => {
                                 </td>
                             </tr>
                         ) : (
-                            ledger.map((entry) => (
-                                <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease' }} className="hover-highlight">
-                                    <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
-                                        {new Date(entry.date).toLocaleDateString('en-GB').replace(/\//g, '-')}
+                            <>
+                                {filteredLedger.map((entry, idx) => (
+                                    <tr 
+                                        key={entry.id} 
+                                        style={{ 
+                                            borderBottom: '1px solid var(--color-border)', 
+                                            transition: 'background-color 0.2s ease',
+                                            background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined,
+                                        }} 
+                                        className="hover-highlight"
+                                    >
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
+                                            {new Date(entry.date).toLocaleDateString('en-GB').replace(/\//g, '-')}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px' }}>
+                                            {entry.type === 'Invoice' ? (
+                                                <span style={{ color: '#ef4444', fontWeight: 600, display: 'inline-flex', padding: '3px 10px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '20px', fontSize: '12px' }}>ជំពាក់</span>
+                                            ) : (
+                                                <span style={{ color: '#3b82f6', fontWeight: 600, display: 'inline-flex', padding: '3px 10px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '20px', fontSize: '12px' }}>សង</span>
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                            {supplier.name.length > 15 ? supplier.name.substring(0, 15) + '…' : supplier.name}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text)' }}>
+                                            <div>{entry.description}</div>
+                                            {entry.paymentMethod && (
+                                                <span style={{ 
+                                                    fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'inline-block',
+                                                    padding: '2px 8px', borderRadius: '8px', 
+                                                    background: 'rgba(107, 114, 128, 0.08)', color: 'var(--color-text-secondary)',
+                                                }}>
+                                                    {entry.paymentMethod}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, fontFamily: entry.invoiceNumber ? 'monospace' : undefined }}>
+                                            {entry.invoiceNumber || (entry.type === 'Invoice' ? `PO-${entry.reference}` : '—')}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.debt > 0 ? '#ef4444' : 'var(--color-text-muted)' }}>
+                                            {entry.debt > 0 ? formatCurrency(entry.debt) : ''}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.paid > 0 ? '#3b82f6' : 'var(--color-text-muted)' }}>
+                                            {entry.paid > 0 ? formatCurrency(entry.paid) : ''}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 700, color: entry.balance > 0 ? '#ef4444' : '#10b981' }}>
+                                            {formatCurrency(entry.balance)}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                                            <button 
+                                                onClick={() => handleDeleteLedgerEntry(entry)}
+                                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.5, transition: 'opacity 0.2s' }}
+                                                title="Delete Entry"
+                                                onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                                                onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
+                                            >
+                                                <Trash2 size={15} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {/* Totals Row */}
+                                <tr style={{ background: 'rgba(0,0,0,0.03)', borderTop: '2px solid var(--color-border)' }}>
+                                    <td colSpan={5} style={{ padding: '14px 20px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        Totals {(dateStart || dateEnd) ? '(filtered)' : ''}
                                     </td>
-                                    <td style={{ padding: '12px 20px', fontSize: '13px' }}>
-                                        {entry.type === 'Invoice' ? (
-                                            <span style={{ color: 'var(--color-danger)', fontWeight: 600, display: 'inline-flex', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '20px' }}>ជំពាក់</span>
-                                        ) : (
-                                            <span style={{ color: 'var(--color-primary)', fontWeight: 600, display: 'inline-flex', padding: '4px 10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '20px' }}>សង</span>
-                                        )}
+                                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: '#ef4444' }}>
+                                        {formatCurrency(filteredTotals.totalDebt)}
                                     </td>
-                                    <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)' }}>
-                                        {supplier.name.substring(0, 15)}
+                                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: '#3b82f6' }}>
+                                        {formatCurrency(filteredTotals.totalPaid)}
                                     </td>
-                                    <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                                        {entry.description}
+                                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: stats.balance > 0 ? '#ef4444' : '#10b981' }}>
+                                        {formatCurrency(stats.balance)}
                                     </td>
-                                    <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                                        {entry.type === 'Invoice' ? `SA${entry.reference}` : entry.reference}
-                                    </td>
-                                    <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.debt > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
-                                        {entry.debt > 0 ? formatCurrency(entry.debt) : ''}
-                                    </td>
-                                    <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.paid > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
-                                        {entry.paid > 0 ? formatCurrency(entry.paid) : ''}
-                                    </td>
-                                    <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.balance > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
-                                        {formatCurrency(entry.balance)}
-                                    </td>
-                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>
-                                        <button 
-                                            onClick={() => handleDeleteLedgerEntry(entry)}
-                                            style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', opacity: 0.7 }}
-                                            title="Delete Entry"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </td>
+                                    <td></td>
                                 </tr>
-                            ))
+                            </>
                         )}
                     </tbody>
                 </table>

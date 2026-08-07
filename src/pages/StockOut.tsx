@@ -423,6 +423,45 @@ const StockOut: React.FC = () => {
         }
     };
 
+    const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedRecordIds.size} stock-out records? This will revert the inventory for these items.`)) return;
+
+        setIsLoading(true);
+        try {
+            const recordsToDelete = records.filter(r => selectedRecordIds.has(r.id));
+            
+            for (const record of recordsToDelete) {
+                // Revert product stock
+                const product = products.find(p => p.id === record.product_id);
+                if (product) {
+                    await updateProduct(product.id, { stock: product.stock + record.quantity });
+                    
+                    // Revert warehouse stock
+                    if (record.warehouse_id) {
+                        const { data: ws } = await supabase.from('warehouse_stock').select('id, quantity').eq('warehouse_id', record.warehouse_id).eq('product_id', product.id).single();
+                        if (ws) {
+                            await supabase.from('warehouse_stock').update({ quantity: ws.quantity + record.quantity }).eq('id', ws.id);
+                        }
+                    }
+                }
+            }
+
+            // Delete from DB
+            const { error } = await supabase.from('stock_movements').delete().in('id', Array.from(selectedRecordIds));
+            if (error) throw error;
+
+            // Optimistic removal from local state
+            setRecords(prev => prev.filter(r => !selectedRecordIds.has(r.id)));
+            setSelectedRecordIds(new Set());
+            showToast(`Successfully deleted ${selectedRecordIds.size} records`, 'success');
+        } catch (err: any) {
+            showToast('Failed to delete records: ' + err.message, 'error');
+            fetchRecords(); // Refresh on failure
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const getReasonBadge = (reason: string) => {
         const colors: Record<string, { bg: string; text: string }> = {
             'Shipped': { bg: '#DBEAFE', text: '#2563EB' },
@@ -497,13 +536,15 @@ const StockOut: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
                     {selectedRecordIds.size > 0 && (
-                        <button
-                            onClick={handleExport}
-                            className="secondary-button"
-                            style={{ height: '42px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                        >
-                            <Download size={18} /> Export ({selectedRecordIds.size})
-                        </button>
+                        <>
+                            <button
+                                onClick={handleExport}
+                                className="secondary-button"
+                                style={{ height: '42px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                            >
+                                <Download size={18} /> Export ({selectedRecordIds.size})
+                            </button>
+                        </>
                     )}
                     <button
                         onClick={() => setShowForm(!showForm)}
@@ -990,6 +1031,32 @@ const StockOut: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Bottom Floating Actions */}
+            {isAdmin && selectedRecordIds.size > 0 && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '24px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'var(--color-surface, white)',
+                    padding: '12px 24px',
+                    borderRadius: '16px',
+                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    zIndex: 1000
+                }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', borderRight: '1px solid var(--color-border)', paddingRight: '16px' }}>
+                        {selectedRecordIds.size} Selected
+                    </div>
+                    <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                        <Trash2 size={18} /> Delete
+                    </button>
+                </div>
+            )}
 
             {/* Edit Modal */}
             <Modal

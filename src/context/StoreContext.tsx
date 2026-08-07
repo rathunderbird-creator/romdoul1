@@ -1436,13 +1436,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     .eq('reference_id', id)
                     .eq('type', 'out');
 
+                const customerName = salesOrder.customer?.name || '';
+                const customerPhone = salesOrder.customer?.phone || '';
+                const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+
                 if (existingMovements && existingMovements.length > 0) {
                     // Update existing records 
                     await supabase.from('stock_movements')
                         .update({
-                            reason: status,
-                            source: status === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
-                            movement_date: getLocalYYYYMMDD()
+                            reason: 'Shipped',
+                            source: 'Order Shipped',
+                            movement_date: getLocalYYYYMMDD(),
+                            customer_name: customerName,
+                            customer_phone: customerPhone
                         })
                         .eq('reference_id', id)
                         .eq('type', 'out')
@@ -1451,9 +1457,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         });
                 } else {
                     // Insert new records
-                    const customerName = salesOrder.customer?.name || '';
-                    const customerPhone = salesOrder.customer?.phone || '';
-                    const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
 
                     const stockOutMovements = salesOrder.items
                         .filter(item => item.id)
@@ -1463,13 +1466,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             type: 'out',
                             quantity: item.quantity,
                             unit_price: item.price || 0,
-                            reason: status,
+                            reason: 'Shipped',
                             reference_id: id,
-                            source: status === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
+                            source: 'Order Shipped',
                             shipping_co: shippingCompany ?? (salesOrder.shipping?.company || ''),
                             note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                             movement_date: getLocalYYYYMMDD(),
-                            created_by: currentUser?.id || 'unknown'
+                            created_by: currentUser?.id || 'unknown',
+                            customer_name: customerName,
+                            customer_phone: customerPhone
                         }));
 
                     if (stockOutMovements.length > 0) {
@@ -1696,13 +1701,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         .eq('reference_id', id)
                         .eq('type', 'out');
 
+                    const customerName = updates.customer?.name || existingOrder.customer?.name || '';
+                    const customerPhone = updates.customer?.phone || existingOrder.customer?.phone || '';
+                    const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+
                     if (existingMovements && existingMovements.length > 0) {
                         // Update existing records
                         await supabase.from('stock_movements')
                             .update({
                                 reason: newStatus,
                                 source: newStatus === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
-                                movement_date: getLocalYYYYMMDD()
+                                movement_date: getLocalYYYYMMDD(),
+                                customer_name: customerName,
+                                customer_phone: customerPhone
                             })
                             .eq('reference_id', id)
                             .eq('type', 'out')
@@ -1712,9 +1723,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     } else {
                         // Insert new records
                         const orderItems = updates.items || existingOrder.items || [];
-                        const customerName = updates.customer?.name || existingOrder.customer?.name || '';
-                        const customerPhone = updates.customer?.phone || existingOrder.customer?.phone || '';
-                        const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
 
                         const stockOutMovements = orderItems
                             .filter(item => item.id)
@@ -1730,7 +1738,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 shipping_co: updates.shipping?.company || existingOrder.shipping?.company || '',
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                                 movement_date: getLocalYYYYMMDD(),
-                                created_by: currentUser?.id || 'unknown'
+                                created_by: currentUser?.id || 'unknown',
+                                customer_name: customerName,
+                                customer_phone: customerPhone
                             }));
 
                         if (stockOutMovements.length > 0) {
@@ -2290,7 +2300,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     shipping_co: localOrder?.shipping?.company || '',
                     note: r.note,
                     movement_date: getLocalYYYYMMDD(),
-                    created_by: currentUser?.id || 'unknown'
+                    created_by: currentUser?.id || 'unknown',
+                    customer_name: customerName,
+                    customer_phone: customerPhone
                 }));
                 await supabase.from('stock_movements').insert(stockMovements).then(({ error }) => {
                     if (error) console.error('Failed to log stock movements for restock:', error);

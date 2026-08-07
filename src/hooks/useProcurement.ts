@@ -115,6 +115,7 @@ export const useProcurement = () => {
                         payment_status: po.payment_status || 'Unpaid',
                         amount_paid: po.amount_paid || 0,
                         payment_due_date: po.payment_due_date || null,
+                        invoice_number: po.invoice_number || null,
                         notes: po.notes
                     })
                     .eq('id', currentPoId);
@@ -131,13 +132,14 @@ export const useProcurement = () => {
                     .insert([{
                         supplier_id: po.supplier_id,
                         order_date: po.order_date,
-                        expected_delivery_date: po.expected_delivery_date,
+                        expected_delivery_date: po.expected_delivery_date || null,
                         status: po.status,
                         total_amount: po.total_amount,
                         payment_status: po.payment_status || 'Unpaid',
                         amount_paid: po.amount_paid || 0,
                         payment_due_date: po.payment_due_date || null,
-                        notes: po.notes
+                        invoice_number: po.invoice_number || null,
+                        notes: po.notes || null
                     }])
                     .select()
                     .single();
