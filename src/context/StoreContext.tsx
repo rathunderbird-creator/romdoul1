@@ -1438,7 +1438,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                 const customerName = salesOrder.customer?.name || '';
                 const customerPhone = salesOrder.customer?.phone || '';
-                const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+
+                // If customer info is empty (order may not be fully loaded in local state), fetch from DB
+                let finalCustomerName = customerName;
+                let finalCustomerPhone = customerPhone;
+                if (!finalCustomerName) {
+                    const { data: dbSale } = await supabase.from('sales').select('customer_snapshot').eq('id', id).single();
+                    if (dbSale?.customer_snapshot) {
+                        finalCustomerName = dbSale.customer_snapshot.name || '';
+                        finalCustomerPhone = dbSale.customer_snapshot.phone || '';
+                    }
+                }
+                const customerInfo = [finalCustomerName, finalCustomerPhone].filter(Boolean).join(' | ');
 
                 if (existingMovements && existingMovements.length > 0) {
                     // Update existing records 
@@ -1447,8 +1458,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             reason: 'Shipped',
                             source: 'Order Shipped',
                             movement_date: getLocalYYYYMMDD(),
-                            customer_name: customerName,
-                            customer_phone: customerPhone
+                            customer_name: finalCustomerName,
+                            customer_phone: finalCustomerPhone
                         })
                         .eq('reference_id', id)
                         .eq('type', 'out')
@@ -1473,8 +1484,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                             movement_date: getLocalYYYYMMDD(),
                             created_by: currentUser?.id || 'unknown',
-                            customer_name: customerName,
-                            customer_phone: customerPhone
+                            customer_name: finalCustomerName,
+                            customer_phone: finalCustomerPhone
                         }));
 
                     if (stockOutMovements.length > 0) {
@@ -1703,7 +1714,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                     const customerName = updates.customer?.name || existingOrder.customer?.name || '';
                     const customerPhone = updates.customer?.phone || existingOrder.customer?.phone || '';
-                    const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
+                    
+                    let finalCustomerName = customerName;
+                    let finalCustomerPhone = customerPhone;
+                    if (!finalCustomerName) {
+                        const { data: dbSale } = await supabase.from('sales').select('customer_snapshot').eq('id', id).single();
+                        if (dbSale?.customer_snapshot) {
+                            finalCustomerName = dbSale.customer_snapshot.name || '';
+                            finalCustomerPhone = dbSale.customer_snapshot.phone || '';
+                        }
+                    }
+
+                    const customerInfo = [finalCustomerName, finalCustomerPhone].filter(Boolean).join(' | ');
 
                     if (existingMovements && existingMovements.length > 0) {
                         // Update existing records
@@ -1712,8 +1734,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 reason: newStatus,
                                 source: newStatus === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
                                 movement_date: getLocalYYYYMMDD(),
-                                customer_name: customerName,
-                                customer_phone: customerPhone
+                                customer_name: finalCustomerName,
+                                customer_phone: finalCustomerPhone
                             })
                             .eq('reference_id', id)
                             .eq('type', 'out')
@@ -1739,8 +1761,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                                 movement_date: getLocalYYYYMMDD(),
                                 created_by: currentUser?.id || 'unknown',
-                                customer_name: customerName,
-                                customer_phone: customerPhone
+                                customer_name: finalCustomerName,
+                                customer_phone: finalCustomerPhone
                             }));
 
                         if (stockOutMovements.length > 0) {

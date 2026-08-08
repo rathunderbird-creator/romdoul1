@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -53,7 +53,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.allTransactions'), path: '/income-expense', icon: ArrowRightLeft },
                 { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
                 { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
-                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign }
+                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign },
+                { label: 'Income Prediction', path: '/income-expense/prediction', icon: Calendar }
             ]
         });
     }

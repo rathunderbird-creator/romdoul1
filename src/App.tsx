@@ -28,6 +28,7 @@ const CategoriesPage = lazy(() => import('./pages/inventory/CategoriesPage'));
 const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
 const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
 const Revenue = lazy(() => import('./pages/Revenue'));
+const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
 
 const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
 const SalesSummary = lazy(() => import('./pages/reports/SalesSummary'));
@@ -102,6 +103,7 @@ const ProtectedApp = () => {
           <Route path="/income-expense/income" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
           <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
           <Route path="/income-expense/revenue" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><Revenue /></ProtectedRoute>} />
+          <Route path="/income-expense/prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomePrediction /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
           <Route path="/orders/shipping" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
           <Route path="/orders/deleted" element={<ProtectedRoute requiredPermission="manage_orders"><DeletedOrders /></ProtectedRoute>} />
