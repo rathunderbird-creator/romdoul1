@@ -494,73 +494,73 @@ const IncomePrediction: React.FC = () => {
             </div>
 
             {/* KPI Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '10px', flexShrink: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '8px', flexShrink: 0 }}>
                 {/* Revenue Card */}
                 <div className="glass-panel hover-lift" style={{
-                    padding: '16px', borderRadius: '16px',
+                    padding: '12px', borderRadius: '12px',
                     background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.02))',
                     border: '1px solid rgba(16,185,129,0.15)',
-                    display: 'flex', flexDirection: 'column', gap: '8px'
+                    display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Revenue</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(16,185,129,0.12)' }}><TrendingUp size={14} color="#10B981" /></div>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Revenue ({monthName})</span>
+                        <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(16,185,129,0.12)' }}><TrendingUp size={12} color="#10B981" /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#10B981' }}>${fmt(totals.shippedDelivered)}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{totals.orderCount} orders</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#10B981' }}>${fmt(totals.shippedDelivered)}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{totals.orderCount} orders</div>
                 </div>
 
                 {/* Total Expenses Card */}
                 <div className="glass-panel hover-lift" style={{
-                    padding: '16px', borderRadius: '16px',
+                    padding: '12px', borderRadius: '12px',
                     background: 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02))',
                     border: '1px solid rgba(239,68,68,0.15)',
-                    display: 'flex', flexDirection: 'column', gap: '8px'
+                    display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Expenses</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(239,68,68,0.12)' }}><TrendingDown size={14} color="#EF4444" /></div>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Expenses ({monthName})</span>
+                        <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(239,68,68,0.12)' }}><TrendingDown size={12} color="#EF4444" /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#EF4444' }}>${fmt(totalExpenses)}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#EF4444' }}>${fmt(totalExpenses)}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>
                         COGS ${fmt(totals.cogs)} · Ship ${fmt(totals.shipping)}
                     </div>
                 </div>
 
                 {/* Profit Card */}
                 <div className="glass-panel hover-lift" style={{
-                    padding: '16px', borderRadius: '16px',
+                    padding: '12px', borderRadius: '12px',
                     background: `linear-gradient(135deg, rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.08), rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.02))`,
                     border: `1px solid rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.15)`,
-                    display: 'flex', flexDirection: 'column', gap: '8px'
+                    display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Profit</span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: `rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.12)` }}>
-                            <DollarSign size={14} color={totals.profit >= 0 ? '#8B5CF6' : '#EF4444'} />
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Profit ({monthName})</span>
+                        <div style={{ padding: '4px', borderRadius: '6px', background: `rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.12)` }}>
+                            <DollarSign size={12} color={totals.profit >= 0 ? '#8B5CF6' : '#EF4444'} />
                         </div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
                         ${fmt(totals.profit)}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Margin: {margin.toFixed(1)}%</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>Margin: {margin.toFixed(1)}%</div>
                 </div>
 
                 {/* Trend Card */}
                 <div className="glass-panel hover-lift" style={{
-                    padding: '16px', borderRadius: '16px',
+                    padding: '12px', borderRadius: '12px',
                     background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.02))',
                     border: '1px solid rgba(59,130,246,0.15)',
-                    display: 'flex', flexDirection: 'column', gap: '8px'
+                    display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
-                            Ad + Staff
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
+                            Ad + Staff ({monthName})
                         </span>
-                        <div style={{ padding: '6px', borderRadius: '8px', background: 'rgba(59,130,246,0.12)' }}><Megaphone size={14} color="#3B82F6" /></div>
+                        <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(59,130,246,0.12)' }}><Megaphone size={12} color="#3B82F6" /></div>
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B82F6' }}>${fmt(totals.boostPage + totals.staff)}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#3B82F6' }}>${fmt(totals.boostPage + totals.staff)}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>
                         Ads ${fmt(totals.boostPage)} · Staff ${fmt(totals.staff)}
                     </div>
                 </div>
@@ -576,7 +576,7 @@ const IncomePrediction: React.FC = () => {
                     <div style={{ flex: 1, maxWidth: '500px' }}>{sparkline}</div>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                         Avg: <strong style={{ color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
-                            ${fmt(dailyData.length > 0 ? totals.profit / dailyData.filter(d => !d.isFuture).length || 0 : 0)}/day
+                            ${fmt(dailyData.length > 0 ? totals.profit / (dailyData.filter(d => !d.isFuture).length || 1) : 0)}/day
                         </strong>
                     </div>
                 </div>
