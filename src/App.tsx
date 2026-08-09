@@ -6,6 +6,7 @@ import Login from './pages/Login';
 
 // Lazy Load Pages
 const Dashboard = lazy(() => import('./pages/DashboardPage'));
+const TodoPage = lazy(() => import('./pages/TodoPage'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const IncomeExpense = lazy(() => import('./pages/IncomeExpense'));
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'));
@@ -94,6 +95,7 @@ const ProtectedApp = () => {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
+          <Route path="/todo" element={<ProtectedRoute requiredPermission="view_dashboard"><TodoPage /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
           <Route path="/inventory" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><Inventory /></ProtectedRoute>} />
           <Route path="/inventory/categories" element={<ProtectedRoute requiredPermission="manage_inventory"><CategoriesPage /></ProtectedRoute>} />

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Calendar, DollarSign, TrendingUp, TrendingDown, Package, Truck, Megaphone, Users, RefreshCw, ChevronLeft, ChevronRight, Check, Loader2, BarChart3 } from 'lucide-react';
+import { Calendar, DollarSign, TrendingUp, TrendingDown, Package, Truck, Megaphone, Users, RefreshCw, ChevronLeft, ChevronRight, Check, Loader2, Save, RotateCcw, BarChart3 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
@@ -25,8 +25,7 @@ interface DailyPrediction {
     boostPage: number;
     staff: number;
     profit: number;
-    boostPageTxId?: string;
-    staffTxId?: string;
+    isSaved: boolean;
     isToday: boolean;
     isFuture: boolean;
     isWeekend: boolean;
@@ -53,7 +52,7 @@ const SkeletonRow = () => (
     </tr>
 );
 
-const DEFAULT_COL_WIDTHS = [110, 70, 130, 110, 130, 120, 110, 130];
+const DEFAULT_COL_WIDTHS = [110, 70, 130, 110, 130, 120, 110, 130, 80];
 
 const IncomePrediction: React.FC = () => {
     const { setHeaderContent } = useHeader();
@@ -149,18 +148,17 @@ const IncomePrediction: React.FC = () => {
             const startStr = `${selectedMonth}-01T00:00:00.000Z`;
             const endStr = `${selectedMonth}-${String(endDate.getDate()).padStart(2, '0')}T23:59:59.999Z`;
 
-            const [salesRes, txRes] = await Promise.all([
+            const [salesRes, predictionsRes] = await Promise.all([
                 supabase.from('sales')
                     .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
                     .gte('date', startStr).lte('date', endStr),
-                supabase.from('transactions')
-                    .select('id, category, amount, date, shipping_co')
-                    .eq('type', 'Expense')
+                supabase.from('income_predictions')
+                    .select('*')
                     .gte('date', startStr).lte('date', endStr)
             ]);
 
             if (salesRes.error) throw salesRes.error;
-            if (txRes.error) throw txRes.error;
+            if (predictionsRes.error) throw predictionsRes.error;
 
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -182,18 +180,37 @@ const IncomePrediction: React.FC = () => {
                     boostPage: 0,
                     staff: 0,
                     profit: 0,
+                    isSaved: false,
                     isToday: dateStr === todayStr,
                     isFuture: dateStr > todayStr,
                     isWeekend: dow === 0 || dow === 6
                 });
             }
 
+            // 1. Apply saved predictions first
+            (predictionsRes.data || []).forEach((row: any) => {
+                const dateStr = row.date;
+                if (!dailyMap.has(dateStr)) return;
+                const day = dailyMap.get(dateStr)!;
+                day.isSaved = true;
+                day.shippedDelivered = Number(row.shipped_delivered) || 0;
+                day.orderCount = Number(row.order_count) || 0;
+                day.cogs = Number(row.cogs) || 0;
+                day.shipping = Number(row.shipping) || 0;
+                day.boostPage = Number(row.boost_page) || 0;
+                day.staff = Number(row.staff) || 0;
+            });
+
+            // 2. Auto-calculate from live sales ONLY for unsaved days
             (salesRes.data || []).forEach((sale: any) => {
-                const status = sale.shipping_status || 'Pending';
-                if (status !== 'Shipped' && status !== 'Delivered') return;
                 const saleDate = sale.date ? sale.date.substring(0, 10) : null;
                 if (!saleDate || !dailyMap.has(saleDate)) return;
                 const day = dailyMap.get(saleDate)!;
+                if (day.isSaved) return; // Freeze auto-calc if saved
+
+                const status = sale.shipping_status || 'Pending';
+                if (status !== 'Shipped' && status !== 'Delivered') return;
+                
                 day.shippedDelivered += (sale.total || 0);
                 day.orderCount += 1;
                 (sale.items || []).forEach((item: any) => {
@@ -201,24 +218,9 @@ const IncomePrediction: React.FC = () => {
                     day.cogs += (cost * (item.quantity || 1));
                 });
                 
-                // Add automated shipping fee based on configured rates
                 const coName = sale.shipping_company || 'Unassigned';
                 const shippingFee = shippingRates[coName] || 0;
                 day.shipping += shippingFee;
-            });
-
-            (txRes.data || []).forEach((tx: any) => {
-                const txDate = tx.date ? tx.date.substring(0, 10) : null;
-                if (!txDate || !dailyMap.has(txDate)) return;
-                const day = dailyMap.get(txDate)!;
-
-                if (tx.category === 'Boost Page') {
-                    day.boostPage += Number(tx.amount);
-                    day.boostPageTxId = tx.id;
-                } else if (tx.category === 'Staff') {
-                    day.staff += Number(tx.amount);
-                    day.staffTxId = tx.id;
-                }
             });
 
             const results = Array.from(dailyMap.values()).map(day => {
@@ -231,6 +233,7 @@ const IncomePrediction: React.FC = () => {
             results.forEach(day => {
                 newDrafts[`${day.date}-boostPage`] = day.boostPage > 0 ? day.boostPage.toString() : '';
                 newDrafts[`${day.date}-staff`] = day.staff > 0 ? day.staff.toString() : '';
+                newDrafts[`${day.date}-shipping`] = day.shipping > 0 ? day.shipping.toString() : '';
             });
             setDraftValues(newDrafts);
 
@@ -250,11 +253,11 @@ const IncomePrediction: React.FC = () => {
         }
     }, [isLoading, dailyData]);
 
-    const handleInputChange = (date: string, field: 'boostPage' | 'staff', value: string) => {
+    const handleInputChange = (date: string, field: 'boostPage' | 'staff' | 'shipping', value: string) => {
         setDraftValues(prev => ({ ...prev, [`${date}-${field}`]: value }));
     };
 
-    const handleInputBlur = async (date: string, field: 'boostPage' | 'staff') => {
+    const handleInputBlur = (date: string, field: 'boostPage' | 'staff' | 'shipping') => {
         const dayIndex = dailyData.findIndex(d => d.date === date);
         if (dayIndex === -1) return;
 
@@ -265,57 +268,70 @@ const IncomePrediction: React.FC = () => {
         const currentValue = day[field];
         if (numValue === currentValue) return;
 
-        const cellKey = `${date}-${field}`;
-        setSavingCells(prev => new Set(prev).add(cellKey));
+        const newData = [...dailyData];
+        newData[dayIndex] = {
+            ...day,
+            [field]: numValue,
+            profit: day.shippedDelivered - day.cogs -
+                (field === 'shipping' ? numValue : day.shipping) -
+                (field === 'boostPage' ? numValue : day.boostPage) -
+                (field === 'staff' ? numValue : day.staff)
+        };
+        setDailyData(newData);
+    };
 
+    const handleSave = async (day: DailyPrediction) => {
+        setSavingCells(prev => new Set(prev).add(day.date));
         try {
-            const txIdField = field === 'boostPage' ? 'boostPageTxId' : 'staffTxId';
-            const categoryName = field === 'boostPage' ? 'Boost Page' : 'Staff';
-            const existingTxId = day[txIdField];
-
-            if (existingTxId) {
-                if (numValue === 0) {
-                    await supabase.from('transactions').delete().eq('id', existingTxId);
-                    day[txIdField] = undefined;
-                } else {
-                    await supabase.from('transactions').update({ amount: numValue }).eq('id', existingTxId);
-                }
-            } else if (numValue > 0) {
-                const newTx = {
-                    type: 'Expense',
-                    amount: numValue,
-                    category: categoryName,
-                    date: `${date}T12:00:00.000Z`,
-                    description: 'Income Prediction Auto-entry',
-                    added_by: currentUser?.name || 'System'
-                };
-                const { data } = await supabase.from('transactions').insert([newTx]).select('id').single();
-                if (data) day[txIdField] = data.id;
-            }
-
+            const { error } = await supabase.from('income_predictions').upsert({
+                date: day.date,
+                shipped_delivered: day.shippedDelivered,
+                order_count: day.orderCount,
+                cogs: day.cogs,
+                shipping: day.shipping,
+                boost_page: day.boostPage,
+                staff: day.staff,
+                profit: day.profit,
+                updated_at: new Date().toISOString(),
+                updated_by: currentUser?.name || 'System'
+            });
+            if (error) throw error;
+            
             const newData = [...dailyData];
-            newData[dayIndex] = {
-                ...day,
-                [field]: numValue,
-                profit: day.shippedDelivered - day.cogs - day.shipping -
-                    (field === 'boostPage' ? numValue : day.boostPage) -
-                    (field === 'staff' ? numValue : day.staff)
-            };
-            setDailyData(newData);
-
-            // Show saved indicator
-            setSavedCells(prev => new Set(prev).add(cellKey));
-            setTimeout(() => setSavedCells(prev => { const n = new Set(prev); n.delete(cellKey); return n; }), 1500);
-
+            const idx = newData.findIndex(d => d.date === day.date);
+            if (idx !== -1) {
+                newData[idx].isSaved = true;
+                setDailyData(newData);
+            }
+            
+            setSavedCells(prev => new Set(prev).add(day.date));
+            setTimeout(() => setSavedCells(prev => { const n = new Set(prev); n.delete(day.date); return n; }), 2000);
         } catch (error) {
-            console.error('Failed to save manual expense:', error);
-            setDraftValues(prev => ({ ...prev, [cellKey]: currentValue > 0 ? currentValue.toString() : '' }));
+            console.error('Failed to save prediction:', error);
+            alert('Failed to save. Check console for details.');
         } finally {
-            setSavingCells(prev => { const n = new Set(prev); n.delete(cellKey); return n; });
+            setSavingCells(prev => { const n = new Set(prev); n.delete(day.date); return n; });
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent, _date: string, _field: 'boostPage' | 'staff') => {
+    const handleReset = async (day: DailyPrediction) => {
+        if (!confirm(`Are you sure you want to unsave ${day.date}? This will revert to auto-calculated live data.`)) return;
+        
+        setSavingCells(prev => new Set(prev).add(day.date));
+        try {
+            const { error } = await supabase.from('income_predictions').delete().eq('date', day.date);
+            if (error) throw error;
+            // Fetch data again to re-calculate this day from live sales
+            fetchData();
+        } catch (error) {
+            console.error('Failed to reset prediction:', error);
+            alert('Failed to reset. Check console for details.');
+        } finally {
+            setSavingCells(prev => { const n = new Set(prev); n.delete(day.date); return n; });
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent, _date: string, _field: 'boostPage' | 'staff' | 'shipping') => {
         if (e.key === 'Enter') {
             (e.target as HTMLInputElement).blur();
         }
@@ -362,7 +378,7 @@ const IncomePrediction: React.FC = () => {
         );
     }, [dailyData]);
 
-    const renderEditableCell = (day: DailyPrediction, field: 'boostPage' | 'staff', color: string) => {
+    const renderEditableCell = (day: DailyPrediction, field: 'boostPage' | 'staff' | 'shipping', color: string) => {
         const cellKey = `${day.date}-${field}`;
         const isSaving = savingCells.has(cellKey);
         const isSaved = savedCells.has(cellKey);
@@ -396,6 +412,7 @@ const IncomePrediction: React.FC = () => {
                                 transition: 'all 0.2s'
                             }}
                             onFocus={e => { e.target.style.borderColor = color; e.target.style.boxShadow = `0 0 0 2px ${color}20`; }}
+                            disabled={day.isSaved}
                         />
                     </div>
                 </div>
@@ -615,6 +632,9 @@ const IncomePrediction: React.FC = () => {
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#8B5CF6' }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><TrendingUp size={12} /> Profit</span>{resizeHandle(7)}
                             </th>
+                            <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                Action{resizeHandle(8)}
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -693,10 +713,8 @@ const IncomePrediction: React.FC = () => {
                                             {day.cogs > 0 ? `$${fmt(day.cogs)}` : '-'}
                                         </td>
 
-                                        {/* Shipping */}
-                                        <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 500, fontSize: '12px', color: day.shipping > 0 ? '#EF4444' : 'var(--color-text-secondary)' }}>
-                                            {day.shipping > 0 ? `$${fmt(day.shipping)}` : '-'}
-                                        </td>
+                                        {/* Shipping (editable) */}
+                                        {renderEditableCell(day, 'shipping', '#EF4444')}
 
                                         {/* Staff (editable) */}
                                         {renderEditableCell(day, 'staff', '#3B82F6')}
@@ -709,6 +727,29 @@ const IncomePrediction: React.FC = () => {
                                             background: day.profit !== 0 ? `rgba(${day.profit > 0 ? '139,92,246' : '239,68,68'},0.04)` : undefined
                                         }}>
                                             {day.profit !== 0 ? `$${fmt(day.profit)}` : '-'}
+                                        </td>
+                                        
+                                        {/* Action */}
+                                        <td style={{ textAlign: 'center', padding: '4px' }}>
+                                            {day.isSaved ? (
+                                                <button 
+                                                    onClick={() => handleReset(day)}
+                                                    disabled={savingCells.has(day.date)}
+                                                    title="Unsave and recalculate"
+                                                    style={{ padding: '6px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', borderRadius: '8px', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
+                                                >
+                                                    {savingCells.has(day.date) ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <RotateCcw size={16} />}
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => handleSave(day)}
+                                                    disabled={savingCells.has(day.date)}
+                                                    title="Save prediction"
+                                                    style={{ padding: '6px', background: savedCells.has(day.date) ? '#10B981' : 'rgba(139, 92, 246, 0.1)', color: savedCells.has(day.date) ? 'white' : '#8B5CF6', borderRadius: '8px', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', transition: 'all 0.2s' }}
+                                                >
+                                                    {savingCells.has(day.date) ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : savedCells.has(day.date) ? <Check size={16} /> : <Save size={16} />}
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 );
@@ -743,6 +784,7 @@ const IncomePrediction: React.FC = () => {
                                 <td style={{ bottom: 'auto', textAlign: 'right', fontWeight: 700, fontSize: '12px', padding: '12px', color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
                                     ${fmt(totals.profit)}
                                 </td>
+                                <td style={{ bottom: 'auto', background: 'var(--color-surface)' }}></td>
                             </tr>
                             {/* Profit highlight row */}
                             <tr style={{
