@@ -62,6 +62,7 @@ import { ActivityLogProvider } from './context/ActivityLogContext';
 import { LanguageProvider } from './context/LanguageContext';
 
 import ProtectedRoute from './components/ProtectedRoute';
+import TodoReminderService from './components/TodoReminderService';
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -92,6 +93,8 @@ const ProtectedApp = () => {
 
   return (
     <Layout>
+      {/* Runs on every page, so task reminders don't depend on the Todo page being open. */}
+      <TodoReminderService />
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />

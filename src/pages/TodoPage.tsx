@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { CheckCircle2, Circle, Calendar as CalendarIcon, Inbox, CalendarDays, Plus, Flag, Loader2, Trash2, X, Hash, Clock, AlignLeft, Repeat, Bell } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
+import { toLocalDateStr } from '../utils/todoReminders';
 
 interface TodoProject {
     id: string;
@@ -37,39 +38,6 @@ const REPEAT_OPTIONS: Array<{ value: RepeatRule | ''; label: string }> = [
 
 const PROJECT_COLORS = ['#EF4444', '#F97316', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899'];
 
-// Local (not UTC) YYYY-MM-DD. This business runs in UTC+7, so a UTC-based "today"
-// mislabels due/overdue tasks during the first 7 hours of each local day.
-const toLocalDateStr = (d: Date) =>
-    new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-
-// 'HH:MM' for right now, local time — compared lexically against remind_at.
-const nowHHMM = () => {
-    const d = new Date();
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
-// Sends a reminder to Telegram, reusing the existing notification configs. Looks for
-// one whose name mentions "todo" so task reminders don't spam the order channels;
-// if none is configured this is a no-op and the other channels still fire.
-const sendTelegramReminder = async (title: string, dueDate: string | null) => {
-    try {
-        const { data } = await supabase.from('telegram_notifications').select('name, bot_token, chat_id');
-        const config = (data || []).find(c => (c.name || '').toLowerCase().includes('todo'));
-        if (!config?.bot_token || !config?.chat_id) return;
-
-        const text = `⏰ <b>Task reminder</b>\n${title}${dueDate ? `\nDue: ${dueDate}` : ''}`;
-        for (const chatId of String(config.chat_id).split(',').map(s => s.trim()).filter(Boolean)) {
-            await fetch(`https://api.telegram.org/bot${config.bot_token}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-            });
-        }
-    } catch (e) {
-        console.error('Failed to send Telegram task reminder:', e);
-    }
-};
-
 // Advances a date string one repeat interval. Monthly clamps to the end of shorter
 // months, so a task due the 31st lands on the 30th/28th rather than skipping ahead.
 const advanceDate = (dateStr: string, rule: RepeatRule): string => {
@@ -100,6 +68,27 @@ const toDbTodo = (updates: Partial<Todo> & Record<string, unknown>): Record<stri
     const row: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() };
     if ('project_id' in updates) row.project = project_id ?? null;
     return row;
+};
+
+// Sidebar count pill. Hidden at zero so the sidebar stays quiet when there's
+// nothing to do, rather than showing a row of noisy "0"s.
+const CountBadge: React.FC<{ count: number; urgent?: boolean }> = ({ count, urgent }) => {
+    if (!count) return null;
+    return (
+        <span style={{
+            marginLeft: 'auto',
+            fontSize: '12px',
+            fontWeight: urgent ? 700 : 500,
+            color: urgent ? '#EF4444' : 'var(--color-text-secondary)',
+            background: urgent ? 'rgba(239,68,68,0.12)' : 'var(--color-surface)',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            minWidth: '20px',
+            textAlign: 'center'
+        }}>
+            {count}
+        </span>
+    );
 };
 
 const TodoPage: React.FC = () => {
@@ -191,43 +180,8 @@ const TodoPage: React.FC = () => {
         Notification.requestPermission().catch(() => { /* user dismissed */ });
     }, [todos]);
 
-    // Reminder engine. Ticks every 30s while the page is mounted and fires any
-    // reminder whose time has arrived today. `last_reminded_on` is persisted so a
-    // task reminds once per day even across reloads.
-    //
-    // Note this only runs while the POS is open — there is no server-side scheduler,
-    // so a reminder whose time passes while the app is closed fires on next open.
-    useEffect(() => {
-        const checkReminders = () => {
-            const today = toLocalDateStr(new Date());
-            const time = nowHHMM();
-
-            for (const todo of todos) {
-                if (todo.status !== 'open' || !todo.remind_at) continue;
-                if (todo.last_reminded_on === today) continue;
-                // Not yet due today, or scheduled for a future date.
-                if (todo.due_date && todo.due_date > today) continue;
-                if (todo.remind_at > time) continue;
-
-                const body = todo.due_date ? `Due ${todo.due_date}` : 'Task reminder';
-                showToast(`⏰ ${todo.title}`, 'success');
-                if ('Notification' in window && Notification.permission === 'granted') {
-                    new Notification(todo.title, { body, tag: `todo-${todo.id}` });
-                }
-                void sendTelegramReminder(todo.title, todo.due_date);
-
-                // Mark locally first so the next tick (30s away) can't double-fire
-                // while the write is still in flight.
-                setTodos(prev => prev.map(t => t.id === todo.id ? { ...t, last_reminded_on: today } : t));
-                void supabase.from('todos').update({ last_reminded_on: today }).eq('id', todo.id)
-                    .then(({ error }) => { if (error) console.error('Failed to record reminder:', error); });
-            }
-        };
-
-        checkReminders();
-        const timer = setInterval(checkReminders, 30_000);
-        return () => clearInterval(timer);
-    }, [todos, showToast]);
+    // Firing reminders lives in <TodoReminderService />, mounted app-wide, so it keeps
+    // working when this page isn't open. This page only edits the schedule.
 
     const handleAddProject = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -383,7 +337,9 @@ const TodoPage: React.FC = () => {
     // Held in a ref so the unmount cleanup always sees the latest closure without
     // re-running on every render.
     const flushRef = useRef(flushTextUpdate);
-    flushRef.current = flushTextUpdate;
+    useEffect(() => {
+        flushRef.current = flushTextUpdate;
+    });
     useEffect(() => () => flushRef.current(), []);
 
     const deleteTodo = async (id: string) => {
@@ -433,26 +389,59 @@ const TodoPage: React.FC = () => {
 
     const todayStr = toLocalDateStr(new Date());
 
-    const filterTodos = () => {
-        let filtered = todos;
-
-        if (!showCompleted) {
-            filtered = filtered.filter(t => t.status === 'open');
-        }
-
-        switch (activeView) {
+    // One predicate drives both the visible list and the sidebar counts, so a badge
+    // can never disagree with what the view actually shows.
+    const matchesView = (todo: Todo, view: string) => {
+        switch (view) {
             case 'today':
-                return filtered.filter(t => t.due_date === todayStr || (!t.due_date && toLocalDateStr(new Date(t.created_at)) === todayStr));
+                // Overdue tasks belong in Today too. Previously `due_date === todayStr`
+                // dropped them from every date view, so a missed task was only findable
+                // by browsing its project — exactly the task you least want to lose.
+                return (!!todo.due_date && todo.due_date <= todayStr)
+                    || (!todo.due_date && toLocalDateStr(new Date(todo.created_at)) === todayStr);
             case 'upcoming':
-                return filtered.filter(t => t.due_date && t.due_date > todayStr);
+                return !!todo.due_date && todo.due_date > todayStr;
             case 'inbox':
-                return filtered.filter(t => !t.project_id);
+                return !todo.project_id;
             default:
-                return filtered.filter(t => t.project_id === activeView);
+                return todo.project_id === view;
         }
     };
 
+    const filterTodos = () => {
+        const filtered = showCompleted ? todos : todos.filter(t => t.status === 'open');
+        return filtered
+            .filter(t => matchesView(t, activeView))
+            // Soonest first so overdue and due-today float to the top; undated tasks
+            // sink to the bottom. Priority breaks ties.
+            .sort((a, b) => {
+                const dateA = a.due_date || '9999-12-31';
+                const dateB = b.due_date || '9999-12-31';
+                if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+                return a.priority - b.priority;
+            });
+    };
+
     const displayedTodos = filterTodos();
+
+    // Open-task counts per sidebar entry, plus how many of those are overdue.
+    const viewCounts = useMemo(() => {
+        const open = todos.filter(t => t.status === 'open');
+        const counts: Record<string, number> = {
+            inbox: open.filter(t => matchesView(t, 'inbox')).length,
+            today: open.filter(t => matchesView(t, 'today')).length,
+            upcoming: open.filter(t => matchesView(t, 'upcoming')).length,
+        };
+        for (const p of projects) {
+            counts[p.id] = open.filter(t => matchesView(t, p.id)).length;
+        }
+        return counts;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [todos, projects, todayStr]);
+
+    const overdueCount = todos.filter(
+        t => t.status === 'open' && t.due_date && t.due_date < todayStr
+    ).length;
 
     const getViewTitle = () => {
         switch (activeView) {
@@ -556,9 +545,7 @@ const TodoPage: React.FC = () => {
                 >
                     <Inbox size={20} color={activeView === 'inbox' ? '#8B5CF6' : '#3B82F6'} />
                     {!isMobile && <span>Inbox</span>}
-                    {!isMobile && <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '12px' }}>
-                        {todos.filter(t => !t.project_id && t.status === 'open').length}
-                    </span>}
+                    {!isMobile && <CountBadge count={viewCounts.inbox} />}
                 </button>
                 <button 
                     onClick={() => setActiveView('today')}
@@ -572,6 +559,8 @@ const TodoPage: React.FC = () => {
                 >
                     <CalendarIcon size={20} color={activeView === 'today' ? '#8B5CF6' : '#10B981'} />
                     {!isMobile && <span>Today</span>}
+                    {/* Overdue is called out in red — it's the number that needs acting on. */}
+                    {!isMobile && <CountBadge count={viewCounts.today} urgent={overdueCount > 0} />}
                 </button>
                 <button 
                     onClick={() => setActiveView('upcoming')}
@@ -585,6 +574,7 @@ const TodoPage: React.FC = () => {
                 >
                     <CalendarDays size={20} color={activeView === 'upcoming' ? '#8B5CF6' : '#F59E0B'} />
                     {!isMobile && <span>Upcoming</span>}
+                    {!isMobile && <CountBadge count={viewCounts.upcoming} />}
                 </button>
 
                 {!isMobile && (
@@ -634,6 +624,7 @@ const TodoPage: React.FC = () => {
                                     >
                                         <Hash size={16} color={p.color} />
                                         <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                                        <CountBadge count={viewCounts[p.id] || 0} />
                                     </button>
                                     <button onClick={() => deleteProject(p.id)} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Delete Project">
                                         <Trash2 size={14} color="var(--color-text-secondary)" />
@@ -788,14 +779,18 @@ const TodoPage: React.FC = () => {
 
             {/* Task Edit Side Drawer */}
             {selectedTodo && (
-                <div style={{ 
-                    position: 'absolute', right: 0, top: 0, bottom: 0, 
-                    width: isMobile ? '100%' : '400px', 
+                <div style={{
+                    // On desktop the drawer is a flex sibling, so the list shrinks to sit
+                    // beside it. Absolutely positioning it (as before) floated it over the
+                    // list and hid the right-hand side of every task. On mobile there's no
+                    // room to share, so it stays a full-screen overlay.
+                    ...(isMobile
+                        ? { position: 'absolute' as const, right: 0, top: 0, bottom: 0, width: '100%', zIndex: 50 }
+                        : { position: 'relative' as const, width: '400px', flexShrink: 0 }),
                     background: 'var(--color-background)',
                     borderLeft: '1px solid var(--color-border)',
                     boxShadow: '-4px 0 20px rgba(0,0,0,0.1)',
                     display: 'flex', flexDirection: 'column',
-                    zIndex: 50,
                     animation: 'slideInRight 0.2s ease-out'
                 }}>
                     <style>{`@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
