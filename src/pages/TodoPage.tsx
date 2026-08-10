@@ -24,6 +24,7 @@ interface Todo {
     status: string;
     project_id: string | null;
     created_at: string;
+    updated_at: string;
     repeat_rule: RepeatRule | null;
     remind_at: string | null;        // 'HH:MM' local time
     last_reminded_on: string | null; // local YYYY-MM-DD, guards one reminder per day
@@ -366,9 +367,10 @@ const TodoPage: React.FC = () => {
         }
 
         const newStatus = currentStatus === 'open' ? 'completed' : 'open';
-        setTodos(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+        const now = new Date().toISOString();
+        setTodos(prev => prev.map(t => t.id === id ? { ...t, status: newStatus, updated_at: now } : t));
         try {
-            await supabase.from('todos').update({ status: newStatus }).eq('id', id);
+            await supabase.from('todos').update({ status: newStatus, updated_at: now }).eq('id', id);
         } catch (error) {
             console.error('Error toggling status:', error);
             setTodos(prev => prev.map(t => t.id === id ? { ...t, status: currentStatus } : t));
@@ -476,9 +478,14 @@ const TodoPage: React.FC = () => {
     const matchesView = (todo: Todo, view: string) => {
         switch (view) {
             case 'today':
-                // Overdue tasks belong in Today too. Previously `due_date === todayStr`
-                // dropped them from every date view, so a missed task was only findable
-                // by browsing its project — exactly the task you least want to lose.
+                // Overdue tasks belong in Today too.
+                // However, completed tasks from the past shouldn't flood the Today view.
+                if (todo.status === 'completed') {
+                    const completedToday = todo.updated_at && toLocalDateStr(new Date(todo.updated_at)) === todayStr;
+                    return completedToday
+                        || (!!todo.due_date && todo.due_date === todayStr)
+                        || (!todo.due_date && toLocalDateStr(new Date(todo.created_at)) === todayStr);
+                }
                 return (!!todo.due_date && todo.due_date <= todayStr)
                     || (!todo.due_date && toLocalDateStr(new Date(todo.created_at)) === todayStr);
             case 'upcoming':
@@ -495,8 +502,11 @@ const TodoPage: React.FC = () => {
         return filtered
             .filter(t => matchesView(t, activeView))
             // Soonest first so overdue and due-today float to the top; undated tasks
-            // sink to the bottom. Priority breaks ties.
+            // sink to the bottom. Priority breaks ties. Completed tasks go at the very bottom.
             .sort((a, b) => {
+                if (a.status === 'completed' && b.status !== 'completed') return 1;
+                if (a.status !== 'completed' && b.status === 'completed') return -1;
+                
                 const dateA = a.due_date || '9999-12-31';
                 const dateB = b.due_date || '9999-12-31';
                 if (dateA !== dateB) return dateA < dateB ? -1 : 1;
@@ -757,7 +767,8 @@ const TodoPage: React.FC = () => {
                         </h2>
                         {activeView !== 'settings' && (
                             <button
-                                onClick={() => setShowCompleted(!showCompleted)}
+                                type="button"
+                                onClick={() => setShowCompleted(prev => !prev)}
                                 style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
                             >
                                 <CheckCircle2 size={16} />
@@ -852,9 +863,24 @@ const TodoPage: React.FC = () => {
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {displayedTodos.map(todo => <TaskItem key={todo.id} todo={todo} />)}
+                            {displayedTodos.filter(t => t.status === 'open').map(todo => <TaskItem key={todo.id} todo={todo} />)}
+                            
+                            {showCompleted && (
+                                <>
+                                    <div style={{ margin: '16px 0 0 4px', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', letterSpacing: '0.5px' }}>
+                                        Completed
+                                    </div>
+                                    {displayedTodos.filter(t => t.status === 'completed').length > 0 ? (
+                                        displayedTodos.filter(t => t.status === 'completed').map(todo => <TaskItem key={todo.id} todo={todo} />)
+                                    ) : (
+                                        <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px', fontStyle: 'italic', background: 'var(--color-surface)', borderRadius: '12px', border: '1px dashed var(--color-border)' }}>
+                                            No completed tasks in this view.
+                                        </div>
+                                    )}
+                                </>
+                            )}
 
-                            {displayedTodos.length === 0 && !isAdding && (
+                            {displayedTodos.filter(t => t.status === 'open').length === 0 && !isAdding && (
                                 <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                     <CheckCircle2 size={48} color="rgba(139,92,246,0.2)" />
                                     <p style={{ margin: 0, fontSize: '16px' }}>All clear! Enjoy your day.</p>
