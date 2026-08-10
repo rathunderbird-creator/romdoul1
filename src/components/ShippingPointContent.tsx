@@ -124,7 +124,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [isPinnedListExpanded, setIsPinnedListExpanded] = useState(false);
     const [isShutdownPanelExpanded, setIsShutdownPanelExpanded] = useState(false);
-    const [isLocationSelectorsExpanded, setIsLocationSelectorsExpanded] = useState(true);
+    // Collapsed by default on a phone: expanded, the four cascading dropdowns add
+    // ~400px of panel above everything else. Search is the faster route on mobile
+    // anyway, and the section is one tap away.
+    const [isLocationSelectorsExpanded, setIsLocationSelectorsExpanded] = useState(
+        () => !(typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches)
+    );
 
     // Modal states
     const [shippingCompanies, setShippingCompanies] = useState<string[]>([]);
@@ -904,10 +909,11 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                             </div>
                         </div>
 
-                        {isLocationSelectorsExpanded && (
-                            <>
-                                {/* Global Search */}
-                                <div ref={searchRef} style={{ position: 'relative', marginBottom: '8px' }}>
+                        {/* Global Search — deliberately outside the collapsible block.
+                            Typing a place name is the quickest way to move the map,
+                            especially on a phone, so it stays visible even when the
+                            cascading dropdowns are collapsed. */}
+                        <div ref={searchRef} style={{ position: 'relative', marginBottom: '8px', marginTop: '12px' }}>
                                     <div style={{ position: 'relative' }}>
                                         <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                         <input
@@ -1035,6 +1041,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                         </div>
                                     )}
                                 </div>
+                        {isLocationSelectorsExpanded && (
+                            <>
                                 <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: '4px 0 8px' }} />
 
                                 {/* Province Select */}
@@ -1731,8 +1739,25 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                     .shipping-header h1 {
                         font-size: 20px !important;
                     }
+                    /* The explanatory subtitle wraps to three lines on a phone and
+                       pushes the map further down; the page title already says it. */
+                    .shipping-header p {
+                        display: none !important;
+                    }
+                    /* This is a map tool, so the map goes first. Stacked below the full
+                       control panel it started ~900px down — off-screen until you
+                       scrolled past every filter. */
                     .shipping-map-container {
-                        min-height: 500px !important;
+                        order: -1;
+                        min-height: 0 !important;
+                        height: 55vh !important;
+                    }
+                    /* Comfortable touch targets: 44px is the usual minimum. */
+                    .shipping-layout select,
+                    .shipping-layout input[type="text"],
+                    .shipping-layout input[type="search"] {
+                        min-height: 44px;
+                        font-size: 16px; /* stops iOS Safari zooming the page on focus */
                     }
                 }
             `}</style>

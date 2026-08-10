@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
-import { CheckCircle2, Circle, Calendar as CalendarIcon, Inbox, CalendarDays, Plus, Flag, Loader2, Trash2, X, Hash, Clock, AlignLeft, Repeat, Bell } from 'lucide-react';
+import { CheckCircle2, Circle, Calendar as CalendarIcon, Inbox, CalendarDays, Plus, Flag, Loader2, Trash2, X, Hash, Clock, AlignLeft, Repeat, Bell, Send, Eye, EyeOff } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
 import { toLocalDateStr } from '../utils/todoReminders';
 
@@ -93,9 +93,24 @@ const CountBadge: React.FC<{ count: number; urgent?: boolean }> = ({ count, urge
 
 const TodoPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const { currentUser } = useStore();
+    const { currentUser, telegramConfigs, updateStoreProfile } = useStore();
     const { showToast } = useToast();
     const isMobile = useMobile();
+
+    // Telegram reminder settings. Reminders look for a config whose name contains
+    // "todo", so this panel edits that one specifically rather than the order channels.
+    const todoTelegramConfig = (telegramConfigs || []).find(c => (c.name || '').toLowerCase().includes('todo'));
+    const [telegramForm, setTelegramForm] = useState({ botToken: '', chatId: '' });
+    const [isSavingTelegram, setIsSavingTelegram] = useState(false);
+    const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+    const [showToken, setShowToken] = useState(false);
+
+    useEffect(() => {
+        setTelegramForm({
+            botToken: todoTelegramConfig?.botToken || '',
+            chatId: todoTelegramConfig?.chatId || '',
+        });
+    }, [todoTelegramConfig?.botToken, todoTelegramConfig?.chatId]);
 
     const [todos, setTodos] = useState<Todo[]>([]);
     const [projects, setProjects] = useState<TodoProject[]>([]);
@@ -182,6 +197,73 @@ const TodoPage: React.FC = () => {
 
     // Firing reminders lives in <TodoReminderService />, mounted app-wide, so it keeps
     // working when this page isn't open. This page only edits the schedule.
+
+    // Writes through the store's existing telegram path, so this config lands in the
+    // same table the main Settings → Telegram page uses (one source of truth).
+    const handleSaveTelegram = async () => {
+        setIsSavingTelegram(true);
+        try {
+            const existing = telegramConfigs || [];
+            const updated = todoTelegramConfig
+                ? existing.map(c => c.id === todoTelegramConfig.id
+                    ? { ...c, botToken: telegramForm.botToken.trim(), chatId: telegramForm.chatId.trim() }
+                    : c)
+                : [...existing, {
+                    id: crypto.randomUUID(),
+                    // The name must contain "todo" — that's how the reminder engine
+                    // finds this config instead of the order channels.
+                    name: 'TODO Reminders',
+                    botToken: telegramForm.botToken.trim(),
+                    chatId: telegramForm.chatId.trim(),
+                    // Deliberately empty: this config is driven by task reminders, not
+                    // by order-status changes.
+                    triggerStatuses: [],
+                    note: 'Used for Todo task reminders',
+                }];
+
+            await updateStoreProfile({ telegramConfigs: updated });
+            showToast('Telegram reminder settings saved', 'success');
+        } catch (error) {
+            console.error('Failed to save Telegram reminder settings:', error);
+            showToast('Failed to save: ' + (error instanceof Error ? error.message : 'unknown error'), 'error');
+        } finally {
+            setIsSavingTelegram(false);
+        }
+    };
+
+    const handleTestTelegram = async () => {
+        if (!telegramForm.botToken.trim() || !telegramForm.chatId.trim()) {
+            showToast('Enter a bot token and chat ID first', 'error');
+            return;
+        }
+        setIsTestingTelegram(true);
+        try {
+            const ids = telegramForm.chatId.split(',').map(s => s.trim()).filter(Boolean);
+            let delivered = 0;
+            for (const chatId of ids) {
+                const res = await fetch(`https://api.telegram.org/bot${telegramForm.botToken.trim()}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: '⏰ <b>Task reminder test</b>\nTodo reminders are connected to this chat.',
+                        parse_mode: 'HTML',
+                    }),
+                });
+                if (res.ok) delivered++;
+                else console.error('Telegram test rejected:', await res.text());
+            }
+            showToast(
+                delivered > 0 ? `Test sent to ${delivered} chat${delivered > 1 ? 's' : ''}` : 'Telegram rejected the message — check the token and chat ID',
+                delivered > 0 ? 'success' : 'error'
+            );
+        } catch (error) {
+            console.error('Telegram test failed:', error);
+            showToast('Test failed — see console', 'error');
+        } finally {
+            setIsTestingTelegram(false);
+        }
+    };
 
     const handleAddProject = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -448,6 +530,7 @@ const TodoPage: React.FC = () => {
             case 'today': return 'Today';
             case 'upcoming': return 'Upcoming';
             case 'inbox': return 'Inbox';
+            case 'settings': return 'Telegram Reminders';
             default: {
                 const proj = projects.find(p => p.id === activeView);
                 return proj ? proj.name : 'Inbox';
@@ -632,6 +715,35 @@ const TodoPage: React.FC = () => {
                                 </div>
                             ))}
                         </div>
+
+                        {/* Settings */}
+                        <div style={{ marginTop: '20px' }}>
+                            <div style={{ padding: '0 12px', marginBottom: '8px' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Settings</span>
+                            </div>
+                            <button
+                                onClick={() => setActiveView('settings')}
+                                className="menu-item hover-lift"
+                                style={{
+                                    width: '100%', display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px',
+                                    borderRadius: '8px', border: 'none',
+                                    background: activeView === 'settings' ? 'rgba(139,92,246,0.1)' : 'transparent',
+                                    color: activeView === 'settings' ? '#8B5CF6' : 'var(--color-text-main)',
+                                    cursor: 'pointer', textAlign: 'left', fontWeight: activeView === 'settings' ? 600 : 400
+                                }}
+                            >
+                                <Send size={16} color={activeView === 'settings' ? '#8B5CF6' : '#0EA5E9'} />
+                                <span style={{ fontSize: '14px' }}>Telegram Reminders</span>
+                                {/* A dot rather than a count: this is a health signal, not a quantity. */}
+                                <span
+                                    title={todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? 'Connected' : 'Not configured'}
+                                    style={{
+                                        marginLeft: 'auto', width: '8px', height: '8px', borderRadius: '50%',
+                                        background: todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? '#10B981' : '#EF4444'
+                                    }}
+                                />
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -643,16 +755,98 @@ const TodoPage: React.FC = () => {
                         <h2 style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {getViewTitle()}
                         </h2>
-                        <button 
-                            onClick={() => setShowCompleted(!showCompleted)}
-                            style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                            <CheckCircle2 size={16} />
-                            {showCompleted ? 'Hide Completed' : 'Show Completed'}
-                        </button>
+                        {activeView !== 'settings' && (
+                            <button
+                                onClick={() => setShowCompleted(!showCompleted)}
+                                style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                                <CheckCircle2 size={16} />
+                                {showCompleted ? 'Hide Completed' : 'Show Completed'}
+                            </button>
+                        )}
                     </div>
 
-                    {isLoading ? (
+                    {activeView === 'settings' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                                Task reminders are sent to Telegram so they reach phones, not just whoever is at
+                                the POS. This is a separate chat from your order notifications, so reminders don't
+                                mix in with new-order alerts.
+                            </p>
+
+                            <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+                                        Bot Token
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input
+                                            type={showToken ? 'text' : 'password'}
+                                            value={telegramForm.botToken}
+                                            onChange={e => setTelegramForm(f => ({ ...f, botToken: e.target.value }))}
+                                            placeholder="123456789:ABCDefgh..."
+                                            style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', outline: 'none', fontSize: '14px' }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowToken(v => !v)}
+                                            title={showToken ? 'Hide token' : 'Show token'}
+                                            style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+                                        >
+                                            {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        Create a bot with @BotFather on Telegram to get this.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+                                        Chat ID
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={telegramForm.chatId}
+                                        onChange={e => setTelegramForm(f => ({ ...f, chatId: e.target.value }))}
+                                        placeholder="-100123..., -45678..."
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', outline: 'none', fontSize: '14px' }}
+                                    />
+                                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        Separate multiple chats with commas. Add the bot to the group first.
+                                    </p>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
+                                    <button
+                                        onClick={handleTestTelegram}
+                                        disabled={isTestingTelegram}
+                                        className="secondary-button"
+                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: isTestingTelegram ? 'not-allowed' : 'pointer' }}
+                                    >
+                                        {isTestingTelegram ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
+                                        Send test
+                                    </button>
+                                    <button
+                                        onClick={handleSaveTelegram}
+                                        disabled={isSavingTelegram}
+                                        className="primary-button"
+                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: isSavingTelegram ? 'not-allowed' : 'pointer' }}
+                                    >
+                                        {isSavingTelegram ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : null}
+                                        Save
+                                    </button>
+                                </div>
+                            </div>
+
+                            <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                                Reminders fire while the POS is open on any page. If every device is closed at the
+                                reminder time, the message is sent when the app is next opened rather than skipped.
+                            </p>
+                        </div>
+                    )}
+
+                    {activeView === 'settings' ? null : isLoading ? (
                         <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
                             <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: '#8B5CF6' }} />
                         </div>
