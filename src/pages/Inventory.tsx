@@ -389,6 +389,13 @@ const Inventory: React.FC = () => {
         return result;
     }, [products, searchTerm, columnFilters, sortConfig, productOrder]);
 
+    // Every product currently has an empty SKU, and a column of "N/A" in the leading
+    // position costs width and reads as missing data. Show it only once a SKU exists.
+    const hasAnySku = useMemo(
+        () => products.some(p => (p.sku || '').trim() !== ''),
+        [products]
+    );
+
     // The single page of rows actually rendered. Shared by the desktop table and the
     // mobile card list so the two can never drift out of sync.
     const paginatedProducts = useMemo(
@@ -727,7 +734,10 @@ const Inventory: React.FC = () => {
                 </div>
             )}
             {/* Minimalist Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: canViewFinancials ? 'repeat(6, 1fr)' : 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            {/* auto-fit rather than a fixed column count: at `repeat(6, 1fr)` the last
+                two cards were pushed off-screen on a phone with no way to scroll to
+                them, so "Out of Stock" and "Total Value" were simply unreachable. */}
+            <div className="inventory-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Products</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalProducts}</div>
@@ -804,9 +814,11 @@ const Inventory: React.FC = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
-                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('sku')}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>SKU {sortConfig?.key === 'sku' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
-                            </th>
+                            {hasAnySku && (
+                                <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('sku')}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>SKU {sortConfig?.key === 'sku' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                </th>
+                            )}
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Product Name {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
@@ -841,14 +853,23 @@ const Inventory: React.FC = () => {
                             const isOutOfStock = product.stock === 0;
                             const isLowStock = product.stock > 0 && product.stock < (product.lowStockThreshold || 5);
                             return (
-                                <tr key={product.id} style={{ 
+                                <tr key={product.id} style={{
                                     borderBottom: '1px solid var(--color-border)',
-                                    backgroundColor: recentlyUpdatedId === product.id ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                                    // Tint the whole row for stock problems so they're scannable down the
+                                    // page, rather than relying on a small badge in one column. The
+                                    // mobile cards already do this; the table didn't.
+                                    backgroundColor: recentlyUpdatedId === product.id
+                                        ? 'rgba(16, 185, 129, 0.15)'
+                                        : isOutOfStock ? 'rgba(239, 68, 68, 0.06)'
+                                        : isLowStock ? 'rgba(245, 158, 11, 0.07)'
+                                        : 'transparent',
                                     transition: 'background-color 0.8s ease'
                                 }}>
-                                    <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#4B5563' }}>
-                                        {product.sku || 'N/A'}
-                                    </td>
+                                    {hasAnySku && (
+                                        <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#4B5563' }}>
+                                            {product.sku || '—'}
+                                        </td>
+                                    )}
                                     <td style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                         <div style={{ width: '24px', height: '24px', borderRadius: '4px', background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <Package size={14} color="#6366f1" />
@@ -859,7 +880,9 @@ const Inventory: React.FC = () => {
                                         {product.category}
                                     </td>
                                     {canViewFinancials && (
-                                        <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
+                                        // Tabular figures keep digits the same width, so the money
+                                        // columns line up and are readable at a glance.
+                                        <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280', fontVariantNumeric: 'tabular-nums' }}>
                                             ${(product.purchaseCost || 0).toFixed(2)}
                                         </td>
                                     )}
@@ -884,7 +907,7 @@ const Inventory: React.FC = () => {
                                         /> pcs
                                     </td>
                                     {canViewFinancials && (
-                                        <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827' }}>
+                                        <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827', fontVariantNumeric: 'tabular-nums' }}>
                                             ${(product.price * product.stock).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
                                     )}
@@ -1325,6 +1348,29 @@ const Inventory: React.FC = () => {
                     </div>
                 )
             }
+
+            <style>{`
+                @media (max-width: 640px) {
+                    /* Three compact tiles per row instead of two roomy ones: at the
+                       desktop sizing the six stats filled three rows and pushed the
+                       product list most of a screen down. */
+                    .inventory-stats {
+                        grid-template-columns: repeat(3, 1fr) !important;
+                        gap: 8px !important;
+                        margin-bottom: 16px !important;
+                    }
+                    .inventory-stats > div {
+                        padding: 10px 12px !important;
+                        gap: 2px !important;
+                    }
+                    .inventory-stats > div > span {
+                        font-size: 11px !important;
+                    }
+                    .inventory-stats > div > div {
+                        font-size: 17px !important;
+                    }
+                }
+            `}</style>
         </div >
     );
 };
