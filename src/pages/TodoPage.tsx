@@ -670,14 +670,19 @@ const TodoPage: React.FC = () => {
                     {!isMobile && <CountBadge count={viewCounts.upcoming} />}
                 </button>
 
-                {!isMobile && (
-                    <div style={{ marginTop: '20px' }}>
+                <div style={{ marginTop: '20px' }}>
+                    {!isMobile ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', marginBottom: '8px' }}>
                             <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Projects</span>
                             <button onClick={() => setIsAddingProject(!isAddingProject)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Plus size={16} /></button>
                         </div>
-                        
-                        {isAddingProject && (
+                    ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', padding: '12px 0 4px 0', borderTop: '1px solid var(--color-border)' }}>
+                             {/* Just a visual separator on mobile before projects start */}
+                        </div>
+                    )}
+                    
+                    {isAddingProject && !isMobile && (
                             <form onSubmit={handleAddProject} style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 <input 
                                     autoFocus
@@ -705,46 +710,51 @@ const TodoPage: React.FC = () => {
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             {projects.map(p => (
-                                <div key={p.id} className="menu-item hover-lift" style={{ display: 'flex', alignItems: 'center', background: activeView === p.id ? 'rgba(139,92,246,0.1)' : 'transparent', borderRadius: '8px' }}>
+                                <div key={p.id} className="menu-item hover-lift" style={{ display: 'flex', alignItems: 'center', background: activeView === p.id ? 'rgba(139,92,246,0.1)' : 'transparent', borderRadius: '8px', justifyContent: isMobile ? 'center' : 'flex-start' }}>
                                     <button 
                                         onClick={() => setActiveView(p.id)}
                                         style={{ 
-                                            flex: 1, display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', 
+                                            flex: isMobile ? 'none' : 1, display: 'flex', alignItems: 'center', gap: '12px', padding: isMobile ? '10px 0' : '8px 12px', 
                                             border: 'none', background: 'transparent',
                                             color: activeView === p.id ? '#8B5CF6' : 'var(--color-text-main)',
                                             cursor: 'pointer', textAlign: 'left', fontWeight: activeView === p.id ? 600 : 400
                                         }}
                                     >
-                                        <Hash size={16} color={p.color} />
-                                        <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
-                                        <CountBadge count={viewCounts[p.id] || 0} />
+                                        <Hash size={isMobile ? 20 : 16} color={p.color} />
+                                        {!isMobile && <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>}
+                                        {!isMobile && <CountBadge count={viewCounts[p.id] || 0} />}
                                     </button>
-                                    <button onClick={() => deleteProject(p.id)} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Delete Project">
-                                        <Trash2 size={14} color="var(--color-text-secondary)" />
-                                    </button>
+                                    {!isMobile && (
+                                        <button onClick={() => deleteProject(p.id)} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Delete Project">
+                                            <Trash2 size={14} color="var(--color-text-secondary)" />
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>
 
-                        {/* Settings */}
-                        <div style={{ marginTop: '20px' }}>
+                    {/* Settings */}
+                    <div style={{ marginTop: '20px' }}>
+                        {!isMobile && (
                             <div style={{ padding: '0 12px', marginBottom: '8px' }}>
                                 <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Settings</span>
                             </div>
-                            <button
-                                onClick={() => setActiveView('settings')}
-                                className="menu-item hover-lift"
-                                style={{
-                                    width: '100%', display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px',
-                                    borderRadius: '8px', border: 'none',
-                                    background: activeView === 'settings' ? 'rgba(139,92,246,0.1)' : 'transparent',
-                                    color: activeView === 'settings' ? '#8B5CF6' : 'var(--color-text-main)',
-                                    cursor: 'pointer', textAlign: 'left', fontWeight: activeView === 'settings' ? 600 : 400
-                                }}
-                            >
-                                <Send size={16} color={activeView === 'settings' ? '#8B5CF6' : '#0EA5E9'} />
-                                <span style={{ fontSize: '14px' }}>Telegram Reminders</span>
-                                {/* A dot rather than a count: this is a health signal, not a quantity. */}
+                        )}
+                        <button
+                            onClick={() => setActiveView('settings')}
+                            className="menu-item hover-lift"
+                            style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: '12px', padding: isMobile ? '10px 0' : '8px 12px',
+                                justifyContent: isMobile ? 'center' : 'flex-start',
+                                borderRadius: '8px', border: 'none',
+                                background: activeView === 'settings' ? 'rgba(139,92,246,0.1)' : 'transparent',
+                                color: activeView === 'settings' ? '#8B5CF6' : 'var(--color-text-main)',
+                                cursor: 'pointer', textAlign: 'left', fontWeight: activeView === 'settings' ? 600 : 400
+                            }}
+                        >
+                            <Send size={isMobile ? 20 : 16} color={activeView === 'settings' ? '#8B5CF6' : '#0EA5E9'} />
+                            {!isMobile && <span style={{ fontSize: '14px' }}>Telegram Reminders</span>}
+                            {!isMobile && (
                                 <span
                                     title={todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? 'Connected' : 'Not configured'}
                                     style={{
@@ -752,10 +762,10 @@ const TodoPage: React.FC = () => {
                                         background: todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? '#10B981' : '#EF4444'
                                     }}
                                 />
-                            </button>
-                        </div>
+                            )}
+                        </button>
                     </div>
-                )}
+                </div>
             </div>
 
             {/* Main Content Area */}
