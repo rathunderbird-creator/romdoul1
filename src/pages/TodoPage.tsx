@@ -120,6 +120,7 @@ const TodoPage: React.FC = () => {
     // View state
     const [activeView, setActiveView] = useState<string>('inbox');
     const [showCompleted, setShowCompleted] = useState(false);
+    const [showMobileHome, setShowMobileHome] = useState(true);
     
     // Add task inline state
     const [isAdding, setIsAdding] = useState(false);
@@ -492,13 +493,19 @@ const TodoPage: React.FC = () => {
                 return !!todo.due_date && todo.due_date > todayStr;
             case 'inbox':
                 return !todo.project_id;
+            case 'all':
+                return true;
+            case 'flagged':
+                return todo.priority < 4;
+            case 'completed':
+                return todo.status === 'completed';
             default:
                 return todo.project_id === view;
         }
     };
 
     const filterTodos = () => {
-        const filtered = showCompleted ? todos : todos.filter(t => t.status === 'open');
+        const filtered = (showCompleted || activeView === 'completed') ? todos : todos.filter(t => t.status === 'open');
         return filtered
             .filter(t => matchesView(t, activeView))
             // Soonest first so overdue and due-today float to the top; undated tasks
@@ -523,6 +530,9 @@ const TodoPage: React.FC = () => {
             inbox: open.filter(t => matchesView(t, 'inbox')).length,
             today: open.filter(t => matchesView(t, 'today')).length,
             upcoming: open.filter(t => matchesView(t, 'upcoming')).length,
+            all: open.length,
+            flagged: open.filter(t => matchesView(t, 'flagged')).length,
+            completed: todos.filter(t => t.status === 'completed').length,
         };
         for (const p of projects) {
             counts[p.id] = open.filter(t => matchesView(t, p.id)).length;
@@ -538,8 +548,11 @@ const TodoPage: React.FC = () => {
     const getViewTitle = () => {
         switch (activeView) {
             case 'today': return 'Today';
-            case 'upcoming': return 'Upcoming';
+            case 'upcoming': return 'Scheduled';
             case 'inbox': return 'Inbox';
+            case 'all': return 'All';
+            case 'flagged': return 'Flagged';
+            case 'completed': return 'Completed';
             case 'settings': return 'Telegram Reminders';
             default: {
                 const proj = projects.find(p => p.id === activeView);
@@ -614,10 +627,100 @@ const TodoPage: React.FC = () => {
         );
     };
 
+    if (isMobile && showMobileHome) {
+        return (
+            <div style={{ height: 'calc(100vh - 60px)', overflowY: 'auto', background: 'var(--color-background)', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <div />
+                    <button onClick={() => { setActiveView('settings'); setShowMobileHome(false); }} style={{ background: 'var(--color-surface)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                        <Send size={18} color="#8B5CF6" />
+                    </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
+                    {[
+                        { title: 'Today', count: viewCounts.today, icon: <CalendarIcon size={20} />, color: '#3B82F6', view: 'today' },
+                        { title: 'Scheduled', count: viewCounts.upcoming, icon: <CalendarDays size={20} />, color: '#EF4444', view: 'upcoming' },
+                        { title: 'All', count: viewCounts.all, icon: <Inbox size={20} />, color: '#374151', view: 'all' },
+                        { title: 'Flagged', count: viewCounts.flagged, icon: <Flag size={20} />, color: '#F59E0B', view: 'flagged' },
+                        { title: 'Completed', count: viewCounts.completed, icon: <CheckCircle2 size={20} />, color: '#6B7280', view: 'completed' },
+                    ].map(card => (
+                        <div 
+                            key={card.title}
+                            onClick={() => { setActiveView(card.view); setShowMobileHome(false); }}
+                            style={{
+                                background: card.color,
+                                borderRadius: '16px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                            }}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                    {card.icon}
+                                </div>
+                                <span style={{ fontSize: '24px', fontWeight: 'bold', color: 'white' }}>{card.count}</span>
+                            </div>
+                            <span style={{ fontSize: '15px', fontWeight: '600', color: 'white' }}>{card.title}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <h2 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '16px', color: 'var(--color-text-main)' }}>My Lists</h2>
+                <div style={{ background: 'var(--color-surface)', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div onClick={() => { setActiveView('inbox'); setShowMobileHome(false); }} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', marginRight: '12px' }}>
+                            <Inbox size={16} />
+                        </div>
+                        <span style={{ flex: 1, fontSize: '15px', fontWeight: 500, color: 'var(--color-text-main)' }}>Inbox</span>
+                        <span style={{ fontSize: '15px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>{viewCounts.inbox}</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>&gt;</span>
+                    </div>
+                    {projects.map((p, i) => (
+                        <div key={p.id} onClick={() => { setActiveView(p.id); setShowMobileHome(false); }} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: i < projects.length - 1 ? '1px solid var(--color-border)' : 'none', cursor: 'pointer' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', marginRight: '12px' }}>
+                                <AlignLeft size={16} />
+                            </div>
+                            <span style={{ flex: 1, fontSize: '15px', fontWeight: 500, color: 'var(--color-text-main)' }}>{p.name}</span>
+                            <span style={{ fontSize: '15px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>{viewCounts[p.id] || 0}</span>
+                            <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>&gt;</span>
+                        </div>
+                    ))}
+                </div>
+
+                <button
+                    onClick={() => { setIsAddingProject(true); setNewProjectName(''); }}
+                    style={{ background: 'none', border: 'none', color: '#3B82F6', fontSize: '15px', fontWeight: 500, padding: '16px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                    <Plus size={18} /> Add List
+                </button>
+                
+                {isAddingProject && (
+                    <form onSubmit={handleAddProject} style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--color-surface)', borderRadius: '12px', marginBottom: '16px' }}>
+                        <input 
+                            autoFocus type="text" placeholder="List name"
+                            value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+                            style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text-main)', fontSize: '15px' }}
+                        />
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', padding: '4px 0' }}>
+                            {PROJECT_COLORS.map(c => (
+                                <button key={c} type="button" onClick={() => setNewProjectColor(c)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, border: newProjectColor === c ? '2px solid var(--color-text-main)' : 'none', cursor: 'pointer' }} />
+                            ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button type="submit" style={{ flex: 1, padding: '10px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Add</button>
+                            <button type="button" onClick={() => setIsAddingProject(false)} style={{ flex: 1, padding: '10px', background: 'var(--color-background)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                        </div>
+                    </form>
+                )}
+            </div>
+        );
+    }
+
     return (
         <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden', position: 'relative' }}>
             {/* Left Sidebar */}
-            <div className="glass-panel" style={{ 
+            {!isMobile && (
+                <div className="glass-panel" style={{ 
                 width: isMobile ? '60px' : '260px', 
                 borderRight: '1px solid var(--color-border)',
                 padding: '20px 12px',
@@ -767,12 +870,18 @@ const TodoPage: React.FC = () => {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Main Content Area */}
-            <div style={{ flex: 1, padding: isMobile ? '20px' : '40px 60px', overflowY: 'auto' }}>
+            <div style={{ flex: 1, padding: isMobile ? '20px' : '40px 60px', overflowY: 'auto', paddingBottom: isMobile ? '100px' : '40px' }}>
                 <div style={{ maxWidth: '800px', margin: '0 auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                        <h2 style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h2 style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 800, color: (isMobile && activeView === 'today') ? '#3B82F6' : 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isMobile && (
+                                <button onClick={() => setShowMobileHome(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6', display: 'flex', alignItems: 'center', padding: 0 }}>
+                                    <span style={{ fontSize: '28px', marginRight: '4px', lineHeight: 0.8 }}>‹</span>
+                                </button>
+                            )}
                             {getViewTitle()}
                         </h2>
                         {activeView !== 'settings' && (
@@ -987,7 +1096,7 @@ const TodoPage: React.FC = () => {
                                         </button>
                                     </div>
                                 </form>
-                            ) : (
+                            ) : !isMobile ? (
                                 <button 
                                     onClick={() => setIsAdding(true)}
                                     style={{ 
@@ -1001,10 +1110,35 @@ const TodoPage: React.FC = () => {
                                     <Plus size={20} color="currentColor" />
                                     Add task
                                 </button>
-                            )}
+                            ) : null}
                         </div>
                     )}
                 </div>
+
+                {isMobile && !isAdding && activeView !== 'settings' && (
+                    <button
+                        onClick={() => setIsAdding(true)}
+                        style={{
+                            position: 'fixed',
+                            bottom: '24px',
+                            right: '24px',
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '50%',
+                            background: '#3B82F6',
+                            color: 'white',
+                            border: 'none',
+                            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            zIndex: 40
+                        }}
+                    >
+                        <Plus size={24} />
+                    </button>
+                )}
             </div>
 
             {/* Task Edit Side Drawer */}
