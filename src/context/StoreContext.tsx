@@ -278,10 +278,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return { data: data || [], error };
             };
 
-            // Fetch core data. Note: Removing 'platform, page' from customers query because they are not yet migrated to production DB, causing a 400 Bad Request error.
+            // Fetch core data.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult, warehousesResult, warehouseStockResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at').order('created_at', { ascending: false }),
-                supabase.from('customers').select('id, name, phone'),
+                supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at, is_active').order('created_at', { ascending: false }),
+                // Select all customer detail fields, not just id/name/phone: the checkout
+                // form saves email/address/city/platform/page, and a narrower select would
+                // silently drop them from the in-memory store on every reload.
+                supabase.from('customers').select('id, name, phone, email, address, city, platform, page'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 supabase.from('users').select('*'),
@@ -292,13 +295,36 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 supabase.from('warehouse_stock').select('*')
             ]);
 
-            console.log('Fetched Sales Count:', salesResult.data?.length);
-            if (salesResult.error) console.error('Sales Fetch Error:', salesResult.error);
+            // Surface fetch failures. PostgREST reports these on `.error` instead of
+            // throwing, so they never reach the catch below — and because each block
+            // below is guarded by `if (result.data)`, a failed query silently leaves
+            // its list empty. A single unknown column drops the whole table this way.
+            const fetchResults: Array<[string, { error: unknown }]> = [
+                ['products', productsResult],
+                ['customers', customersResult],
+                ['sales', salesResult],
+                ['app_config', configResult],
+                ['users', usersResult],
+                ['restocks', restocksResult],
+                ['transactions', transactionsResult],
+                ['telegram_notifications', telegramConfigsResult],
+                ['warehouses', warehousesResult],
+                ['warehouse_stock', warehouseStockResult],
+            ];
+            for (const [table, result] of fetchResults) {
+                if (result.error) {
+                    const message = (result.error as { message?: string }).message ?? result.error;
+                    console.error(`Failed to fetch "${table}":`, message);
+                }
+            }
 
             // Products
             if (productsResult.data) {
-                setProducts(productsResult.data.map((p: any) => ({
+                setProducts(productsResult.data
+                    .filter((p: any) => p.is_active !== false)
+                    .map((p: any) => ({
                     ...p,
+                    isActive: p.is_active ?? true,
                     lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
                     stock: Number(p.stock),
                     price: Number(p.price),
@@ -1073,10 +1099,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const deleteProduct = async (id: string) => {
-        const { error } = await supabase.from('products').delete().eq('id', id);
+        // Soft delete the product to preserve foreign key constraints in sale_items
+        const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
         if (error) {
-            console.error('Error deleting product:', error);
-            // Optionally revert local state if needed, but for now just log
+            console.error('Error soft-deleting product:', error);
             alert(`Failed to delete product: ${error.message}`);
             // Re-fetch to sync state?
             const { data } = await supabase.from('products').select('*').eq('id', id).single();
@@ -1089,9 +1115,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const deleteProducts = async (ids: string[]) => {
-        const { error } = await supabase.from('products').delete().in('id', ids);
+        // Soft delete the products to preserve foreign key constraints
+        const { error } = await supabase.from('products').update({ is_active: false }).in('id', ids);
         if (error) {
-            console.error('Error deleting products:', error);
+            console.error('Error soft-deleting products:', error);
             alert(`Failed to delete products: ${error.message}`);
         } else {
             setProducts(prev => prev.filter(p => !ids.includes(p.id)));

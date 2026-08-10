@@ -21,7 +21,7 @@ const instances = require('./db_instances.json').instances;
 const EXPECTED_TABLES = {
     products: [
         'id', 'name', 'model', 'price', 'stock', 'low_stock_threshold',
-        'image', 'category', 'created_at'
+        'image', 'category', 'low_stock_alert', 'created_at'
     ],
     customers: [
         'id', 'name', 'phone', 'email', 'address', 'city',

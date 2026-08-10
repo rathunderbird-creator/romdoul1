@@ -389,6 +389,13 @@ const Inventory: React.FC = () => {
         return result;
     }, [products, searchTerm, columnFilters, sortConfig, productOrder]);
 
+    // The single page of rows actually rendered. Shared by the desktop table and the
+    // mobile card list so the two can never drift out of sync.
+    const paginatedProducts = useMemo(
+        () => filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
+        [filteredAndSortedProducts, currentPage, itemsPerPage]
+    );
+
     // Calculate Totals
     const stats = useMemo(() => {
         const totalProducts = products.length;
@@ -769,8 +776,31 @@ const Inventory: React.FC = () => {
                 )}
             </div>
 
-            {/* Table */}
+            {/* Table (desktop) / card list (mobile) */}
             <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                {isMobile ? (
+                    /* The table needs 600px minimum, which forces horizontal scrolling on a
+                       phone. MobileInventoryCard renders the same row data as a tappable card. */
+                    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {paginatedProducts.map((product) => (
+                            <MobileInventoryCard
+                                key={product.id}
+                                product={product}
+                                isSelected={selectedIds.has(product.id)}
+                                onToggleSelect={() => toggleSelection(product.id)}
+                                isExpanded={expandedProductIds.has(product.id)}
+                                onToggleExpand={() => toggleProductExpansion(product.id)}
+                                onEdit={openEditModal}
+                                onDelete={promptDelete}
+                            />
+                        ))}
+                        {paginatedProducts.length === 0 && (
+                            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
+                                No products found.
+                            </div>
+                        )}
+                    </div>
+                ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
@@ -807,7 +837,7 @@ const Inventory: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredAndSortedProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((product) => {
+                        {paginatedProducts.map((product) => {
                             const isOutOfStock = product.stock === 0;
                             const isLowStock = product.stock > 0 && product.stock < (product.lowStockThreshold || 5);
                             return (
@@ -895,6 +925,7 @@ const Inventory: React.FC = () => {
                         })}
                     </tbody>
                 </table>
+                )}
                 <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)' }}>
                     <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                         Showing {filteredAndSortedProducts.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length}

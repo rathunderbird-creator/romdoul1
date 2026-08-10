@@ -14,6 +14,7 @@ export interface Product {
     category: string;
     invoiceNumber?: string;
     supplier?: string;
+    isActive?: boolean;
     createdAt?: string;
 }
 

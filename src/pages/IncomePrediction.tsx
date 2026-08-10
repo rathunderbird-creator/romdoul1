@@ -10,6 +10,12 @@ const getLocalYYYYMM = (date: Date = new Date()) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 };
 
+// `sales.date` is a timestamptz stored in UTC, but the business runs in local time
+// (UTC+7). Reading the date off the raw ISO string would book any sale made between
+// midnight and 07:00 local to the *previous* day, so always convert to local first.
+const getLocalYYYYMMDD = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -145,23 +151,30 @@ const IncomePrediction: React.FC = () => {
         setIsLoading(true);
         try {
             const endDate = new Date(year, monthIdx + 1, 0);
-            const startStr = `${selectedMonth}-01T00:00:00.000Z`;
-            const endStr = `${selectedMonth}-${String(endDate.getDate()).padStart(2, '0')}T23:59:59.999Z`;
+            // Query the month as a half-open range of real instants derived from LOCAL
+            // midnight boundaries. Using `${month}-01T00:00:00Z` would start the window
+            // 7 hours late and end it 7 hours into the next month.
+            const startStr = new Date(year, monthIdx, 1).toISOString();
+            const endStr = new Date(year, monthIdx + 1, 1).toISOString();
+
+            // `income_predictions.date` is a plain calendar date, so it's bounded by the
+            // month's own YYYY-MM-DD strings rather than by instants.
+            const firstDayStr = `${selectedMonth}-01`;
+            const lastDayStr = `${selectedMonth}-${String(endDate.getDate()).padStart(2, '0')}`;
 
             const [salesRes, predictionsRes] = await Promise.all([
                 supabase.from('sales')
                     .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
-                    .gte('date', startStr).lte('date', endStr),
+                    .gte('date', startStr).lt('date', endStr),
                 supabase.from('income_predictions')
                     .select('*')
-                    .gte('date', startStr).lte('date', endStr)
+                    .gte('date', firstDayStr).lte('date', lastDayStr)
             ]);
 
             if (salesRes.error) throw salesRes.error;
             if (predictionsRes.error) throw predictionsRes.error;
 
-            const today = new Date();
-            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            const todayStr = getLocalYYYYMMDD(new Date());
             const daysInMonth = endDate.getDate();
             const dailyMap = new Map<string, DailyPrediction>();
 
@@ -203,7 +216,7 @@ const IncomePrediction: React.FC = () => {
 
             // 2. Auto-calculate from live sales ONLY for unsaved days
             (salesRes.data || []).forEach((sale: any) => {
-                const saleDate = sale.date ? sale.date.substring(0, 10) : null;
+                const saleDate = sale.date ? getLocalYYYYMMDD(new Date(sale.date)) : null;
                 if (!saleDate || !dailyMap.has(saleDate)) return;
                 const day = dailyMap.get(saleDate)!;
                 if (day.isSaved) return; // Freeze auto-calc if saved

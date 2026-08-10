@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -1603,6 +1603,50 @@ const Orders: React.FC = () => {
 
     const hasFilters = statusFilter.length > 0 || salesmanFilter !== 'All' || searchTerm !== '' || payStatusFilter.length > 0 || shippingCoFilter.length > 0 || pageFilter.length > 0 || (dateRange.start && dateRange.end) || Object.keys(columnFilters).length > 0;
 
+    // Shared by the toolbar's "Clear Filters" button and the empty-state row, so a
+    // user who filters themselves down to nothing can recover without hunting for
+    // which of the ten filters is responsible.
+    const clearAllFilters = () => {
+        setSearchTerm('');
+        setStatusFilter([]);
+        setSalesmanFilter('All');
+        setPayStatusFilter([]);
+        setShippingCoFilter([]);
+        setPageFilter([]);
+        setColumnFilters({});
+        setDateRange({ start: '', end: '' });
+    };
+
+    // +1 for the leading checkbox/status column, which sits outside `visibleColumns`.
+    const visibleColumnCount = allColumns.filter(col => visibleColumns.includes(col.id)).length + 1;
+
+    // Shared by the desktop table body and the mobile card list. Distinguishes "your
+    // filters excluded everything" (recoverable) from "there are genuinely no orders".
+    const emptyStateContent = isLoadingOrders ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '14px' }}>
+            <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+            Searching orders…
+        </div>
+    ) : hasFilters ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <Filter size={32} style={{ opacity: 0.25 }} />
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>No orders match your filters</div>
+            <div style={{ fontSize: '13px' }}>Try widening the date range or removing a filter.</div>
+            <button
+                onClick={clearAllFilters}
+                style={{ marginTop: '4px', padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#EF4444', color: 'white', fontSize: '13px', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+                <Filter size={14} /> Clear Filters
+            </button>
+        </div>
+    ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+            <Package size={32} style={{ opacity: 0.25 }} />
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>No orders yet</div>
+            <div style={{ fontSize: '13px' }}>New orders will appear here once they’re created.</div>
+        </div>
+    );
+
     return (
         <div>
             {/* Header */}
@@ -2197,16 +2241,7 @@ const Orders: React.FC = () => {
                                 </div>
 
                                 <button
-                                    onClick={() => {
-                                        setSearchTerm('');
-                                        setStatusFilter([]);
-                                        setSalesmanFilter('All');
-                                        setPayStatusFilter([]);
-                                        setShippingCoFilter([]);
-                                        setPageFilter([]);
-                                        setColumnFilters({});
-                                        setDateRange({ start: '', end: '' });
-                                    }}
+                                    onClick={clearAllFilters}
                                     disabled={!hasFilters}
                                     style={{
                                         padding: '10px 16px', borderRadius: '8px',
@@ -2448,6 +2483,11 @@ const Orders: React.FC = () => {
                     }}>
                         {isMobile ? (
                             <div style={{ display: 'flex', flexDirection: 'column', padding: '8px', paddingBottom: '100px' }}>
+                                {paginatedOrders.length === 0 && (
+                                    <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                        {emptyStateContent}
+                                    </div>
+                                )}
                                 {paginatedOrders.map(order => (
                                     <MobileOrderCard
                                         key={order.id}
@@ -2497,9 +2537,6 @@ const Orders: React.FC = () => {
                                         canEdit={canEdit}
                                     />
                                 ))}
-                                {paginatedOrders.length === 0 && (
-                                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>
-                                )}
 
                                 {/* Mobile FAB - New Order */}
                                 {hasPermission('create_orders') && (
@@ -3089,6 +3126,15 @@ const Orders: React.FC = () => {
                                                 </tr>
                                             );
                                         })}
+                                        {paginatedOrders.length === 0 && (
+                                            /* Without this the body renders as blank space under the
+                                               headers, which reads as "broken" rather than "no match". */
+                                            <tr>
+                                                <td colSpan={visibleColumnCount + 1} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                                    {emptyStateContent}
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                     <tfoot>
                                         <tr>
@@ -3125,7 +3171,6 @@ const Orders: React.FC = () => {
                                         </tr>
                                     </tfoot>
                                 </table>
-                                {filteredOrders.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No orders found.</div>}
                             </>
                         )}
                     </div>

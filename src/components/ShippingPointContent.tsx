@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy, Edit2, Power, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
@@ -7,6 +7,29 @@ import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
 
 
+
+// Cap on how many gazetteer hits the search dropdown will collect.
+const MAX_SEARCH_RESULTS = 50;
+
+// A pinned shipping point, as stored in the custom-locations table.
+interface CustomLocation {
+    id: string;
+    pcode: string;
+    name: string;
+    lat: number;
+    lng: number;
+    courier?: string | null;
+    province?: string | null;
+    district?: string | null;
+    commune?: string | null;
+    phone?: string | null;
+    contact_name?: string | null;
+    is_shutdown?: boolean;
+}
+
+// Supabase/thrown errors arrive as `unknown`; pull a readable message off them.
+const errorMessage = (e: unknown) =>
+    e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
 
 // Define the data types based on the JSON structure
 interface Village {
@@ -96,20 +119,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     const [isEditing, setIsEditing] = useState(false);
     const [editMarkerLatLng, setEditMarkerLatLng] = useState<[number, number] | null>(null);
     const [focusedPinLatLng, setFocusedPinLatLng] = useState<[number, number] | null>(null);
-    const [customLocations, setCustomLocations] = useState<Array<{
-        id: string,
-        pcode: string,
-        name: string,
-        lat: number,
-        lng: number,
-        courier?: string | null,
-        province?: string | null,
-        district?: string | null,
-        commune?: string | null,
-        phone?: string | null,
-        contact_name?: string | null,
-        is_shutdown?: boolean
-    }>>([]);
+    const [customLocations, setCustomLocations] = useState<CustomLocation[]>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [isPinnedListExpanded, setIsPinnedListExpanded] = useState(false);
@@ -131,6 +141,31 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         contactName: '',
         isShutdown: false
     });
+    const loadShippingCompanies = useCallback(async () => {
+        try {
+            const { data, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
+            if (!error && data?.data?.shippingCompanies) {
+                setShippingCompanies(data.data.shippingCompanies);
+            }
+        } catch (e) {
+            console.error("Failed to load shipping companies", e);
+        }
+    }, []);
+
+    // Depends on the `tableName` prop, so it has to be re-created (and re-run) when
+    // that changes — previously the loader was pinned to whatever table was passed
+    // on first mount.
+    const loadCustomLocations = useCallback(async () => {
+        try {
+            const { data, error } = await supabase.from(tableName).select('*');
+            if (!error && data) {
+                setCustomLocations(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch custom locations", e);
+        }
+    }, [tableName]);
+
     // Fetch data dynamically so it doesn't block the main JS bundle
     useEffect(() => {
         setIsLoading(true);
@@ -144,32 +179,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             .finally(() => {
                 setIsLoading(false);
             });
-
-        loadCustomLocations();
-        loadShippingCompanies();
     }, []);
 
-    const loadShippingCompanies = async () => {
-        try {
-            const { data, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
-            if (!error && data?.data?.shippingCompanies) {
-                setShippingCompanies(data.data.shippingCompanies);
-            }
-        } catch (e) {
-            console.error("Failed to load shipping companies", e);
-        }
-    };
-
-    const loadCustomLocations = async () => {
-        try {
-            const { data, error } = await supabase.from(tableName).select('*');
-            if (!error && data) {
-                setCustomLocations(data);
-            }
-        } catch (e) {
-            console.error("Failed to fetch custom locations", e);
-        }
-    };
+    useEffect(() => {
+        loadCustomLocations();
+        loadShippingCompanies();
+    }, [loadCustomLocations, loadShippingCompanies]);
 
 
     const [activeCustomLocation, setActiveCustomLocation] = useState<typeof customLocations[0] | null>(null);
@@ -226,11 +241,21 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
 
 
     // Global Search Logic
-    const globalSearchResults = useMemo(() => {
-        if (!globalSearchTerm || globalSearchTerm.trim().length === 0) return [];
+    //
+    // The gazetteer is ~16,000 nodes (25 provinces / 197 districts / 1,652 communes
+    // / 14,372 villages), so scanning it is far too costly to redo on every keystroke.
+    // Debounce the term and let the memo key off the settled value instead.
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearchTerm(globalSearchTerm), 200);
+        return () => clearTimeout(t);
+    }, [globalSearchTerm]);
 
-        const term = globalSearchTerm.toLowerCase();
-        let results: Array<{
+    const globalSearchResults = useMemo(() => {
+        const term = debouncedSearchTerm.trim().toLowerCase();
+        if (!term) return [];
+
+        const results: Array<{
             type: 'province' | 'district' | 'commune' | 'village',
             name: string,
             path: string,
@@ -240,42 +265,40 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             vcode: string
         }> = [];
 
+        // Khmer has no case, so lowercasing only matters for the latin transliteration.
+        const isMatch = (khmer: string, latin: string) =>
+            khmer.includes(term) || latin.toLowerCase().includes(term);
+
+        // A labelled break stops the whole walk at the cap. The previous nested
+        // `if (results.length > 50) break` checks only unwound one level at a time
+        // and ran after the push, so the list could overshoot the intended limit.
+        search:
         for (const p of data) {
-            // Check Province
-            if (p.khmer.includes(term) || p.latin.toLowerCase().includes(term)) {
+            if (isMatch(p.khmer, p.latin)) {
                 results.push({ type: 'province', name: p.khmer, path: 'រាជធានី/ខេត្ត', pcode: p.code, dcode: '', ccode: '', vcode: '' });
+                if (results.length >= MAX_SEARCH_RESULTS) break search;
             }
-            if (p.districts) {
-                for (const d of p.districts) {
-                    // Check District
-                    if (d.khmer.includes(term) || d.latin.toLowerCase().includes(term)) {
-                        results.push({ type: 'district', name: d.khmer, path: `${p.khmer}`, pcode: p.code, dcode: d.code, ccode: '', vcode: '' });
+            for (const d of p.districts || []) {
+                if (isMatch(d.khmer, d.latin)) {
+                    results.push({ type: 'district', name: d.khmer, path: `${p.khmer}`, pcode: p.code, dcode: d.code, ccode: '', vcode: '' });
+                    if (results.length >= MAX_SEARCH_RESULTS) break search;
+                }
+                for (const c of d.communes || []) {
+                    if (isMatch(c.khmer, c.latin)) {
+                        results.push({ type: 'commune', name: c.khmer, path: `${p.khmer} > ${d.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: '' });
+                        if (results.length >= MAX_SEARCH_RESULTS) break search;
                     }
-                    if (d.communes) {
-                        for (const c of d.communes) {
-                            // Check Commune
-                            if (c.khmer.includes(term) || c.latin.toLowerCase().includes(term)) {
-                                results.push({ type: 'commune', name: c.khmer, path: `${p.khmer} > ${d.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: '' });
-                            }
-                            if (c.villages) {
-                                for (const v of c.villages) {
-                                    // Check Village
-                                    if (v.khmer.includes(term) || v.latin.toLowerCase().includes(term)) {
-                                        results.push({ type: 'village', name: v.khmer, path: `${p.khmer} > ${d.khmer} > ${c.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: v.code });
-                                    }
-                                    if (results.length > 50) break; // Limit
-                                }
-                            }
-                            if (results.length > 50) break;
+                    for (const v of c.villages || []) {
+                        if (isMatch(v.khmer, v.latin)) {
+                            results.push({ type: 'village', name: v.khmer, path: `${p.khmer} > ${d.khmer} > ${c.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: v.code });
+                            if (results.length >= MAX_SEARCH_RESULTS) break search;
                         }
                     }
-                    if (results.length > 50) break;
                 }
             }
-            if (results.length > 50) break;
         }
         return results;
-    }, [data, globalSearchTerm]);
+    }, [data, debouncedSearchTerm]);
 
     // Group Pinned Locations by Province
     const pinnedLocationsByProvince = useMemo(() => {
@@ -472,7 +495,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         if (!loc.pcode.startsWith('CUSTOM_')) {
             setActiveCustomLocation(null);
             const type = loc.pcode.length === 2 ? 'province' : loc.pcode.length === 4 ? 'district' : loc.pcode.length === 6 ? 'commune' : 'village';
-            handleAreaSelect(type as any, loc.pcode);
+            handleAreaSelect(type, loc.pcode);
         } else {
             setActiveCustomLocation(loc);
             let pCode = '', dCode = '', cCode = '';
@@ -547,7 +570,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         setIsSaveModalOpen(true);
     };
 
-    const handleEditPinBtnClick = (loc: any) => {
+    const handleEditPinBtnClick = (loc: CustomLocation) => {
         setEditingLocationId(loc.id);
         setEditMarkerLatLng([loc.lat, loc.lng]);
         setModalData({
@@ -627,15 +650,15 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setIsSaveModalOpen(false);
             await loadCustomLocations();
             alert(`Location specifically mapped to ${modalData.name}!`);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error('Catch Block Error in submitSaveLocation API:', e);
-            setSavingError(e.message || JSON.stringify(e));
+            setSavingError(errorMessage(e));
         } finally {
             setIsSavingLocation(false);
         }
     };
 
-    const handleToggleShutdown = async (loc: any) => {
+    const handleToggleShutdown = async (loc: CustomLocation) => {
         const newStatus = !loc.is_shutdown;
         setIsSavingLocation(true);
         try {
@@ -647,9 +670,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             if (error) throw error;
             await loadCustomLocations();
             showToast(`Location "${loc.name}" is now ${newStatus ? 'Temporarily Shutdown' : 'Reactivated'}`, 'success');
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error('Error toggling shutdown status', e);
-            showToast('Failed to toggle status: ' + e.message, 'error');
+            showToast('Failed to toggle status: ' + errorMessage(e), 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -666,9 +689,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setEditMarkerLatLng(null);
             await loadCustomLocations();
             alert(`Location pin removed for ${name}!`);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error('Exception during delete', e);
-            alert('Error removing location pin: ' + e.message);
+            alert('Error removing location pin: ' + errorMessage(e));
         } finally {
             setIsSavingLocation(false);
         }
@@ -728,9 +751,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                 setIsConfirmingDelete(false);
                 alert(`Location pin removed for ${targetName}!`);
             }
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error('Exception during delete', e);
-            alert('Error removing location pin: ' + e.message);
+            alert('Error removing location pin: ' + errorMessage(e));
         } finally {
             setIsSavingLocation(false);
         }
