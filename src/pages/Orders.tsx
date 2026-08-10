@@ -393,7 +393,8 @@ const lockedOrderMessage = (order: Sale) =>
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, addOnlineOrder } = useStore();
+    const [isDuplicating, setIsDuplicating] = useState(false);
 
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
@@ -1557,6 +1558,70 @@ const Orders: React.FC = () => {
         }
     };
 
+    // Duplicates the selected orders as fresh Drafted orders.
+    //
+    // Everything that describes an *outcome* is deliberately reset rather than copied:
+    // payment status, amount received, settle date and tracking number all belong to
+    // the original. Copying `paymentStatus: 'Paid'` would be the damaging one —
+    // addOnlineOrder records an income transaction for paid orders, so a duplicate
+    // would invent revenue that was never taken.
+    const handleDuplicateSelected = async () => {
+        if (isDuplicating || selectedIds.size === 0) return;
+
+        const originals = filteredOrders.filter(o => selectedIds.has(o.id));
+        if (originals.length === 0) return;
+        if (!confirm(`Duplicate ${originals.length} order${originals.length > 1 ? 's' : ''} as new Drafted order${originals.length > 1 ? 's' : ''}?`)) return;
+
+        setIsDuplicating(true);
+        let created = 0;
+        try {
+            for (const original of originals) {
+                const duplicate: Omit<Sale, 'id'> = {
+                    items: original.items.map(item => ({ ...item })),
+                    total: original.total,
+                    discount: original.discount,
+                    date: new Date().toISOString(),
+                    paymentMethod: original.paymentMethod,
+                    type: original.type,
+                    salesman: original.salesman,
+                    customerCare: original.customerCare,
+                    remark: original.remark,
+                    pageSource: original.pageSource,
+                    customer: original.customer ? { ...original.customer } : undefined,
+
+                    // Reset outcome fields — this is a new, unstarted order.
+                    paymentStatus: 'Unpaid',
+                    amountReceived: 0,
+                    settleDate: undefined,
+                    orderStatus: 'Open',
+                    isPrinted: false,
+                    shipping: {
+                        company: original.shipping?.company || '',
+                        trackingNumber: '',
+                        status: 'Drafted',
+                        cost: original.shipping?.cost || 0,
+                        staffName: original.shipping?.staffName,
+                    },
+                };
+
+                await addOnlineOrder(duplicate);
+                created++;
+            }
+
+            setSelectedIds(new Set());
+            showToast(`Created ${created} new Drafted order${created > 1 ? 's' : ''}`, 'success');
+        } catch (error) {
+            console.error('Failed to duplicate orders:', error);
+            showToast(
+                `Duplicated ${created} of ${originals.length} before failing: ` +
+                (error instanceof Error ? error.message : 'unknown error'),
+                'error'
+            );
+        } finally {
+            setIsDuplicating(false);
+        }
+    };
+
     const handleCopyOrder = (order: Sale) => {
         const text = generateOrderCopyText(order, sales);
 
@@ -1733,6 +1798,30 @@ const Orders: React.FC = () => {
                                 >
                                     <Edit size={18} />
                                     Bulk Edit {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                </button>
+                            )}
+                            {canEdit && selectedIds.size > 0 && (
+                                <button
+                                    onClick={handleDuplicateSelected}
+                                    disabled={isDuplicating}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        padding: '0 16px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #10B981',
+                                        background: 'var(--color-surface)',
+                                        color: '#10B981',
+                                        cursor: isDuplicating ? 'not-allowed' : 'pointer',
+                                        opacity: isDuplicating ? 0.6 : 1,
+                                        fontWeight: 500,
+                                        transition: 'all 0.2s',
+                                        height: '40px',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                    title="Duplicate selected orders as new Drafted orders"
+                                >
+                                    <Copy size={18} />
+                                    {isDuplicating ? 'Duplicating…' : `Duplicate (${selectedIds.size})`}
                                 </button>
                             )}
                             <div style={{ width: 'auto' }}>
