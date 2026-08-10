@@ -505,7 +505,7 @@ const TodoPage: React.FC = () => {
     };
 
     const filterTodos = () => {
-        const filtered = (showCompleted || activeView === 'completed') ? todos : todos.filter(t => t.status === 'open');
+        const filtered = (showCompleted || activeView === 'completed' || activeView === 'today') ? todos : todos.filter(t => t.status === 'open');
         return filtered
             .filter(t => matchesView(t, activeView))
             // Soonest first so overdue and due-today float to the top; undated tasks
@@ -884,7 +884,7 @@ const TodoPage: React.FC = () => {
                             )}
                             {getViewTitle()}
                         </h2>
-                        {activeView !== 'settings' && (
+                        {!['settings', 'completed', 'today'].includes(activeView) && (
                             <button
                                 type="button"
                                 onClick={() => setShowCompleted(prev => !prev)}
@@ -984,7 +984,7 @@ const TodoPage: React.FC = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {displayedTodos.filter(t => t.status === 'open').map(todo => <TaskItem key={todo.id} todo={todo} />)}
                             
-                            {showCompleted && (
+                            {(showCompleted || activeView === 'today') && (
                                 <>
                                     <div style={{ margin: '16px 0 0 4px', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', letterSpacing: '0.5px' }}>
                                         Completed
