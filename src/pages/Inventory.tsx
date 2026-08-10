@@ -196,6 +196,85 @@ const Inventory: React.FC = () => {
     const [adjustStockProduct, setAdjustStockProduct] = useState<Product | null>(null);
     const [adjustStockAmount, setAdjustStockAmount] = useState<number | string>('');
     const [adjustStockReason, setAdjustStockReason] = useState<string>('');
+    // One in-flight flag for both stock modals. Without it, pressing Enter and then
+    // clicking Confirm (or hitting Enter twice) applies the same change repeatedly.
+    const [isStockSubmitting, setIsStockSubmitting] = useState(false);
+
+    // A stock entry this large is almost certainly a typo — and `addStock` builds one
+    // inventory_items row per unit, so a slipped digit would try to create millions of
+    // rows and hang the browser.
+    const MAX_STOCK_ENTRY = 100000;
+
+    const validateStockQty = (raw: number | string, { allowZero = false } = {}): number | null => {
+        const qty = Number(raw);
+        if (raw === '' || !Number.isFinite(qty)) {
+            showToast('Please enter a valid stock amount', 'error');
+            return null;
+        }
+        if (!Number.isInteger(qty)) {
+            showToast('Stock must be a whole number of units', 'error');
+            return null;
+        }
+        if (allowZero ? qty < 0 : qty <= 0) {
+            showToast(allowZero ? 'Stock cannot be negative' : 'Enter an amount greater than zero', 'error');
+            return null;
+        }
+        if (qty > MAX_STOCK_ENTRY) {
+            showToast(`That looks like a typo — ${qty.toLocaleString()} exceeds the ${MAX_STOCK_ENTRY.toLocaleString()} limit`, 'error');
+            return null;
+        }
+        return qty;
+    };
+
+    // Shared by the Enter key and the Confirm button so their validation can't drift.
+    const confirmAddStock = async () => {
+        if (isStockSubmitting || !addStockProduct) return;
+        const qty = validateStockQty(addStockAmount);
+        if (qty === null) return;
+
+        const cost = Number(addStockCost) || 0;
+        if (cost < 0) {
+            showToast('Unit cost cannot be negative', 'error');
+            return;
+        }
+
+        const pid = addStockProduct.id;
+        const name = addStockProduct.name;
+        setIsStockSubmitting(true);
+        try {
+            await addStock(pid, qty, cost);
+            showToast(`Added ${qty} stock to ${name}`, 'success');
+            setAddStockProduct(null);
+            setRecentlyUpdatedId(pid);
+            setTimeout(() => setRecentlyUpdatedId(null), 2000);
+        } catch (err) {
+            showToast('Failed to add stock: ' + (err instanceof Error ? err.message : 'unknown error'), 'error');
+        } finally {
+            setIsStockSubmitting(false);
+        }
+    };
+
+    const confirmAdjustStock = async () => {
+        if (isStockSubmitting || !adjustStockProduct) return;
+        // Adjustment sets an absolute count, so zero is a legitimate value.
+        const qty = validateStockQty(adjustStockAmount, { allowZero: true });
+        if (qty === null) return;
+
+        const pid = adjustStockProduct.id;
+        const name = adjustStockProduct.name;
+        setIsStockSubmitting(true);
+        try {
+            await adjustStock(pid, qty, adjustStockReason);
+            showToast(`Adjusted stock for ${name}`, 'success');
+            setAdjustStockProduct(null);
+            setRecentlyUpdatedId(pid);
+            setTimeout(() => setRecentlyUpdatedId(null), 2000);
+        } catch (err) {
+            showToast('Failed to adjust stock: ' + (err instanceof Error ? err.message : 'unknown error'), 'error');
+        } finally {
+            setIsStockSubmitting(false);
+        }
+    };
     const [recentlyUpdatedId, setRecentlyUpdatedId] = useState<string | null>(null);
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1222,14 +1301,10 @@ const Inventory: React.FC = () => {
                                             autoFocus
                                             value={addStockAmount}
                                             onChange={e => setAddStockAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                                            onKeyDown={async e => {
-                                                if (e.key === 'Enter' && addStockAmount !== '' && Number(addStockAmount) > 0) {
-                                        const pid = addStockProduct.id;
-                                        await addStock(pid, Number(addStockAmount), Number(addStockCost) || 0);
-                                                    showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
-                                        setAddStockProduct(null);
-                                        setRecentlyUpdatedId(pid);
-                                        setTimeout(() => setRecentlyUpdatedId(null), 2000);
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    void confirmAddStock();
                                                 }
                                             }}
                                         />
@@ -1251,23 +1326,12 @@ const Inventory: React.FC = () => {
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                 <button onClick={() => setAddStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button
-                                    onClick={async () => {
-                                        if (addStockAmount === '' || Number(addStockAmount) <= 0) {
-                                            showToast('Please enter a valid stock amount', 'error');
-                                            return;
-                                        }
-                                        const pid = addStockProduct.id;
-                                        await addStock(pid, Number(addStockAmount), Number(addStockCost) || 0);
-                                        showToast(`Added ${addStockAmount} stock to ${addStockProduct.name}`, 'success');
-                                        setAddStockProduct(null);
-                                        setRecentlyUpdatedId(pid);
-                                        setTimeout(() => setRecentlyUpdatedId(null), 2000);
-                                    }}
+                                    onClick={confirmAddStock}
                                     className="primary-button"
-                                    style={{ padding: '10px 24px' }}
-                                    disabled={addStockAmount === '' || Number(addStockAmount) <= 0}
+                                    style={{ padding: '10px 24px', cursor: isStockSubmitting ? 'not-allowed' : 'pointer' }}
+                                    disabled={addStockAmount === '' || Number(addStockAmount) <= 0 || isStockSubmitting}
                                 >
-                                    Confirm Addition
+                                    {isStockSubmitting ? 'Adding…' : 'Confirm Addition'}
                                 </button>
                             </div>
                         </div>
@@ -1325,23 +1389,12 @@ const Inventory: React.FC = () => {
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                 <button onClick={() => setAdjustStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
                                 <button
-                                    onClick={async () => {
-                                        if (adjustStockAmount === '' || Number(adjustStockAmount) < 0) {
-                                            showToast('Please enter a valid stock amount', 'error');
-                                            return;
-                                        }
-                                        const pid = adjustStockProduct.id;
-                                        await adjustStock(pid, Number(adjustStockAmount), adjustStockReason);
-                                        showToast(`Adjusted stock for ${adjustStockProduct.name}`, 'success');
-                                        setAdjustStockProduct(null);
-                                        setRecentlyUpdatedId(pid);
-                                        setTimeout(() => setRecentlyUpdatedId(null), 2000);
-                                    }}
+                                    onClick={confirmAdjustStock}
                                     className="primary-button"
-                                    style={{ padding: '10px 24px' }}
-                                    disabled={adjustStockAmount === '' || Number(adjustStockAmount) < 0}
+                                    style={{ padding: '10px 24px', cursor: isStockSubmitting ? 'not-allowed' : 'pointer' }}
+                                    disabled={adjustStockAmount === '' || Number(adjustStockAmount) < 0 || isStockSubmitting}
                                 >
-                                    Confirm Adjustment
+                                    {isStockSubmitting ? 'Adjusting…' : 'Confirm Adjustment'}
                                 </button>
                             </div>
                         </div>

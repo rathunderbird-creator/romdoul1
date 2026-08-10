@@ -381,6 +381,15 @@ const PayByModalComponent: React.FC<{
     );
 };
 
+// Closed-out orders: stock and/or payment have already been reversed on these, so
+// editing would re-run order logic against a reversal. They stay read-only until
+// someone deliberately moves the order back to an active status from the order list.
+const LOCKED_ORDER_STATUSES = ['ReStock', 'Cancelled', 'Returned'];
+const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
+const lockedOrderMessage = (order: Sale) =>
+    `This order is ${order.shipping?.status} and can no longer be edited. ` +
+    `Change its status from the order list first if you need to reopen it.`;
+
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
@@ -546,8 +555,14 @@ const Orders: React.FC = () => {
                 const editId = state.editOrderId;
                 const orderToEdit = sales.find(s => s.id === editId) || serverOrders.find(s => s.id === editId);
                 if (orderToEdit) {
-                    setEditingOrder(orderToEdit);
-                    setActiveTab('pos');
+                    // Same rule as the edit buttons — this route (e.g. from the order
+                    // detail page) would otherwise open the form for a restocked order.
+                    if (isOrderLocked(orderToEdit)) {
+                        showToast(lockedOrderMessage(orderToEdit), 'error');
+                    } else {
+                        setEditingOrder(orderToEdit);
+                        setActiveTab('pos');
+                    }
                     navigate(location.pathname, { replace: true, state: {} });
                 }
             } else if (state.createNew) {
@@ -1356,6 +1371,10 @@ const Orders: React.FC = () => {
     };
 
     const handleOpenEdit = (order: Sale) => {
+        if (isOrderLocked(order)) {
+            showToast(lockedOrderMessage(order), 'error');
+            return;
+        }
         setEditingOrder(order);
         setActiveTab('pos');
     };
@@ -2502,6 +2521,13 @@ const Orders: React.FC = () => {
                                         onCopy={(o) => handleCopyOrder(o)}
                                         onUpdateStatus={(id, status) => {
                                             if (status === 'Delivered') {
+                                                // Check before opening the payment modal — the store rejects
+                                                // this transition anyway, and it's needless to make someone
+                                                // fill in payment details first.
+                                                if (!['Shipped', 'Delivered'].includes(order.shipping?.status || 'Pending')) {
+                                                    showToast('Mark the order Shipped before Delivered — set it back to Drafted and follow Confirmed → Shipped.', 'error');
+                                                    return;
+                                                }
                                                 setPayByOrderToUpdate(order);
                                                 setIsPayByModalOpen(true);
                                                 return;
@@ -2862,7 +2888,7 @@ const Orders: React.FC = () => {
                                                                                 <Eye size={16} color="var(--color-text-secondary)" />
                                                                             </button>
                                                                             {hasPermission('manage_orders') && (
-                                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title="Edit Order" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" disabled={isOrderLocked(order)} title={isOrderLocked(order) ? `${order.shipping?.status} orders cannot be edited` : 'Edit Order'} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: isOrderLocked(order) ? 'not-allowed' : 'pointer', opacity: isOrderLocked(order) ? 0.35 : 1 }}>
                                                                                     <Edit size={16} color="var(--color-text-secondary)" />
                                                                                 </button>
                                                                             )}
@@ -2994,6 +3020,12 @@ const Orders: React.FC = () => {
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'Delivered') {
+                                                                                    // Blocked here too, so the payment modal never opens on a
+                                                                                    // transition the store will reject.
+                                                                                    if (!['Shipped', 'Delivered'].includes(order.shipping?.status || 'Pending')) {
+                                                                                        showToast('Mark the order Shipped before Delivered — set it back to Drafted and follow Confirmed → Shipped.', 'error');
+                                                                                        return;
+                                                                                    }
                                                                                     setPayByOrderToUpdate(order);
                                                                                     setIsPayByModalOpen(true);
                                                                                     return;
@@ -3211,22 +3243,22 @@ const Orders: React.FC = () => {
                                     <Trash2 size={18} /> Delete
                                 </button>
                                 { (() => {
-                                    const isRestockDisabled = Array.from(selectedIds).some(id => filteredOrders.find(o => o.id === id)?.shipping?.status === 'ReStock');
+                                    const allReturned = Array.from(selectedIds).every(id => filteredOrders.find(o => o.id === id)?.shipping?.status === 'Returned');
+                                    if (!allReturned) return null;
                                     return (
                                         <button 
                                             type="button" 
-                                            onClick={isRestockDisabled ? undefined : handleBulkRestock} 
-                                            disabled={isRestockDisabled}
+                                            onClick={handleBulkRestock} 
                                             style={{ 
                                                 display: 'flex', 
                                                 alignItems: 'center', 
                                                 gap: '8px', 
                                                 padding: '8px 16px', 
-                                                background: isRestockDisabled ? '#F3F4F6' : '#E0E7FF', 
-                                                color: isRestockDisabled ? '#9CA3AF' : '#4F46E5', 
+                                                background: '#E0E7FF', 
+                                                color: '#4F46E5', 
                                                 borderRadius: '8px', 
                                                 border: 'none', 
-                                                cursor: isRestockDisabled ? 'not-allowed' : 'pointer', 
+                                                cursor: 'pointer', 
                                                 fontWeight: 500 
                                             }}>
                                             <RefreshCw size={18} /> Restock

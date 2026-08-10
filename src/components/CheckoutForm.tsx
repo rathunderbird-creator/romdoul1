@@ -985,15 +985,25 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Delivery Status</label>
+                                {/* Locked while editing. Changing status here bypassed the shipping and
+                                    payment prompts and applied stock movements as a side effect of an
+                                    unrelated save, which is how stock ended up mis-counted. Status is
+                                    changed from the order list instead, where each step is confirmed. */}
                                 <select
                                     className="search-input"
-                                    style={{ width: '100%', padding: '10px 12px', background: currentUser?.roleId === 'salesman' ? 'var(--color-bg)' : 'white', opacity: currentUser?.roleId === 'salesman' ? 0.7 : 1 }}
+                                    style={{ width: '100%', padding: '10px 12px', background: (currentUser?.roleId === 'salesman' || !!orderToEdit) ? 'var(--color-bg)' : 'white', opacity: (currentUser?.roleId === 'salesman' || !!orderToEdit) ? 0.7 : 1, cursor: (currentUser?.roleId === 'salesman' || !!orderToEdit) ? 'not-allowed' : 'pointer' }}
                                     value={formData.shippingStatus}
                                     onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}
-                                    disabled={currentUser?.roleId === 'salesman'}
+                                    disabled={currentUser?.roleId === 'salesman' || !!orderToEdit}
+                                    title={orderToEdit ? 'Change delivery status from the order list' : undefined}
                                 >
                                     {[{id: 'Drafted', name: 'Drafted'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Drafted'}>{s.name}</option>)}
                                 </select>
+                                {orderToEdit && (
+                                    <p style={{ margin: '6px 0 0', fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                                        Locked while editing. Change it from the Order Status column in the order list so stock is counted correctly.
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Status</label>

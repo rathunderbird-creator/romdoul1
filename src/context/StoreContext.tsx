@@ -64,6 +64,30 @@ const getLocalYYYYMMDD = () => {
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
+// Stock leaves the building at 'Shipped', and only then. Delivery is a later
+// confirmation of the same physical movement, so it must not deduct again or rewrite
+// the original stock-out record — the goods are counted out exactly once.
+const countsAsStockOut = (status: string) => status === 'Shipped';
+
+// Statuses where the stock is already gone. Used to decide whether stock should be
+// put back: moving Shipped -> Delivered stays "consumed", so nothing is restored.
+const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(status);
+
+// An order can only be delivered if it was shipped. Stock is counted out at 'Shipped',
+// so jumping straight to 'Delivered' would mark goods as gone while inventory still
+// shows them on hand.
+//
+// Re-asserting 'Delivered' on an already-delivered order is allowed: editing an
+// unrelated field re-sends the current shipping object, and rejecting that would block
+// ordinary edits to delivered orders.
+const canMarkDelivered = (currentStatus: string) => isStockConsumed(currentStatus);
+
+const DELIVERED_BLOCKED_MESSAGE = (currentStatus: string) =>
+    `This order is "${currentStatus}" and cannot be marked Delivered directly.\n\n` +
+    `Stock is counted out when an order is Shipped, so skipping that step would leave ` +
+    `inventory unchanged.\n\n` +
+    `Set the order back to Drafted, then move it through Confirmed → Shipped → Delivered.`;
+
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 // Initial Dummy Data
@@ -1339,6 +1363,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => {
+        // Checked before the optimistic setSales below — otherwise the row would flip to
+        // "Delivered" on screen even though the change is rejected.
+        if (status === 'Delivered') {
+            const currentStatus = sales.find(s => s.id === id)?.shipping?.status || 'Pending';
+            if (!canMarkDelivered(currentStatus)) {
+                alert(DELIVERED_BLOCKED_MESSAGE(currentStatus));
+                return;
+            }
+        }
+
         const now = new Date().toISOString();
         const editorName = currentUser?.name;
 
@@ -1371,10 +1405,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (salesOrder) {
             const oldStatus = salesOrder.shipping?.status || 'Pending';
 
-            const isStockOutStatus = (s: string) => ['Shipped', 'Delivered'].includes(s);
-
-            // Case 1: Changing TO 'Shipped' or 'Delivered' (from non-shipped) -> DEDUCT Stock
-            if (isStockOutStatus(status) && !isStockOutStatus(oldStatus)) {
+            // Case 1: Changing TO 'Shipped' (from a status where stock is still on hand)
+            // -> DEDUCT Stock. Delivered deliberately does not deduct: the goods already
+            // left at Shipped, and counting again would double-deduct.
+            if (countsAsStockOut(status) && !isStockConsumed(oldStatus)) {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1406,7 +1440,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Case 2: Changing FROM 'Shipped' or 'Delivered' (to non-shipped) -> RESTORE Stock
             // EXCEPTION: If changing to 'Returned', do NOT restore stock automatically.
             // 'Returned' means it's on the way back but hasn't arrived. (Restock button in Inventory will restore it).
-            else if (isStockOutStatus(oldStatus) && !isStockOutStatus(status) && status !== 'Returned') {
+            else if (isStockConsumed(oldStatus) && !isStockConsumed(status) && status !== 'Returned') {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1450,10 +1484,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         await supabase.from('sales').update(updates).eq('id', id);
 
-        const isStockOutStatus = (s: string) => ['Shipped', 'Delivered'].includes(s);
-
-        // Log stock-out movement only when status changes to Shipped or Delivered
-        if (salesOrder && isStockOutStatus(status)) {
+        // Log the stock-out movement only when the order ships. Delivery must leave the
+        // existing record untouched — rewriting it re-dated the movement to the delivery
+        // day, which moved it in stock-out reports.
+        if (salesOrder && countsAsStockOut(status)) {
             const oldStatus = salesOrder.shipping?.status || 'Pending';
             // Only log or update if this is a new transition
             if (oldStatus !== status) {
@@ -1553,6 +1587,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { data } = await supabase.from('sales').select('*').eq('id', id).single();
             if (data) {
                 existingOrder = mapSaleEntity(data) as any;
+            }
+        }
+
+        // Same rule as updateOrderStatus — this is a second way in (including the bulk
+        // edit path, which calls through here per order), so it needs the same guard.
+        if (updates.shipping?.status === 'Delivered') {
+            const currentStatus = existingOrder?.shipping?.status || 'Pending';
+            if (!canMarkDelivered(currentStatus)) {
+                alert(DELIVERED_BLOCKED_MESSAGE(currentStatus));
+                return;
             }
         }
 
@@ -1730,9 +1774,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (updates.shipping?.status && existingOrder) {
                 const newStatus = updates.shipping.status;
                 const oldStatus = existingOrder.shipping?.status || 'Pending';
-                const isStockOutStatus = (s: string) => ['Shipped', 'Delivered'].includes(s);
-
-                if (isStockOutStatus(newStatus) && oldStatus !== newStatus) {
+                if (countsAsStockOut(newStatus) && oldStatus !== newStatus) {
                     // Check if stock-out records already exist for this order
                     const { data: existingMovements } = await supabase.from('stock_movements')
                         .select('id')
@@ -1756,10 +1798,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                     if (existingMovements && existingMovements.length > 0) {
                         // Update existing records
+                        // Only reached when shipping, so the reason/source stay 'Shipped'
+                        // and the movement keeps the date the goods actually left.
                         await supabase.from('stock_movements')
                             .update({
-                                reason: newStatus,
-                                source: newStatus === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
+                                reason: 'Shipped',
+                                source: 'Order Shipped',
                                 movement_date: getLocalYYYYMMDD(),
                                 customer_name: finalCustomerName,
                                 customer_phone: finalCustomerPhone
@@ -1781,9 +1825,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 type: 'out',
                                 quantity: item.quantity,
                                 unit_price: item.price || 0,
-                                reason: newStatus,
+                                // This branch only runs on 'Shipped', so both are fixed.
+                                reason: 'Shipped',
                                 reference_id: id,
-                                source: newStatus === 'Delivered' ? 'Order Delivered' : 'Order Shipped',
+                                source: 'Order Shipped',
                                 shipping_co: updates.shipping?.company || existingOrder.shipping?.company || '',
                                 note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
                                 movement_date: getLocalYYYYMMDD(),
@@ -1798,8 +1843,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             });
                         }
                     }
-                } else if (isStockOutStatus(oldStatus) && !isStockOutStatus(newStatus) && newStatus !== 'Returned') {
-                    // Delete stock-out records since the order is no longer shipped/delivered
+                } else if (isStockConsumed(oldStatus) && !isStockConsumed(newStatus) && newStatus !== 'Returned') {
+                    // Only when the order genuinely comes back out of a shipped/delivered
+                    // state — Shipped -> Delivered keeps its record.
                     await supabase.from('stock_movements').delete().eq('reference_id', id).eq('type', 'out');
                 }
             }

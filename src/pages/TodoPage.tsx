@@ -983,7 +983,25 @@ const TodoPage: React.FC = () => {
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {displayedTodos.filter(t => t.status === 'open').map(todo => <TaskItem key={todo.id} todo={todo} />)}
-                            
+
+                            {/* "Nothing open" belongs where the open tasks would be, above the
+                                Completed section. Rendered after it, the big empty-state icon
+                                appeared *below* a visible list of tasks and read as a bug.
+                                It also shrinks to a single line when completed tasks are on
+                                screen, since the view plainly isn't empty. */}
+                            {displayedTodos.filter(t => t.status === 'open').length === 0 && !isAdding && (
+                                displayedTodos.length > 0 ? (
+                                    <div style={{ padding: '12px 4px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
+                                        No open tasks left here.
+                                    </div>
+                                ) : (
+                                    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                        <CheckCircle2 size={48} color="rgba(139,92,246,0.2)" />
+                                        <p style={{ margin: 0, fontSize: '16px' }}>All clear! Enjoy your day.</p>
+                                    </div>
+                                )
+                            )}
+
                             {(showCompleted || activeView === 'today') && (
                                 <>
                                     <div style={{ margin: '16px 0 0 4px', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', letterSpacing: '0.5px' }}>
@@ -997,13 +1015,6 @@ const TodoPage: React.FC = () => {
                                         </div>
                                     )}
                                 </>
-                            )}
-
-                            {displayedTodos.filter(t => t.status === 'open').length === 0 && !isAdding && (
-                                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                                    <CheckCircle2 size={48} color="rgba(139,92,246,0.2)" />
-                                    <p style={{ margin: 0, fontSize: '16px' }}>All clear! Enjoy your day.</p>
-                                </div>
                             )}
 
                             {/* Inline Add Task */}

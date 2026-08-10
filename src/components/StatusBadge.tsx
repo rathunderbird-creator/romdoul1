@@ -135,7 +135,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                         overflow: 'hidden'
                     }}
                 >
-                    {options.filter(opt => opt !== 'ReStock' || status === 'ReStock').map((opt) => {
+                    {options.filter(opt => opt !== 'ReStock' || status === 'ReStock' || status === 'Returned').map((opt) => {
                         const optStyle = getStatusStyle(opt);
                         const isDisabled = (disabledOptions || []).includes(opt) || (opt === 'Delivered' && status !== 'Shipped' && status !== 'Delivered');
 

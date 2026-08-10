@@ -35,7 +35,7 @@ interface StockMovement {
 }
 
 const StockMovementsPage: React.FC = () => {
-    const { warehouses, products, updateProduct, currentUser } = useStore();
+    const { warehouses, updateProduct, currentUser } = useStore();
     const isAdmin = currentUser?.roleId === 'admin';
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
@@ -251,24 +251,57 @@ const StockMovementsPage: React.FC = () => {
     };
 
     const handleBulkDelete = async () => {
+        // Reverting inventory is not idempotent, so a second click while the first pass
+        // is still running would revert the same movements twice.
+        if (isLoading) return;
         if (!confirm(`Are you sure you want to delete ${selectedRecordIds.size} stock movement records? This will revert the inventory for these items.`)) return;
 
         setIsLoading(true);
         try {
             const recordsToDelete = movements.filter(r => selectedRecordIds.has(r.id));
-            
+
+            // Total the reversals per product before writing anything.
+            //
+            // The previous version updated inside the loop using `product.stock` from
+            // React state, which doesn't change between iterations. Deleting two
+            // movements for the same product therefore computed both new totals from
+            // the same starting figure, and the second write overwrote the first —
+            // so only one of the two was ever reverted.
+            const productDeltas = new Map<string, number>();
+            const warehouseDeltas = new Map<string, number>();
+
             for (const record of recordsToDelete) {
-                const product = products.find(p => p.id === record.product_id);
-                if (product) {
-                    const stockAdjustment = record.type === 'in' ? -record.quantity : record.quantity;
-                    await updateProduct(product.id, { stock: product.stock + stockAdjustment });
-                    
-                    if (record.warehouse_id) {
-                        const { data: ws } = await supabase.from('warehouse_stock').select('id, quantity').eq('warehouse_id', record.warehouse_id).eq('product_id', product.id).single();
-                        if (ws) {
-                            await supabase.from('warehouse_stock').update({ quantity: ws.quantity + stockAdjustment }).eq('id', ws.id);
-                        }
-                    }
+                const adjustment = record.type === 'in' ? -record.quantity : record.quantity;
+                productDeltas.set(record.product_id, (productDeltas.get(record.product_id) || 0) + adjustment);
+                if (record.warehouse_id) {
+                    const key = `${record.warehouse_id}|${record.product_id}`;
+                    warehouseDeltas.set(key, (warehouseDeltas.get(key) || 0) + adjustment);
+                }
+            }
+
+            for (const [productId, delta] of productDeltas) {
+                // Read the live figure rather than trusting cached state, which may be
+                // stale if another device changed stock while this page was open.
+                const { data: fresh, error: freshError } = await supabase
+                    .from('products').select('stock').eq('id', productId).single();
+                if (freshError || !fresh) {
+                    console.error('Could not read current stock for', productId, freshError?.message);
+                    continue;
+                }
+                const next = fresh.stock + delta;
+                if (next < 0) {
+                    console.warn(`Reverting movements for ${productId} would give ${next}; clamped to 0.`);
+                }
+                await updateProduct(productId, { stock: Math.max(0, next) });
+            }
+
+            for (const [key, delta] of warehouseDeltas) {
+                const [warehouseId, productId] = key.split('|');
+                const { data: ws } = await supabase.from('warehouse_stock')
+                    .select('id, quantity').eq('warehouse_id', warehouseId).eq('product_id', productId).single();
+                if (ws) {
+                    await supabase.from('warehouse_stock')
+                        .update({ quantity: Math.max(0, ws.quantity + delta) }).eq('id', ws.id);
                 }
             }
 
@@ -725,8 +758,8 @@ const StockMovementsPage: React.FC = () => {
                     <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', borderRight: '1px solid var(--color-border)', paddingRight: '16px' }}>
                         {selectedRecordIds.size} Selected
                     </div>
-                    <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                        <Trash2 size={18} /> Delete
+                    <button type="button" onClick={handleBulkDelete} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.6 : 1, fontWeight: 500 }}>
+                        <Trash2 size={18} /> {isLoading ? 'Deleting…' : 'Delete'}
                     </button>
                 </div>
             )}
