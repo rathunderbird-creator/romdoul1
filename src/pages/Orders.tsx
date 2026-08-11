@@ -384,6 +384,18 @@ const PayByModalComponent: React.FC<{
 // Closed-out orders: stock and/or payment have already been reversed on these, so
 // editing would re-run order logic against a reversal. They stay read-only until
 // someone deliberately moves the order back to an active status from the order list.
+// Mirrors the rule enforced in StoreContext: 'Delivered' and 'Returned' only make sense
+// once the goods have shipped. Checked here too so the UI doesn't open a payment or
+// remark modal for a transition the store will reject.
+const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
+// Only 'Shipped' may lead here. Delivered and Returned are terminal — re-selecting either
+// would re-open the payment flow and re-run accounting on an order that is already settled.
+const canEnterPostDispatch = (order: Sale) => (order.shipping?.status || 'Pending') === 'Shipped';
+const postDispatchMessage = (current: string, target: string) =>
+    ['Delivered', 'Returned'].includes(current)
+        ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
+        : `Mark the order Shipped before ${target} — set it back to Drafted and follow Confirmed → Shipped.`;
+
 const LOCKED_ORDER_STATUSES = ['ReStock', 'Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
@@ -2609,14 +2621,14 @@ const Orders: React.FC = () => {
                                         onPrint={(o) => setReceiptSale(o)}
                                         onCopy={(o) => handleCopyOrder(o)}
                                         onUpdateStatus={(id, status) => {
+                                            // Checked before any modal opens — the store rejects these
+                                            // transitions anyway, and it's needless to make someone fill
+                                            // in payment details first.
+                                            if (POST_DISPATCH_STATUSES.includes(status) && !canEnterPostDispatch(order)) {
+                                                showToast(postDispatchMessage(order.shipping?.status || 'Pending', status), 'error');
+                                                return;
+                                            }
                                             if (status === 'Delivered') {
-                                                // Check before opening the payment modal — the store rejects
-                                                // this transition anyway, and it's needless to make someone
-                                                // fill in payment details first.
-                                                if (!['Shipped', 'Delivered'].includes(order.shipping?.status || 'Pending')) {
-                                                    showToast('Mark the order Shipped before Delivered — set it back to Drafted and follow Confirmed → Shipped.', 'error');
-                                                    return;
-                                                }
                                                 setPayByOrderToUpdate(order);
                                                 setIsPayByModalOpen(true);
                                                 return;
@@ -3091,6 +3103,13 @@ const Orders: React.FC = () => {
                                                                                     : ['Delivered', 'Returned']
                                                                             }
                                                                             onChange={(newStatus: string) => {
+                                                                                // Backstop for the disabledOptions above, and it also covers
+                                                                                // 'Returned' — reaching it without shipping would credit
+                                                                                // stock on delete that was never deducted.
+                                                                                if (POST_DISPATCH_STATUSES.includes(newStatus) && !canEnterPostDispatch(order)) {
+                                                                                    showToast(postDispatchMessage(order.shipping?.status || 'Pending', newStatus), 'error');
+                                                                                    return;
+                                                                                }
                                                                                 if (newStatus === 'Shipped') {
                                                                                     setShippingTargetStatus('Shipped');
                                                                                     setShippingOrderToUpdate(order);
@@ -3109,12 +3128,6 @@ const Orders: React.FC = () => {
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'Delivered') {
-                                                                                    // Blocked here too, so the payment modal never opens on a
-                                                                                    // transition the store will reject.
-                                                                                    if (!['Shipped', 'Delivered'].includes(order.shipping?.status || 'Pending')) {
-                                                                                        showToast('Mark the order Shipped before Delivered — set it back to Drafted and follow Confirmed → Shipped.', 'error');
-                                                                                        return;
-                                                                                    }
                                                                                     setPayByOrderToUpdate(order);
                                                                                     setIsPayByModalOpen(true);
                                                                                     return;

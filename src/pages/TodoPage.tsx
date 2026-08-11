@@ -158,9 +158,12 @@ const TodoPage: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent]);
 
+    // Re-fetch when the signed-in user changes, so switching accounts swaps the task
+    // list instead of leaving the previous user's tasks on screen.
     useEffect(() => {
         fetchData();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.id]);
 
     useEffect(() => {
         if (isAdding && inputRef.current) {
@@ -169,11 +172,22 @@ const TodoPage: React.FC = () => {
     }, [isAdding]);
 
     const fetchData = async () => {
+        // Tasks and projects are personal: only ever load the signed-in user's own.
+        // Without an owner we would be querying everyone's, so bail out rather than
+        // fall back to showing the whole table.
+        const ownerId = currentUser?.id;
+        if (!ownerId) {
+            setTodos([]);
+            setProjects([]);
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
         try {
             const [todosRes, projectsRes] = await Promise.all([
-                supabase.from('todos').select('*').order('priority', { ascending: true }).order('created_at', { ascending: false }),
-                supabase.from('todo_projects').select('*').order('created_at', { ascending: true })
+                supabase.from('todos').select('*').eq('user_id', ownerId).order('priority', { ascending: true }).order('created_at', { ascending: false }),
+                supabase.from('todo_projects').select('*').eq('user_id', ownerId).order('created_at', { ascending: true })
             ]);
 
             if (todosRes.error) throw todosRes.error;
@@ -359,7 +373,7 @@ const TodoPage: React.FC = () => {
             setSelectedTodo(prev => (prev && prev.id === id ? { ...prev, ...updates } : prev));
             showToast(`Repeats next on ${next}`, 'success');
             try {
-                await supabase.from('todos').update(toDbTodo(updates)).eq('id', id);
+                await supabase.from('todos').update(toDbTodo(updates)).eq('id', id).eq('user_id', currentUser?.id);
             } catch (error) {
                 console.error('Error advancing repeating task:', error);
                 fetchData();
@@ -371,7 +385,7 @@ const TodoPage: React.FC = () => {
         const now = new Date().toISOString();
         setTodos(prev => prev.map(t => t.id === id ? { ...t, status: newStatus, updated_at: now } : t));
         try {
-            await supabase.from('todos').update({ status: newStatus, updated_at: now }).eq('id', id);
+            await supabase.from('todos').update({ status: newStatus, updated_at: now }).eq('id', id).eq('user_id', currentUser?.id);
         } catch (error) {
             console.error('Error toggling status:', error);
             setTodos(prev => prev.map(t => t.id === id ? { ...t, status: currentStatus } : t));
@@ -400,7 +414,7 @@ const TodoPage: React.FC = () => {
         const pending = pendingTextUpdate.current;
         pendingTextUpdate.current = null;
         if (pending) {
-            supabase.from('todos').update(toDbTodo(pending.updates)).eq('id', pending.id)
+            supabase.from('todos').update(toDbTodo(pending.updates)).eq('id', pending.id).eq('user_id', currentUser?.id)
                 .then(({ error }) => { if (error) { console.error('Error saving task text:', error); fetchData(); } });
         }
     };
@@ -439,7 +453,7 @@ const TodoPage: React.FC = () => {
 
         setTodos(prev => prev.filter(t => t.id !== id));
         try {
-            await supabase.from('todos').delete().eq('id', id);
+            await supabase.from('todos').delete().eq('id', id).eq('user_id', currentUser?.id);
         } catch (error) {
             console.error('Error deleting task:', error);
             fetchData();
@@ -449,8 +463,8 @@ const TodoPage: React.FC = () => {
     const deleteProject = async (id: string) => {
         if (!confirm('Delete this project? Tasks inside will be moved to Inbox.')) return;
         try {
-            await supabase.from('todos').update({ project: null }).eq('project', id);
-            await supabase.from('todo_projects').delete().eq('id', id);
+            await supabase.from('todos').update({ project: null }).eq('project', id).eq('user_id', currentUser?.id);
+            await supabase.from('todo_projects').delete().eq('id', id).eq('user_id', currentUser?.id);
             if (activeView === id) setActiveView('inbox');
             fetchData();
         } catch (error) {

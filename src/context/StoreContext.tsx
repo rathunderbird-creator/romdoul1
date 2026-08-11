@@ -73,20 +73,25 @@ const countsAsStockOut = (status: string) => status === 'Shipped';
 // put back: moving Shipped -> Delivered stays "consumed", so nothing is restored.
 const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(status);
 
-// An order can only be delivered if it was shipped. Stock is counted out at 'Shipped',
-// so jumping straight to 'Delivered' would mark goods as gone while inventory still
-// shows them on hand.
+// Statuses that only make sense once the goods have physically left: you cannot deliver
+// or receive a return for something that was never shipped.
 //
-// Re-asserting 'Delivered' on an already-delivered order is allowed: editing an
-// unrelated field re-sends the current shipping object, and rejecting that would block
-// ordinary edits to delivered orders.
-const canMarkDelivered = (currentStatus: string) => isStockConsumed(currentStatus);
+// Both also drive stock accounting on delete — deleteOrders restocks Shipped/Delivered/
+// Returned orders — so an order reaching 'Returned' straight from 'Pending' would credit
+// stock on deletion that was never deducted in the first place.
+const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
 
-const DELIVERED_BLOCKED_MESSAGE = (currentStatus: string) =>
-    `This order is "${currentStatus}" and cannot be marked Delivered directly.\n\n` +
+// 'Shipped' is the only valid predecessor. Delivered and Returned are terminal: once an
+// order reaches either, it cannot be moved to the other or re-applied to itself, which
+// would re-open the payment flow and re-run stock accounting on a settled order.
+const canEnterPostDispatch = (currentStatus: string) => currentStatus === 'Shipped';
+
+const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: string) =>
+    `This order is "${currentStatus}" and cannot be marked ${targetStatus} directly.\n\n` +
     `Stock is counted out when an order is Shipped, so skipping that step would leave ` +
-    `inventory unchanged.\n\n` +
-    `Set the order back to Drafted, then move it through Confirmed → Shipped → Delivered.`;
+    `inventory unchanged — and deleting the order later would add stock back that was ` +
+    `never taken.\n\n` +
+    `Set the order back to Drafted, then move it through Confirmed → Shipped.`;
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
@@ -1364,11 +1369,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const updateOrderStatus = async (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => {
         // Checked before the optimistic setSales below — otherwise the row would flip to
-        // "Delivered" on screen even though the change is rejected.
-        if (status === 'Delivered') {
-            const currentStatus = sales.find(s => s.id === id)?.shipping?.status || 'Pending';
-            if (!canMarkDelivered(currentStatus)) {
-                alert(DELIVERED_BLOCKED_MESSAGE(currentStatus));
+        // the new status on screen even though the change is rejected.
+        if (POST_DISPATCH_STATUSES.includes(status)) {
+            // `sales` only holds the loaded page, so an order reached via search or an
+            // older page is absent from it. Defaulting to 'Pending' in that case made
+            // this guard reject perfectly valid Shipped -> Delivered changes, so fall
+            // back to the database rather than to an assumption.
+            let currentStatus: string = sales.find(s => s.id === id)?.shipping?.status ?? '';
+            if (!currentStatus) {
+                const { data, error } = await supabase.from('sales').select('shipping_status').eq('id', id).single();
+                if (error) {
+                    console.error('Could not read current status before changing it:', error.message);
+                    alert('Could not verify this order’s current status. Please refresh and try again.');
+                    return;
+                }
+                currentStatus = data?.shipping_status || 'Pending';
+            }
+            if (!canEnterPostDispatch(currentStatus)) {
+                alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
                 return;
             }
         }
@@ -1401,7 +1419,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }));
 
         // --- Stock Management Logic ---
-        const salesOrder = sales.find(s => s.id === id);
+        // `sales` is only the currently loaded page. An order opened from search or an
+        // older page is missing from it, and this block used to be skipped entirely in
+        // that case — so shipping such an order never deducted its stock. Fall back to
+        // the database (items included) so stock is applied regardless of what's loaded.
+        let salesOrder = sales.find(s => s.id === id);
+        if (!salesOrder) {
+            const { data, error } = await supabase
+                .from('sales')
+                .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+                .eq('id', id)
+                .single();
+            if (error) {
+                console.error('Could not load order for stock adjustment:', error.message);
+            } else if (data) {
+                salesOrder = mapSaleEntity(data);
+            }
+        }
         if (salesOrder) {
             const oldStatus = salesOrder.shipping?.status || 'Pending';
 
@@ -1592,10 +1626,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // Same rule as updateOrderStatus — this is a second way in (including the bulk
         // edit path, which calls through here per order), so it needs the same guard.
-        if (updates.shipping?.status === 'Delivered') {
+        //
+        // Only an actual *change* is rejected here. Saving an edit to a delivered order
+        // re-sends its current status unchanged, and treating that as a transition would
+        // make every delivered order impossible to edit.
+        if (updates.shipping?.status && POST_DISPATCH_STATUSES.includes(updates.shipping.status)) {
             const currentStatus = existingOrder?.shipping?.status || 'Pending';
-            if (!canMarkDelivered(currentStatus)) {
-                alert(DELIVERED_BLOCKED_MESSAGE(currentStatus));
+            const isRealChange = currentStatus !== updates.shipping.status;
+            if (isRealChange && !canEnterPostDispatch(currentStatus)) {
+                alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, updates.shipping.status));
                 return;
             }
         }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import { useStore } from '../context/StoreContext';
 import {
     toLocalDateStr,
     nowHHMM,
@@ -27,6 +28,7 @@ const POLL_INTERVAL_MS = 60_000;
  */
 const TodoReminderService: React.FC = () => {
     const { showToast } = useToast();
+    const { currentUser } = useStore();
     // Keep the latest toast fn without making it a dependency of the interval, so the
     // poll timer isn't torn down and recreated on unrelated re-renders.
     const toastRef = useRef(showToast);
@@ -34,7 +36,14 @@ const TodoReminderService: React.FC = () => {
         toastRef.current = showToast;
     }, [showToast]);
 
+    const ownerId = currentUser?.id;
+
     useEffect(() => {
+        // Tasks are private, so only the signed-in user's reminders are polled —
+        // otherwise everyone at the shop would be reminded of everyone else's tasks,
+        // and whoever polled first would claim the reminder for its real owner.
+        if (!ownerId) return;
+
         let cancelled = false;
 
         const checkReminders = async () => {
@@ -44,6 +53,7 @@ const TodoReminderService: React.FC = () => {
             const { data, error } = await supabase
                 .from('todos')
                 .select('id, title, due_date, remind_at, last_reminded_on')
+                .eq('user_id', ownerId)
                 .eq('status', 'open')
                 .not('remind_at', 'is', null);
 
@@ -84,7 +94,8 @@ const TodoReminderService: React.FC = () => {
             cancelled = true;
             clearInterval(timer);
         };
-    }, []);
+        // Restart the poll when the signed-in user changes.
+    }, [ownerId]);
 
     return null;
 };
