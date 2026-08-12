@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import TopLoadingBar from './TopLoadingBar';
 import { useLocation } from 'react-router-dom';
 
 import { useMobile } from '../hooks/useMobile';
@@ -48,6 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     return (
 
         <div style={{ height: '100vh', display: 'flex', overflow: 'hidden' }}>
+            <TopLoadingBar />
             <Sidebar isCollapsed={isCollapsed} toggleSidebar={() => setIsCollapsed(!isCollapsed)} isMobile={isMobile} />
             <div style={{
                 flex: 1,
