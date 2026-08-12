@@ -1,11 +1,107 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import type { User, Role, Permission } from '../types';
-import { Plus, Edit2, Trash2, Shield, User as UserIcon, Check, Lock } from 'lucide-react';
+import {
+    Plus, Edit2, Trash2, Shield, User as UserIcon, Check, Lock, Users as UsersIcon,
+    LayoutDashboard, ShoppingCart, Truck, Wallet, Package, Briefcase, HeartHandshake,
+    Calculator, Settings, ShieldCheck
+} from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
+
+// --- Permission catalog -----------------------------------------------------
+// Grouped to mirror the app's actual navigation (see Sidebar.tsx / App.tsx routes),
+// with human-readable labels and descriptions. This is the single source of truth
+// for what the Roles editor shows, so new permissions only need to be added here.
+interface PermissionMeta {
+    key: Permission;
+    label: string;
+    description: string;
+}
+interface PermissionGroup {
+    category: string;
+    icon: React.ComponentType<{ size?: number }>;
+    permissions: PermissionMeta[];
+}
+
+const PERMISSION_GROUPS: PermissionGroup[] = [
+    {
+        category: 'Dashboard',
+        icon: LayoutDashboard,
+        permissions: [
+            { key: 'view_dashboard', label: 'View Dashboard', description: 'Access the home dashboard, Todo and shipping point' },
+        ],
+    },
+    {
+        category: 'Sales & Orders',
+        icon: ShoppingCart,
+        permissions: [
+            { key: 'process_sales', label: 'Process Sales (POS)', description: 'Use the point-of-sale to ring up sales' },
+            { key: 'view_orders', label: 'View Orders', description: 'View orders in read-only mode' },
+            { key: 'create_orders', label: 'Create Orders', description: 'Create new customer orders' },
+            { key: 'manage_orders', label: 'Manage Orders', description: 'Edit, delete, and manage shipping, payments and scammers' },
+        ],
+    },
+    {
+        category: 'Inventory',
+        icon: Package,
+        permissions: [
+            { key: 'view_inventory_stock', label: 'View Stock', description: 'View products and stock levels' },
+            { key: 'manage_inventory', label: 'Manage Inventory', description: 'Edit products, categories, warehouses and stock movements' },
+        ],
+    },
+    {
+        category: 'Finance',
+        icon: Wallet,
+        permissions: [
+            { key: 'manage_income_expense', label: 'Income & Expense', description: 'Manage income, expenses, revenue and predictions' },
+            { key: 'view_reports', label: 'View Reports', description: 'Access sales, financial and inventory reports' },
+        ],
+    },
+    {
+        category: 'Purchasing',
+        icon: Truck,
+        permissions: [
+            { key: 'manage_procurement', label: 'Manage Procurement', description: 'Purchase orders, suppliers and receiving' },
+        ],
+    },
+    {
+        category: 'HR & Payroll',
+        icon: Briefcase,
+        permissions: [
+            { key: 'manage_attendance', label: 'Manage Attendance', description: 'Record and review staff attendance' },
+            { key: 'manage_payroll', label: 'Manage Payroll', description: 'Process payroll runs' },
+            { key: 'manage_hr', label: 'Manage HR', description: 'Employees, leaves and HR payroll' },
+        ],
+    },
+    {
+        category: 'CRM',
+        icon: HeartHandshake,
+        permissions: [
+            { key: 'manage_crm', label: 'Manage CRM', description: 'Leads, interactions and quotations' },
+        ],
+    },
+    {
+        category: 'Accounting',
+        icon: Calculator,
+        permissions: [
+            { key: 'manage_accounting', label: 'Manage Accounting', description: 'Chart of accounts, journal entries and payments' },
+        ],
+    },
+    {
+        category: 'Administration',
+        icon: Settings,
+        permissions: [
+            { key: 'manage_users', label: 'Manage Users', description: 'Create users and roles, assign permissions' },
+            { key: 'manage_settings', label: 'Manage Settings', description: 'Store profile, security and system settings' },
+        ],
+    },
+];
+
+// Flat list of every permission key, derived from the catalog above.
+const ALL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key));
 const UserManagement: React.FC = () => {
-    const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole, refreshData } = useStore();
+    const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole, refreshData, currentUser } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
@@ -24,17 +120,7 @@ const UserManagement: React.FC = () => {
 
     React.useEffect(() => {
         refreshData(true);
-
-        // Debug: Direct fetch
-        const debugFetch = async () => {
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-            const supabase = createClient(supabaseUrl, supabaseKey);
-            const { data, error } = await supabase.from('users').select('*');
-            console.log('UserManagement: Direct Fetch Result:', { data, error });
-        };
-        debugFetch();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // User State
@@ -46,22 +132,6 @@ const UserManagement: React.FC = () => {
     const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [roleFormData, setRoleFormData] = useState<Partial<Role>>({ name: '', description: '', permissions: [] });
-
-    const allPermissions: Permission[] = [
-        'view_dashboard',
-        'process_sales',
-        'manage_inventory',
-        'view_inventory_stock',
-        'manage_orders',
-        'create_orders',
-        'view_orders',
-        'manage_income_expense',
-        'view_reports',
-        'manage_attendance',
-        'manage_payroll',
-        'manage_users',
-        'manage_settings'
-    ];
 
     // User Handlers
     const handleOpenUserModal = (user?: User) => {
@@ -135,22 +205,28 @@ const UserManagement: React.FC = () => {
             }
             setIsRoleModalOpen(false);
         } catch (error) {
-            showToast('Failed to save role', 'error');
+            // Surface the store guard's actual reason (e.g. self-lockout) instead of a
+            // generic message, so the user knows why the save was refused.
+            showToast(error instanceof Error ? error.message : 'Failed to save role', 'error');
         }
     };
 
     const handleDeleteRole = async (id: string) => {
-        if (users.some(u => u.roleId === id)) {
-            showToast('Cannot delete role assigned to users', 'error');
-            return;
-        }
-        if (confirm('Are you sure you want to delete this role?')) {
+        if (!confirm('Are you sure you want to delete this role?')) return;
+        try {
             await deleteRole(id);
             showToast('Role deleted successfully', 'success');
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : 'Failed to delete role', 'error');
         }
     };
 
+    // The Admin role is always full-access (enforced in hasPermission), so its
+    // checkboxes are shown ticked-and-locked rather than pretending they're editable.
+    const isEditingAdminRole = editingRole?.id === 'admin';
+
     const togglePermission = (permission: Permission) => {
+        if (isEditingAdminRole) return;
         const currentPermissions = roleFormData.permissions || [];
         if (currentPermissions.includes(permission)) {
             setRoleFormData({ ...roleFormData, permissions: currentPermissions.filter(p => p !== permission) });
@@ -158,6 +234,28 @@ const UserManagement: React.FC = () => {
             setRoleFormData({ ...roleFormData, permissions: [...currentPermissions, permission] });
         }
     };
+
+    // Toggle every permission in a category on/off at once.
+    const toggleGroup = (group: PermissionGroup) => {
+        if (isEditingAdminRole) return;
+        const current = roleFormData.permissions || [];
+        const keys = group.permissions.map(p => p.key);
+        const allSelected = keys.every(k => current.includes(k));
+        const next = allSelected
+            ? current.filter(p => !keys.includes(p))
+            : Array.from(new Set([...current, ...keys]));
+        setRoleFormData({ ...roleFormData, permissions: next });
+    };
+
+    // Select-all / clear-all across every permission.
+    const toggleAllPermissions = () => {
+        if (isEditingAdminRole) return;
+        const current = roleFormData.permissions || [];
+        const allSelected = ALL_PERMISSIONS.every(p => current.includes(p));
+        setRoleFormData({ ...roleFormData, permissions: allSelected ? [] : [...ALL_PERMISSIONS] });
+    };
+
+    const selectedCount = isEditingAdminRole ? ALL_PERMISSIONS.length : (roleFormData.permissions?.length || 0);
 
     return (
         <div style={{ padding: '24px', maxWidth: '100%', margin: '0 auto' }}>
@@ -298,39 +396,95 @@ const UserManagement: React.FC = () => {
                 <div>
 
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
-                        {roles.map(role => (
-                            <div key={role.id} style={{ background: 'var(--color-surface)', borderRadius: '12px', padding: '20px', border: '1px solid var(--color-border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                                    <div>
-                                        <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 600 }}>{role.name}</h3>
-                                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{role.description}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                        {roles.map(role => {
+                            const assignedUsers = users.filter(u => u.roleId === role.id).length;
+                            const permCount = role.permissions.length;
+                            const isAdminRole = role.id === 'admin';
+                            // Admin has full access regardless of its stored list.
+                            const hasFullAccess = isAdminRole || ALL_PERMISSIONS.every(p => role.permissions.includes(p));
+                            // Why deletion is blocked, if it is — mirrors the store guards.
+                            const deleteBlockedReason = isAdminRole
+                                ? 'The Admin role is protected'
+                                : assignedUsers > 0
+                                    ? 'Reassign its users first'
+                                    : currentUser?.roleId === role.id
+                                        ? 'This is your own role'
+                                        : null;
+                            return (
+                                <div key={role.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', borderRadius: '12px', padding: '20px', border: '1px solid var(--color-border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                                            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)', flexShrink: 0 }}>
+                                                <Shield size={20} />
+                                            </div>
+                                            <div style={{ minWidth: 0 }}>
+                                                <h3 style={{ margin: '0 0 2px 0', fontSize: '17px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role.name}</h3>
+                                                <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{role.description || 'No description'}</p>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                            <button onClick={() => handleOpenRoleModal(role)} title={isAdminRole ? 'View Admin role (always full access)' : 'Edit role'} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}><Edit2 size={16} /></button>
+                                            <button
+                                                onClick={() => handleDeleteRole(role.id)}
+                                                disabled={!!deleteBlockedReason}
+                                                title={deleteBlockedReason || 'Delete role'}
+                                                style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: deleteBlockedReason ? 'not-allowed' : 'pointer', opacity: deleteBlockedReason ? 0.35 : 1 }}
+                                            ><Trash2 size={16} /></button>
+                                        </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                        <button onClick={() => handleOpenRoleModal(role)} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}><Edit2 size={16} /></button>
-                                        <button onClick={() => handleDeleteRole(role.id)} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={16} /></button>
-                                    </div>
-                                </div>
 
-                                <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
-                                    <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Permissions</h4>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                        {role.permissions.map(perm => (
-                                            <span key={perm} style={{
-                                                fontSize: '12px',
-                                                padding: '4px 10px',
-                                                borderRadius: '12px',
-                                                background: 'var(--color-bg-secondary)',
-                                                color: 'var(--color-text)',
-                                                border: '1px solid var(--color-border)'
-                                            }}>
-                                                {perm.replace(/_/g, ' ')}
+                                    <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                            <UsersIcon size={13} /> {assignedUsers} {assignedUsers === 1 ? 'user' : 'users'}
+                                        </span>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                            <ShieldCheck size={13} /> {permCount} {permCount === 1 ? 'permission' : 'permissions'}
+                                        </span>
+                                    </div>
+
+                                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: 'auto' }}>
+                                        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Permissions</h4>
+                                        {hasFullAccess ? (
+                                            <span style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.1)', color: '#16A34A', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                <ShieldCheck size={13} /> Full access
                                             </span>
-                                        ))}
+                                        ) : permCount === 0 ? (
+                                            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>No permissions granted</span>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                {PERMISSION_GROUPS.map(group => {
+                                                    const granted = group.permissions.filter(p => role.permissions.includes(p.key));
+                                                    if (granted.length === 0) return null;
+                                                    const GroupIcon = group.icon;
+                                                    return (
+                                                        <div key={group.category}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+                                                                <GroupIcon size={12} /> {group.category}
+                                                            </div>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                                {granted.map(p => (
+                                                                    <span key={p.key} style={{
+                                                                        fontSize: '12px',
+                                                                        padding: '4px 10px',
+                                                                        borderRadius: '12px',
+                                                                        background: 'var(--color-bg-secondary)',
+                                                                        color: 'var(--color-text)',
+                                                                        border: '1px solid var(--color-border)'
+                                                                    }}>
+                                                                        {p.label}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -447,41 +601,96 @@ const UserManagement: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 500 }}>Permissions</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    {allPermissions.map(perm => (
-                                        <div
-                                            key={perm}
-                                            onClick={() => togglePermission(perm)}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '10px',
-                                                padding: '8px 12px',
-                                                borderRadius: '8px',
-                                                border: roleFormData.permissions?.includes(perm) ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                                                background: roleFormData.permissions?.includes(perm) ? 'rgba(59, 130, 246, 0.05)' : 'var(--color-bg-secondary)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s'
-                                            }}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <label style={{ fontSize: '14px', fontWeight: 500 }}>
+                                        Permissions <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>({selectedCount}/{ALL_PERMISSIONS.length})</span>
+                                    </label>
+                                    {!isEditingAdminRole && (
+                                        <button
+                                            type="button"
+                                            onClick={toggleAllPermissions}
+                                            style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                                         >
-                                            <div style={{
-                                                width: '18px',
-                                                height: '18px',
-                                                borderRadius: '4px',
-                                                border: '1px solid',
-                                                borderColor: roleFormData.permissions?.includes(perm) ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                                background: roleFormData.permissions?.includes(perm) ? 'var(--color-primary)' : 'transparent',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                color: 'white'
-                                            }}>
-                                                {roleFormData.permissions?.includes(perm) && <Check size={12} />}
+                                            {ALL_PERMISSIONS.every(p => roleFormData.permissions?.includes(p)) ? 'Clear all' : 'Select all'}
+                                        </button>
+                                    )}
+                                </div>
+
+                                {isEditingAdminRole && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', marginBottom: '12px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.08)', color: '#16A34A', fontSize: '12px', fontWeight: 500 }}>
+                                        <ShieldCheck size={14} /> The Admin role always has full access and cannot be changed.
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    {PERMISSION_GROUPS.map(group => {
+                                        const GroupIcon = group.icon;
+                                        const groupKeys = group.permissions.map(p => p.key);
+                                        const allInGroup = groupKeys.every(k => roleFormData.permissions?.includes(k));
+                                        return (
+                                            <div key={group.category}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                                        <GroupIcon size={14} /> {group.category}
+                                                    </div>
+                                                    {!isEditingAdminRole && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleGroup(group)}
+                                                            style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                                        >
+                                                            {allInGroup ? 'Clear' : 'All'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                    {group.permissions.map(({ key, label, description }) => {
+                                                        const checked = isEditingAdminRole || roleFormData.permissions?.includes(key);
+                                                        return (
+                                                            <div
+                                                                key={key}
+                                                                onClick={() => togglePermission(key)}
+                                                                title={description}
+                                                                style={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'flex-start',
+                                                                    gap: '10px',
+                                                                    padding: '10px 12px',
+                                                                    borderRadius: '8px',
+                                                                    border: checked ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                                    background: checked ? 'rgba(59, 130, 246, 0.05)' : 'var(--color-bg-secondary)',
+                                                                    cursor: isEditingAdminRole ? 'not-allowed' : 'pointer',
+                                                                    opacity: isEditingAdminRole ? 0.7 : 1,
+                                                                    transition: 'all 0.2s'
+                                                                }}
+                                                            >
+                                                                <div style={{
+                                                                    width: '18px',
+                                                                    height: '18px',
+                                                                    borderRadius: '4px',
+                                                                    border: '1px solid',
+                                                                    borderColor: checked ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                                    background: checked ? 'var(--color-primary)' : 'transparent',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    color: 'white',
+                                                                    flexShrink: 0,
+                                                                    marginTop: '1px'
+                                                                }}>
+                                                                    {checked && <Check size={12} />}
+                                                                </div>
+                                                                <div style={{ minWidth: 0 }}>
+                                                                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{label}</div>
+                                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.3, marginTop: '2px' }}>{description}</div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{perm.replace(/_/g, ' ')}</span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
