@@ -36,7 +36,7 @@ const ReceivingPage: React.FC = () => {
             if (po.items && po.items.length > 0) {
                 for (const item of po.items) {
                     if (item.product_id) {
-                        await addStock(item.product_id, item.quantity, item.unit_price, `Received from PO-${po.id.substring(0,8)}`);
+                        await addStock(item.product_id, item.quantity, item.unit_price, `Received from PO-${po.id.substring(0,8)}`, po.supplier?.name || '');
                     }
                 }
             }

@@ -4,7 +4,7 @@ import type { User, Role, Permission } from '../types';
 import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Check, Lock, Users as UsersIcon,
     LayoutDashboard, ShoppingCart, Truck, Wallet, Package, Briefcase, HeartHandshake,
-    Calculator, Settings, ShieldCheck
+    Calculator, Settings, ShieldCheck, X, Search, AlertCircle, Mail, Eye, EyeOff, Target
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -127,11 +127,41 @@ const UserManagement: React.FC = () => {
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [userFormData, setUserFormData] = useState<Partial<User>>({ name: '', email: '', roleId: '', pin: '', dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 });
+    const [userSearch, setUserSearch] = useState('');
+    const [userRoleFilter, setUserRoleFilter] = useState('all');
+    const [showUserPassword, setShowUserPassword] = useState(false);
+
+    const closeUserModal = () => {
+        setIsUserModalOpen(false);
+        setShowUserPassword(false);
+    };
+
+    // Close the user modal on Escape for keyboard users.
+    React.useEffect(() => {
+        if (!isUserModalOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeUserModal(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isUserModalOpen]);
 
     // Role State
     const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [roleFormData, setRoleFormData] = useState<Partial<Role>>({ name: '', description: '', permissions: [] });
+    const [roleSearch, setRoleSearch] = useState('');
+
+    const closeRoleModal = () => {
+        setIsRoleModalOpen(false);
+        setRoleSearch('');
+    };
+
+    // Close the role modal on Escape for keyboard users.
+    React.useEffect(() => {
+        if (!isRoleModalOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRoleModal(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isRoleModalOpen]);
 
     // User Handlers
     const handleOpenUserModal = (user?: User) => {
@@ -147,26 +177,38 @@ const UserManagement: React.FC = () => {
             setEditingUser(null);
             setUserFormData({ name: '', email: '', roleId: roles[0]?.id || '', pin: '', dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 });
         }
+        setShowUserPassword(false);
         setIsUserModalOpen(true);
     };
 
     const handleSaveUser = async () => {
-        if (!userFormData.name || !userFormData.email || !userFormData.roleId) {
+        const name = userFormData.name?.trim();
+        const email = userFormData.email?.trim();
+        if (!name || !email || !userFormData.roleId) {
             showToast('Please fill in all required fields', 'error');
+            return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            showToast('Please enter a valid email address', 'error');
+            return;
+        }
+        const duplicateEmail = users.some(u => u.id !== editingUser?.id && u.email.trim().toLowerCase() === email.toLowerCase());
+        if (duplicateEmail) {
+            showToast('A user with this email already exists', 'error');
             return;
         }
 
         try {
             if (editingUser) {
-                await updateUser(editingUser.id, userFormData);
+                await updateUser(editingUser.id, { ...userFormData, name, email });
                 showToast('User updated successfully', 'success');
             } else {
-                await addUser(userFormData as Omit<User, 'id'>);
+                await addUser({ ...userFormData, name, email } as Omit<User, 'id'>);
                 showToast('User added successfully', 'success');
             }
-            setIsUserModalOpen(false);
+            closeUserModal();
         } catch (error) {
-            showToast('Failed to save user', 'error');
+            showToast(error instanceof Error ? error.message : 'Failed to save user', 'error');
         }
     };
 
@@ -186,12 +228,19 @@ const UserManagement: React.FC = () => {
             setEditingRole(null);
             setRoleFormData({ name: '', description: '', permissions: [] });
         }
+        setRoleSearch('');
         setIsRoleModalOpen(true);
     };
 
     const handleSaveRole = async () => {
-        if (!roleFormData.name) {
+        const name = roleFormData.name?.trim();
+        if (!name) {
             showToast('Role name is required', 'error');
+            return;
+        }
+        const duplicate = roles.some(r => r.id !== editingRole?.id && r.name.trim().toLowerCase() === name.toLowerCase());
+        if (duplicate) {
+            showToast('A role with this name already exists', 'error');
             return;
         }
 
@@ -256,6 +305,47 @@ const UserManagement: React.FC = () => {
     };
 
     const selectedCount = isEditingAdminRole ? ALL_PERMISSIONS.length : (roleFormData.permissions?.length || 0);
+
+    // Live validation + search filtering for the role modal.
+    const roleNameTrimmed = roleFormData.name?.trim() || '';
+    const roleNameDuplicate = !!roleNameTrimmed && roles.some(
+        r => r.id !== editingRole?.id && r.name.trim().toLowerCase() === roleNameTrimmed.toLowerCase()
+    );
+    const canSaveRole = !!roleNameTrimmed && !roleNameDuplicate;
+    const roleSearchLower = roleSearch.trim().toLowerCase();
+    const filteredRoleGroups = PERMISSION_GROUPS
+        .map(group => ({
+            ...group,
+            permissions: roleSearchLower
+                ? group.permissions.filter(p =>
+                    p.label.toLowerCase().includes(roleSearchLower) ||
+                    p.description.toLowerCase().includes(roleSearchLower) ||
+                    group.category.toLowerCase().includes(roleSearchLower))
+                : group.permissions,
+        }))
+        .filter(g => g.permissions.length > 0);
+
+    // Users tab: search + role filter, then sort by role name.
+    const userSearchLower = userSearch.trim().toLowerCase();
+    const filteredUsers = [...users]
+        .filter(u => userRoleFilter === 'all' || u.roleId === userRoleFilter)
+        .filter(u => !userSearchLower
+            || u.name.toLowerCase().includes(userSearchLower)
+            || u.email.toLowerCase().includes(userSearchLower))
+        .sort((a, b) => {
+            const roleA = roles.find(r => r.id === a.roleId)?.name || '';
+            const roleB = roles.find(r => r.id === b.roleId)?.name || '';
+            return roleA.localeCompare(roleB) || a.name.localeCompare(b.name);
+        });
+
+    // User modal validation.
+    const userNameTrimmed = userFormData.name?.trim() || '';
+    const userEmailTrimmed = userFormData.email?.trim() || '';
+    const userEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmailTrimmed);
+    const userEmailDuplicate = !!userEmailTrimmed && users.some(
+        u => u.id !== editingUser?.id && u.email.trim().toLowerCase() === userEmailTrimmed.toLowerCase()
+    );
+    const canSaveUser = !!userNameTrimmed && !!userFormData.roleId && userEmailValid && !userEmailDuplicate;
 
     return (
         <div style={{ padding: '24px', maxWidth: '100%', margin: '0 auto' }}>
@@ -328,68 +418,100 @@ const UserManagement: React.FC = () => {
 
             {activeTab === 'users' ? (
                 <div>
-
+                    {/* Toolbar: search + role filter + count */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                        <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '200px' }}>
+                            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                            <input
+                                type="text"
+                                value={userSearch}
+                                onChange={e => setUserSearch(e.target.value)}
+                                placeholder="Search by name or email…"
+                                style={{ width: '100%', padding: '9px 12px 9px 36px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                            />
+                        </div>
+                        <select
+                            value={userRoleFilter}
+                            onChange={e => setUserRoleFilter(e.target.value)}
+                            style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer' }}
+                        >
+                            <option value="all">All roles</option>
+                            {roles.map(role => (
+                                <option key={role.id} value={role.id}>{role.name}</option>
+                            ))}
+                        </select>
+                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                            {filteredUsers.length} of {users.length} {users.length === 1 ? 'user' : 'users'}
+                        </span>
+                    </div>
 
                     <div style={{ background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead style={{ background: 'var(--color-bg-secondary)' }}>
-                                <tr>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>User</th>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Role</th>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Password</th>
-                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {[...users].sort((a, b) => {
-                                    const roleA = roles.find(r => r.id === a.roleId)?.name || '';
-                                    const roleB = roles.find(r => r.id === b.roleId)?.name || '';
-                                    return roleA.localeCompare(roleB);
-                                }).map(user => (
-                                    <tr key={user.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                                        <td style={{ padding: '16px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)', fontWeight: 'bold' }}>
-                                                    {user.name.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontWeight: 500 }}>{user.name}</div>
-                                                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{user.email}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td style={{ padding: '16px' }}>
-                                            <span style={{
-                                                padding: '4px 12px',
-                                                borderRadius: '20px',
-                                                background: 'rgba(59, 130, 246, 0.1)',
-                                                color: '#3B82F6',
-                                                fontSize: '13px',
-                                                fontWeight: 500
-                                            }}>
-                                                {roles.find(r => r.id === user.roleId)?.name || 'Unknown'}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '16px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)' }}>
-                                                <Lock size={14} />
-                                                <span>{user.pin ? '••••' : 'Not Set'}</span>
-                                            </div>
-                                        </td>
-                                        <td style={{ padding: '16px', textAlign: 'right' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                <button onClick={() => handleOpenUserModal(user)} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button onClick={() => handleDeleteUser(user.id)} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </td>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
+                                <thead style={{ background: 'var(--color-bg-secondary)' }}>
+                                    <tr>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>User</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Role</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Password</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {filteredUsers.map(user => (
+                                        <tr key={user.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                                            <td style={{ padding: '14px 16px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)', fontWeight: 'bold', flexShrink: 0 }}>
+                                                        {user.name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontWeight: 500 }}>{user.name}</div>
+                                                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{user.email}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '14px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 12px',
+                                                    borderRadius: '20px',
+                                                    background: 'rgba(59, 130, 246, 0.1)',
+                                                    color: '#3B82F6',
+                                                    fontSize: '13px',
+                                                    fontWeight: 500,
+                                                    whiteSpace: 'nowrap'
+                                                }}>
+                                                    {roles.find(r => r.id === user.roleId)?.name || 'Unknown'}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '14px 16px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)' }}>
+                                                    <Lock size={14} />
+                                                    <span>{user.pin ? '••••' : 'Not Set'}</span>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                                    <button onClick={() => handleOpenUserModal(user)} title="Edit user" style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button onClick={() => handleDeleteUser(user.id)} title="Delete user" style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredUsers.length === 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '48px 24px', color: 'var(--color-text-secondary)' }}>
+                                <UsersIcon size={32} style={{ opacity: 0.4 }} />
+                                <div style={{ fontSize: '14px' }}>
+                                    {users.length === 0 ? 'No users yet — add your first user.' : 'No users match your filters.'}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             ) : (
@@ -491,86 +613,147 @@ const UserManagement: React.FC = () => {
 
             {/* User Modal */}
             {isUserModalOpen && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: 'var(--color-surface)', padding: '24px', borderRadius: '12px', width: '450px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
-                        <h2 style={{ marginTop: 0, marginBottom: '20px' }}>{editingUser ? 'Edit User' : 'Add User'}</h2>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div
+                    onClick={closeUserModal}
+                    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '520px', maxWidth: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+                    >
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '20px 24px', borderBottom: '1px solid var(--color-border)' }}>
+                            <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)', fontWeight: 'bold', fontSize: '18px', flexShrink: 0 }}>
+                                {userNameTrimmed ? userNameTrimmed.charAt(0).toUpperCase() : <UserIcon size={20} />}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingUser ? 'Edit User' : 'Add User'}</h2>
+                                <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                    {editingUser ? 'Update this user’s account details' : 'Create a new user account'}
+                                </p>
+                            </div>
+                            <button
+                                onClick={closeUserModal}
+                                aria-label="Close"
+                                style={{ padding: '8px', borderRadius: '8px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', flexShrink: 0 }}
+                                onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
+                                onMouseOut={e => e.currentTarget.style.background = 'none'}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Name</label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Name <span style={{ color: 'var(--color-red)' }}>*</span></label>
                                 <input
                                     type="text"
                                     value={userFormData.name}
+                                    autoFocus
                                     onChange={e => setUserFormData({ ...userFormData, name: e.target.value })}
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
+                                    placeholder="Full name"
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                                 />
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Email</label>
-                                <input
-                                    type="email"
-                                    value={userFormData.email}
-                                    onChange={e => setUserFormData({ ...userFormData, email: e.target.value })}
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
-                                />
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Email <span style={{ color: 'var(--color-red)' }}>*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <Mail size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                    <input
+                                        type="email"
+                                        value={userFormData.email}
+                                        onChange={e => setUserFormData({ ...userFormData, email: e.target.value })}
+                                        placeholder="name@example.com"
+                                        style={{ width: '100%', padding: '10px 10px 10px 36px', borderRadius: '8px', border: `1px solid ${userEmailDuplicate || (userEmailTrimmed && !userEmailValid) ? 'var(--color-red)' : 'var(--color-border)'}`, background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                {userEmailTrimmed && !userEmailValid && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', color: 'var(--color-red)' }}>
+                                        <AlertCircle size={13} /> Enter a valid email address
+                                    </div>
+                                )}
+                                {userEmailValid && userEmailDuplicate && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', color: 'var(--color-red)' }}>
+                                        <AlertCircle size={13} /> A user with this email already exists
+                                    </div>
+                                )}
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Role</label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Role <span style={{ color: 'var(--color-red)' }}>*</span></label>
                                 <select
                                     value={userFormData.roleId}
                                     onChange={e => setUserFormData({ ...userFormData, roleId: e.target.value })}
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                                 >
+                                    <option value="" disabled>Select a role</option>
                                     {roles.map(role => (
                                         <option key={role.id} value={role.id}>{role.name}</option>
                                     ))}
                                 </select>
+                                {userFormData.roleId && (
+                                    <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        {roles.find(r => r.id === userFormData.roleId)?.id === 'admin'
+                                            ? 'Full access to everything'
+                                            : `${roles.find(r => r.id === userFormData.roleId)?.permissions.length || 0} permission(s)`}
+                                    </div>
+                                )}
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Password <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span></label>
-                                <input
-                                    type="text"
-                                    value={userFormData.pin}
-                                    onChange={e => setUserFormData({ ...userFormData, pin: e.target.value })}
-                                    placeholder="Enter password"
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
-                                />
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Password <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>(optional)</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type={showUserPassword ? 'text' : 'password'}
+                                        value={userFormData.pin}
+                                        onChange={e => setUserFormData({ ...userFormData, pin: e.target.value })}
+                                        placeholder={editingUser ? 'Leave blank to keep current' : 'Set a login password'}
+                                        style={{ width: '100%', padding: '10px 40px 10px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowUserPassword(v => !v)}
+                                        aria-label={showUserPassword ? 'Hide password' : 'Show password'}
+                                        style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', padding: '4px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', display: 'flex' }}
+                                    >
+                                        {showUserPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
                             </div>
-                            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: '8px' }}>
-                                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: 'var(--color-primary)' }}>Sales Targets ($)</h4>
+                            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: '4px' }}>
+                                <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Target size={15} /> Sales Targets ($)
+                                </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>Daily</label>
-                                        <input
-                                            type="number"
-                                            value={userFormData.dailyTarget || 0}
-                                            onChange={e => setUserFormData({ ...userFormData, dailyTarget: parseFloat(e.target.value) || 0 })}
-                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px' }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>Weekly</label>
-                                        <input
-                                            type="number"
-                                            value={userFormData.weeklyTarget || 0}
-                                            onChange={e => setUserFormData({ ...userFormData, weeklyTarget: parseFloat(e.target.value) || 0 })}
-                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px' }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>Monthly</label>
-                                        <input
-                                            type="number"
-                                            value={userFormData.monthlyTarget || 0}
-                                            onChange={e => setUserFormData({ ...userFormData, monthlyTarget: parseFloat(e.target.value) || 0 })}
-                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px' }}
-                                        />
-                                    </div>
+                                    {([
+                                        ['Daily', 'dailyTarget'],
+                                        ['Weekly', 'weeklyTarget'],
+                                        ['Monthly', 'monthlyTarget'],
+                                    ] as const).map(([label, field]) => (
+                                        <div key={field}>
+                                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>{label}</label>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={userFormData[field] || 0}
+                                                onChange={e => setUserFormData({ ...userFormData, [field]: parseFloat(e.target.value) || 0 })}
+                                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', fontSize: '13px', boxSizing: 'border-box' }}
+                                            />
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                            <button onClick={() => setIsUserModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer' }}>Cancel</button>
-                            <button onClick={handleSaveUser} style={{ padding: '10px 16px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: 'pointer' }}>Save</button>
+
+                        {/* Footer */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderTop: '1px solid var(--color-border)' }}>
+                            <button onClick={closeUserModal} style={{ padding: '10px 18px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>Cancel</button>
+                            <button
+                                onClick={handleSaveUser}
+                                disabled={!canSaveUser}
+                                style={{ padding: '10px 18px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: canSaveUser ? 'pointer' : 'not-allowed', fontWeight: 500, opacity: canSaveUser ? 1 : 0.5 }}
+                            >
+                                {editingUser ? 'Save Changes' : 'Create User'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -578,125 +761,198 @@ const UserManagement: React.FC = () => {
 
             {/* Role Modal */}
             {isRoleModalOpen && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: 'var(--color-surface)', padding: '24px', borderRadius: '12px', width: '500px', maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
-                        <h2 style={{ marginTop: 0, marginBottom: '20px' }}>{editingRole ? 'Edit Role' : 'Add Role'}</h2>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Role Name</label>
-                                <input
-                                    type="text"
-                                    value={roleFormData.name}
-                                    onChange={e => setRoleFormData({ ...roleFormData, name: e.target.value })}
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
-                                />
+                <div
+                    onClick={closeRoleModal}
+                    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '640px', maxWidth: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+                    >
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '20px 24px', borderBottom: '1px solid var(--color-border)' }}>
+                            <div style={{ width: '42px', height: '42px', borderRadius: '11px', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)', flexShrink: 0 }}>
+                                <Shield size={22} />
                             </div>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>Description</label>
-                                <input
-                                    type="text"
-                                    value={roleFormData.description}
-                                    onChange={e => setRoleFormData({ ...roleFormData, description: e.target.value })}
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
-                                />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingRole ? 'Edit Role' : 'Add Role'}</h2>
+                                <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                    {editingRole ? 'Update this role and its permissions' : 'Define a role and choose what it can access'}
+                                </p>
                             </div>
-                            <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                    <label style={{ fontSize: '14px', fontWeight: 500 }}>
-                                        Permissions <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>({selectedCount}/{ALL_PERMISSIONS.length})</span>
+                            <button
+                                onClick={closeRoleModal}
+                                aria-label="Close"
+                                style={{ padding: '8px', borderRadius: '8px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', flexShrink: 0 }}
+                                onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
+                                onMouseOut={e => e.currentTarget.style.background = 'none'}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                                        Role Name <span style={{ color: 'var(--color-red)' }}>*</span>
                                     </label>
-                                    {!isEditingAdminRole && (
-                                        <button
-                                            type="button"
-                                            onClick={toggleAllPermissions}
-                                            style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                                        >
-                                            {ALL_PERMISSIONS.every(p => roleFormData.permissions?.includes(p)) ? 'Clear all' : 'Select all'}
-                                        </button>
+                                    <input
+                                        type="text"
+                                        value={roleFormData.name}
+                                        autoFocus
+                                        onChange={e => setRoleFormData({ ...roleFormData, name: e.target.value })}
+                                        placeholder="e.g. Cashier"
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: `1px solid ${roleNameDuplicate ? 'var(--color-red)' : 'var(--color-border)'}`, background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                    />
+                                    {roleNameDuplicate && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', color: 'var(--color-red)' }}>
+                                            <AlertCircle size={13} /> A role with this name already exists
+                                        </div>
                                     )}
                                 </div>
-
-                                {isEditingAdminRole && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', marginBottom: '12px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.08)', color: '#16A34A', fontSize: '12px', fontWeight: 500 }}>
-                                        <ShieldCheck size={14} /> The Admin role always has full access and cannot be changed.
-                                    </div>
-                                )}
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                    {PERMISSION_GROUPS.map(group => {
-                                        const GroupIcon = group.icon;
-                                        const groupKeys = group.permissions.map(p => p.key);
-                                        const allInGroup = groupKeys.every(k => roleFormData.permissions?.includes(k));
-                                        return (
-                                            <div key={group.category}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                                                        <GroupIcon size={14} /> {group.category}
-                                                    </div>
-                                                    {!isEditingAdminRole && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleGroup(group)}
-                                                            style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                                                        >
-                                                            {allInGroup ? 'Clear' : 'All'}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                                    {group.permissions.map(({ key, label, description }) => {
-                                                        const checked = isEditingAdminRole || roleFormData.permissions?.includes(key);
-                                                        return (
-                                                            <div
-                                                                key={key}
-                                                                onClick={() => togglePermission(key)}
-                                                                title={description}
-                                                                style={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'flex-start',
-                                                                    gap: '10px',
-                                                                    padding: '10px 12px',
-                                                                    borderRadius: '8px',
-                                                                    border: checked ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                                                                    background: checked ? 'rgba(59, 130, 246, 0.05)' : 'var(--color-bg-secondary)',
-                                                                    cursor: isEditingAdminRole ? 'not-allowed' : 'pointer',
-                                                                    opacity: isEditingAdminRole ? 0.7 : 1,
-                                                                    transition: 'all 0.2s'
-                                                                }}
-                                                            >
-                                                                <div style={{
-                                                                    width: '18px',
-                                                                    height: '18px',
-                                                                    borderRadius: '4px',
-                                                                    border: '1px solid',
-                                                                    borderColor: checked ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                                                    background: checked ? 'var(--color-primary)' : 'transparent',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    color: 'white',
-                                                                    flexShrink: 0,
-                                                                    marginTop: '1px'
-                                                                }}>
-                                                                    {checked && <Check size={12} />}
-                                                                </div>
-                                                                <div style={{ minWidth: 0 }}>
-                                                                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{label}</div>
-                                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.3, marginTop: '2px' }}>{description}</div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                                        Description <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>(optional)</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={roleFormData.description}
+                                        onChange={e => setRoleFormData({ ...roleFormData, description: e.target.value })}
+                                        placeholder="Short summary of this role"
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                    />
                                 </div>
                             </div>
+
+                            {/* Permissions toolbar */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <label style={{ fontSize: '14px', fontWeight: 600 }}>Permissions</label>
+                                    <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 10px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                                        {selectedCount} / {ALL_PERMISSIONS.length}
+                                    </span>
+                                </div>
+                                {!isEditingAdminRole && (
+                                    <button
+                                        type="button"
+                                        onClick={toggleAllPermissions}
+                                        style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                    >
+                                        {ALL_PERMISSIONS.every(p => roleFormData.permissions?.includes(p)) ? 'Clear all' : 'Select all'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {isEditingAdminRole && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', marginBottom: '16px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.08)', color: '#16A34A', fontSize: '12px', fontWeight: 500 }}>
+                                    <ShieldCheck size={14} /> The Admin role always has full access and cannot be changed.
+                                </div>
+                            )}
+
+                            {/* Search */}
+                            {!isEditingAdminRole && (
+                                <div style={{ position: 'relative', marginBottom: '16px' }}>
+                                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                    <input
+                                        type="text"
+                                        value={roleSearch}
+                                        onChange={e => setRoleSearch(e.target.value)}
+                                        placeholder="Search permissions…"
+                                        style={{ width: '100%', padding: '9px 12px 9px 36px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Permission groups */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                                {filteredRoleGroups.map(group => {
+                                    const GroupIcon = group.icon;
+                                    const groupKeys = group.permissions.map(p => p.key);
+                                    const selectedInGroup = groupKeys.filter(k => isEditingAdminRole || roleFormData.permissions?.includes(k)).length;
+                                    const allInGroup = selectedInGroup === groupKeys.length;
+                                    return (
+                                        <div key={group.category}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                                    <GroupIcon size={14} /> {group.category}
+                                                    <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0, color: 'var(--color-text-secondary)' }}>· {selectedInGroup}/{groupKeys.length}</span>
+                                                </div>
+                                                {!isEditingAdminRole && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleGroup(group)}
+                                                        style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                                    >
+                                                        {allInGroup ? 'Clear' : 'Select all'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                {group.permissions.map(({ key, label, description }) => {
+                                                    const checked = isEditingAdminRole || roleFormData.permissions?.includes(key);
+                                                    return (
+                                                        <div
+                                                            key={key}
+                                                            onClick={() => togglePermission(key)}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '12px',
+                                                                padding: '12px 14px',
+                                                                borderRadius: '10px',
+                                                                border: checked ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                                background: checked ? 'rgba(59, 130, 246, 0.06)' : 'var(--color-bg-secondary)',
+                                                                cursor: isEditingAdminRole ? 'not-allowed' : 'pointer',
+                                                                opacity: isEditingAdminRole ? 0.75 : 1,
+                                                                transition: 'all 0.15s'
+                                                            }}
+                                                        >
+                                                            <div style={{
+                                                                width: '20px',
+                                                                height: '20px',
+                                                                borderRadius: '5px',
+                                                                border: '1px solid',
+                                                                borderColor: checked ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                                background: checked ? 'var(--color-primary)' : 'transparent',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                color: 'white',
+                                                                flexShrink: 0
+                                                            }}>
+                                                                {checked && <Check size={13} />}
+                                                            </div>
+                                                            <div style={{ minWidth: 0 }}>
+                                                                <div style={{ fontSize: '14px', fontWeight: 500 }}>{label}</div>
+                                                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.35, marginTop: '2px' }}>{description}</div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {filteredRoleGroups.length === 0 && (
+                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                        No permissions match “{roleSearch}”.
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                            <button onClick={() => setIsRoleModalOpen(false)} style={{ padding: '10px 16px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer' }}>Cancel</button>
-                            <button onClick={handleSaveRole} style={{ padding: '10px 16px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: 'pointer' }}>Save</button>
+
+                        {/* Footer */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderTop: '1px solid var(--color-border)' }}>
+                            <button onClick={closeRoleModal} style={{ padding: '10px 18px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>Cancel</button>
+                            <button
+                                onClick={handleSaveRole}
+                                disabled={!canSaveRole}
+                                style={{ padding: '10px 18px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: canSaveRole ? 'pointer' : 'not-allowed', fontWeight: 500, opacity: canSaveRole ? 1 : 0.5 }}
+                            >
+                                {editingRole ? 'Save Changes' : 'Create Role'}
+                            </button>
                         </div>
                     </div>
                 </div>
