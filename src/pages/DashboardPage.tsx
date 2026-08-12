@@ -11,7 +11,68 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import type { Sale } from '../types';
 
+// Canonical status ordering used by every performance section.
+const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
 
+// Single source of truth for status colors, so every card stays consistent.
+const getStatusStyle = (status: string): { color: string; bgColor: string } => {
+    switch (status) {
+        case 'Delivered': return { color: '#059669', bgColor: '#D1FAE5' };
+        case 'Cancelled':
+        case 'Returned': return { color: '#DC2626', bgColor: '#FEE2E2' };
+        case 'ReStock': return { color: '#7E22CE', bgColor: '#F3E8FF' };
+        case 'Confirmed': return { color: '#0369A1', bgColor: '#E0F2FE' };
+        case 'Drafted':
+        case 'Pending': return { color: '#D97706', bgColor: '#FEF3C7' };
+        default: return { color: '#1D4ED8', bgColor: '#EFF6FF' };
+    }
+};
+
+// Sorted, translated status pills shared by the salesman/page/shipping/product cards.
+const StatusBadges: React.FC<{ statuses: Record<string, number>; t: (k: string) => string }> = ({ statuses, t }) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+        {Object.entries(statuses)
+            .filter(([, count]) => count > 0)
+            .sort((a, b) => {
+                const ia = STATUS_ORDER.indexOf(a[0]);
+                const ib = STATUS_ORDER.indexOf(b[0]);
+                return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+            })
+            .map(([status, count]) => {
+                const { color, bgColor } = getStatusStyle(status);
+                return (
+                    <span key={status} style={{
+                        fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
+                        backgroundColor: bgColor, color, fontWeight: 600,
+                        display: 'inline-flex', alignItems: 'center'
+                    }}>
+                        {t(`status.${status.toLowerCase()}`) || status}: {count}
+                    </span>
+                );
+            })}
+    </div>
+);
+
+// Section heading with an icon badge and an optional count pill / right-side action.
+const SectionHeader: React.FC<{
+    icon: React.ComponentType<{ size?: number }>;
+    title: string;
+    count?: number;
+    action?: React.ReactNode;
+}> = ({ icon: Icon, title, count, action }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon size={17} />
+            </div>
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0 }}>{title}</h3>
+            {typeof count === 'number' && (
+                <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>{count}</span>
+            )}
+        </div>
+        {action}
+    </div>
+);
 
 const Dashboard: React.FC = () => {
     const { products, refreshData } = useStore();
@@ -437,8 +498,12 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
                 <style>{`
-                        @keyframes spin { 
-                            100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } 
+                        @keyframes spin {
+                            100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); }
+                        }
+                        @keyframes dashLoad {
+                            0% { margin-left: -40%; }
+                            100% { margin-left: 100%; }
                         }
                         .dashboard-flex-container > * {
                             flex: 1 1 calc(20% - 16px);
@@ -452,8 +517,15 @@ const Dashboard: React.FC = () => {
                     `}</style>
             </div>
 
+            {/* Slim loading indicator shown while dashboard data refetches */}
+            <div style={{ height: '3px', marginBottom: '17px', borderRadius: '2px', overflow: 'hidden', background: isLoadingSales ? 'var(--color-primary-light)' : 'transparent' }}>
+                {isLoadingSales && (
+                    <div style={{ height: '100%', width: '40%', background: 'var(--color-primary)', borderRadius: '2px', animation: 'dashLoad 1s ease-in-out infinite' }} />
+                )}
+            </div>
 
             {/* Sales & Orders Overview */}
+            <SectionHeader icon={ShoppingBag} title="Sales & Orders" count={stats.totalSalesCount} />
             <div className="dashboard-flex-container" style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -507,7 +579,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Pay Status Cards */}
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.paymentStatus')}</h3>
+            <SectionHeader icon={CreditCard} title={t('dashboard.paymentStatus')} count={paymentStatusStats.length} />
             <div className="dashboard-flex-container" style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -543,7 +615,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Inventory Overview */}
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.inventory')}</h3>
+            <SectionHeader icon={Package} title={t('dashboard.inventory')} />
             <div className="dashboard-flex-container" style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -587,7 +659,7 @@ const Dashboard: React.FC = () => {
 
             {/* Top Selling Products */}
             <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.topSellingProducts')}</h3>
+                <SectionHeader icon={TrendingUp} title={t('dashboard.topSellingProducts')} count={topProducts.length} />
                 {topProducts.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
@@ -621,24 +693,28 @@ const Dashboard: React.FC = () => {
 
                 {/* 4. Salesman Performance */}
                 <div style={{ marginBottom: '32px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>{t('dashboard.salesmanPerformance')}</h3>
-                        <select 
-                            className="text-input" 
-                            style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
-                            value={salesmanStatusFilter}
-                            onChange={(e) => setSalesmanStatusFilter(e.target.value)}
-                        >
-                            <option value="All">{t('dashboard.allStatuses')}</option>
-                            <option value="Delivered">{t('status.delivered')}</option>
-                            <option value="Shipped">{t('status.shipped')}</option>
-                            <option value="Confirmed">{t('status.confirmed')}</option>
-                            <option value="Pending">{t('status.pending')}</option>
-                            <option value="Drafted">{t('status.ordered')}</option>
-                            <option value="Cancelled">{t('status.cancelled')}</option>
-                            <option value="Returned">{t('status.returned')}</option>
-                        </select>
-                    </div>
+                    <SectionHeader
+                        icon={User}
+                        title={t('dashboard.salesmanPerformance')}
+                        count={salesmanStats.length}
+                        action={
+                            <select
+                                className="text-input"
+                                style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
+                                value={salesmanStatusFilter}
+                                onChange={(e) => setSalesmanStatusFilter(e.target.value)}
+                            >
+                                <option value="All">{t('dashboard.allStatuses')}</option>
+                                <option value="Delivered">{t('status.delivered')}</option>
+                                <option value="Shipped">{t('status.shipped')}</option>
+                                <option value="Confirmed">{t('status.confirmed')}</option>
+                                <option value="Pending">{t('status.pending')}</option>
+                                <option value="Drafted">{t('status.ordered')}</option>
+                                <option value="Cancelled">{t('status.cancelled')}</option>
+                                <option value="Returned">{t('status.returned')}</option>
+                            </select>
+                        }
+                    />
                     {salesmanStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
@@ -648,7 +724,6 @@ const Dashboard: React.FC = () => {
                             gap: '16px'
                         }}>
                             {salesmanStats.map((s, index) => {
-                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
                                 return (
                                     <StatsCard
                                         key={index}
@@ -661,42 +736,7 @@ const Dashboard: React.FC = () => {
                                                     {' | '}
                                                     <span style={{ color: '#E65F2B', fontWeight: 600 }}>{s.count} {t('dashboard.orders')}</span>
                                                 </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                                                    {Object.entries(s.statuses)
-                                                        .sort((a, b) => {
-                                                            const indexA = STATUS_ORDER.indexOf(a[0]);
-                                                            const indexB = STATUS_ORDER.indexOf(b[0]);
-                                                            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-                                                        })
-                                                        .map(([status, count]) => {
-                                                            let color = '#1D4ED8', bgColor = '#EFF6FF';
-                                                            if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
-                                                            else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
-                                                            else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
-                                                            else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                            else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
-
-                                                            const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
-                                                            return (
-                                                                <span 
-                                                                    key={status} 
-                                                                    style={{
-                                                                        fontSize: '10px',
-                                                                        padding: '2px 6px',
-                                                                        borderRadius: '4px',
-                                                                        backgroundColor: bgColor,
-                                                                        color: color,
-                                                                        fontWeight: 600,
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center'
-                                                                    }}
-                                                                >
-                                                                    {translatedStatus}: {count}
-                                                                </span>
-                                                            );
-                                                        })
-                                                    }
-                                                </div>
+                                                <StatusBadges statuses={s.statuses} t={t} />
                                             </div>
                                         }
                                         icon={User}
@@ -720,24 +760,28 @@ const Dashboard: React.FC = () => {
 
                 {/* 4.5 Page Performance */}
                 <div style={{ marginBottom: '32px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>Page Performance</h3>
-                        <select 
-                            className="text-input" 
-                            style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
-                            value={pageStatusFilter}
-                            onChange={(e) => setPageStatusFilter(e.target.value)}
-                        >
-                            <option value="All">{t('dashboard.allStatuses')}</option>
-                            <option value="Delivered">{t('status.delivered')}</option>
-                            <option value="Shipped">{t('status.shipped')}</option>
-                            <option value="Confirmed">{t('status.confirmed')}</option>
-                            <option value="Pending">{t('status.pending')}</option>
-                            <option value="Drafted">{t('status.ordered')}</option>
-                            <option value="Cancelled">{t('status.cancelled')}</option>
-                            <option value="Returned">{t('status.returned')}</option>
-                        </select>
-                    </div>
+                    <SectionHeader
+                        icon={Globe}
+                        title="Page Performance"
+                        count={pageStats.length}
+                        action={
+                            <select
+                                className="text-input"
+                                style={{ padding: '4px', fontSize: '12px', width: 'auto', minWidth: '100px' }}
+                                value={pageStatusFilter}
+                                onChange={(e) => setPageStatusFilter(e.target.value)}
+                            >
+                                <option value="All">{t('dashboard.allStatuses')}</option>
+                                <option value="Delivered">{t('status.delivered')}</option>
+                                <option value="Shipped">{t('status.shipped')}</option>
+                                <option value="Confirmed">{t('status.confirmed')}</option>
+                                <option value="Pending">{t('status.pending')}</option>
+                                <option value="Drafted">{t('status.ordered')}</option>
+                                <option value="Cancelled">{t('status.cancelled')}</option>
+                                <option value="Returned">{t('status.returned')}</option>
+                            </select>
+                        }
+                    />
                     {pageStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
@@ -747,7 +791,6 @@ const Dashboard: React.FC = () => {
                             gap: '16px'
                         }}>
                             {pageStats.map((s, index) => {
-                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
                                 return (
                                     <StatsCard
                                         key={index}
@@ -760,42 +803,7 @@ const Dashboard: React.FC = () => {
                                                     {' | '}
                                                     <span style={{ color: '#E65F2B', fontWeight: 600 }}>{s.count} {t('dashboard.orders')}</span>
                                                 </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                                                    {Object.entries(s.statuses)
-                                                        .sort((a, b) => {
-                                                            const indexA = STATUS_ORDER.indexOf(a[0]);
-                                                            const indexB = STATUS_ORDER.indexOf(b[0]);
-                                                            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-                                                        })
-                                                        .map(([status, count]) => {
-                                                            let color = '#1D4ED8', bgColor = '#EFF6FF';
-                                                            if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
-                                                            else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
-                                                            else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
-                                                            else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                            else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
-
-                                                            const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
-                                                            return (
-                                                                <span 
-                                                                    key={status} 
-                                                                    style={{
-                                                                        fontSize: '10px',
-                                                                        padding: '2px 6px',
-                                                                        borderRadius: '4px',
-                                                                        backgroundColor: bgColor,
-                                                                        color: color,
-                                                                        fontWeight: 600,
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center'
-                                                                    }}
-                                                                >
-                                                                    {translatedStatus}: {count}
-                                                                </span>
-                                                            );
-                                                        })
-                                                    }
-                                                </div>
+                                                <StatusBadges statuses={s.statuses} t={t} />
                                             </div>
                                         }
                                         icon={Globe}
@@ -819,7 +827,7 @@ const Dashboard: React.FC = () => {
 
                 {/* 5. Shipping Performance */}
                 <div style={{ marginBottom: '32px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.shippingPerformance')}</h3>
+                    <SectionHeader icon={Truck} title={t('dashboard.shippingPerformance')} count={shippingStats.length} />
                     {shippingStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
@@ -829,7 +837,6 @@ const Dashboard: React.FC = () => {
                             gap: '16px'
                         }}>
                             {shippingStats.map((carrier, index) => {
-                                const STATUS_ORDER = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned', 'ReStock'];
                                 return (
                                     <StatsCard
                                         key={index}
@@ -840,42 +847,7 @@ const Dashboard: React.FC = () => {
                                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                                     ${carrier.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cost | <span style={{ color: '#E65F2B', fontWeight: 600 }}>{carrier.delivered} {t('dashboard.orders')}</span>
                                                 </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                                                    {Object.entries(carrier.statuses)
-                                                        .sort((a, b) => {
-                                                            const indexA = STATUS_ORDER.indexOf(a[0]);
-                                                            const indexB = STATUS_ORDER.indexOf(b[0]);
-                                                            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-                                                        })
-                                                        .map(([status, count]) => {
-                                                            let color = '#1D4ED8', bgColor = '#EFF6FF';
-                                                            if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
-                                                            else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
-                                                            else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
-                                                            else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                            else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
-
-                                                            const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
-                                                            return (
-                                                                <span 
-                                                                    key={status} 
-                                                                    style={{
-                                                                        fontSize: '10px',
-                                                                        padding: '2px 6px',
-                                                                        borderRadius: '4px',
-                                                                        backgroundColor: bgColor,
-                                                                        color: color,
-                                                                        fontWeight: 600,
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center'
-                                                                    }}
-                                                                >
-                                                                    {translatedStatus}: {count}
-                                                                </span>
-                                                            );
-                                                        })
-                                                    }
-                                                </div>
+                                                <StatusBadges statuses={carrier.statuses} t={t} />
                                             </div>
                                         }
                                         icon={Truck}
@@ -898,7 +870,7 @@ const Dashboard: React.FC = () => {
 
             {/* Product Report Cards */}
             <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{t('dashboard.productReport')}</h3>
+                <SectionHeader icon={Package} title={t('dashboard.productReport')} count={pivotStats.product.length} />
                 {pivotStats.product.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
@@ -921,47 +893,16 @@ const Dashboard: React.FC = () => {
                                             {' | '}
                                             <span style={{ color: '#059669', fontWeight: 600 }}>{p.stock} {t('dashboard.stock')}</span>
                                         </div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                                            {Object.entries({
-                                                Pending: p.pending,
-                                                Confirmed: p.confirmed,
-                                                Shipped: p.shipped,
-                                                Delivered: p.delivered,
-                                                Drafted: p.ordered,
-                                                Cancelled: p.cancelled,
-                                                Returned: p.returned,
-                                                ReStock: p.restock
-                                            })
-                                                .filter(([_, count]) => count > 0)
-                                                .map(([status, count]) => {
-                                                    let color = '#1D4ED8', bgColor = '#EFF6FF';
-                                                    if (status === 'Delivered') { color = '#059669'; bgColor = '#D1FAE5'; }
-                                                    else if (status === 'Cancelled' || status === 'Returned') { color = '#DC2626'; bgColor = '#FEE2E2'; }
-                                                    else if (status === 'ReStock') { color = '#7E22CE'; bgColor = '#F3E8FF'; }
-                                                    else if (status === 'Confirmed') { color = '#0369A1'; bgColor = '#E0F2FE'; }
-                                                    else if (status === 'Drafted' || status === 'Pending') { color = '#D97706'; bgColor = '#FEF3C7'; }
-
-                                                    const translatedStatus = t(`status.${status.toLowerCase()}`) || status;
-                                                    return (
-                                                        <span 
-                                                            key={status} 
-                                                            style={{
-                                                                fontSize: '10px',
-                                                                padding: '2px 6px',
-                                                                borderRadius: '4px',
-                                                                backgroundColor: bgColor,
-                                                                color: color,
-                                                                fontWeight: 600,
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center'
-                                                            }}
-                                                        >
-                                                            {translatedStatus}: {count}
-                                                        </span>
-                                                    );
-                                                })
-                                            }
-                                        </div>
+                                        <StatusBadges statuses={{
+                                            Pending: p.pending,
+                                            Confirmed: p.confirmed,
+                                            Shipped: p.shipped,
+                                            Delivered: p.delivered,
+                                            Drafted: p.ordered,
+                                            Cancelled: p.cancelled,
+                                            Returned: p.returned,
+                                            ReStock: p.restock
+                                        }} t={t} />
                                     </div>
                                 }
                                 icon={Package}

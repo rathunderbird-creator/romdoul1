@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
-import type { PurchaseOrderItem } from '../../types';
+import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -229,6 +229,98 @@ const PurchaseOrdersPage = () => {
 
     const thStyle: React.CSSProperties = { padding: '14px 16px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' };
 
+    // --- Sorting ---
+    type SortKey = 'po' | 'supplier' | 'order_date' | 'expected' | 'invoice' | 'due_date' | 'items' | 'total' | 'status' | 'payment';
+    const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
+
+    const handleSort = (key: SortKey) => {
+        setSortConfig(prev =>
+            prev?.key === key
+                ? (prev.direction === 'asc' ? { key, direction: 'desc' } : null) // third click clears
+                : { key, direction: 'asc' }
+        );
+    };
+
+    // Values to compare per column. Dates become timestamps and money/counts stay
+    // numeric so they sort by magnitude rather than as text ("$9" before "$10").
+    const sortValue = (po: PurchaseOrder, key: SortKey): string | number => {
+        switch (key) {
+            case 'po': return po.id.toLowerCase();
+            case 'supplier': return (po.supplier?.name || '').toLowerCase();
+            case 'order_date': return new Date(po.order_date).getTime() || 0;
+            case 'expected': return po.expected_delivery_date ? new Date(po.expected_delivery_date).getTime() : 0;
+            case 'invoice': return (po.invoice_number || '').toLowerCase();
+            case 'due_date': return po.payment_due_date ? new Date(po.payment_due_date).getTime() : 0;
+            case 'items': return po.items?.length || 0;
+            case 'total': return po.total_amount || 0;
+            case 'status': return (po.status || '').toLowerCase();
+            case 'payment': return (po.payment_status || 'Unpaid').toLowerCase();
+            default: return '';
+        }
+    };
+
+    const sortedPOs = useMemo(() => {
+        if (!sortConfig) return filteredPOs;
+        const dir = sortConfig.direction === 'asc' ? 1 : -1;
+        // Copy first — sort mutates, and filteredPOs is memoised upstream.
+        return [...filteredPOs].sort((a, b) => {
+            const av = sortValue(a, sortConfig.key);
+            const bv = sortValue(b, sortConfig.key);
+            if (av === bv) return 0;
+            return (av < bv ? -1 : 1) * dir;
+        });
+    }, [filteredPOs, sortConfig]);
+
+    // --- Column resizing ---
+    const PO_COLUMNS: Array<{ key: SortKey | 'actions'; label: string; align: 'left' | 'center' | 'right'; width: number; sortable: boolean }> = [
+        { key: 'po', label: 'PO #', align: 'left', width: 130, sortable: true },
+        { key: 'supplier', label: 'Supplier', align: 'left', width: 160, sortable: true },
+        { key: 'order_date', label: 'Date', align: 'left', width: 110, sortable: true },
+        { key: 'expected', label: 'Expected', align: 'left', width: 110, sortable: true },
+        { key: 'invoice', label: 'Invoice #', align: 'left', width: 130, sortable: true },
+        { key: 'due_date', label: 'Due Date', align: 'left', width: 110, sortable: true },
+        { key: 'items', label: 'Items', align: 'center', width: 80, sortable: true },
+        { key: 'total', label: 'Total', align: 'right', width: 110, sortable: true },
+        { key: 'status', label: 'Status', align: 'center', width: 120, sortable: true },
+        { key: 'payment', label: 'Payment', align: 'center', width: 140, sortable: true },
+        { key: 'actions', label: 'Actions', align: 'center', width: 120, sortable: false },
+    ];
+
+    const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+        try {
+            const saved = localStorage.getItem('po-col-widths');
+            if (saved) return JSON.parse(saved);
+        } catch { /* ignore malformed value */ }
+        return Object.fromEntries(PO_COLUMNS.map(c => [c.key, c.width]));
+    });
+
+    // Drag state lives in a ref: it changes on every mousemove and must not re-render.
+    const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+
+    const handleResizeStart = (e: React.MouseEvent, key: string) => {
+        e.preventDefault();
+        e.stopPropagation(); // don't trigger the header's sort click
+        resizingRef.current = { key, startX: e.clientX, startWidth: colWidths[key] ?? 120 };
+
+        const onMove = (ev: MouseEvent) => {
+            const r = resizingRef.current;
+            if (!r) return;
+            const next = Math.max(60, r.startWidth + (ev.clientX - r.startX));
+            setColWidths(prev => ({ ...prev, [r.key]: next }));
+        };
+        const onUp = () => {
+            resizingRef.current = null;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            setColWidths(prev => {
+                try { localStorage.setItem('po-col-widths', JSON.stringify(prev)); } catch { /* quota */ }
+                return prev;
+            });
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
+
     return (
         <div className="page-container fade-in">
             {/* Summary Stats */}
@@ -363,21 +455,51 @@ const PurchaseOrdersPage = () => {
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>PO #</th>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>Supplier</th>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>Expected</th>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>Invoice #</th>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>Due Date</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Items</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Payment</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
+                                {PO_COLUMNS.map(col => {
+                                    const isSorted = sortConfig?.key === col.key;
+                                    const width = colWidths[col.key] ?? col.width;
+                                    return (
+                                        <th
+                                            key={col.key}
+                                            onClick={col.sortable ? () => handleSort(col.key as SortKey) : undefined}
+                                            title={col.sortable ? 'Click to sort — drag the edge to resize' : undefined}
+                                            style={{
+                                                ...thStyle,
+                                                textAlign: col.align,
+                                                width: `${width}px`,
+                                                minWidth: `${width}px`,
+                                                position: 'relative',
+                                                cursor: col.sortable ? 'pointer' : 'default',
+                                                userSelect: 'none',
+                                                color: isSorted ? 'var(--color-primary)' : thStyle.color,
+                                            }}
+                                        >
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle' }}>
+                                                {col.label}
+                                                {col.sortable && (
+                                                    isSorted
+                                                        ? (sortConfig!.direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />)
+                                                        : <ChevronsUpDown size={13} style={{ opacity: 0.25 }} />
+                                                )}
+                                            </span>
+                                            {/* Grab handle straddling the column edge. mousedown stops
+                                                propagation so starting a drag doesn't also sort. */}
+                                            <span
+                                                onMouseDown={(e) => handleResizeStart(e, col.key)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{
+                                                    position: 'absolute', top: 0, right: 0, bottom: 0,
+                                                    width: '8px', transform: 'translateX(50%)',
+                                                    cursor: 'col-resize', zIndex: 2,
+                                                }}
+                                            />
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredPOs.map((po, idx) => {
+                            {sortedPOs.map((po, idx) => {
                                 const statusCfg = getStatusConfig(po.status);
                                 const payCfg = getPaymentConfig(po.payment_status || 'Unpaid');
                                 const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();

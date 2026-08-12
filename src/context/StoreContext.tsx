@@ -2,7 +2,8 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
-import type { 
+import { ALL_PERMISSIONS } from '../types';
+import type {
     Product, 
     CartItem, 
     Sale, 
@@ -1155,7 +1156,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
-    const addStock = async (productId: string, quantity: number, cost?: number, note?: string) => {
+    // `supplier` feeds the "Supplier / Customer" column in Stock Movements. Without it
+    // every stock-in row rendered as "-", since that column falls back to customer_name
+    // which is only set for sales-side movements.
+    const addStock = async (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => {
         setIsLoading(true);
         try {
             const id = generateUUID();
@@ -1201,6 +1205,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 quantity: quantity,
                 unit_price: cost || product.purchaseCost || 0,
                 source: note?.startsWith('Received from PO') ? 'Purchase Order' : 'Inventory Adjustment',
+                supplier: supplier || '',
                 note: note || '',
                 movement_date: getLocalYYYYMMDD(),
                 created_by: currentUser?.id
@@ -2529,18 +2534,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 })), ...prev]);
 
                 // Also log to stock_movements for Stock-In tracking
-                const stockMovements = restockRecords.map(r => ({
-                    product_id: r.product_id,
-                    product_name: restockItems.find(i => i.product_id === r.product_id)?.product_id || r.product_id,
-                    type: 'in',
-                    quantity: r.quantity,
-                    unit_price: 0,
-                    source: 'Customer Return',
-                    shipping_co: '', // Bulk order returns mixed shipping companies
-                    note: r.note,
-                    movement_date: getLocalYYYYMMDD(),
-                    created_by: currentUser?.id || 'unknown'
-                }));
+                const stockMovements = restockRecords.map(r => {
+                    // A bulk restock can merge the same product from several orders, so
+                    // list every contributing customer. Without this the movement showed
+                    // "-" in the Supplier / Customer column even though the note named them.
+                    const sourceOrders = [...(productOrderSources[r.product_id] || [])];
+                    const names = [...new Set(sourceOrders.map(id => orderCustomerMap[id]?.name).filter(Boolean))];
+                    const phones = [...new Set(sourceOrders.map(id => orderCustomerMap[id]?.phone).filter(Boolean))];
+                    return {
+                        product_id: r.product_id,
+                        product_name: restockItems.find(i => i.product_id === r.product_id)?.product_id || r.product_id,
+                        type: 'in',
+                        quantity: r.quantity,
+                        unit_price: 0,
+                        source: 'Customer Return',
+                        shipping_co: '', // Bulk order returns mixed shipping companies
+                        note: r.note,
+                        movement_date: getLocalYYYYMMDD(),
+                        created_by: currentUser?.id || 'unknown',
+                        customer_name: names.join(', '),
+                        customer_phone: phones.join(', ')
+                    };
+                });
 
                 // Fetch product names for the movements
                 const productIds = [...new Set(stockMovements.map(m => m.product_id))];
@@ -2794,11 +2809,36 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateRole = async (id: string, updates: Partial<Role>) => {
+        // The built-in Admin role is always full-access (hasPermission hardcodes it), so
+        // its permission list is display-only. Keep it truthful rather than let someone
+        // save a half-checked Admin role that still behaves as full access.
+        if (id === 'admin' && updates.permissions) {
+            updates = { ...updates, permissions: ALL_PERMISSIONS };
+        }
+        // Self-lockout guard: removing "Manage Users" from your own role would take away
+        // access to this very page, with no way back short of editing the database.
+        if (
+            updates.permissions &&
+            currentUser?.roleId === id &&
+            currentUser?.roleId !== 'admin' &&
+            !updates.permissions.includes('manage_users')
+        ) {
+            throw new Error('You cannot remove "Manage Users" from your own role — you would lock yourself out of this page.');
+        }
         const newRoles = (config.roles || []).map(r => r.id === id ? { ...r, ...updates } : r);
         await updateConfig({ ...config, roles: newRoles });
     };
 
     const deleteRole = async (id: string) => {
+        if (id === 'admin') {
+            throw new Error('The Admin role is protected and cannot be deleted.');
+        }
+        if (users.some(u => u.roleId === id)) {
+            throw new Error('This role is still assigned to one or more users. Reassign them before deleting it.');
+        }
+        if (currentUser?.roleId === id) {
+            throw new Error('You cannot delete the role you are currently signed in with.');
+        }
         const newRoles = (config.roles || []).filter(r => r.id !== id);
         await updateConfig({ ...config, roles: newRoles });
     };

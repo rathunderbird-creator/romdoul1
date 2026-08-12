@@ -167,7 +167,7 @@ export interface StoreContextType {
     updateProductOrder: (order: string[]) => void;
 
     // Restock Management
-    addStock: (productId: string, quantity: number, cost?: number, note?: string) => Promise<void>;
+    addStock: (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => Promise<void>;
     adjustStock: (productId: string, newStock: number, reason: string) => Promise<void>;
 
     // Customer Management
@@ -323,6 +323,16 @@ export type Permission =
     | 'manage_crm'
     | 'manage_procurement'
     | 'manage_accounting';
+
+// Canonical runtime list of every permission. Keep in sync with the Permission union
+// above. The `satisfies` check makes TypeScript flag any value that isn't a valid
+// Permission, so a typo here fails the build.
+export const ALL_PERMISSIONS = [
+    'view_dashboard', 'process_sales', 'manage_inventory', 'view_reports', 'manage_settings',
+    'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock',
+    'manage_income_expense', 'manage_attendance', 'manage_payroll', 'manage_hr', 'manage_crm',
+    'manage_procurement', 'manage_accounting',
+] satisfies Permission[];
 
 export interface Role {
     id: string;
