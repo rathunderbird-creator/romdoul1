@@ -1645,13 +1645,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
 
         if (updates.paymentStatus === 'Cancel') {
-            const currentShippingStatus = updates.shipping?.status || existingOrder?.shipping?.status;
-            if (currentShippingStatus !== 'Returned' && currentShippingStatus !== 'Cancelled') {
-                updates.shipping = { 
-                    ...(existingOrder?.shipping || {}), 
-                    ...(updates.shipping || {}), 
-                    status: 'Pending' 
-                } as any;
+            // Cancelling payment normally sends shipping back to 'Pending' so the order can
+            // be re-processed. But when the caller ALSO sets a shipping status (the
+            // Returned / Cancelled / ReStock transitions cancel payment as a side effect and
+            // pass their own status), respect that status instead of forcing 'Pending'.
+            // Without this, changing e.g. Shipped -> Returned flipped the order to Pending,
+            // because `existingOrder` is read from the not-yet-committed local state (still
+            // 'Shipped') and so failed the Returned/Cancelled check below.
+            if (!updates.shipping?.status) {
+                const currentShippingStatus = existingOrder?.shipping?.status;
+                if (currentShippingStatus !== 'Returned' && currentShippingStatus !== 'Cancelled' && currentShippingStatus !== 'ReStock') {
+                    updates.shipping = {
+                        ...(existingOrder?.shipping || {}),
+                        status: 'Pending'
+                    } as any;
+                }
             }
         } else if (updates.paymentStatus === 'Get File') {
             updates.shipping = { 

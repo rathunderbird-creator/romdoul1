@@ -2641,10 +2641,11 @@ const Orders: React.FC = () => {
                                             }
                                             updateOrderStatus(id, status);
                                             if (status === 'ReStock') {
-                                                updateOrder(id, { paymentStatus: 'Cancel' });
+                                                // Pass the shipping status so updateOrder doesn't reset it to Pending.
+                                                updateOrder(id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
                                                 restockOrder(id);
                                             } else if (status === 'Returned' || status === 'Cancelled') {
-                                                updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined });
+                                                updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined, shipping: { ...order.shipping, status } as any });
                                             }
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
@@ -3134,10 +3135,11 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 updateOrderStatus(order.id, newStatus as any);
                                                                                 if (newStatus === 'ReStock') {
-                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel' });
+                                                                                    // Pass the shipping status so updateOrder doesn't reset it to Pending.
+                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
                                                                                     restockOrder(order.id);
                                                                                 } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
-                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined });
+                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined, shipping: { ...order.shipping, status: newStatus } as any });
                                                                                 }
                                                                             }}
                                                                         />
