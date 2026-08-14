@@ -54,6 +54,11 @@ const ReceivingPage = lazy(() => import('./pages/procurement/ReceivingPage'));
 const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
+const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
+const AccountsReceivablePage = lazy(() => import('./pages/accounting/AccountsReceivablePage'));
+const WholesaleOrdersPage = lazy(() => import('./pages/accounting/WholesaleOrdersPage'));
+const WholesaleCustomersPage = lazy(() => import('./pages/accounting/WholesaleCustomersPage'));
+const WholesaleCustomerDetailsPage = lazy(() => import('./pages/accounting/WholesaleCustomerDetailsPage'));
 
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
@@ -114,6 +119,9 @@ const ProtectedApp = () => {
           <Route path="/orders/deleted" element={<ProtectedRoute requiredPermission="manage_orders"><DeletedOrders /></ProtectedRoute>} />
           <Route path="/orders/scammers" element={<ProtectedRoute requiredPermission="manage_orders"><Scammers /></ProtectedRoute>} />
           <Route path="/orders/:id" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrderDetailPage /></ProtectedRoute>} />
+          <Route path="/wholesale/orders" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleOrdersPage /></ProtectedRoute>} />
+          <Route path="/wholesale/customers" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomersPage /></ProtectedRoute>} />
+          <Route path="/wholesale/customers/:id" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomerDetailsPage /></ProtectedRoute>} />
 
           {/* These pages seem to be work in progress or not fully guarded in Sidebar yet, 
               but better protect them or hide them if not used. 
@@ -161,6 +169,8 @@ const ProtectedApp = () => {
 
           <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
+          <Route path="/accounting/payable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsPayablePage /></ProtectedRoute>} />
+          <Route path="/accounting/receivable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsReceivablePage /></ProtectedRoute>} />
           <Route path="/accounting/payments" element={<ProtectedRoute requiredPermission="manage_accounting"><PaymentsPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

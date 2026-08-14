@@ -443,6 +443,61 @@ export interface SupplierPayment {
 }
 
 // ==========================================
+// Wholesale Orders (customer credit sales) — mirror of Purchase Orders
+// ==========================================
+export interface WholesaleOrderItem {
+    id?: string;
+    wholesale_order_id?: string;
+    product_id: string;
+    product_name?: string;
+    quantity: number;
+    unit_price: number;
+    created_at?: string;
+}
+
+export interface CustomerPayment {
+    id: string;
+    wholesale_order_id: string;
+    amount: number;
+    payment_date: string;
+    payment_method?: string;
+    notes?: string;
+    created_at?: string;
+}
+
+export interface WholesaleCustomer {
+    id: string;
+    name: string;
+    contact_name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    note?: string;
+    is_active: boolean;
+    created_at?: string;
+}
+
+export interface WholesaleOrder {
+    id: string;
+    invoice_number?: string;
+    customer_name: string;
+    customer_phone?: string;
+    warehouse_id?: string;
+    order_date: string;
+    due_date?: string;
+    status: 'Open' | 'Cancelled';
+    total_amount: number;
+    amount_paid?: number;
+    payment_status?: 'Unpaid' | 'Partial' | 'Paid';
+    notes?: string;
+    created_by?: string;
+    created_at?: string;
+    // Joined for UI
+    items?: WholesaleOrderItem[];
+    payments?: CustomerPayment[];
+}
+
+// ==========================================
 // ERP: HR & Payroll Types
 // ==========================================
 export interface Employee {

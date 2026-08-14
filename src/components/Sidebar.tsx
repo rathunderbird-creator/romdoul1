@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -73,6 +73,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
         });
     }
 
+    if (hasPermission('manage_orders')) {
+        navItems.push({
+            icon: Store,
+            label: 'Wholesale',
+            path: '/wholesale',
+            subItems: [
+                { label: 'Wholesale Orders', path: '/wholesale/orders', icon: ShoppingCart },
+                { label: 'Customers', path: '/wholesale/customers', icon: Users }
+            ]
+        });
+    }
+
     if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
         navItems.push({
             icon: Package,
@@ -86,6 +98,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             ]
         });
     }
+
+    if (hasPermission('manage_accounting')) {
+        navItems.push({
+            icon: Calculator,
+            label: 'Accounting',
+            path: '/accounting',
+            subItems: [
+                { label: 'Chart of Accounts', path: '/accounting/chart-of-accounts', icon: Network },
+                { label: 'Journal Entries', path: '/accounting/journal-entries', icon: BookOpen },
+                { label: 'Accounts Payable', path: '/accounting/payable', icon: Wallet },
+                { label: 'Accounts Receivable', path: '/accounting/receivable', icon: HandCoins },
+                { label: 'Payments', path: '/accounting/payments', icon: CreditCard }
+            ]
+        });
+    }
+
     if (hasPermission('manage_hr') || hasPermission('manage_attendance')) {
         navItems.push({
             icon: Briefcase,
@@ -109,21 +137,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: 'Leads', path: '/crm/leads', icon: UserPlus },
                 { label: 'Interactions', path: '/crm/interactions', icon: MessageSquare },
                 { label: 'Quotations', path: '/crm/quotations', icon: FileText }
-            ]
-        });
-    }
-
-
-
-    if (hasPermission('manage_accounting')) {
-        navItems.push({
-            icon: Calculator,
-            label: 'Accounting',
-            path: '/accounting',
-            subItems: [
-                { label: 'Chart of Accounts', path: '/accounting/chart-of-accounts', icon: Network },
-                { label: 'Journal Entries', path: '/accounting/journal-entries', icon: BookOpen },
-                { label: 'Payments', path: '/accounting/payments', icon: CreditCard }
             ]
         });
     }
