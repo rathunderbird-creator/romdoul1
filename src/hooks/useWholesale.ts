@@ -95,7 +95,7 @@ export const useWholesale = () => {
 
             // Log a stock-out movement per line so the sale shows in Stock Movements.
             const localDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
-            const movements = items
+            const baseMovements = items
                 .filter(i => i.product_id && i.quantity)
                 .map(i => ({
                     product_id: i.product_id,
@@ -106,16 +106,26 @@ export const useWholesale = () => {
                     source: 'Wholesale Order',
                     reason: 'Wholesale Sale',
                     reference_id: orderId,
-                    warehouse_id: order.warehouse_id || null,
                     customer_name: order.customer_name || '',
                     customer_phone: order.customer_phone || '',
                     note: `Wholesale ${order.invoice_number || 'WO-' + orderId.slice(0, 8)}`,
                     movement_date: localDate,
                     created_by: createdBy || 'System'
                 }));
-            if (movements.length > 0) {
-                const { error: mErr } = await supabase.from('stock_movements').insert(movements);
-                if (mErr) console.error('Failed to log wholesale stock-out movements:', mErr);
+            if (baseMovements.length > 0) {
+                // Try with warehouse_id first; the column only exists after the
+                // add_warehouse_to_stock_movements migration. If the insert is
+                // rejected (e.g. column missing), retry without it so the
+                // movement is still logged.
+                const withWarehouse = baseMovements.map(m => ({ ...m, warehouse_id: order.warehouse_id || null }));
+                let { error: mErr } = await supabase.from('stock_movements').insert(withWarehouse);
+                if (mErr) {
+                    ({ error: mErr } = await supabase.from('stock_movements').insert(baseMovements));
+                }
+                if (mErr) {
+                    console.error('Failed to log wholesale stock-out movements:', mErr);
+                    showToast('Order saved, but logging to Stock Movements failed: ' + mErr.message, 'error');
+                }
             }
 
             showToast('Wholesale order created', 'success');
