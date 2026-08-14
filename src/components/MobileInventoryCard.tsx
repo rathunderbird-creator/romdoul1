@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Edit2, Trash2, AlertTriangle, ChevronDown, Truck } from 'lucide-react';
 import type { Product } from '../types';
 import './MobileInventoryCard.css';
 import LazyAvatar from './LazyAvatar';
@@ -12,6 +12,7 @@ interface MobileInventoryCardProps {
     onToggleExpand: () => void;
     onEdit: (product: Product) => void;
     onDelete: (id: string) => void;
+    onWholesale?: (product: Product) => void;
 }
 
 const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
@@ -21,7 +22,8 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
     isExpanded,
     onToggleExpand,
     onEdit,
-    onDelete
+    onDelete,
+    onWholesale
 }) => {
     const isLowStock = product.stock < (product.lowStockThreshold || 5);
 
@@ -113,6 +115,18 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                         >
                             <Trash2 size={18} />
                         </button>
+                        {onWholesale && (
+                            <button
+                                className="mic-action-btn primary"
+                                style={{ backgroundColor: '#3B82F6', borderColor: '#3B82F6' }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onWholesale(product);
+                                }}
+                            >
+                                <Truck size={18} />
+                            </button>
+                        )}
                         <button
                             className="mic-action-btn primary"
                             onClick={(e) => {

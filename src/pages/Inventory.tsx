@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Filter, Download } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Filter, Download, Truck, CheckCircle2, User, CreditCard } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -25,6 +25,7 @@ import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { useWholesale } from '../hooks/useWholesale';
 import MobileInventoryCard from '../components/MobileInventoryCard';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
@@ -145,10 +146,15 @@ const InlineEditCell = ({
 const PIE_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4'];
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock, addOnlineOrder } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+    const { customers: wholesaleCustomers, fetchCustomers: fetchWholesaleCustomers } = useWholesale();
+
+    React.useEffect(() => {
+        fetchWholesaleCustomers();
+    }, [fetchWholesaleCustomers]);
 
     // Permission Logic
     const restrictedRoles = ['store_manager', 'salesman', 'customer_care'];
@@ -188,6 +194,18 @@ const Inventory: React.FC = () => {
     const handleImageLeave = React.useCallback(() => {
         setHoverPreview(null);
     }, []);
+
+    // Wholesale State
+    const [wholesaleProduct, setWholesaleProduct] = useState<Product | null>(null);
+    const [wholesaleCustomer, setWholesaleCustomer] = useState('');
+    const [wholesalePhone, setWholesalePhone] = useState('');
+    const [wholesaleQuantity, setWholesaleQuantity] = useState<number | string>(1);
+    const [wholesalePrice, setWholesalePrice] = useState<number | string>('');
+    const [wholesalePaymentMethod, setWholesalePaymentMethod] = useState('Cash');
+    const [wholesalePaymentStatus, setWholesalePaymentStatus] = useState('Paid');
+    const [wholesaleShippingStatus, setWholesaleShippingStatus] = useState('Delivered');
+    const [wholesaleRemark, setWholesaleRemark] = useState('');
+    const [isWholesaleSubmitting, setIsWholesaleSubmitting] = useState(false);
 
     // Add Stock State
     const [addStockProduct, setAddStockProduct] = useState<Product | null>(null);
@@ -275,6 +293,83 @@ const Inventory: React.FC = () => {
             setIsStockSubmitting(false);
         }
     };
+
+    const confirmWholesaleOrder = async () => {
+        if (isWholesaleSubmitting || !wholesaleProduct) return;
+        const qty = validateStockQty(wholesaleQuantity);
+        if (qty === null) return;
+        
+        const price = Number(wholesalePrice);
+        if (isNaN(price) || price < 0) {
+            showToast('Price must be a valid non-negative number', 'error');
+            return;
+        }
+        
+        if (!wholesaleCustomer.trim()) {
+            showToast('Customer name is required', 'error');
+            return;
+        }
+
+        setIsWholesaleSubmitting(true);
+        try {
+            const sale = {
+                customer: {
+                    name: wholesaleCustomer,
+                    phone: wholesalePhone,
+                    address: '',
+                    city: '',
+                    page: '',
+                    platform: ''
+                },
+                items: [{
+                    id: wholesaleProduct.id,
+                    name: wholesaleProduct.name,
+                    price: price,
+                    quantity: qty,
+                    stock: wholesaleProduct.stock
+                }],
+                total: price * qty,
+                amountReceived: wholesalePaymentStatus === 'Paid' ? price * qty : 0,
+                paymentMethod: wholesalePaymentMethod as any,
+                paymentStatus: wholesalePaymentStatus as any,
+                shipping: {
+                    company: '', 
+                    trackingNumber: '',
+                    status: wholesaleShippingStatus as any
+                },
+                salesman: currentUser?.name || 'System',
+                customerCare: '',
+                remark: wholesaleRemark,
+                pageSource: '',
+                settleDate: wholesalePaymentStatus === 'Paid' ? new Date().toISOString() : null,
+                lastEditedAt: null
+            };
+
+            await addOnlineOrder(sale);
+            showToast(`Wholesale order created for ${qty}x ${wholesaleProduct.name}`, 'success');
+            setWholesaleProduct(null);
+            
+            setRecentlyUpdatedId(wholesaleProduct.id);
+            setTimeout(() => setRecentlyUpdatedId(null), 2000);
+        } catch (err) {
+            showToast('Failed to create wholesale order: ' + (err instanceof Error ? err.message : 'unknown error'), 'error');
+        } finally {
+            setIsWholesaleSubmitting(false);
+        }
+    };
+
+    const openWholesaleModal = (product: Product) => {
+        setWholesaleProduct(product);
+        setWholesaleCustomer('');
+        setWholesalePhone('');
+        setWholesaleQuantity(1);
+        setWholesalePrice(product.price);
+        setWholesalePaymentMethod('Cash');
+        setWholesalePaymentStatus('Paid');
+        setWholesaleShippingStatus('Delivered');
+        setWholesaleRemark('Wholesale');
+    };
+
     const [recentlyUpdatedId, setRecentlyUpdatedId] = useState<string | null>(null);
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -881,6 +976,7 @@ const Inventory: React.FC = () => {
                                 onToggleExpand={() => toggleProductExpansion(product.id)}
                                 onEdit={openEditModal}
                                 onDelete={promptDelete}
+                                onWholesale={openWholesaleModal}
                             />
                         ))}
                         {paginatedProducts.length === 0 && (
@@ -1012,6 +1108,9 @@ const Inventory: React.FC = () => {
                                                 </button>
                                                 <button onClick={() => setAdjustStockProduct(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">
                                                     <Layers size={14} />
+                                                </button>
+                                                <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title="Wholesale Order">
+                                                    <Truck size={14} />
                                                 </button>
                                                 <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title="Edit Product">
                                                     <Edit2 size={14} />
@@ -1396,6 +1495,207 @@ const Inventory: React.FC = () => {
                                 >
                                     {isStockSubmitting ? 'Adjusting…' : 'Confirm Adjustment'}
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Wholesale Modal */}
+            {
+                wholesaleProduct && (
+                    <div style={{
+                        position: 'fixed', inset: 0, zIndex: 9999,
+                        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+                    }}>
+                        <div style={{
+                            background: '#ffffff',
+                            borderRadius: '24px',
+                            width: '100%',
+                            maxWidth: '740px',
+                            maxHeight: '92vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
+                            overflow: 'hidden',
+                            animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}>
+                            {/* Modal Header */}
+                            <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(59,130,246,0.04), rgba(37,99,235,0.04))' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                        <Truck size={20} />
+                                    </div>
+                                    <div>
+                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
+                                            New Wholesale Order
+                                        </h2>
+                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{wholesaleProduct.name} - Current Stock: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{wholesaleProduct.stock}</span></p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setWholesaleProduct(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                
+                                {/* Section: Customer Information */}
+                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        <User size={15} /> Customer Information
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Customer Name *</label>
+                                            <select
+                                                className="input-field"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                value={wholesaleCustomer}
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    setWholesaleCustomer(val);
+                                                    const customer = wholesaleCustomers.find(c => c.name === val);
+                                                    if (customer && customer.phone) {
+                                                        setWholesalePhone(customer.phone);
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">Select a customer...</option>
+                                                {wholesaleCustomers.map(c => (
+                                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Customer Phone</label>
+                                            <input
+                                                className="input-field"
+                                                type="text"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                placeholder="e.g. 012345678"
+                                                value={wholesalePhone}
+                                                onChange={e => setWholesalePhone(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: Order Details */}
+                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        <Package size={15} /> Order Details
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Quantity</label>
+                                            <input
+                                                className="input-field"
+                                                type="number"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                placeholder="e.g. 50"
+                                                value={wholesaleQuantity}
+                                                onChange={e => setWholesaleQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Unit Price ($)</label>
+                                            <input
+                                                className="input-field"
+                                                type="number"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                placeholder="0.00"
+                                                value={wholesalePrice}
+                                                onChange={e => setWholesalePrice(e.target.value === '' ? '' : Number(e.target.value))}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: Payment & Shipping */}
+                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        <CreditCard size={15} /> Payment & Shipping
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Method</label>
+                                            <select
+                                                className="input-field"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                value={wholesalePaymentMethod}
+                                                onChange={e => setWholesalePaymentMethod(e.target.value)}
+                                            >
+                                                <option value="Cash">Cash</option>
+                                                <option value="QR">QR</option>
+                                                <option value="Bank Transfer">Bank Transfer</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Status</label>
+                                            <select
+                                                className="input-field"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                value={wholesalePaymentStatus}
+                                                onChange={e => setWholesalePaymentStatus(e.target.value)}
+                                            >
+                                                <option value="Paid">Paid</option>
+                                                <option value="Unpaid">Unpaid</option>
+                                                <option value="Partially Paid">Partially Paid</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Status</label>
+                                            <select
+                                                className="input-field"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                value={wholesaleShippingStatus}
+                                                onChange={e => setWholesaleShippingStatus(e.target.value)}
+                                            >
+                                                <option value="Delivered">Delivered</option>
+                                                <option value="Shipped">Shipped</option>
+                                                <option value="Confirmed">Confirmed</option>
+                                                <option value="Drafted">Drafted</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Remark</label>
+                                            <input
+                                                className="input-field"
+                                                type="text"
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                placeholder="e.g. Wholesale"
+                                                value={wholesaleRemark}
+                                                onChange={e => setWholesaleRemark(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(59,130,246,0.03), rgba(37,99,235,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total</span>
+                                    <span style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>
+                                        ${wholesaleQuantity !== '' && wholesalePrice !== '' ? (Number(wholesaleQuantity) * Number(wholesalePrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button className="secondary-button" onClick={() => setWholesaleProduct(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px' }}>Cancel</button>
+                                    <button
+                                        onClick={confirmWholesaleOrder}
+                                        className="primary-button"
+                                        style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', cursor: isWholesaleSubmitting ? 'not-allowed' : 'pointer' }}
+                                        disabled={!wholesaleCustomer.trim() || wholesaleQuantity === '' || Number(wholesaleQuantity) <= 0 || isWholesaleSubmitting}
+                                    >
+                                        <CheckCircle2 size={16} /> {isWholesaleSubmitting ? 'Submitting…' : 'Create Order'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
