@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useToast } from '../../context/ToastContext';
+import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 
 const formatCurrency = (amount: number) => {
@@ -38,6 +39,27 @@ const PurchaseOrdersPage = () => {
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment } = useProcurement();
     const [receivingId, setReceivingId] = useState<string | null>(null);
     const receivingRef = useRef<Set<string>>(new Set());
+
+    // View-details modal
+    const [viewPO, setViewPO] = useState<any | null>(null);
+    const [viewPayments, setViewPayments] = useState<any[]>([]);
+    const [viewPaymentsLoading, setViewPaymentsLoading] = useState(false);
+
+    const handleViewPO = async (po: any) => {
+        setViewPO(po);
+        setViewPayments([]);
+        setViewPaymentsLoading(true);
+        try {
+            const { data } = await supabase
+                .from('supplier_payments')
+                .select('*')
+                .eq('purchase_order_id', po.id)
+                .order('payment_date', { ascending: false });
+            setViewPayments(data || []);
+        } finally {
+            setViewPaymentsLoading(false);
+        }
+    };
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -594,6 +616,13 @@ const PurchaseOrdersPage = () => {
                                         </td>
                                         <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button
+                                                    onClick={() => handleViewPO(po)}
+                                                    style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
+                                                    title="View Details"
+                                                >
+                                                    <Eye size={15} />
+                                                </button>
                                                 {po.status !== 'Received' && po.status !== 'Cancelled' && (
                                                     <button
                                                         onClick={() => handleReceivePO(po)}
@@ -839,6 +868,122 @@ const PurchaseOrdersPage = () => {
                 </div>
             )}
             
+            {/* View Details Modal */}
+            {viewPO && (() => {
+                const statusCfg = getStatusConfig(viewPO.status);
+                const payCfg = getPaymentConfig(viewPO.payment_status || 'Unpaid');
+                const paid = Number(viewPO.amount_paid) || 0;
+                const balance = (Number(viewPO.total_amount) || 0) - paid;
+                const isOverdue = viewPO.payment_status !== 'Paid' && viewPO.payment_due_date && new Date(viewPO.payment_due_date) < new Date();
+                return (
+                    <div
+                        onClick={() => setViewPO(null)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+                    >
+                        <div onClick={(e) => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: '24px', width: '100%', maxWidth: '760px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                            {/* Header */}
+                            <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                        <FileText size={20} />
+                                    </div>
+                                    <div>
+                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, fontFamily: 'monospace' }}>PO-{viewPO.id.substring(0, 8).toUpperCase()}</h2>
+                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{viewPO.supplier?.name || 'Unknown supplier'}</p>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: statusCfg.bg, color: statusCfg.color }}>{viewPO.status}</span>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: payCfg.bg, color: payCfg.color }}>{viewPO.payment_status || 'Unpaid'}</span>
+                                    <button onClick={() => setViewPO(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Body */}
+                            <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {/* Info grid */}
+                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
+                                    <DetailItem label="Order Date" value={viewPO.order_date ? new Date(viewPO.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <DetailItem label="Expected Delivery" value={viewPO.expected_delivery_date ? new Date(viewPO.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <DetailItem label="Payment Due" value={viewPO.payment_due_date ? new Date(viewPO.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} valueColor={isOverdue ? '#ef4444' : undefined} />
+                                    <DetailItem label="Invoice No" value={viewPO.invoice_number || '—'} mono={!!viewPO.invoice_number} />
+                                    {viewPO.notes && <DetailItem label="Notes" value={viewPO.notes} span />}
+                                </div>
+
+                                {/* Line items */}
+                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        <Package size={15} /> Line Items
+                                        <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPO.items?.length || 0}</span>
+                                    </h4>
+                                    <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: '#ffffff' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                            <thead>
+                                                <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
+                                                    <th style={viewTh('36px', 'center')}>#</th>
+                                                    <th style={viewTh(undefined, 'left')}>Product</th>
+                                                    <th style={viewTh('80px', 'right')}>Qty</th>
+                                                    <th style={viewTh('110px', 'right')}>Unit Cost</th>
+                                                    <th style={viewTh('110px', 'right')}>Subtotal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(viewPO.items || []).map((item: any, idx: number) => (
+                                                    <tr key={item.id || idx} style={{ borderTop: idx > 0 ? '1px solid var(--color-border)' : undefined, background: idx % 2 === 1 ? 'rgba(0,0,0,0.01)' : undefined }}>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{idx + 1}</td>
+                                                        <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500 }}>{item.product?.name || '—'}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>{item.quantity}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px' }}>{formatCurrency(item.unit_price || 0)}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>{formatCurrency((item.quantity || 0) * (item.unit_price || 0))}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Payments */}
+                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        <DollarSign size={15} /> Payment History
+                                        <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPayments.length}</span>
+                                    </h4>
+                                    {viewPaymentsLoading ? (
+                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Loading payments…</div>
+                                    ) : viewPayments.length === 0 ? (
+                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No payments recorded yet.</div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {viewPayments.map((p: any) => (
+                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                    <div>
+                                                        <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method, p.notes].filter(Boolean).join(' · ') || '—'}</div>
+                                                    </div>
+                                                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{formatCurrency(Number(p.amount) || 0)}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total </span><span style={{ fontSize: '18px', fontWeight: 800 }}>{formatCurrency(viewPO.total_amount || 0)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Paid </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{formatCurrency(paid)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Balance </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{formatCurrency(balance)}</span></div>
+                                </div>
+                                <button className="secondary-button" onClick={() => setViewPO(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Close</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Payment Modal */}
             {isPaymentModalOpen && (
                 <div style={{
@@ -958,5 +1103,18 @@ const PurchaseOrdersPage = () => {
         </div>
     );
 };
+
+// Helpers for the View Details modal
+const DetailItem: React.FC<{ label: string; value: React.ReactNode; valueColor?: string; mono?: boolean; span?: boolean }> = ({ label, value, valueColor, mono, span }) => (
+    <div style={span ? { gridColumn: '1 / -1' } : undefined}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>{label}</div>
+        <div style={{ fontSize: '13px', fontWeight: 500, color: valueColor || 'var(--color-text)', fontFamily: mono ? 'monospace' : undefined }}>{value}</div>
+    </div>
+);
+
+const viewTh = (width?: string, align: 'left' | 'right' | 'center' = 'left'): React.CSSProperties => ({
+    padding: '10px 12px', textAlign: align, fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)',
+    textTransform: 'uppercase', letterSpacing: '0.5px', width, borderBottom: '1px solid var(--color-border)'
+});
 
 export default PurchaseOrdersPage;

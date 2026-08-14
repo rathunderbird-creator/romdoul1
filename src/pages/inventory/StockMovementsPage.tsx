@@ -60,11 +60,12 @@ const StockMovementsPage: React.FC = () => {
         return localStorage.getItem('stock_movements_warehouseFilter') || 'all';
     });
     
-    // Sorting state
-    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(() => {
-        const saved = localStorage.getItem('stock_movements_sortConfig');
-        return saved ? JSON.parse(saved) : { key: 'movement_date', direction: 'desc' };
-    });
+    // Sorting state. Always open newest-first — a persisted sort (e.g. an old
+    // ascending click restored from localStorage) buried the latest entries.
+    // Column sorting still works for the current visit.
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(
+        { key: 'movement_date', direction: 'desc' }
+    );
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -77,9 +78,8 @@ const StockMovementsPage: React.FC = () => {
         localStorage.setItem('stock_movements_searchTerm', searchTerm);
         localStorage.setItem('stock_movements_typeFilter', typeFilter);
         localStorage.setItem('stock_movements_warehouseFilter', warehouseFilter);
-        localStorage.setItem('stock_movements_sortConfig', JSON.stringify(sortConfig));
         localStorage.setItem('stock_movements_itemsPerPage', itemsPerPage.toString());
-    }, [dateRange, searchTerm, typeFilter, warehouseFilter, sortConfig, itemsPerPage]);
+    }, [dateRange, searchTerm, typeFilter, warehouseFilter, itemsPerPage]);
 
     useEffect(() => {
         setHeaderContent({
@@ -154,8 +154,14 @@ const StockMovementsPage: React.FC = () => {
                 let bValue: any = b[sortConfig.key as keyof StockMovement];
                 
                 if (sortConfig.key === 'movement_date') {
-                    aValue = new Date(a.movement_date || a.created_at).getTime();
-                    bValue = new Date(b.movement_date || b.created_at).getTime();
+                    // movement_date is a plain date, so entries from the same day tie —
+                    // break the tie with created_at so the latest transaction stays on top.
+                    const aDay = new Date(a.movement_date || a.created_at).getTime();
+                    const bDay = new Date(b.movement_date || b.created_at).getTime();
+                    if (aDay !== bDay) return sortConfig.direction === 'asc' ? aDay - bDay : bDay - aDay;
+                    const aCreated = new Date(a.created_at).getTime();
+                    const bCreated = new Date(b.created_at).getTime();
+                    return sortConfig.direction === 'asc' ? aCreated - bCreated : bCreated - aCreated;
                 } else if (sortConfig.key === 'source') {
                     aValue = a.type === 'in' ? a.source : a.reason;
                     bValue = b.type === 'in' ? b.source : b.reason;

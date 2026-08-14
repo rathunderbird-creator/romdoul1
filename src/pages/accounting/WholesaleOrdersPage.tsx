@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2, Eye } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -44,6 +44,9 @@ const WholesaleOrdersPage: React.FC = () => {
     const [payMethod, setPayMethod] = useState('Bank Transfer');
     const [payNote, setPayNote] = useState('');
     const [payDate, setPayDate] = useState(today());
+
+    // View-details modal
+    const [viewOrder, setViewOrder] = useState<WholesaleOrder | null>(null);
 
     useEffect(() => {
         setHeaderContent({
@@ -207,6 +210,9 @@ const WholesaleOrdersPage: React.FC = () => {
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button onClick={() => setViewOrder(o)} title="View Details" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <Eye size={15} />
+                                                </button>
                                                 {o.status !== 'Cancelled' && balance > 0.005 && (
                                                     <button onClick={() => openPay(o)} title="Record Payment" style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <DollarSign size={15} />
@@ -377,6 +383,126 @@ const WholesaleOrdersPage: React.FC = () => {
                 </div>
             )}
 
+            {/* View Details modal */}
+            {viewOrder && (() => {
+                const paid = viewOrder.amount_paid || 0;
+                const balance = (viewOrder.total_amount || 0) - paid;
+                const pc = payConfig(viewOrder.payment_status);
+                const whName = warehouses.find(w => w.id === viewOrder.warehouse_id)?.name || '—';
+                const payments = [...(viewOrder.payments || [])].sort((a, b) => (b.payment_date || '').localeCompare(a.payment_date || ''));
+                return (
+                    <div style={modalOverlay} onClick={() => setViewOrder(null)}>
+                        <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: '24px', width: '100%', maxWidth: '760px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                            {/* Header */}
+                            <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05))' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                        <ShoppingCart size={20} />
+                                    </div>
+                                    <div>
+                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, fontFamily: 'monospace' }}>{viewOrder.invoice_number || `WO-${viewOrder.id.slice(0, 8).toUpperCase()}`}</h2>
+                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{viewOrder.customer_name}{viewOrder.customer_phone ? ` · ${viewOrder.customer_phone}` : ''}</p>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: pc.bg, color: pc.color }}>{viewOrder.payment_status || 'Unpaid'}</span>
+                                    {viewOrder.status === 'Cancelled' && (
+                                        <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: 'rgba(107,114,128,0.1)', color: '#6B7280' }}>Cancelled</span>
+                                    )}
+                                    <button onClick={() => setViewOrder(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Body */}
+                            <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {/* Info grid */}
+                                <div style={{ ...sectionCard, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
+                                    <WDetail label="Order Date" value={viewOrder.order_date ? new Date(viewOrder.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <WDetail label="Due Date" value={viewOrder.due_date ? new Date(viewOrder.due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <WDetail label="From Warehouse" value={whName} />
+                                    <WDetail label="Created By" value={viewOrder.created_by || '—'} />
+                                    {viewOrder.notes && <WDetail label="Notes" value={viewOrder.notes} span />}
+                                </div>
+
+                                {/* Line items */}
+                                <div style={sectionCard}>
+                                    <h4 style={{ ...sectionHeading, marginBottom: '14px' }}>
+                                        <Package size={15} /> Line Items
+                                        <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewOrder.items?.length || 0}</span>
+                                    </h4>
+                                    <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                            <thead>
+                                                <tr style={{ background: 'var(--color-bg)' }}>
+                                                    <th style={liTh(36)}>#</th>
+                                                    <th style={{ ...liTh(), textAlign: 'left' }}>Product</th>
+                                                    <th style={{ ...liTh(80), textAlign: 'right' }}>Qty</th>
+                                                    <th style={{ ...liTh(110), textAlign: 'right' }}>Unit Price</th>
+                                                    <th style={{ ...liTh(110), textAlign: 'right' }}>Subtotal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(viewOrder.items || []).map((item, idx) => (
+                                                    <tr key={item.id || idx} style={{ borderTop: idx > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{idx + 1}</td>
+                                                        <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500 }}>{item.product_name || '—'}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>{item.quantity}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px' }}>{fmt(item.unit_price || 0)}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>{fmt((item.quantity || 0) * (item.unit_price || 0))}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Payments */}
+                                <div style={sectionCard}>
+                                    <h4 style={{ ...sectionHeading, marginBottom: '14px' }}>
+                                        <DollarSign size={15} /> Payment History
+                                        <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{payments.length}</span>
+                                    </h4>
+                                    {payments.length === 0 ? (
+                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No payments recorded yet.</div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {payments.map(p => (
+                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                    <div>
+                                                        <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method, p.notes].filter(Boolean).join(' · ') || '—'}</div>
+                                                    </div>
+                                                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{fmt(Number(p.amount) || 0)}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total </span><span style={{ fontSize: '18px', fontWeight: 800 }}>{fmt(viewOrder.total_amount || 0)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Paid </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{fmt(paid)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Balance </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{fmt(balance)}</span></div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    {viewOrder.status !== 'Cancelled' && balance > 0.005 && (
+                                        <button className="primary-button" onClick={() => { const o = viewOrder; setViewOrder(null); openPay(o); }} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <DollarSign size={16} /> Record Payment
+                                        </button>
+                                    )}
+                                    <button className="secondary-button" onClick={() => setViewOrder(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Payment modal — styled like the Purchase Order payment popup */}
             {payOrder && (() => {
                 const remaining = (payOrder.total_amount || 0) - (payOrder.amount_paid || 0);
@@ -485,5 +611,13 @@ const sectionHeading: React.CSSProperties = { fontSize: '13px', fontWeight: 700,
 const fieldLabel: React.CSSProperties = { display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' };
 const fieldInput: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', boxSizing: 'border-box' };
 const liTh = (width?: number): React.CSSProperties => ({ padding: '10px 12px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', width: width ? `${width}px` : undefined, borderBottom: '1px solid var(--color-border)' });
+
+// Small labelled value for the View Details modal.
+const WDetail: React.FC<{ label: string; value: React.ReactNode; span?: boolean }> = ({ label, value, span }) => (
+    <div style={span ? { gridColumn: '1 / -1' } : undefined}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>{label}</div>
+        <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>{value}</div>
+    </div>
+);
 
 export default WholesaleOrdersPage;
