@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
+import { useToast } from '../../context/ToastContext';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 
 const formatCurrency = (amount: number) => {
@@ -32,8 +33,11 @@ type PaymentFilter = 'All' | 'Unpaid' | 'Partial' | 'Paid';
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { products } = useStore();
+    const { products, addStock } = useStore();
+    const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment } = useProcurement();
+    const [receivingId, setReceivingId] = useState<string | null>(null);
+    const receivingRef = useRef<Set<string>>(new Set());
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -138,6 +142,31 @@ const PurchaseOrdersPage = () => {
     const handleDeletePO = async (id: string) => {
         if (window.confirm('Are you sure you want to delete this purchase order?')) {
             await deletePurchaseOrder(id);
+        }
+    };
+
+    // Receive a PO straight from the table: add each item to stock and mark it Received.
+    const handleReceivePO = async (po: any) => {
+        if (receivingRef.current.has(po.id)) return;
+        if (!window.confirm(`Receive PO-${po.id.substring(0, 8).toUpperCase()} into stock?`)) return;
+        receivingRef.current.add(po.id);
+        setReceivingId(po.id);
+        try {
+            if (po.items && po.items.length > 0) {
+                for (const item of po.items) {
+                    if (item.product_id) {
+                        await addStock(item.product_id, item.quantity, item.unit_price, `Received from PO-${po.id.substring(0, 8)}`, po.supplier?.name || '');
+                    }
+                }
+            }
+            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || []);
+            showToast(`PO-${po.id.substring(0, 8).toUpperCase()} received into stock`, 'success');
+            fetchPurchaseOrders(true);
+        } catch (error: any) {
+            showToast('Error receiving PO: ' + (error?.message || ''), 'error');
+        } finally {
+            receivingRef.current.delete(po.id);
+            setReceivingId(null);
         }
     };
 
@@ -565,8 +594,18 @@ const PurchaseOrdersPage = () => {
                                         </td>
                                         <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                {po.status !== 'Received' && po.status !== 'Cancelled' && (
+                                                    <button
+                                                        onClick={() => handleReceivePO(po)}
+                                                        disabled={receivingId === po.id}
+                                                        style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: receivingId === po.id ? 'not-allowed' : 'pointer', color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s', opacity: receivingId === po.id ? 0.6 : 1 }}
+                                                        title="Receive into stock"
+                                                    >
+                                                        <PackageCheck size={15} />
+                                                    </button>
+                                                )}
                                                 {po.payment_status !== 'Paid' && (
-                                                    <button 
+                                                    <button
                                                         onClick={() => handleOpenPaymentModal(po)}
                                                         style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
                                                         title="Record Payment"
