@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye, RefreshCw, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -44,6 +44,41 @@ const PurchaseOrdersPage = () => {
     const [viewPO, setViewPO] = useState<any | null>(null);
     const [viewPayments, setViewPayments] = useState<any[]>([]);
     const [viewPaymentsLoading, setViewPaymentsLoading] = useState(false);
+
+    // Copy a formatted text summary of the PO to the clipboard (for chat/Telegram).
+    const handleCopyPO = async (po: any) => {
+        const d = (v?: string) => (v ? new Date(v).toLocaleDateString('en-GB').replace(/\//g, '-') : '-');
+        const paid = Number(po.amount_paid) || 0;
+        const balance = (Number(po.total_amount) || 0) - paid;
+        const lines: string[] = [
+            '📦 Purchase Order',
+            '',
+            `#️⃣ PO No: PO-${po.id.substring(0, 8).toUpperCase()}`,
+            `🏢 Supplier: ${po.supplier?.name || '-'}`,
+        ];
+        if (po.invoice_number) lines.push(`📄 Invoice: ${po.invoice_number}`);
+        lines.push(`📅 Order Date: ${d(po.order_date)}`);
+        if (po.expected_delivery_date) lines.push(`🚚 Expected: ${d(po.expected_delivery_date)}`);
+        if (po.payment_due_date) lines.push(`⏰ Payment Due: ${d(po.payment_due_date)}`);
+        lines.push('', '📦 Items:');
+        for (const item of po.items || []) {
+            lines.push(`- ${item.product?.name || 'Unknown'} x${item.quantity} (${formatCurrency(item.unit_price || 0)})`);
+        }
+        lines.push(
+            '',
+            `💰 Total: ${formatCurrency(po.total_amount || 0)}`,
+            `💵 Paid: ${formatCurrency(paid)}`,
+            `🔴 Balance: ${formatCurrency(balance)}`,
+            `📊 Status: ${po.status} | Payment: ${po.payment_status || 'Unpaid'}`
+        );
+        if (po.notes) lines.push(`📝 Notes: ${po.notes}`);
+        try {
+            await navigator.clipboard.writeText(lines.join('\n'));
+            showToast('PO details copied to clipboard', 'success');
+        } catch {
+            showToast('Failed to copy to clipboard', 'error');
+        }
+    };
 
     const handleViewPO = async (po: any) => {
         setViewPO(po);
@@ -278,10 +313,10 @@ const PurchaseOrdersPage = () => {
         });
     }, [purchaseOrders, searchQuery, statusFilter, paymentFilter]);
 
-    const thStyle: React.CSSProperties = { padding: '14px 16px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' };
+    const thStyle: React.CSSProperties = { padding: '8px 12px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' };
 
     // --- Sorting ---
-    type SortKey = 'po' | 'supplier' | 'order_date' | 'expected' | 'invoice' | 'due_date' | 'items' | 'total' | 'status' | 'payment';
+    type SortKey = 'po' | 'supplier' | 'order_date' | 'expected' | 'invoice' | 'due_date' | 'items' | 'total' | 'balance' | 'status' | 'payment';
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
 
     const handleSort = (key: SortKey) => {
@@ -304,6 +339,7 @@ const PurchaseOrdersPage = () => {
             case 'due_date': return po.payment_due_date ? new Date(po.payment_due_date).getTime() : 0;
             case 'items': return po.items?.length || 0;
             case 'total': return po.total_amount || 0;
+            case 'balance': return (po.total_amount || 0) - (po.amount_paid || 0);
             case 'status': return (po.status || '').toLowerCase();
             case 'payment': return (po.payment_status || 'Unpaid').toLowerCase();
             default: return '';
@@ -322,6 +358,15 @@ const PurchaseOrdersPage = () => {
         });
     }, [filteredPOs, sortConfig]);
 
+    // --- Pagination ---
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(() => Number(localStorage.getItem('po_itemsPerPage')) || 100);
+    useEffect(() => { setCurrentPage(1); }, [searchQuery, statusFilter, paymentFilter, itemsPerPage]);
+    useEffect(() => { localStorage.setItem('po_itemsPerPage', String(itemsPerPage)); }, [itemsPerPage]);
+    const totalPages = Math.max(1, Math.ceil(sortedPOs.length / itemsPerPage));
+    const safePage = Math.min(currentPage, totalPages);
+    const paginatedPOs = sortedPOs.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
+
     // --- Column resizing ---
     const PO_COLUMNS: Array<{ key: SortKey | 'actions'; label: string; align: 'left' | 'center' | 'right'; width: number; sortable: boolean }> = [
         { key: 'po', label: 'PO #', align: 'left', width: 130, sortable: true },
@@ -332,6 +377,7 @@ const PurchaseOrdersPage = () => {
         { key: 'due_date', label: 'Due Date', align: 'left', width: 110, sortable: true },
         { key: 'items', label: 'Items', align: 'center', width: 80, sortable: true },
         { key: 'total', label: 'Total', align: 'right', width: 110, sortable: true },
+        { key: 'balance', label: 'Balance', align: 'right', width: 110, sortable: true },
         { key: 'status', label: 'Status', align: 'center', width: 120, sortable: true },
         { key: 'payment', label: 'Payment', align: 'center', width: 140, sortable: true },
         { key: 'actions', label: 'Actions', align: 'center', width: 120, sortable: false },
@@ -477,8 +523,16 @@ const PurchaseOrdersPage = () => {
                             style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
                         />
                     </div>
-                    <button 
-                        className="primary-button" 
+                    <button
+                        className="secondary-button"
+                        onClick={() => { fetchPurchaseOrders(); fetchSuppliers(); }}
+                        title="Refresh"
+                        style={{ padding: '9px 12px', borderRadius: '10px' }}
+                    >
+                        <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
+                    </button>
+                    <button
+                        className="primary-button"
                         onClick={handleOpenModal}
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontWeight: 600, boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}
                     >
@@ -550,29 +604,29 @@ const PurchaseOrdersPage = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {sortedPOs.map((po, idx) => {
+                            {paginatedPOs.map((po, idx) => {
                                 const statusCfg = getStatusConfig(po.status);
                                 const payCfg = getPaymentConfig(po.payment_status || 'Unpaid');
                                 const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();
                                 const paidPercent = po.total_amount > 0 ? Math.min(100, Math.round(((po.amount_paid || 0) / po.total_amount) * 100)) : 0;
                                 return (
                                     <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined }} className="hover-highlight">
-                                        <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', fontFamily: 'monospace' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', fontFamily: 'monospace' }}>
                                             PO-{po.id.substring(0, 8).toUpperCase()}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
                                             {po.supplier?.name || '—'}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                             {new Date(po.order_date).toLocaleDateString('en-GB').replace(/\//g, '-')}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                             {po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '13px', color: po.invoice_number ? 'var(--color-text)' : 'var(--color-text-muted)', fontFamily: po.invoice_number ? 'monospace' : undefined, fontWeight: po.invoice_number ? 500 : 400 }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', color: po.invoice_number ? 'var(--color-text)' : 'var(--color-text-muted)', fontFamily: po.invoice_number ? 'monospace' : undefined, fontWeight: po.invoice_number ? 500 : 400 }}>
                                             {po.invoice_number || '—'}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '13px' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px' }}>
                                             {po.payment_due_date ? (
                                                 <span style={{ color: isOverdue ? '#ef4444' : 'var(--color-text-secondary)', fontWeight: isOverdue ? 600 : 400 }}>
                                                     {new Date(po.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-')}
@@ -580,13 +634,16 @@ const PurchaseOrdersPage = () => {
                                                 </span>
                                             ) : '—'}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '13px', textAlign: 'center', fontWeight: 600, color: 'var(--color-text)' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', textAlign: 'center', fontWeight: 600, color: 'var(--color-text)' }}>
                                             {po.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 0}
                                         </td>
-                                        <td style={{ padding: '14px 16px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text)', textAlign: 'right' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text)', textAlign: 'right' }}>
                                             {formatCurrency(po.total_amount)}
                                         </td>
-                                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '14px', fontWeight: 700, textAlign: 'right', color: ((po.total_amount || 0) - (po.amount_paid || 0)) > 0.005 ? '#ef4444' : '#10b981' }}>
+                                            {formatCurrency((po.total_amount || 0) - (po.amount_paid || 0))}
+                                        </td>
+                                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                             <span style={{ 
                                                 display: 'inline-block', padding: '3px 10px', borderRadius: '20px', 
                                                 fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
@@ -595,7 +652,7 @@ const PurchaseOrdersPage = () => {
                                                 {po.status}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                             <div>
                                                 <span style={{ 
                                                     display: 'inline-block', padding: '3px 10px', borderRadius: '20px', 
@@ -614,7 +671,7 @@ const PurchaseOrdersPage = () => {
                                                 )}
                                             </div>
                                         </td>
-                                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                                 <button
                                                     onClick={() => handleViewPO(po)}
@@ -622,6 +679,13 @@ const PurchaseOrdersPage = () => {
                                                     title="View Details"
                                                 >
                                                     <Eye size={15} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleCopyPO(po)}
+                                                    style={{ background: 'rgba(107,114,128,0.08)', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
+                                                    title="Copy Details"
+                                                >
+                                                    <Copy size={15} />
                                                 </button>
                                                 {po.status !== 'Received' && po.status !== 'Cancelled' && (
                                                     <button
@@ -663,6 +727,31 @@ const PurchaseOrdersPage = () => {
                             })}
                         </tbody>
                     </table>
+                    {/* Pagination */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                            Showing {sortedPOs.length === 0 ? 0 : (safePage - 1) * itemsPerPage + 1} to {Math.min(safePage * itemsPerPage, sortedPOs.length)} of {sortedPOs.length} entries
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <select value={itemsPerPage} onChange={e => setItemsPerPage(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+                                    {[100, 200, 500].map(n => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1} style={{ padding: '5px', opacity: safePage === 1 ? 0.4 : 1, border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface)', cursor: safePage === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', color: 'var(--color-text)' }}>
+                                    <ChevronLeft size={15} />
+                                </button>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', margin: '0 8px' }}>
+                                    Page <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{safePage}</span> of {totalPages}
+                                </span>
+                                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} style={{ padding: '5px', opacity: safePage === totalPages ? 0.4 : 1, border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface)', cursor: safePage === totalPages ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', color: 'var(--color-text)' }}>
+                                    <ChevronRight size={15} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -977,7 +1066,12 @@ const PurchaseOrdersPage = () => {
                                     <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Paid </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{formatCurrency(paid)}</span></div>
                                     <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Balance </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{formatCurrency(balance)}</span></div>
                                 </div>
-                                <button className="secondary-button" onClick={() => setViewPO(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Close</button>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button className="secondary-button" onClick={() => handleCopyPO(viewPO)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Copy size={15} /> Copy Details
+                                    </button>
+                                    <button className="secondary-button" onClick={() => setViewPO(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Close</button>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -66,7 +66,7 @@ export const useWholesale = () => {
                 warehouse_id: order.warehouse_id || null,
                 order_date: order.order_date,
                 due_date: order.due_date || null,
-                status: 'Open',
+                status: order.status || 'Open',
                 total_amount: total,
                 amount_paid: 0,
                 payment_status: 'Unpaid',
@@ -192,6 +192,30 @@ export const useWholesale = () => {
         }
     }, [showToast, fetchWholesaleOrders]);
 
+    // Change an order's status. Cancelling returns the stock to inventory and
+    // removes the logged stock-out movements (mirror of how deleting does it);
+    // Open -> Delivered is a plain status update. Re-opening a cancelled order
+    // is not supported, since its stock has already been returned.
+    const updateWholesaleOrderStatus = useCallback(async (order: WholesaleOrder, status: WholesaleOrder['status']) => {
+        try {
+            if (status === 'Cancelled' && order.status !== 'Cancelled') {
+                for (const i of order.items || []) {
+                    if (!i.product_id || !i.quantity) continue;
+                    await adjustProductStock(i.product_id, i.quantity);
+                    if (order.warehouse_id) await adjustWarehouseStock(order.warehouse_id, i.product_id, i.quantity);
+                }
+                await supabase.from('stock_movements').delete().eq('reference_id', order.id).eq('type', 'out');
+            }
+            const { error } = await supabase.from('wholesale_orders').update({ status }).eq('id', order.id);
+            if (error) throw error;
+            showToast(status === 'Cancelled' ? 'Order cancelled — stock returned' : `Order marked ${status}`, 'success');
+            await fetchWholesaleOrders(true);
+        } catch (error: any) {
+            showToast('Failed to update order status: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchWholesaleOrders]);
+
     // Delete a customer payment and revert the order's paid amount (mirror of deleteSupplierPayment).
     const deleteCustomerPayment = useCallback(async (paymentId: string) => {
         try {
@@ -267,6 +291,7 @@ export const useWholesale = () => {
         fetchWholesaleOrders,
         createWholesaleOrder,
         deleteWholesaleOrder,
+        updateWholesaleOrderStatus,
         recordCustomerPayment,
         deleteCustomerPayment,
         fetchCustomers,

@@ -485,7 +485,7 @@ export interface WholesaleOrder {
     warehouse_id?: string;
     order_date: string;
     due_date?: string;
-    status: 'Open' | 'Cancelled';
+    status: 'Open' | 'Delivered' | 'Cancelled';
     total_amount: number;
     amount_paid?: number;
     payment_status?: 'Unpaid' | 'Partial' | 'Paid';
