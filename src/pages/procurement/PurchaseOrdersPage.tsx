@@ -63,7 +63,7 @@ const PurchaseOrdersPage = () => {
     const [payingSupplierId, setPayingSupplierId] = useState('');
     const [payingPORemaining, setPayingPORemaining] = useState<number>(0);
     const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
-    const [paymentMethod, setPaymentMethod] = useState('Cash');
+    const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
     const [paymentDate, setPaymentDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [paymentNotes, setPaymentNotes] = useState('');
 
@@ -222,7 +222,7 @@ const PurchaseOrdersPage = () => {
         const remaining = (po.total_amount || 0) - (po.amount_paid || 0);
         setPayingPORemaining(remaining > 0 ? remaining : 0);
         setPaymentAmount(remaining > 0 ? remaining : 0);
-        setPaymentMethod('Cash');
+        setPaymentMethod('Bank Transfer');
         setPaymentDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setPaymentNotes('');
         setIsPaymentModalOpen(true);

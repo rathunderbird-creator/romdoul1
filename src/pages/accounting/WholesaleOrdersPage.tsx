@@ -41,7 +41,7 @@ const WholesaleOrdersPage: React.FC = () => {
     // Payment modal
     const [payOrder, setPayOrder] = useState<WholesaleOrder | null>(null);
     const [payAmount, setPayAmount] = useState<number | string>('');
-    const [payMethod, setPayMethod] = useState('Cash');
+    const [payMethod, setPayMethod] = useState('Bank Transfer');
     const [payNote, setPayNote] = useState('');
     const [payDate, setPayDate] = useState(today());
 
@@ -99,7 +99,7 @@ const WholesaleOrdersPage: React.FC = () => {
     const openPay = (o: WholesaleOrder) => {
         setPayOrder(o);
         setPayAmount(((o.total_amount || 0) - (o.amount_paid || 0)).toFixed(2));
-        setPayMethod('Cash'); setPayNote(''); setPayDate(today());
+        setPayMethod('Bank Transfer'); setPayNote(''); setPayDate(today());
     };
 
     const submitPay = async () => {
