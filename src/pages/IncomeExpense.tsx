@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Wallet, Truck } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Wallet, Truck, Download, PieChart, X, ArrowUp, ArrowDown, ChevronsUpDown, ArrowRightLeft } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
@@ -10,8 +11,6 @@ import '../components/MobileOrderCard.css';
 import type { Transaction } from '../types';
 import { getShippingLogo } from '../utils/shipping';
 import { getPaymentLogo, getPaymentColor } from '../utils/payment';
-import StatsCard from '../components/StatsCard';
-import Modal from '../components/Modal';
 import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
 
@@ -99,7 +98,21 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     const [filterShippingCo, setFilterShippingCo] = useState<string>('All');
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize] = useState(50);
+    const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('ie_pageSize')) || 50);
+    const [showBreakdown, setShowBreakdown] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem('ie_pageSize', String(pageSize));
+        setCurrentPage(1);
+    }, [pageSize]);
+
+    // Close the transaction modal on Escape.
+    useEffect(() => {
+        if (!isAddModalOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsAddModalOpen(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isAddModalOpen]);
     const [dateRange, setDateRange] = useState(() => {
         const saved = localStorage.getItem('incomeExpenseDateRange');
         if (saved) {
@@ -273,29 +286,108 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         setCurrentPage(1);
     }, [filterType, filterCategory, filterShippingCo, searchTerm, dateRange]);
 
+    // --- Column sorting (mirror of the order tables). null = default ordering. ---
+    type IeSortKey = 'date' | 'type' | 'category' | 'shipping' | 'description' | 'payby' | 'amount';
+    const [sortConfig, setSortConfig] = useState<{ key: IeSortKey; direction: 'asc' | 'desc' } | null>(null);
+
+    const handleSort = (key: IeSortKey) => {
+        setSortConfig(prev =>
+            prev?.key === key
+                ? (prev.direction === 'asc' ? { key, direction: 'desc' } : null) // third click clears
+                : { key, direction: 'asc' }
+        );
+    };
+
+    const sortValue = (t: Transaction, key: IeSortKey): string | number => {
+        switch (key) {
+            case 'date': return parseDate(t.date).getTime();
+            case 'type': return t.type;
+            case 'category': return (t.category || '').toLowerCase();
+            case 'shipping': return (t.shipping_co || '').toLowerCase();
+            case 'description': return (t.description || '').toLowerCase();
+            case 'payby': return (t.pay_by || '').toLowerCase();
+            case 'amount': return Number(t.amount);
+            default: return '';
+        }
+    };
+
+    const sortedTransactions = useMemo(() => {
+        if (!sortConfig) return filteredTransactions;
+        const dir = sortConfig.direction === 'asc' ? 1 : -1;
+        return [...filteredTransactions].sort((a, b) => {
+            const av = sortValue(a, sortConfig.key);
+            const bv = sortValue(b, sortConfig.key);
+            if (av === bv) return 0;
+            return (av < bv ? -1 : 1) * dir;
+        });
+    }, [filteredTransactions, sortConfig]);
+
     // Pagination
-    const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / pageSize));
     const paginatedTransactions = useMemo(() => {
         const start = (currentPage - 1) * pageSize;
-        return filteredTransactions.slice(start, start + pageSize);
-    }, [filteredTransactions, currentPage, pageSize]);
+        return sortedTransactions.slice(start, start + pageSize);
+    }, [sortedTransactions, currentPage, pageSize]);
 
     // Stats
     const stats = useMemo(() => {
         let totalIncome = 0;
         let totalExpense = 0;
 
+        let incomeCount = 0;
+        let expenseCount = 0;
         filteredTransactions.forEach(t => {
-            if (t.type === 'Income') totalIncome += Number(t.amount);
-            if (t.type === 'Expense') totalExpense += Number(t.amount);
+            if (t.type === 'Income') { totalIncome += Number(t.amount); incomeCount += 1; }
+            if (t.type === 'Expense') { totalExpense += Number(t.amount); expenseCount += 1; }
         });
 
         return {
             totalIncome,
             totalExpense,
-            netBalance: totalIncome - totalExpense
+            netBalance: totalIncome - totalExpense,
+            incomeCount,
+            expenseCount
         };
     }, [filteredTransactions]);
+
+    // Per-category totals for the breakdown panel (top 6 each side, filtered range).
+    const categoryBreakdown = useMemo(() => {
+        const inc: Record<string, { amount: number; count: number }> = {};
+        const exp: Record<string, { amount: number; count: number }> = {};
+        filteredTransactions.forEach(t => {
+            const cat = t.category?.trim() || 'Uncategorized';
+            const bucket = t.type === 'Income' ? inc : exp;
+            if (!bucket[cat]) bucket[cat] = { amount: 0, count: 0 };
+            bucket[cat].amount += Number(t.amount);
+            bucket[cat].count += 1;
+        });
+        const top = (m: Record<string, { amount: number; count: number }>) =>
+            Object.entries(m).sort((a, b) => b[1].amount - a[1].amount).slice(0, 6);
+        return { income: top(inc), expense: top(exp) };
+    }, [filteredTransactions]);
+
+    // Export the filtered transactions (plus totals) to Excel.
+    const exportToExcel = () => {
+        if (filteredTransactions.length === 0) return;
+        const rows: any[] = filteredTransactions.map(t => ({
+            Date: parseDate(t.date).toLocaleDateString('en-GB'),
+            Type: t.type,
+            Category: t.category || '',
+            'Shipping Co': t.shipping_co || '',
+            Description: t.description || '',
+            'Pay By': t.pay_by || '',
+            Amount: Number(t.amount) * (t.type === 'Expense' ? -1 : 1),
+            'Added By': (t as any).added_by || (t as any).addedBy || ''
+        }));
+        rows.push({});
+        rows.push({ Description: 'Total Income', Amount: stats.totalIncome });
+        rows.push({ Description: 'Total Expense', Amount: -stats.totalExpense });
+        rows.push({ Description: 'Net Balance', Amount: stats.netBalance });
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+        XLSX.writeFile(wb, `Income_Expense_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    };
 
     const uniqueCategories = useMemo(() => {
         const cats = new Set<string>(allGlobalCategories);
@@ -430,6 +522,25 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         }
     };
 
+    // Most-used categories for the selected form type — quick-pick chips in the modal.
+    const topFormCategories = useMemo(() => {
+        const freq: Record<string, number> = {};
+        localTransactions.forEach(t => {
+            if (t.type !== formData.type) return;
+            const c = t.category?.trim();
+            if (c) freq[c] = (freq[c] || 0) + 1;
+        });
+        return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c);
+    }, [localTransactions, formData.type]);
+
+    // Transaction modal validation + live KHR→USD preview.
+    const txnAmountValid = Number(formData.amount) > 0;
+    const txnRateValid = formData.currency === 'USD' || Number(formData.exchangeRate) > 0;
+    const txnUsdPreview = formData.currency === 'KHR' && txnAmountValid && txnRateValid
+        ? Number(formData.amount) / Number(formData.exchangeRate)
+        : null;
+    const canSaveTxn = txnAmountValid && txnRateValid;
+
     if (!hasPermission('manage_income_expense')) {
         return (
             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
@@ -440,52 +551,44 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
     return (
         <div style={{ paddingBottom: '40px', maxWidth: '100%', margin: '0 auto' }}>
-            {/* Premium Stats Grid */}
+            {/* Stats Grid */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
                 gap: isMobile ? '12px' : '16px',
                 marginBottom: '24px',
                 marginTop: '12px'
             }}>
-                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.25)', boxShadow: '0 4px 20px -10px rgba(16, 185, 129, 0.15)', background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, transparent 100%)', zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1, padding: '0px' }}>
-                        <StatsCard
-                            title="Total Income"
-                            value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            icon={TrendingUp}
-                            color="var(--color-blue)"
-                            style={{ padding: '10px 12px', gap: '12px', boxShadow: 'none', background: 'transparent' }}
-                        />
-                    </div>
-                </div>
-
-                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.25)', boxShadow: '0 4px 20px -10px rgba(239, 68, 68, 0.15)', background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, transparent 100%)', zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1, padding: '0px' }}>
-                        <StatsCard
-                            title="Total Expense"
-                            value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            icon={TrendingDown}
-                            color="var(--color-red)"
-                            style={{ padding: '10px 12px', gap: '12px', boxShadow: 'none', background: 'transparent' }}
-                        />
-                    </div>
-                </div>
-
-                <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: `1px solid ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`, boxShadow: `0 4px 20px -10px ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'}`, background: 'var(--color-surface)', backdropFilter: 'blur(12px)', transition: 'transform 0.3s ease', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `linear-gradient(135deg, ${stats.netBalance >= 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'} 0%, transparent 100%)`, zIndex: 0 }} />
-                    <div style={{ position: 'relative', zIndex: 1, padding: '0px' }}>
-                        <StatsCard
-                            title="Net Balance"
-                            value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            icon={DollarSign}
-                            color={stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)'}
-                            style={{ padding: '10px 12px', gap: '12px', boxShadow: 'none', background: 'transparent' }}
-                        />
-                    </div>
-                </div>
+                <IeStatCard
+                    icon={TrendingUp}
+                    gradient="linear-gradient(135deg, #3b82f6, #60a5fa)"
+                    label="Total Income"
+                    value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    sub={`${stats.incomeCount} record${stats.incomeCount === 1 ? '' : 's'}`}
+                    valueColor="var(--color-blue)"
+                />
+                <IeStatCard
+                    icon={TrendingDown}
+                    gradient="linear-gradient(135deg, #ef4444, #f87171)"
+                    label="Total Expense"
+                    value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    sub={`${stats.expenseCount} record${stats.expenseCount === 1 ? '' : 's'}`}
+                    valueColor="var(--color-red)"
+                />
+                <IeStatCard
+                    icon={DollarSign}
+                    gradient={stats.netBalance >= 0 ? 'linear-gradient(135deg, #10b981, #34d399)' : 'linear-gradient(135deg, #f59e0b, #fbbf24)'}
+                    label="Net Balance"
+                    value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    valueColor={stats.netBalance >= 0 ? '#10b981' : 'var(--color-red)'}
+                />
+                <IeStatCard
+                    icon={ArrowRightLeft}
+                    gradient="linear-gradient(135deg, #6366f1, #8b5cf6)"
+                    label="Transactions"
+                    value={String(filteredTransactions.length)}
+                    sub={`${stats.incomeCount} in · ${stats.expenseCount} out`}
+                />
             </div>
 
             {/* Unified Command Bar */}
@@ -559,6 +662,24 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 {!isMobile && `Delete (${selectedIds.size})`}
                             </button>
                         )}
+                        <button
+                            onClick={() => setShowBreakdown(v => !v)}
+                            className="secondary-button"
+                            style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', flexShrink: 0, background: showBreakdown ? 'var(--color-primary)' : undefined, color: showBreakdown ? 'white' : undefined, border: showBreakdown ? 'none' : undefined }}
+                            title="Category Breakdown"
+                        >
+                            <PieChart size={18} />
+                            {!isMobile && 'Breakdown'}
+                        </button>
+                        <button
+                            onClick={exportToExcel}
+                            disabled={filteredTransactions.length === 0}
+                            className="secondary-button"
+                            style={{ padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '38px', width: '38px', borderRadius: '10px', flexShrink: 0, opacity: filteredTransactions.length === 0 ? 0.5 : 1 }}
+                            title="Export to Excel"
+                        >
+                            <Download size={18} />
+                        </button>
                         <button
                             disabled={isLoadingTransactions}
                             onClick={() => {
@@ -658,6 +779,42 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     </div>
                 </div>
             </div>
+
+            {/* Category Breakdown */}
+            {showBreakdown && (
+                <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '16px', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
+                        {([
+                            { label: 'Income by Category', rows: categoryBreakdown.income, total: stats.totalIncome, color: 'var(--color-blue)', barColor: '#3b82f6' },
+                            { label: 'Expense by Category', rows: categoryBreakdown.expense, total: stats.totalExpense, color: 'var(--color-red)', barColor: '#ef4444' },
+                        ]).map(section => (
+                            <div key={section.label}>
+                                <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{section.label}</h4>
+                                {section.rows.length === 0 ? (
+                                    <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No data in this range.</div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {section.rows.map(([cat, v]) => {
+                                            const pct = section.total > 0 ? Math.round((v.amount / section.total) * 100) : 0;
+                                            return (
+                                                <div key={cat} onClick={() => setFilterCategory(cat === 'Uncategorized' ? 'All' : cat)} style={{ cursor: 'pointer' }} title="Click to filter by this category">
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                                                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{cat} <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({v.count})</span></span>
+                                                        <span style={{ fontWeight: 700, color: section.color }}>${v.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ color: 'var(--color-text-muted)', fontWeight: 500, fontSize: '11px' }}>{pct}%</span></span>
+                                                    </div>
+                                                    <div style={{ width: '100%', height: '6px', borderRadius: '4px', background: 'var(--color-border)', overflow: 'hidden' }}>
+                                                        <div style={{ width: `${pct}%`, height: '100%', borderRadius: '4px', background: section.barColor, transition: 'width 0.4s ease' }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Transactions List / Table */}
             {isMobile ? (
@@ -781,14 +938,35 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
                                     />
                                 </th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Date</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Type</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Category</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Shipping Co</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Description</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Pay By</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Amount</th>
-                                <th style={{ padding: '10px 12px', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>Actions</th>
+                                {([
+                                    { key: 'date', label: 'Date', align: 'left' },
+                                    { key: 'type', label: 'Type', align: 'left' },
+                                    { key: 'category', label: 'Category', align: 'left' },
+                                    { key: 'shipping', label: 'Shipping Co', align: 'left' },
+                                    { key: 'description', label: 'Description', align: 'left' },
+                                    { key: 'payby', label: 'Pay By', align: 'left' },
+                                    { key: 'amount', label: 'Amount', align: 'right' },
+                                    { key: null, label: 'Actions', align: 'center' },
+                                ] as Array<{ key: IeSortKey | null; label: string; align: 'left' | 'right' | 'center' }>).map(col => {
+                                    const isSorted = col.key !== null && sortConfig?.key === col.key;
+                                    return (
+                                        <th
+                                            key={col.label}
+                                            onClick={col.key ? () => handleSort(col.key!) : undefined}
+                                            title={col.key ? 'Click to sort' : undefined}
+                                            style={{ padding: '10px 12px', color: isSorted ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: col.align, position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)', cursor: col.key ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}
+                                        >
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle' }}>
+                                                {col.label}
+                                                {col.key && (
+                                                    isSorted
+                                                        ? (sortConfig!.direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />)
+                                                        : <ChevronsUpDown size={13} style={{ opacity: 0.25 }} />
+                                                )}
+                                            </span>
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody>
@@ -811,7 +989,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         : null;
 
                                     return (
-                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s', backgroundColor: selectedIds.has(t.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }} className="table-row-hover">
+                                    <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)', borderLeft: `3px solid ${t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)'}`, transition: 'background-color 0.2s', backgroundColor: selectedIds.has(t.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }} className="table-row-hover">
                                         <td style={{ padding: '10px 12px', width: '40px' }}>
                                             <input 
                                                 type="checkbox" 
@@ -821,7 +999,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
                                             />
                                         </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>
                                             {parseDate(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                         </td>
                                         <td style={{ padding: '10px 12px' }}>
@@ -840,10 +1018,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 {t.type}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>
                                             {t.category || '-'}
                                         </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                             {t.shipping_co ? (
                                                 <span style={{
                                                     display: 'inline-flex',
@@ -864,10 +1042,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 </span>
                                             ) : '-'}
                                         </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                             {t.description || '-'}
                                         </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                 {(t.pay_by || relatedOrder?.paymentMethod) && getPaymentLogo(t.pay_by || relatedOrder?.paymentMethod) && (
                                                     <img src={getPaymentLogo(t.pay_by || relatedOrder?.paymentMethod)!} alt="payby logo" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
@@ -876,7 +1054,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             </div>
                                         </td>
                                         <td style={{ padding: '10px 12px', fontSize: '14px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', textAlign: 'right' }}>
-                                            {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString()}
+                                            {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
                                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
@@ -951,9 +1129,17 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     flexWrap: 'wrap',
                     gap: '12px'
                 }}>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                        Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, filteredTransactions.length)} of {filteredTransactions.length} transactions
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                            Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, filteredTransactions.length)} of {filteredTransactions.length} transactions
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}>
+                                {[50, 100, 200].map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                        </div>
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <button
                             disabled={currentPage === 1}
@@ -1075,15 +1261,32 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 </div>
             )}
 
-            {/* Add/Edit Modal */}
-            <Modal
-                isOpen={isAddModalOpen}
-                onClose={() => setIsAddModalOpen(false)}
-                title={editingTransaction ? "Edit Transaction" : "New Transaction"}
-            >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Add/Edit Modal — PO-style popup */}
+            {isAddModalOpen && (
+            <div onClick={() => setIsAddModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: '24px', width: '100%', maxWidth: '560px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                    {/* Header */}
+                    <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: formData.type === 'Income' ? 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(96,165,250,0.03))' : 'linear-gradient(135deg, rgba(239,68,68,0.06), rgba(248,113,113,0.03))' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: formData.type === 'Income' ? 'linear-gradient(135deg, #3b82f6, #60a5fa)' : 'linear-gradient(135deg, #ef4444, #f87171)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                {formData.type === 'Income' ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                            </div>
+                            <div>
+                                <h2 style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>{editingTransaction ? 'Edit Transaction' : 'New Transaction'}</h2>
+                                <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{formData.type === 'Income' ? 'Money coming in' : 'Money going out'}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <X size={18} />
+                        </button>
+                    </div>
 
-                    {/* Type Toggle */}
+                    {/* Body */}
+                    <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                    {/* Section: Type & Amount */}
+                    <div style={ieSection}>
+                    <h4 style={ieSectionTitle}><DollarSign size={14} /> Type & Amount</h4>
                     <div style={{ display: 'flex', gap: '8px', padding: '4px', background: 'var(--color-background)', borderRadius: '12px' }}>
                         <button
                             onClick={() => setFormData({ ...formData, type: 'Income' })}
@@ -1172,6 +1375,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 <input
                                     type="number"
                                     required
+                                    autoFocus
                                     min="0"
                                     step="any"
                                     value={formData.amount}
@@ -1216,6 +1420,19 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
                     </div>
 
+                    {txnUsdPreview !== null && (
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '-8px', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '8px' }}>
+                            <DollarSign size={13} style={{ color: 'var(--color-primary)' }} />
+                            Will be saved as <strong style={{ color: 'var(--color-primary)' }}>${txnUsdPreview.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</strong>
+                            <span style={{ color: 'var(--color-text-muted)' }}>(៛{Number(formData.amount).toLocaleString()} ÷ {Number(formData.exchangeRate).toLocaleString()})</span>
+                        </div>
+                    )}
+
+                    </div>
+
+                    {/* Section: Details */}
+                    <div style={ieSection}>
+                    <h4 style={ieSectionTitle}><Tag size={14} /> Details</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
@@ -1236,6 +1453,15 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         fontSize: '14px'
                                     }}
                                 />
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                                {[{ label: 'Today', off: 0 }, { label: 'Yesterday', off: 1 }].map(d => {
+                                    const val = new Date(Date.now() - d.off * 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                                    const active = formData.date === val;
+                                    return (
+                                        <button key={d.label} onClick={() => setFormData(p => ({ ...p, date: val }))} style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-secondary)', cursor: 'pointer' }}>{d.label}</button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -1359,6 +1585,18 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
                     </div>
 
+                    {topFormCategories.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Quick:</span>
+                            {topFormCategories.map(cat => {
+                                const active = formData.category === cat;
+                                return (
+                                    <button key={cat} onClick={() => { setFormData(p => ({ ...p, category: cat })); setShowCategoryDropdown(false); }} style={{ padding: '4px 12px', borderRadius: '14px', fontSize: '12px', fontWeight: 500, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}>{cat}</button>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Description / Note</label>
                         <textarea
@@ -1379,28 +1617,50 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         />
                     </div>
 
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                    </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{ padding: '14px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '12px', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.01)' }}>
                         <button
                             onClick={() => setIsAddModalOpen(false)}
                             className="secondary-button"
-                            style={{ flex: 1, padding: '12px' }}
+                            style={{ padding: '11px 20px', borderRadius: '10px', fontWeight: 600 }}
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleSave}
+                            disabled={!canSaveTxn}
                             className="primary-button"
-                            style={{ flex: 1, padding: '12px', background: formData.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)' }}
+                            style={{ padding: '11px 24px', borderRadius: '10px', fontWeight: 600, background: formData.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', opacity: canSaveTxn ? 1 : 0.5, cursor: canSaveTxn ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
+                            {formData.type === 'Income' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                             Save {formData.type}
                         </button>
                     </div>
-
                 </div>
-            </Modal>
+                <style>{`@keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
+            </div>
+            )}
         </div>
     );
 };
+
+// Section-card styles for the transaction modal (match the PO/Wholesale popups).
+const ieSection: React.CSSProperties = { background: 'var(--color-bg)', padding: '16px', borderRadius: '14px', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '14px' };
+const ieSectionTitle: React.CSSProperties = { fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 };
+
+// Standard gradient stat card matching the rest of the app.
+const IeStatCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; gradient: string; label: string; value: string; sub?: string; valueColor?: string }> = ({ icon: Icon, gradient, label, value, sub, valueColor }) => (
+    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}><Icon size={20} /></div>
+        <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{label}</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: valueColor, whiteSpace: 'nowrap' }}>{value}</div>
+            {sub && <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{sub}</div>}
+        </div>
+    </div>
+);
 
 export default IncomeExpense;

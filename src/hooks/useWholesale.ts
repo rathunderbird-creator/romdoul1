@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabase';
 import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer } from '../types';
 import { useToast } from '../context/ToastContext';
 
+const generateUUID = () => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+        return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
+
 // Mirror of useProcurement, but for customer credit sales (Accounts Receivable).
 export const useWholesale = () => {
     const { showToast } = useToast();
@@ -17,7 +27,10 @@ export const useWholesale = () => {
             const { data, error } = await supabase
                 .from('wholesale_orders')
                 .select('*, items:wholesale_order_items(*), payments:customer_payments(*)')
-                .order('order_date', { ascending: false });
+                // order_date is a plain date, so same-day orders tie — break the tie
+                // with created_at so the newest transaction is always on top.
+                .order('order_date', { ascending: false })
+                .order('created_at', { ascending: false });
             if (error) {
                 // Most likely the migration hasn't been run yet.
                 setTableMissing(true);
@@ -162,19 +175,21 @@ export const useWholesale = () => {
     }, [showToast, fetchWholesaleOrders]);
 
     // Record a customer payment against an order (mirror of recordSupplierPayment).
-    const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string) => {
+    // Also logs each receipt to Income & Expense so wholesale money shows up as Income.
+    const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string) => {
         try {
-            const { error: pErr } = await supabase.from('customer_payments').insert([{
+            const payDate = paymentDate || new Date().toISOString().split('T')[0];
+            const { data: inserted, error: pErr } = await supabase.from('customer_payments').insert([{
                 wholesale_order_id: orderId,
                 amount,
-                payment_date: paymentDate || new Date().toISOString().split('T')[0],
+                payment_date: payDate,
                 payment_method: paymentMethod,
                 notes: notes || null
-            }]);
+            }]).select().single();
             if (pErr) throw pErr;
 
             const { data: order, error: fErr } = await supabase
-                .from('wholesale_orders').select('amount_paid, total_amount').eq('id', orderId).single();
+                .from('wholesale_orders').select('amount_paid, total_amount, customer_name, invoice_number').eq('id', orderId).single();
             if (fErr || !order) throw fErr || new Error('Order not found');
 
             const newPaid = (Number(order.amount_paid) || 0) + Number(amount);
@@ -182,6 +197,24 @@ export const useWholesale = () => {
             const { error: uErr } = await supabase.from('wholesale_orders')
                 .update({ amount_paid: newPaid, payment_status: status }).eq('id', orderId);
             if (uErr) throw uErr;
+
+            // Log an Income transaction, tagged with the payment id so deleting the
+            // payment can remove it again. Non-fatal: the payment itself succeeded.
+            const marker = `#WSP-${String(inserted?.id || '').slice(0, 8)}`;
+            const { error: tErr } = await supabase.from('transactions').insert([{
+                id: generateUUID(),
+                date: new Date(payDate).toISOString(),
+                type: 'Income',
+                category: 'លក់ដុំ',
+                amount: Number(amount),
+                description: `${order.customer_name || 'Wholesale'} · ${order.invoice_number || 'WO-' + orderId.slice(0, 8).toUpperCase()} ${marker}`,
+                pay_by: paymentMethod || null,
+                added_by: receivedBy || 'Wholesale'
+            }]);
+            if (tErr) {
+                console.error('Failed to log wholesale income transaction:', tErr);
+                showToast('Payment saved, but logging to Income failed: ' + tErr.message, 'error');
+            }
 
             showToast('Payment recorded', 'success');
             await fetchWholesaleOrders(true);
@@ -231,6 +264,8 @@ export const useWholesale = () => {
             }
             const { error } = await supabase.from('customer_payments').delete().eq('id', paymentId);
             if (error) throw error;
+            // Remove the Income transaction that was logged with this payment.
+            await supabase.from('transactions').delete().like('description', `%#WSP-${paymentId.slice(0, 8)}%`);
             showToast('Payment deleted', 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {

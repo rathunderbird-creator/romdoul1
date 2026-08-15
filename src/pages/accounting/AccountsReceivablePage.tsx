@@ -186,7 +186,7 @@ const AccountsReceivablePage: React.FC = () => {
         setSaving(true);
         try {
             if (receiptFor.source === 'wholesale') {
-                await recordCustomerPayment(receiptFor.id, amount, receiptMethod, receiptNote);
+                await recordCustomerPayment(receiptFor.id, amount, receiptMethod, receiptNote, undefined, currentUser?.name);
             } else {
                 await supabase.from('warehouse_transfer_receipts').insert([{
                     transfer_id: receiptFor.id, amount,

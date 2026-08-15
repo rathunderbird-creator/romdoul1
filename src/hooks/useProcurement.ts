@@ -86,7 +86,10 @@ export const useProcurement = () => {
             const { data, error } = await supabase
                 .from('purchase_orders')
                 .select('*, supplier:suppliers(*), items:purchase_order_items(*, product:products(*))')
-                .order('order_date', { ascending: false });
+                // order_date is a plain date, so same-day POs tie — break the tie
+                // with created_at so the newest transaction is always on top.
+                .order('order_date', { ascending: false })
+                .order('created_at', { ascending: false });
                 
             if (error) throw error;
             setPurchaseOrders(data || []);

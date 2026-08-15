@@ -498,6 +498,52 @@ export interface WholesaleOrder {
 }
 
 // ==========================================
+// CRM Types
+// ==========================================
+export interface Lead {
+    id: string;
+    name: string;
+    company_name?: string;
+    email?: string;
+    phone?: string;
+    status: 'New' | 'Contacted' | 'Qualified' | 'Proposal Sent' | 'Won' | 'Lost';
+    source?: string;
+    assigned_to?: string;
+    notes?: string;
+    created_at?: string;
+}
+
+export interface Interaction {
+    id: string;
+    lead_id?: string;
+    type: 'Call' | 'Email' | 'Meeting';
+    date: string;
+    notes?: string;
+    performed_by?: string;
+    created_at?: string;
+    // Joined for UI
+    lead?: Lead;
+}
+
+export interface QuotationItem {
+    name: string;
+    quantity: number;
+    unit_price: number;
+}
+
+export interface Quotation {
+    id: string;
+    lead_id?: string;
+    total_amount: number;
+    status: 'Draft' | 'Sent' | 'Accepted' | 'Rejected';
+    valid_until?: string;
+    items: QuotationItem[];
+    created_at?: string;
+    // Joined for UI
+    lead?: Lead;
+}
+
+// ==========================================
 // ERP: HR & Payroll Types
 // ==========================================
 export interface Employee {

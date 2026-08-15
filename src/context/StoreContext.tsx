@@ -1721,6 +1721,62 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }]).then(({ error }) => {
                 if (error) console.error('Failed to create transaction for updated order:', error);
             });
+        } else if (
+            updates.settleDate &&
+            existingOrder &&
+            isPaidStatus(updates.paymentStatus !== undefined ? updates.paymentStatus : existingOrder.paymentStatus)
+        ) {
+            // A paid order's settle date changed without a payment-status transition
+            // (e.g. the bulk settle-date edit when the shipping company pays out).
+            // Move its income transaction to the new date so Income & Expense matches
+            // the settle-date view — and if it was never logged (silent failure or
+            // legacy data), create it now.
+            const customerName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
+            const amountToRecord = updates.amountReceived !== undefined
+                ? updates.amountReceived
+                : (existingOrder.amountReceived || existingOrder.total);
+            const rawDate = updates.settleDate;
+            const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDate).toISOString() : rawDate;
+            try {
+                const { data: txns } = await supabase.from('transactions')
+                    .select('id, amount')
+                    .eq('type', 'Income')
+                    .eq('category', 'លក់ឥវ៉ាន់')
+                    .eq('description', customerName)
+                    .or(`amount.eq.${existingOrder.amountReceived || 0},amount.eq.${existingOrder.total}`)
+                    .limit(1);
+                if (txns && txns.length > 0) {
+                    await supabase.from('transactions')
+                        .update({ date: normalizedDate, amount: amountToRecord || txns[0].amount })
+                        .eq('id', txns[0].id);
+                    setTransactions(prev => prev.map(t => t.id === txns[0].id ? { ...t, date: normalizedDate, amount: amountToRecord || t.amount } : t));
+                } else {
+                    const healed = {
+                        id: generateUUID(),
+                        date: normalizedDate,
+                        type: 'Income' as const,
+                        category: 'លក់ឥវ៉ាន់',
+                        amount: amountToRecord || 0,
+                        description: customerName,
+                        addedBy: currentUser?.name || 'System',
+                        shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null
+                    };
+                    setTransactions(prev => [healed, ...prev]);
+                    const { error: healErr } = await supabase.from('transactions').insert([{
+                        id: healed.id,
+                        date: healed.date,
+                        type: healed.type,
+                        category: healed.category,
+                        amount: healed.amount,
+                        description: healed.description,
+                        added_by: healed.addedBy,
+                        shipping_co: healed.shipping_co
+                    }]);
+                    if (healErr) console.error('Failed to create missing income transaction:', healErr);
+                }
+            } catch (e) {
+                console.error('Failed to sync income transaction with settle date:', e);
+            }
         }
 
         // 2. Prepare DB Updates for 'sales' table

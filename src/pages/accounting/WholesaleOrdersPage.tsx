@@ -195,7 +195,7 @@ const WholesaleOrdersPage: React.FC = () => {
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
         setSaving(true);
         try {
-            await recordCustomerPayment(payOrder.id, amount, payMethod, payNote, payDate);
+            await recordCustomerPayment(payOrder.id, amount, payMethod, payNote, payDate, currentUser?.name);
             setPayOrder(null);
         } catch { /* hook toasts */ } finally { setSaving(false); }
     };
