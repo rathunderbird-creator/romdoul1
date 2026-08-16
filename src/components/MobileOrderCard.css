@@ -1,23 +1,23 @@
 /* MobileOrderCard.css – Redesigned */
 
+/* Flat inbox-style rows: no card chrome, hairline separators, left status bar. */
 .mobile-order-card {
     background: white;
-    border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-    margin-bottom: 6px;
+    border-radius: 0;
+    margin-bottom: 0;
     overflow: hidden;
-    transition: box-shadow 0.2s ease, transform 0.15s ease;
+    transition: background-color 0.15s ease;
     position: relative;
     border-left: 4px solid #9CA3AF;
+    border-bottom: 1px solid #F3F4F6;
 }
 
 .mobile-order-card:active {
-    transform: scale(0.99);
+    background: #F9FAFB;
 }
 
 .mobile-order-card.selected {
-    background: #EFF6FF;
-    box-shadow: 0 0 0 2px var(--color-primary), 0 2px 8px rgba(59, 130, 246, 0.15);
+    background: #E0F2FE;
 }
 
 .mobile-order-card.paid-settled {
@@ -52,18 +52,18 @@
     display: none;
 }
 
-/* Avatar */
+/* Avatar — circular, inbox style (background color set inline per customer) */
 .moc-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
     background: linear-gradient(135deg, #E0E7FF, #C7D2FE);
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    color: #4338CA;
-    font-size: 14px;
+    color: #ffffff;
+    font-size: 15px;
     flex-shrink: 0;
     letter-spacing: 0.5px;
 }
@@ -89,13 +89,72 @@
 }
 
 .moc-products-summary {
-    font-size: 11px;
+    font-size: 12px;
     color: #6B7280;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     line-height: 1.4;
 }
+
+/* Name + time line (inbox style) */
+.moc-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.moc-time {
+    font-size: 11px;
+    color: #9CA3AF;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Tag pills row (inbox style, solid colors) */
+.moc-tags-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.moc-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    line-height: 1.5;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Shipping status pills */
+.moc-tag.shipping-drafted { background: #9CA3AF; }
+.moc-tag.shipping-pending { background: #F59E0B; }
+.moc-tag.shipping-confirmed { background: #0EA5E9; }
+.moc-tag.shipping-shipped { background: #3B82F6; }
+.moc-tag.shipping-delivered { background: #10B981; }
+.moc-tag.shipping-returned { background: #EF4444; }
+.moc-tag.shipping-restock { background: #8B5CF6; }
+.moc-tag.shipping-cancelled { background: #EF4444; }
+
+/* Payment pills */
+.moc-tag.pay-paid { background: #059669; }
+.moc-tag.pay-unpaid { background: #DC2626; }
+.moc-tag.pay-getfile { background: #2563EB; }
+.moc-tag.pay-cancel { background: #6B7280; text-decoration: line-through; }
+
+/* Salesman / page tags (like the inbox labels) */
+.moc-tag.tag-salesman { background: #EC4899; }
+.moc-tag.tag-page { background: #8B5CF6; }
 
 .moc-meta-row {
     display: flex;
@@ -122,10 +181,12 @@
 }
 
 .moc-total-amount {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
     color: #111827;
     letter-spacing: -0.3px;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .moc-badges {

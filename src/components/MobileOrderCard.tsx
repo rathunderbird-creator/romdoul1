@@ -44,6 +44,26 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
             .slice(0, 2);
     };
 
+    // Stable per-customer avatar color (inbox-style).
+    const avatarColor = (name: string) => {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        return `hsl(${Math.abs(hash % 360)}, 60%, 55%)`;
+    };
+
+    // Inbox-style timestamp: time for today, "Yesterday", else short date.
+    const formatOrderTime = (d: string) => {
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return '';
+        const now = new Date();
+        if (dt.toDateString() === now.toDateString()) {
+            return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        const yesterday = new Date(now.getTime() - 86400000);
+        if (dt.toDateString() === yesterday.toDateString()) return 'Yesterday';
+        return dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    };
+
     const shippingStatus = (order.shipping?.status || 'Drafted').toLowerCase().replace(/\s+/g, '');
     const payStatus = order.paymentStatus || 'Unpaid';
 
@@ -71,18 +91,21 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
 
     return (
         <div className={cardClass}>
-            {/* Header / Summary Row */}
+            {/* Header / Summary Row — inbox style */}
             <div className="moc-header" onClick={onToggleExpand}>
                 {/* Avatar */}
-                <div className="moc-avatar">
+                <div className="moc-avatar" style={{ background: avatarColor(order.customer?.name || 'Unknown') }}>
                     {getInitials(order.customer?.name || 'Unknown')}
                 </div>
 
                 {/* Center info */}
                 <div className="moc-info">
-                    <span className="moc-customer-name">
-                        {order.customer?.name || 'Unknown'}
-                    </span>
+                    <div className="moc-name-row">
+                        <span className="moc-customer-name">
+                            {order.customer?.name || 'Unknown'}
+                        </span>
+                        <span className="moc-time">{formatOrderTime(order.date)}</span>
+                    </div>
                     <div className="moc-products-summary">
                         {order.items.length > 0 ? (
                             <>
@@ -91,22 +114,17 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             </>
                         ) : 'No items'}
                     </div>
-                    <div className="moc-meta-row">
-                        <span>{order.salesman || 'N/A'}</span>
-                        <span>•</span>
-                        <span>{new Date(order.date).toLocaleDateString()}</span>
-                    </div>
-                </div>
-
-                {/* Right column: total + badges */}
-                <div className="moc-right-col">
-                    <span className="moc-total-amount">${order.total.toFixed(2)}</span>
-                    <div className="moc-badges">
-                        <span className={`moc-badge shipping-${shippingStatus}`}>
+                    <div className="moc-tags-row">
+                        <span className={`moc-tag shipping-${shippingStatus}`}>
                             {order.shipping?.status || 'Drafted'}
                         </span>
-                        <span className={`moc-badge ${getPayBadgeClass()}`}>
+                        <span className={`moc-tag ${getPayBadgeClass()}`}>
                             {payStatus === 'Get File' ? 'File' : payStatus}
+                        </span>
+                        {order.salesman && <span className="moc-tag tag-salesman">{order.salesman}</span>}
+                        {order.customer?.page && <span className="moc-tag tag-page">{order.customer.page}</span>}
+                        <span className="moc-total-amount" style={{ color: isCancelled ? '#9CA3AF' : (isPaidOrSettle ? '#059669' : '#DC2626') }}>
+                            ${order.total.toFixed(2)}
                         </span>
                     </div>
                 </div>

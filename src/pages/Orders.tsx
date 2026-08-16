@@ -2602,7 +2602,7 @@ const Orders: React.FC = () => {
                         paddingBottom: '0'
                     }}>
                         {isMobile ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', padding: '8px', paddingBottom: '100px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', padding: '0 0 100px 0', background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden' }}>
                                 {paginatedOrders.length === 0 && (
                                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                         {emptyStateContent}

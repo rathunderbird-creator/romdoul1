@@ -30,7 +30,7 @@ const WholesaleOrdersPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { products, warehouses, currentUser, refreshData } = useStore();
-    const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment } = useWholesale();
+    const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
 
     const [search, setSearch] = useState('');
     const [payFilter, setPayFilter] = useState<'All' | 'Unpaid' | 'Partial' | 'Paid'>('All');
@@ -203,6 +203,19 @@ const WholesaleOrdersPage: React.FC = () => {
     const handleDelete = async (o: WholesaleOrder) => {
         if (!confirm(`Delete wholesale order for ${o.customer_name}? Stock will be returned.`)) return;
         try { await deleteWholesaleOrder(o); } catch { /* hook toasts */ }
+    };
+
+    // Delete a payment from the View Details popup: reverts the order balance and
+    // removes the linked Income transaction (handled inside deleteCustomerPayment).
+    const handleDeleteViewPayment = async (p: { id: string; amount: number }) => {
+        if (!viewOrder) return;
+        if (!confirm(`Delete this payment of ${fmt(Number(p.amount) || 0)}? The order balance will be restored.`)) return;
+        try {
+            await deleteCustomerPayment(p.id);
+            const newPaid = Math.max(0, (viewOrder.amount_paid || 0) - Number(p.amount));
+            const newStatus = newPaid === 0 ? 'Unpaid' : (newPaid >= (viewOrder.total_amount || 0) ? 'Paid' : 'Partial');
+            setViewOrder({ ...viewOrder, amount_paid: newPaid, payment_status: newStatus as WholesaleOrder['payment_status'], payments: (viewOrder.payments || []).filter(x => x.id !== p.id) });
+        } catch { /* hook toasts */ }
     };
 
     const handleMarkDelivered = async (o: WholesaleOrder) => {
@@ -715,12 +728,17 @@ const WholesaleOrdersPage: React.FC = () => {
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {payments.map(p => (
-                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
                                                     <div>
                                                         <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</div>
                                                         <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method, p.notes].filter(Boolean).join(' · ') || '—'}</div>
                                                     </div>
-                                                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{fmt(Number(p.amount) || 0)}</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{fmt(Number(p.amount) || 0)}</div>
+                                                        <button onClick={() => handleDeleteViewPayment(p)} title="Delete Payment" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

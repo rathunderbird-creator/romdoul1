@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabase';
 import type { Supplier, PurchaseOrder, PurchaseOrderItem } from '../types';
 import { useToast } from '../context/ToastContext';
 
+const generateUUID = () => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+        return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
+
 export const useProcurement = () => {
     const { showToast } = useToast();
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -192,18 +202,20 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
-    const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string) => {
+    // Also logs each supplier payment to Income & Expense as an Expense.
+    const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string) => {
         try {
+            const payDate = paymentDate || new Date().toISOString().split('T')[0];
             // Log payment
-            const { error: paymentError } = await supabase.from('supplier_payments').insert([{
+            const { data: inserted, error: paymentError } = await supabase.from('supplier_payments').insert([{
                 purchase_order_id: poId,
                 supplier_id: supplierId,
                 amount,
-                payment_date: new Date().toISOString().split('T')[0],
+                payment_date: payDate,
                 payment_method: paymentMethod,
                 notes
-            }]);
-            
+            }]).select().single();
+
             if (paymentError) throw paymentError;
 
             // Fetch current PO
@@ -212,7 +224,7 @@ export const useProcurement = () => {
                 .select('amount_paid, total_amount')
                 .eq('id', poId)
                 .single();
-                
+
             if (fetchError || !po) throw fetchError || new Error('PO not found');
 
             const newAmountPaid = (Number(po.amount_paid) || 0) + Number(amount);
@@ -226,8 +238,27 @@ export const useProcurement = () => {
                     payment_status: newPaymentStatus
                 })
                 .eq('id', poId);
-                
+
             if (poUpdateError) throw poUpdateError;
+
+            // Log an Expense transaction, tagged with the payment id so deleting the
+            // payment can remove it again. Non-fatal: the payment itself succeeded.
+            const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', supplierId).single();
+            const marker = `#SPP-${String(inserted?.id || '').slice(0, 8)}`;
+            const { error: tErr } = await supabase.from('transactions').insert([{
+                id: generateUUID(),
+                date: new Date(payDate).toISOString(),
+                type: 'Expense',
+                category: 'ទិញឥវ៉ាន់',
+                amount: Number(amount),
+                description: `${supplier?.name || 'Supplier'} · PO-${poId.slice(0, 8).toUpperCase()} ${marker}`,
+                pay_by: paymentMethod || null,
+                added_by: paidBy || 'Purchasing'
+            }]);
+            if (tErr) {
+                console.error('Failed to log supplier expense transaction:', tErr);
+                showToast('Payment saved, but logging to Expense failed: ' + tErr.message, 'error');
+            }
 
             showToast('Payment recorded successfully', 'success');
             await fetchPurchaseOrders(true);
@@ -259,6 +290,8 @@ export const useProcurement = () => {
 
             const { error } = await supabase.from('supplier_payments').delete().eq('id', paymentId);
             if (error) throw error;
+            // Remove the Expense transaction that was logged with this payment.
+            await supabase.from('transactions').delete().like('description', `%#SPP-${paymentId.slice(0, 8)}%`);
             showToast('Payment deleted successfully', 'success');
             await fetchPurchaseOrders(true);
         } catch (error: any) {

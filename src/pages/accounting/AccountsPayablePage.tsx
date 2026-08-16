@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Wallet, AlertTriangle, Users, DollarSign, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { Modal } from '../../components';
 import { useToast } from '../../context/ToastContext';
@@ -19,6 +20,7 @@ const daysOverdue = (due?: string): number | null => {
 const AccountsPayablePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { currentUser } = useStore();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, recordSupplierPayment } = useProcurement();
 
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -100,7 +102,7 @@ const AccountsPayablePage: React.FC = () => {
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
         setSaving(true);
         try {
-            await recordSupplierPayment(payPO.id, payPO.supplier_id, amount, payMethod, payNote);
+            await recordSupplierPayment(payPO.id, payPO.supplier_id, amount, payMethod, payNote, undefined, currentUser?.name);
             setPayPO(null);
         } catch {
             /* hook already toasts */

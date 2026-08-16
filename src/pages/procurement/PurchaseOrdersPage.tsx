@@ -34,9 +34,9 @@ type PaymentFilter = 'All' | 'Unpaid' | 'Partial' | 'Paid';
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { products, addStock } = useStore();
+    const { products, addStock, currentUser } = useStore();
     const { showToast } = useToast();
-    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment } = useProcurement();
+    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment } = useProcurement();
     const [receivingId, setReceivingId] = useState<string | null>(null);
     const receivingRef = useRef<Set<string>>(new Set());
 
@@ -78,6 +78,21 @@ const PurchaseOrdersPage = () => {
         } catch {
             showToast('Failed to copy to clipboard', 'error');
         }
+    };
+
+    // Delete a payment from the View Details popup: reverts the PO balance and
+    // removes the linked Expense transaction (handled inside deleteSupplierPayment).
+    const handleDeleteViewPayment = async (p: any) => {
+        if (!viewPO) return;
+        if (!window.confirm(`Delete this payment of ${formatCurrency(Number(p.amount) || 0)}? The PO balance will be restored.`)) return;
+        try {
+            await deleteSupplierPayment(p.id);
+            setViewPayments(prev => prev.filter(x => x.id !== p.id));
+            // Keep the open popup's totals in sync without refetching.
+            const newPaid = Math.max(0, (Number(viewPO.amount_paid) || 0) - Number(p.amount));
+            const newStatus = newPaid === 0 ? 'Unpaid' : (newPaid >= viewPO.total_amount ? 'Paid' : 'Partial');
+            setViewPO({ ...viewPO, amount_paid: newPaid, payment_status: newStatus });
+        } catch { /* hook toasts */ }
     };
 
     const handleViewPO = async (po: any) => {
@@ -288,7 +303,7 @@ const PurchaseOrdersPage = () => {
     const handleSavePayment = async () => {
         if (!paymentAmount) return;
         try {
-            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes);
+            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes, paymentDate, currentUser?.name);
             setIsPaymentModalOpen(false);
         } catch (error) {
             // Error handled in hook
@@ -1046,12 +1061,17 @@ const PurchaseOrdersPage = () => {
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {viewPayments.map((p: any) => (
-                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
                                                     <div>
                                                         <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</div>
                                                         <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method, p.notes].filter(Boolean).join(' · ') || '—'}</div>
                                                     </div>
-                                                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{formatCurrency(Number(p.amount) || 0)}</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{formatCurrency(Number(p.amount) || 0)}</div>
+                                                        <button onClick={() => handleDeleteViewPayment(p)} title="Delete Payment" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
