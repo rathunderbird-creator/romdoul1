@@ -1115,36 +1115,39 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 )})
                             )}
                         </tbody>
-                        <tfoot>
-                            <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold', borderTop: '2px solid var(--color-border)' }}>
-                                <td colSpan={7} style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
-                                    Total Income
-                                </td>
-                                <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-blue)', fontSize: '13px' }}>
-                                    +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </td>
-                                <td></td>
-                            </tr>
-                            <tr style={{ backgroundColor: 'var(--color-surface)', fontWeight: 'bold' }}>
-                                <td colSpan={7} style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
-                                    Total Expense
-                                </td>
-                                <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-red)', fontSize: '13px' }}>
-                                    -${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </td>
-                                <td></td>
-                            </tr>
-                            <tr style={{ backgroundColor: 'var(--color-background)', fontWeight: '800', borderTop: '1px solid var(--color-border)' }}>
-                                <td colSpan={6} style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-text-main)', fontSize: '13px', textTransform: 'uppercase' }}>
-                                    Net Balance
-                                </td>
-                                <td style={{ padding: '10px 12px', textAlign: 'right', color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)', fontSize: '14px' }}>
-                                    ${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
                     </table>
+                </div>
+            )}
+
+            {/* Sticky totals footer — outside the overflow-x table wrapper so it can
+                stick to the page's scroll area */}
+            {filteredTransactions.length > 0 && (
+                <div style={{
+                    position: 'sticky',
+                    bottom: 0,
+                    zIndex: 60,
+                    marginTop: '8px',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '12px',
+                    padding: '7px 14px',
+                    boxShadow: '0 -2px 10px rgba(0,0,0,0.08)',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    alignItems: 'center',
+                    gap: isMobile ? '12px' : '18px',
+                    flexWrap: 'wrap'
+                }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals</span>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-blue)' }}>
+                        Income +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-red)' }}>
+                        Expense −${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span style={{ fontSize: '14px', fontWeight: 800, color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)' }}>
+                        Net ${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                 </div>
             )}
 
