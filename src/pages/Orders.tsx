@@ -935,19 +935,25 @@ const Orders: React.FC = () => {
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
 
-    // Auto-hide the filter bar on mobile: hide while scrolling down, show on scroll up
-    // (same behaviour as the app header). The page scrolls inside Layout's <main>.
+    // Auto-hide the filter bar on mobile: hide while scrolling down, show on scroll up.
+    // The bar is sticky and hides via transform — never by collapsing its layout
+    // height, which would shift the list mid-scroll (a jarring jump) and feed a
+    // phantom "scroll up" event back into this handler.
     const [hideMobileFilters, setHideMobileFilters] = useState(false);
     const lastScrollYRef = useRef(0);
     useEffect(() => {
         if (!isMobile) { setHideMobileFilters(false); return; }
         const mainEl = document.querySelector('main');
         if (!mainEl) return;
+        let acc = 0; // accumulated same-direction scroll distance (hysteresis)
         const onScroll = () => {
             const y = mainEl.scrollTop;
-            if (y > lastScrollYRef.current && y > 80) setHideMobileFilters(true);
-            else if (y < lastScrollYRef.current) setHideMobileFilters(false);
+            const dy = y - lastScrollYRef.current;
             lastScrollYRef.current = y;
+            if ((dy > 0 && acc < 0) || (dy < 0 && acc > 0)) acc = 0;
+            acc += dy;
+            if (acc > 24 && y > 60) { setHideMobileFilters(true); acc = 0; }
+            else if (acc < -24 || y <= 10) { setHideMobileFilters(false); if (acc < -24) acc = 0; }
         };
         mainEl.addEventListener('scroll', onScroll, { passive: true });
         return () => mainEl.removeEventListener('scroll', onScroll);
@@ -1780,13 +1786,11 @@ const Orders: React.FC = () => {
                     <div className="glass-panel" style={{
                         marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50,
                         ...(isMobile ? {
-                            transition: 'max-height 0.3s ease, opacity 0.25s ease, padding 0.3s ease, margin-bottom 0.3s ease',
-                            maxHeight: hideMobileFilters ? '0px' : '600px',
+                            position: 'sticky' as const,
+                            top: 0,
+                            transform: hideMobileFilters ? 'translateY(-130%)' : 'translateY(0)',
                             opacity: hideMobileFilters ? 0 : 1,
-                            paddingTop: hideMobileFilters ? 0 : '16px',
-                            paddingBottom: hideMobileFilters ? 0 : '16px',
-                            marginBottom: hideMobileFilters ? 0 : '12px',
-                            overflow: hideMobileFilters ? 'hidden' : undefined,
+                            transition: 'transform 0.28s ease, opacity 0.25s ease',
                             pointerEvents: hideMobileFilters ? 'none' as const : undefined
                         } : {})
                     }}>
