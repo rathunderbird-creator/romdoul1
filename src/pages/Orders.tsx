@@ -390,7 +390,12 @@ const PayByModalComponent: React.FC<{
 const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
 // Only 'Shipped' may lead here. Delivered and Returned are terminal — re-selecting either
 // would re-open the payment flow and re-run accounting on an order that is already settled.
-const canEnterPostDispatch = (order: Sale) => (order.shipping?.status || 'Pending') === 'Shipped';
+const canEnterPostDispatch = (order: Sale, target?: string) => {
+    const cur = order.shipping?.status || 'Pending';
+    // Returned is also allowed from Delivered: real post-delivery returns, and the
+    // correction path when Delivered was selected by mistake.
+    return cur === 'Shipped' || (target === 'Returned' && cur === 'Delivered');
+};
 const postDispatchMessage = (current: string, target: string) =>
     ['Delivered', 'Returned'].includes(current)
         ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
@@ -2624,7 +2629,7 @@ const Orders: React.FC = () => {
                                             // Checked before any modal opens — the store rejects these
                                             // transitions anyway, and it's needless to make someone fill
                                             // in payment details first.
-                                            if (POST_DISPATCH_STATUSES.includes(status) && !canEnterPostDispatch(order)) {
+                                            if (POST_DISPATCH_STATUSES.includes(status) && !canEnterPostDispatch(order, status)) {
                                                 showToast(postDispatchMessage(order.shipping?.status || 'Pending', status), 'error');
                                                 return;
                                             }
@@ -3097,17 +3102,21 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
+                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
                                                                             disabledOptions={
                                                                                 (order.shipping?.status === 'Shipped')
                                                                                     ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
-                                                                                    : ['Delivered', 'Returned']
+                                                                                    : (order.shipping?.status === 'Delivered')
+                                                                                        // From Delivered only a return is allowed (post-delivery
+                                                                                        // return, or correcting a mistaken Delivered).
+                                                                                        ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
+                                                                                        : ['Delivered', 'Returned']
                                                                             }
                                                                             onChange={(newStatus: string) => {
                                                                                 // Backstop for the disabledOptions above, and it also covers
                                                                                 // 'Returned' — reaching it without shipping would credit
                                                                                 // stock on delete that was never deducted.
-                                                                                if (POST_DISPATCH_STATUSES.includes(newStatus) && !canEnterPostDispatch(order)) {
+                                                                                if (POST_DISPATCH_STATUSES.includes(newStatus) && !canEnterPostDispatch(order, newStatus)) {
                                                                                     showToast(postDispatchMessage(order.shipping?.status || 'Pending', newStatus), 'error');
                                                                                     return;
                                                                                 }

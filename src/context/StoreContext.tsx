@@ -82,10 +82,13 @@ const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(st
 // stock on deletion that was never deducted in the first place.
 const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
 
-// 'Shipped' is the only valid predecessor. Delivered and Returned are terminal: once an
-// order reaches either, it cannot be moved to the other or re-applied to itself, which
-// would re-open the payment flow and re-run stock accounting on a settled order.
-const canEnterPostDispatch = (currentStatus: string) => currentStatus === 'Shipped';
+// 'Shipped' is the valid predecessor for both. 'Returned' may additionally be entered
+// from 'Delivered' — a customer can return goods after receiving them (and it's also
+// the correction path when Delivered was picked by mistake). Stock stays consistent:
+// both states have stock counted out, and restocking only happens via the Restock
+// button. 'Delivered' itself remains reachable only from 'Shipped'.
+const canEnterPostDispatch = (currentStatus: string, targetStatus?: string) =>
+    currentStatus === 'Shipped' || (targetStatus === 'Returned' && currentStatus === 'Delivered');
 
 const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: string) =>
     `This order is "${currentStatus}" and cannot be marked ${targetStatus} directly.\n\n` +
@@ -1390,7 +1393,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
                 currentStatus = data?.shipping_status || 'Pending';
             }
-            if (!canEnterPostDispatch(currentStatus)) {
+            if (!canEnterPostDispatch(currentStatus, status)) {
                 alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
                 return;
             }
@@ -1638,13 +1641,35 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.shipping?.status && POST_DISPATCH_STATUSES.includes(updates.shipping.status)) {
             const currentStatus = existingOrder?.shipping?.status || 'Pending';
             const isRealChange = currentStatus !== updates.shipping.status;
-            if (isRealChange && !canEnterPostDispatch(currentStatus)) {
+            if (isRealChange && !canEnterPostDispatch(currentStatus, updates.shipping.status)) {
                 alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, updates.shipping.status));
                 return;
             }
         }
 
         if (updates.paymentStatus === 'Cancel') {
+            // If the order was already Paid/Settled, its income was logged — remove it so
+            // the books don't keep revenue for a cancelled/returned order (e.g. a return
+            // recorded after delivery). Matched the same way income is looked up elsewhere.
+            if (existingOrder && ['Paid', 'Settled', 'Paid/Settled'].includes(existingOrder.paymentStatus || '')) {
+                const custName = existingOrder.customer?.name || 'Customer';
+                try {
+                    const { data: paidTxns } = await supabase.from('transactions')
+                        .select('id')
+                        .eq('type', 'Income')
+                        .eq('category', 'លក់ឥវ៉ាន់')
+                        .eq('description', custName)
+                        .or(`amount.eq.${existingOrder.amountReceived || 0},amount.eq.${existingOrder.total}`)
+                        .limit(1);
+                    if (paidTxns && paidTxns.length > 0) {
+                        await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
+                        setTransactions(prev => prev.filter(t => t.id !== paidTxns[0].id));
+                    }
+                } catch (e) {
+                    console.error('Failed to remove income for cancelled paid order:', e);
+                }
+            }
+
             // Cancelling payment normally sends shipping back to 'Pending' so the order can
             // be re-processed. But when the caller ALSO sets a shipping status (the
             // Returned / Cancelled / ReStock transitions cancel payment as a side effect and
