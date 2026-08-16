@@ -556,3 +556,13 @@ div:has(> svg) .search-input {
         transform: rotate(360deg);
     }
 }
+/* iOS Safari auto-zooms when a focused form control has font-size < 16px.
+   Keep all form controls at 16px on phones so tapping a search box never zooms.
+   (!important because many inputs set smaller inline font sizes.) */
+@media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}

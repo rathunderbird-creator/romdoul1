@@ -396,6 +396,27 @@ const canEnterPostDispatch = (order: Sale, target?: string) => {
     // correction path when Delivered was selected by mistake.
     return cur === 'Shipped' || (target === 'Returned' && cur === 'Delivered');
 };
+
+// Always-visible chip group for the mobile filter drawer (no hidden dropdowns).
+const DrawerChipGroup: React.FC<{ title: string; options: string[]; selected: string[]; onToggle: (v: string) => void }> = ({ title, options, selected, onToggle }) => (
+    <div>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {options.map(opt => {
+                const active = selected.includes(opt);
+                return (
+                    <button
+                        key={opt}
+                        onClick={() => onToggle(opt)}
+                        style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                    >
+                        {opt}
+                    </button>
+                );
+            })}
+        </div>
+    </div>
+);
 const postDispatchMessage = (current: string, target: string) =>
     ['Delivered', 'Returned'].includes(current)
         ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
@@ -1801,33 +1822,8 @@ const Orders: React.FC = () => {
                         <div onClick={() => setIsFilterDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1199 }} />
                     )}
 
-                    <div className="glass-panel" style={{
-                        ...(!isMobile ? {
-                            marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap' as const, gap: '16px', alignItems: 'center', position: 'relative' as const, zIndex: 50
-                        } : {
-                            // Right-side slide-in filter drawer
-                            position: 'fixed' as const,
-                            top: 0, right: 0, bottom: 0,
-                            width: '85%', maxWidth: '340px',
-                            zIndex: 1200,
-                            display: 'flex', flexDirection: 'column' as const, flexWrap: 'nowrap' as const,
-                            gap: '14px', padding: '16px',
-                            overflowY: 'auto' as const,
-                            borderRadius: '16px 0 0 16px',
-                            background: 'var(--color-surface)',
-                            transform: isFilterDrawerOpen ? 'translateX(0)' : 'translateX(105%)',
-                            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                            boxShadow: '-8px 0 30px rgba(0,0,0,0.18)'
-                        })
-                    }}>
-                        {isMobile && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
-                                <button onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <X size={18} />
-                                </button>
-                            </div>
-                        )}
+                    {!isMobile && (
+                    <div className="glass-panel" style={{ marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50 }}>
 
 
                         {/* Search and DatePicker Row */}
@@ -2667,8 +2663,89 @@ const Orders: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Mobile drawer footer: Clear + Done */}
-                        {isMobile && (
+                    </div >
+                    )}
+
+                    {/* Mobile filter drawer: search / date / refresh on top, all
+                        filter groups expanded as chips below (no hidden dropdowns) */}
+                    {isMobile && (
+                        <div className="glass-panel" style={{
+                            position: 'fixed', top: 0, right: 0, bottom: 0,
+                            width: '85%', maxWidth: '340px', zIndex: 1200,
+                            display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px',
+                            overflowY: 'auto', borderRadius: '16px 0 0 16px',
+                            background: 'var(--color-surface)',
+                            transform: isFilterDrawerOpen ? 'translateX(0)' : 'translateX(105%)',
+                            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                            boxShadow: '-8px 0 30px rgba(0,0,0,0.18)'
+                        }}>
+                            {/* Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
+                                <button onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Search */}
+                            <div style={{ position: 'relative' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search orders..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                />
+                            </div>
+
+                            {/* Date range + refresh */}
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+                                </div>
+                                <button
+                                    onClick={() => refreshData(true)}
+                                    title="Refresh"
+                                    style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                                >
+                                    <RefreshCw size={17} />
+                                </button>
+                            </div>
+
+                            {/* Expanded filter groups */}
+                            <DrawerChipGroup
+                                title="Order Status"
+                                options={['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock']}
+                                selected={statusFilter}
+                                onToggle={(v) => setStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
+                            />
+                            <DrawerChipGroup
+                                title="Pay Status"
+                                options={['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel']}
+                                selected={payStatusFilter}
+                                onToggle={(v) => setPayStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
+                            />
+                            <DrawerChipGroup
+                                title="Salesman"
+                                options={users.map(u => u.name)}
+                                selected={salesmanFilter === 'All' ? [] : [salesmanFilter]}
+                                onToggle={(v) => setSalesmanFilter(salesmanFilter === v ? 'All' : v)}
+                            />
+                            <DrawerChipGroup
+                                title="Shipping Co"
+                                options={shippingCompanies}
+                                selected={shippingCoFilter}
+                                onToggle={(v) => setShippingCoFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
+                            />
+                            <DrawerChipGroup
+                                title="Page"
+                                options={pages}
+                                selected={pageFilter}
+                                onToggle={(v) => setPageFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
+                            />
+
+                            {/* Footer: Clear + Filter */}
                             <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--color-surface)', paddingTop: '12px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '10px' }}>
                                 <button
                                     onClick={() => {
@@ -2692,8 +2769,8 @@ const Orders: React.FC = () => {
                                     Filter
                                 </button>
                             </div>
-                        )}
-                    </div >
+                        </div>
+                    )}
 
                     {/* Table or Mobile List */}
                     <div style={{
