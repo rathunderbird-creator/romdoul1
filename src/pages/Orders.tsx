@@ -1261,14 +1261,17 @@ const Orders: React.FC = () => {
                 }
             }
 
-        return query;
+        // PostgREST builders are thenables — returning one straight out of an
+        // async function makes `await` EXECUTE the query and hand back its result
+        // instead of the builder. Wrap it so the caller gets the builder intact.
+        return { query };
     }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters]);
 
     const fetchOrders = React.useCallback(async () => {
         setIsLoadingOrders(true);
         try {
             let query: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
-            query = await applyOrderFilters(query);
+            query = (await applyOrderFilters(query)).query;
 
             let dbSortCol = 'date';
             if (sortConfig) {
@@ -1321,7 +1324,7 @@ const Orders: React.FC = () => {
                     const CHUNK = 1000;
                     for (let fromRow = 0; fromRow < 20000; fromRow += CHUNK) {
                         let sumQuery: any = supabase.from('sales').select('total');
-                        sumQuery = await applyOrderFilters(sumQuery);
+                        sumQuery = (await applyOrderFilters(sumQuery)).query;
                         const { data: rows, error: sumError } = await sumQuery
                             .in('shipping_status', REVENUE_TOTAL_STATUSES)
                             .range(fromRow, fromRow + CHUNK - 1);
