@@ -261,6 +261,15 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
     // Filtering
     const filteredTransactions = useMemo(() => {
+        // Customers matched by phone / tracking ID on their orders. Deposit and
+        // wholesale rows append markers after the name (#DEP-…, · INV #WSP-…),
+        // so match on prefix rather than requiring the exact description.
+        const orderNames = Array.from(orderSearchNames);
+        const matchesOrderCustomer = (description?: string) => {
+            if (orderNames.length === 0) return false;
+            const desc = (description || '').trim().toLowerCase();
+            return orderNames.some(n => n && desc.startsWith(n));
+        };
         return localTransactions.filter(t => {
             const matchesType = filterType === 'All' || t.type === filterType;
             const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
@@ -268,8 +277,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             const matchesSearch = (t.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                 (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                 (t.shipping_co?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                // Customers matched by phone / tracking ID on their orders.
-                orderSearchNames.has((t.description || '').trim().toLowerCase());
+                matchesOrderCustomer(t.description);
 
             const itemDate = parseDate(t.date);
 

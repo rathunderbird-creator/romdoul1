@@ -422,6 +422,9 @@ const postDispatchMessage = (current: string, target: string) =>
         ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
         : `Mark the order Shipped before ${target} — set it back to Drafted and follow Confirmed → Shipped.`;
 
+// Statuses that count as (expected) revenue in the mobile footer's Total.
+const REVENUE_TOTAL_STATUSES = ['Confirmed', 'Shipped', 'Delivered'];
+
 const LOCKED_ORDER_STATUSES = ['ReStock', 'Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
@@ -1014,6 +1017,9 @@ const Orders: React.FC = () => {
     // Mobile ignores itemsPerPage and infinite-scrolls in batches of this size.
     const MOBILE_PAGE_SIZE = 100;
     const [totalCount, setTotalCount] = useState(0);
+    // Revenue across ALL orders matching the filters (Confirmed/Shipped/Delivered
+    // only). null = query failed; the footer then falls back to the loaded rows.
+    const [revenueTotal, setRevenueTotal] = useState<number | null>(null);
 
     const [serverOrders, setServerOrders] = useState<Sale[]>([]);
     const [isLoadingOrders, setIsLoadingOrders] = useState(false);
@@ -1023,11 +1029,10 @@ const Orders: React.FC = () => {
         setCurrentPage(1);
     }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, columnFilters, itemsPerPage, isMobile]);
 
-    const fetchOrders = React.useCallback(async () => {
-        setIsLoadingOrders(true);
-        try {
-            let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
-
+    // Applies every active filter (status, salesman, pay status, shipping co,
+    // page, date range, search, column filters) to a sales query builder.
+    // Shared by the page fetch and the revenue-total query so both always agree.
+    const applyOrderFilters = React.useCallback(async (query: any) => {
             if (statusFilter.length > 0) {
                 query = query.in('shipping_status', statusFilter);
             }
@@ -1256,6 +1261,15 @@ const Orders: React.FC = () => {
                 }
             }
 
+        return query;
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters]);
+
+    const fetchOrders = React.useCallback(async () => {
+        setIsLoadingOrders(true);
+        try {
+            let query: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
+            query = await applyOrderFilters(query);
+
             let dbSortCol = 'date';
             if (sortConfig) {
                 const map: Record<string, string> = {
@@ -1296,12 +1310,37 @@ const Orders: React.FC = () => {
 
             const mapped = (data || []).map(mapSaleEntity);
             setServerOrders(mapped);
+
+            // Mobile footer Total: revenue across ALL matching orders (not just the
+            // loaded window), counting only Confirmed / Shipped / Delivered. Summed
+            // client-side in chunks — works without PostgREST aggregates and isn't
+            // silently capped by the API's max-rows limit.
+            if (isMobile) {
+                try {
+                    let revenue = 0;
+                    const CHUNK = 1000;
+                    for (let fromRow = 0; fromRow < 20000; fromRow += CHUNK) {
+                        let sumQuery: any = supabase.from('sales').select('total');
+                        sumQuery = await applyOrderFilters(sumQuery);
+                        const { data: rows, error: sumError } = await sumQuery
+                            .in('shipping_status', REVENUE_TOTAL_STATUSES)
+                            .range(fromRow, fromRow + CHUNK - 1);
+                        if (sumError) throw sumError;
+                        for (const r of rows || []) revenue += Number((r as any).total) || 0;
+                        if (!rows || rows.length < CHUNK) break;
+                    }
+                    setRevenueTotal(revenue);
+                } catch (sumErr) {
+                    console.error('Failed to compute revenue total:', sumErr);
+                    setRevenueTotal(null);
+                }
+            }
         } catch (err) {
             console.error("Fetch orders failed", err);
         } finally {
             setIsLoadingOrders(false);
         }
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt, columnFilters, isMobile]);
+    }, [applyOrderFilters, sortConfig, currentPage, itemsPerPage, salesUpdatedAt, isMobile]);
 
     useEffect(() => {
         fetchOrders();
@@ -2738,7 +2777,7 @@ const Orders: React.FC = () => {
                             {/* Expanded filter groups */}
                             <DrawerChipGroup
                                 title="Order Status"
-                                options={['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock']}
+                                options={['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled']}
                                 selected={statusFilter}
                                 onToggle={(v) => setStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
                             />
@@ -2803,9 +2842,14 @@ const Orders: React.FC = () => {
                     }}>
                         {isMobile ? (
                             <div style={{ display: 'flex', flexDirection: 'column', padding: '0 0 100px 0', background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden' }}>
-                                {paginatedOrders.length === 0 && (
+                                {paginatedOrders.length === 0 && !isLoadingOrders && (
                                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                         {emptyStateContent}
+                                    </div>
+                                )}
+                                {paginatedOrders.length === 0 && isLoadingOrders && (
+                                    <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                        <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading orders…
                                     </div>
                                 )}
                                 {paginatedOrders.map(order => (
@@ -2845,7 +2889,9 @@ const Orders: React.FC = () => {
                                                 updateOrder(id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
                                                 restockOrder(id);
                                             } else if (status === 'Returned' || status === 'Cancelled') {
-                                                updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined, shipping: { ...order.shipping, status } as any });
+                                                // null, not undefined — updateOrder skips undefined fields,
+                                                // which left the old settle_date on cancelled orders.
+                                                updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
                                             }
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
@@ -2855,8 +2901,11 @@ const Orders: React.FC = () => {
                                                 return;
                                             }
                                             if (status === 'Paid' || status === 'Settled') {
-                                                updates.amountReceived = order.total;
-                                                updates.settleDate = new Date().toISOString();
+                                                // Same flow as desktop: capture Pay By + settle date
+                                                // in the settle modal instead of silently defaulting.
+                                                setPaymentMethodTargetOrder(order);
+                                                setIsPaymentMethodModalOpen(true);
+                                                return;
                                             } else if (status === 'Cancel') {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
@@ -2929,7 +2978,9 @@ const Orders: React.FC = () => {
                                     <div style={{ textAlign: 'right' }}>
                                         <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
                                         <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-primary)' }}>
-                                            ${filteredOrders.reduce((sum, order) => sum + order.total, 0).toFixed(2)}
+                                            ${(revenueTotal ?? filteredOrders
+                                                .filter(o => REVENUE_TOTAL_STATUSES.includes(o.shipping?.status || ''))
+                                                .reduce((sum, order) => sum + order.total, 0)).toFixed(2)}
                                         </div>
                                     </div>
                                 </div>
@@ -3280,7 +3331,7 @@ const Orders: React.FC = () => {
                                                                         textAlign: 'left'
                                                                     }}>
                                                                         <PaymentStatusBadge
-                                                                            status={order.paymentStatus || 'Paid'}
+                                                                            status={order.paymentStatus || 'Unpaid'}
                                                                             disabledOptions={['Cancel']}
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
@@ -3370,7 +3421,9 @@ const Orders: React.FC = () => {
                                                                                     updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
                                                                                     restockOrder(order.id);
                                                                                 } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
-                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: undefined, shipping: { ...order.shipping, status: newStatus } as any });
+                                                                                    // null, not undefined — updateOrder skips undefined fields,
+                                                                                    // which left the old settle_date on cancelled orders.
+                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
                                                                                 }
                                                                             }}
                                                                         />

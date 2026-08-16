@@ -282,7 +282,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                 </div>
                                 <div className="moc-status-control">
                                     <PaymentStatusBadge
-                                        status={order.paymentStatus || 'Paid'}
+                                        status={order.paymentStatus || 'Unpaid'}
                                         onChange={(newStatus) => onUpdatePaymentStatus(order.id, newStatus)}
                                         readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
                                         disabledOptions={['Cancel']}
