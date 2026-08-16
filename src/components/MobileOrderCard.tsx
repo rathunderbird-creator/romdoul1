@@ -19,6 +19,7 @@ interface MobileOrderCardProps {
     onUpdateStatus: (id: string, status: any) => void;
     onUpdatePaymentStatus: (id: string, status: any) => void;
     canEdit: boolean;
+    isAdmin?: boolean;
 }
 
 const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
@@ -33,7 +34,8 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     onCopy,
     onUpdateStatus,
     onUpdatePaymentStatus,
-    canEdit
+    canEdit,
+    isAdmin = false
 }) => {
     const getInitials = (name: string) => {
         return name
@@ -284,8 +286,11 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Unpaid'}
                                         onChange={(newStatus) => onUpdatePaymentStatus(order.id, newStatus)}
-                                        readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
-                                        disabledOptions={['Cancel']}
+                                        // Admins bypass the lock so they can correct mistakes
+                                        // (e.g. un-mark a wrong Paid); the store cleans up the
+                                        // logged income when leaving Paid.
+                                        readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'))}
+                                        disabledOptions={isAdmin ? [] : ['Cancel']}
                                     />
                                 </div>
                             </div>

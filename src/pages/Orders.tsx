@@ -2919,6 +2919,7 @@ const Orders: React.FC = () => {
                                             updateOrder(id, updates);
                                         }}
                                         canEdit={canEdit}
+                                        isAdmin={isAdmin}
                                     />
                                 ))}
 
@@ -3335,7 +3336,7 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <PaymentStatusBadge
                                                                             status={order.paymentStatus || 'Unpaid'}
-                                                                            disabledOptions={['Cancel']}
+                                                                            disabledOptions={isAdmin ? [] : ['Cancel']}
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
@@ -3354,7 +3355,10 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 updateOrder(order.id, updates);
                                                                             }}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'}
+                                                                            // Admins bypass the lock so they can correct mistakes
+                                                                            // (e.g. un-mark a wrong Paid); the store cleans up the
+                                                                            // logged income when leaving Paid.
+                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'))}
                                                                         />
                                                                     </td>
                                                                 );

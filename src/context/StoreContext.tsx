@@ -1647,34 +1647,40 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
-        if (updates.paymentStatus === 'Cancel') {
-            // If the order was already Paid/Settled, its income was logged — remove it so
-            // the books don't keep revenue for a cancelled/returned order (e.g. a return
-            // recorded after delivery). Matched the same way income is looked up elsewhere.
-            if (existingOrder && ['Paid', 'Settled', 'Paid/Settled'].includes(existingOrder.paymentStatus || '')) {
-                const custName = existingOrder.customer?.name || 'Customer';
-                // Deposit orders logged only the remainder as sales income — match that
-                // too. The deposit entry itself (កក់ប្រាក់) is never removed: kept always.
-                const dep = existingOrder.depositAmount || 0;
-                const amountMatches = [existingOrder.amountReceived || 0, existingOrder.total];
-                if (dep > 0) amountMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - dep), Math.max(0, existingOrder.total - dep));
-                try {
-                    const { data: paidTxns } = await supabase.from('transactions')
-                        .select('id')
-                        .eq('type', 'Income')
-                        .eq('category', 'លក់ឥវ៉ាន់')
-                        .eq('description', custName)
-                        .or(amountMatches.map(a => `amount.eq.${a}`).join(','))
-                        .limit(1);
-                    if (paidTxns && paidTxns.length > 0) {
-                        await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
-                        setTransactions(prev => prev.filter(t => t.id !== paidTxns[0].id));
-                    }
-                } catch (e) {
-                    console.error('Failed to remove income for cancelled paid order:', e);
+        // Leaving Paid/Settled for ANY non-paid status — Cancel, or an admin unlocking a
+        // mistaken Paid back to Unpaid/Get File/Deposit — removes the income that was
+        // logged when the order was marked Paid, so the books don't keep revenue that is
+        // no longer collected. Matched the same way income is looked up elsewhere.
+        // The deposit entry itself (កក់ប្រាក់) is never removed: deposits are always kept.
+        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
+        if (
+            updates.paymentStatus !== undefined &&
+            !PAID_STATUSES.includes(updates.paymentStatus || '') &&
+            existingOrder && PAID_STATUSES.includes(existingOrder.paymentStatus || '')
+        ) {
+            const custName = existingOrder.customer?.name || 'Customer';
+            // Deposit orders logged only the remainder as sales income — match that too.
+            const dep = existingOrder.depositAmount || 0;
+            const amountMatches = [existingOrder.amountReceived || 0, existingOrder.total];
+            if (dep > 0) amountMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - dep), Math.max(0, existingOrder.total - dep));
+            try {
+                const { data: paidTxns } = await supabase.from('transactions')
+                    .select('id')
+                    .eq('type', 'Income')
+                    .eq('category', 'លក់ឥវ៉ាន់')
+                    .eq('description', custName)
+                    .or(amountMatches.map(a => `amount.eq.${a}`).join(','))
+                    .limit(1);
+                if (paidTxns && paidTxns.length > 0) {
+                    await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
+                    setTransactions(prev => prev.filter(t => t.id !== paidTxns[0].id));
                 }
+            } catch (e) {
+                console.error('Failed to remove income for un-paid order:', e);
             }
+        }
 
+        if (updates.paymentStatus === 'Cancel') {
             // Cancelling payment normally sends shipping back to 'Pending' so the order can
             // be re-processed. But when the caller ALSO sets a shipping status (the
             // Returned / Cancelled / ReStock transitions cancel payment as a side effect and

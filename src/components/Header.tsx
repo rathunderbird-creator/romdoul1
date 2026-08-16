@@ -103,15 +103,26 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         {t('header.recentActions')}
                     </p>
                 </div>
-                <button
-                    onClick={closePanel}
-                    style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--color-text-muted)', display: 'flex', padding: '4px'
-                    }}
-                >
-                    <X size={16} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                        onClick={() => { closePanel(); navigate('/activity-log'); }}
+                        style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600, padding: '4px'
+                        }}
+                    >
+                        View all
+                    </button>
+                    <button
+                        onClick={closePanel}
+                        style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--color-text-muted)', display: 'flex', padding: '4px'
+                        }}
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
             </div>
 
             {/* Log List */}

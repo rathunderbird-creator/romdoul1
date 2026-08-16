@@ -30,6 +30,7 @@ const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
 const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
 const Revenue = lazy(() => import('./pages/Revenue'));
 const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
+const ActivityLogPage = lazy(() => import('./pages/ActivityLogPage'));
 
 const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
 const SalesSummary = lazy(() => import('./pages/reports/SalesSummary'));
@@ -129,6 +130,7 @@ const ProtectedApp = () => {
           <Route path="/payment-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><PaymentTracking /></ProtectedRoute>} />
 
           <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
+          <Route path="/activity-log" element={<ProtectedRoute requiredPermission="view_dashboard"><ActivityLogPage /></ProtectedRoute>} />
           {/* HR & Payroll */}
           <Route path="/hr/attendance" element={<ProtectedRoute requiredPermission="manage_attendance"><AttendancePage /></ProtectedRoute>} />
 
