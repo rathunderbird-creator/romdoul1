@@ -1747,7 +1747,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 amount: amountToRecord || 0,
                 description: customerName,
                 addedBy: currentUser?.name || 'System',
-                shipping_co: shippingCoToRecord
+                shipping_co: shippingCoToRecord,
+                // The Pay By chosen in the settle modal (falls back to the order's method).
+                pay_by: updates.paymentMethod || existingOrder.paymentMethod || null
             };
 
             // Optimistic update
@@ -1762,7 +1764,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 amount: newTransaction.amount,
                 description: newTransaction.description,
                 added_by: newTransaction.addedBy,
-                shipping_co: newTransaction.shipping_co
+                shipping_co: newTransaction.shipping_co,
+                pay_by: newTransaction.pay_by
             }]).then(({ error }) => {
                 if (error) console.error('Failed to create transaction for updated order:', error);
             });
@@ -1810,7 +1813,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         amount: amountToRecord || 0,
                         description: customerName,
                         addedBy: currentUser?.name || 'System',
-                        shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null
+                        shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null,
+                        pay_by: updates.paymentMethod || existingOrder.paymentMethod || null
                     };
                     setTransactions(prev => [healed, ...prev]);
                     const { error: healErr } = await supabase.from('transactions').insert([{
@@ -1821,7 +1825,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         amount: healed.amount,
                         description: healed.description,
                         added_by: healed.addedBy,
-                        shipping_co: healed.shipping_co
+                        shipping_co: healed.shipping_co,
+                        pay_by: healed.pay_by
                     }]);
                     if (healErr) console.error('Failed to create missing income transaction:', healErr);
                 }
@@ -1845,7 +1850,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     amount: depAmount,
                     description: `${custName} #DEP-${id.slice(0, 8)}`,
                     addedBy: currentUser?.name || 'System',
-                    shipping_co: existingOrder.shipping?.company || null
+                    shipping_co: existingOrder.shipping?.company || null,
+                    pay_by: updates.depositMethod || null
                 };
                 setTransactions(prev => [depTxn, ...prev]);
                 supabase.from('transactions').insert([{
