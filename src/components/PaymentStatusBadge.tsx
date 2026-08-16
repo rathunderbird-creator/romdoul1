@@ -17,6 +17,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
     const getStatusStyle = (s: string) => {
         switch (s) {
             case 'Paid': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
+            case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE', border: '#D8B4FE' }; // Purple
             case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8', border: '#93C5FD' }; // Blue
             case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
             case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5', border: '#A5B4FC' }; // Indigo
@@ -48,7 +49,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         width: '100%'
     };
 
-    const options = ['Unpaid', 'Get File', 'Paid', 'Cancel'];
+    const options = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel'];
 
     // Update position when opening
     useEffect(() => {

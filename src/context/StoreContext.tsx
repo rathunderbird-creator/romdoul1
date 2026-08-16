@@ -1653,13 +1653,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // recorded after delivery). Matched the same way income is looked up elsewhere.
             if (existingOrder && ['Paid', 'Settled', 'Paid/Settled'].includes(existingOrder.paymentStatus || '')) {
                 const custName = existingOrder.customer?.name || 'Customer';
+                // Deposit orders logged only the remainder as sales income — match that
+                // too. The deposit entry itself (កក់ប្រាក់) is never removed: kept always.
+                const dep = existingOrder.depositAmount || 0;
+                const amountMatches = [existingOrder.amountReceived || 0, existingOrder.total];
+                if (dep > 0) amountMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - dep), Math.max(0, existingOrder.total - dep));
                 try {
                     const { data: paidTxns } = await supabase.from('transactions')
                         .select('id')
                         .eq('type', 'Income')
                         .eq('category', 'លក់ឥវ៉ាន់')
                         .eq('description', custName)
-                        .or(`amount.eq.${existingOrder.amountReceived || 0},amount.eq.${existingOrder.total}`)
+                        .or(amountMatches.map(a => `amount.eq.${a}`).join(','))
                         .limit(1);
                     if (paidTxns && paidTxns.length > 0) {
                         await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
@@ -1704,9 +1709,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Sync Income/Expense: If changed to 'Paid'/'Settled' (and wasn't before)
         if (isPaidStatus(updates.paymentStatus) && existingOrder && !isPaidStatus(existingOrder.paymentStatus)) {
             const transactionId = generateUUID();
-            const amountToRecord = updates.amountReceived !== undefined
+            // A deposit was already logged as income when it was received, so a
+            // deposit order only logs the COD remainder here. When no explicit
+            // amount is passed, a deposit order is treated as fully collected
+            // (amountReceived currently holds just the deposit).
+            const depositPaid = existingOrder.paymentStatus === 'Deposit' ? (existingOrder.depositAmount || 0) : 0;
+            if (depositPaid > 0 && updates.amountReceived === undefined) {
+                updates.amountReceived = existingOrder.total;
+            }
+            const grossReceived = updates.amountReceived !== undefined
                 ? updates.amountReceived
                 : (existingOrder.amountReceived || existingOrder.total);
+            const amountToRecord = Math.max(0, (grossReceived || 0) - depositPaid);
 
             const customerName = updates.customer?.name
                 || existingOrder.customer?.name
@@ -1757,9 +1771,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // the settle-date view — and if it was never logged (silent failure or
             // legacy data), create it now.
             const customerName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
-            const amountToRecord = updates.amountReceived !== undefined
+            // Deposit orders keep the deposit income separate — the sales entry only
+            // holds the remainder, so match and update against remainder amounts too.
+            const depositHeld = existingOrder.depositAmount || 0;
+            const grossForSync = updates.amountReceived !== undefined
                 ? updates.amountReceived
                 : (existingOrder.amountReceived || existingOrder.total);
+            const amountToRecord = Math.max(0, (grossForSync || 0) - depositHeld);
+            const syncMatches = [existingOrder.amountReceived || 0, existingOrder.total];
+            if (depositHeld > 0) syncMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - depositHeld), Math.max(0, existingOrder.total - depositHeld));
             const rawDate = updates.settleDate;
             const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDate).toISOString() : rawDate;
             try {
@@ -1768,7 +1788,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     .eq('type', 'Income')
                     .eq('category', 'លក់ឥវ៉ាន់')
                     .eq('description', customerName)
-                    .or(`amount.eq.${existingOrder.amountReceived || 0},amount.eq.${existingOrder.total}`)
+                    .or(syncMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
                 if (txns && txns.length > 0) {
                     await supabase.from('transactions')
@@ -1802,6 +1822,40 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             } catch (e) {
                 console.error('Failed to sync income transaction with settle date:', e);
             }
+        } else if (updates.paymentStatus === 'Deposit' && existingOrder && existingOrder.paymentStatus !== 'Deposit') {
+            // Deposit received: log it as income right away (category កក់ប្រាក់).
+            // Deposits are always kept — cancelling the order later never removes
+            // this entry (the cancel cleanup only targets 'លក់ឥវ៉ាន់').
+            const depAmount = Number(updates.depositAmount) || 0;
+            if (depAmount > 0) {
+                const custName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
+                const rawDepDate = updates.depositDate || new Date().toISOString();
+                const depDateIso = rawDepDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDepDate).toISOString() : rawDepDate;
+                const depTxn = {
+                    id: generateUUID(),
+                    date: depDateIso,
+                    type: 'Income' as const,
+                    category: 'កក់ប្រាក់',
+                    amount: depAmount,
+                    description: `${custName} #DEP-${id.slice(0, 8)}`,
+                    addedBy: currentUser?.name || 'System',
+                    shipping_co: existingOrder.shipping?.company || null
+                };
+                setTransactions(prev => [depTxn, ...prev]);
+                supabase.from('transactions').insert([{
+                    id: depTxn.id,
+                    date: depTxn.date,
+                    type: depTxn.type,
+                    category: depTxn.category,
+                    amount: depTxn.amount,
+                    description: depTxn.description,
+                    added_by: depTxn.addedBy,
+                    pay_by: updates.depositMethod || null,
+                    shipping_co: depTxn.shipping_co
+                }]).then(({ error }) => {
+                    if (error) console.error('Failed to log deposit income:', error);
+                });
+            }
         }
 
         // 2. Prepare DB Updates for 'sales' table
@@ -1815,6 +1869,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
         if (updates.amountReceived !== undefined) dbUpdates.amount_received = updates.amountReceived;
         if (updates.settleDate !== undefined) dbUpdates.settle_date = updates.settleDate || null;
+        if (updates.depositAmount !== undefined) dbUpdates.deposit_amount = updates.depositAmount;
+        if (updates.depositDate !== undefined) dbUpdates.deposit_date = updates.depositDate || null;
+        if (updates.depositMethod !== undefined) dbUpdates.deposit_method = updates.depositMethod || null;
         if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) {

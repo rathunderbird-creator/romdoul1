@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal } from '../components';
+import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
@@ -933,6 +933,7 @@ const Orders: React.FC = () => {
     // Select Payment Method Modal State
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
+    const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
 
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
@@ -2231,7 +2232,7 @@ const Orders: React.FC = () => {
                                                         checked={payStatusFilter.length === 4}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setPayStatusFilter(['Unpaid', 'Get File', 'Paid', 'Cancel']);
+                                                                setPayStatusFilter(['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel']);
                                                             } else {
                                                                 setPayStatusFilter([]);
                                                             }
@@ -2240,7 +2241,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                 </label>
-                                                {['Unpaid', 'Get File', 'Paid', 'Cancel'].map(status => (
+                                                {['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel'].map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -2655,6 +2656,10 @@ const Orders: React.FC = () => {
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
                                             const updates: any = { paymentStatus: status };
+                                            if (status === 'Deposit') {
+                                                setDepositTargetOrder(order);
+                                                return;
+                                            }
                                             if (status === 'Paid' || status === 'Settled') {
                                                 updates.amountReceived = order.total;
                                                 updates.settleDate = new Date().toISOString();
@@ -3069,6 +3074,9 @@ const Orders: React.FC = () => {
                                                                                     setPaymentMethodTargetOrder(order);
                                                                                     setIsPaymentMethodModalOpen(true);
                                                                                     return;
+                                                                                } else if (newStatus === 'Deposit') {
+                                                                                    setDepositTargetOrder(order);
+                                                                                    return;
                                                                                 } else if (newStatus === 'Cancel') {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
@@ -3443,10 +3451,11 @@ const Orders: React.FC = () => {
                                     <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
                                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                         {(() => {
-                                            const payStatuses = ['Unpaid', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
                                             const getPayStatusColors = (s: string) => {
                                                 switch (s) {
                                                     case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
+                                                    case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE' };
                                                     case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
                                                     case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
                                                     case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
@@ -3713,6 +3722,22 @@ const Orders: React.FC = () => {
                     }}
                 />
             )}
+            {/* Deposit Modal */}
+            <DepositModal
+                order={depositTargetOrder}
+                onClose={() => setDepositTargetOrder(null)}
+                onConfirm={({ amount, method, date }) => {
+                    if (!depositTargetOrder) return;
+                    updateOrder(depositTargetOrder.id, {
+                        paymentStatus: 'Deposit',
+                        depositAmount: amount,
+                        depositMethod: method,
+                        depositDate: date,
+                        amountReceived: amount
+                    });
+                    setDepositTargetOrder(null);
+                }}
+            />
             <DataImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}

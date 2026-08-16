@@ -81,6 +81,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
         switch (payStatus) {
             case 'Paid': return 'pay-paid';
             case 'Unpaid': return 'pay-unpaid';
+            case 'Deposit': return 'pay-deposit';
             case 'Get File': return 'pay-getfile';
             case 'Cancel': return 'pay-cancel';
             default: return 'pay-unpaid';

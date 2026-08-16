@@ -149,6 +149,7 @@
 /* Payment pills */
 .moc-tag.pay-paid { background: #059669; }
 .moc-tag.pay-unpaid { background: #DC2626; }
+.moc-tag.pay-deposit { background: #7E22CE; }
 .moc-tag.pay-getfile { background: #2563EB; }
 .moc-tag.pay-cancel { background: #6B7280; text-decoration: line-through; }
 

@@ -56,9 +56,13 @@ export interface Sale {
     remark?: string;
     amountReceived?: number;
     settleDate?: string;
+    // Upfront deposit (always kept, even if the order is later cancelled/returned).
+    depositAmount?: number;
+    depositDate?: string;
+    depositMethod?: string;
     lastEditedAt?: string; // ISO string
     lastEditedBy?: string;
-    paymentStatus?: 'Unpaid' | 'Paid' | 'Get File' | 'Cancel';
+    paymentStatus?: 'Unpaid' | 'Deposit' | 'Paid' | 'Get File' | 'Cancel';
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;
     pageSource?: string;

@@ -5,7 +5,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit, Trash2 } from 'lucide-react';
 import type { Sale } from '../types';
-import { PaymentStatusBadge, DateRangePicker, StatusBadge, SettlePaymentModal, POSInterface, BulkEditModal } from '../components';
+import { PaymentStatusBadge, DateRangePicker, StatusBadge, SettlePaymentModal, POSInterface, BulkEditModal, DepositModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -472,6 +472,7 @@ const PaymentTracking: React.FC = () => {
     // Select Payment Method Modal State
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
+    const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
 
     // Server-side fetching (same pattern as Orders Management)
     const [currentPage, setCurrentPage] = useState(1);
@@ -1249,6 +1250,10 @@ const PaymentTracking: React.FC = () => {
                                                 setIsPaymentMethodModalOpen(true);
                                                 return;
                                             }
+                                            if (newStatus === 'Deposit') {
+                                                setDepositTargetOrder(order);
+                                                return;
+                                            }
                                             updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })
                                         }}
                                         readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
@@ -1483,6 +1488,23 @@ const PaymentTracking: React.FC = () => {
                     }}
                 />
             )}
+
+            {/* Deposit Modal */}
+            <DepositModal
+                order={depositTargetOrder}
+                onClose={() => setDepositTargetOrder(null)}
+                onConfirm={({ amount, method, date }) => {
+                    if (!depositTargetOrder) return;
+                    updateOrder(depositTargetOrder.id, {
+                        paymentStatus: 'Deposit',
+                        depositAmount: amount,
+                        depositMethod: method,
+                        depositDate: date,
+                        amountReceived: amount
+                    });
+                    setDepositTargetOrder(null);
+                }}
+            />
 
             {/* Report Modal */}
             <ReportModal

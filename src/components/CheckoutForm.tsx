@@ -113,7 +113,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         discount: number | string;
         enableDiscount: boolean;
         shippingStatus: NonNullable<Sale['shipping']>['status'];
-        paymentStatus: 'Unpaid' | 'Paid' | 'Get File' | 'Cancel';
+        paymentStatus: 'Unpaid' | 'Deposit' | 'Paid' | 'Get File' | 'Cancel';
         date: string;
     } = {
         customerName: orderToEdit?.customer?.name || '',
@@ -374,7 +374,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
                 shippingStatus: orderToEdit.shipping?.status || 'Drafted',
-                paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel') || 'Unpaid',
+                paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Deposit' | 'Paid' | 'Get File' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || ''
             });
         } else {
