@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, lazy } from 'react';
+import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -935,6 +935,24 @@ const Orders: React.FC = () => {
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
 
+    // Auto-hide the filter bar on mobile: hide while scrolling down, show on scroll up
+    // (same behaviour as the app header). The page scrolls inside Layout's <main>.
+    const [hideMobileFilters, setHideMobileFilters] = useState(false);
+    const lastScrollYRef = useRef(0);
+    useEffect(() => {
+        if (!isMobile) { setHideMobileFilters(false); return; }
+        const mainEl = document.querySelector('main');
+        if (!mainEl) return;
+        const onScroll = () => {
+            const y = mainEl.scrollTop;
+            if (y > lastScrollYRef.current && y > 80) setHideMobileFilters(true);
+            else if (y < lastScrollYRef.current) setHideMobileFilters(false);
+            lastScrollYRef.current = y;
+        };
+        mainEl.addEventListener('scroll', onScroll, { passive: true });
+        return () => mainEl.removeEventListener('scroll', onScroll);
+    }, [isMobile]);
+
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
         if (saved) {
@@ -1759,7 +1777,19 @@ const Orders: React.FC = () => {
 
 
                     {/* Filters Bar */}
-                    <div className="glass-panel" style={{ marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50 }}>
+                    <div className="glass-panel" style={{
+                        marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50,
+                        ...(isMobile ? {
+                            transition: 'max-height 0.3s ease, opacity 0.25s ease, padding 0.3s ease, margin-bottom 0.3s ease',
+                            maxHeight: hideMobileFilters ? '0px' : '600px',
+                            opacity: hideMobileFilters ? 0 : 1,
+                            paddingTop: hideMobileFilters ? 0 : '16px',
+                            paddingBottom: hideMobileFilters ? 0 : '16px',
+                            marginBottom: hideMobileFilters ? 0 : '12px',
+                            overflow: hideMobileFilters ? 'hidden' : undefined,
+                            pointerEvents: hideMobileFilters ? 'none' as const : undefined
+                        } : {})
+                    }}>
 
 
                         {/* Search and DatePicker Row */}
@@ -3713,11 +3743,9 @@ const Orders: React.FC = () => {
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
                     onConfirm={({ paymentMethod, settleDate }) => {
+                        // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
-                        if (paymentMethodTargetOrder.shipping?.status !== 'Delivered') {
-                            updates.shipping = { ...(paymentMethodTargetOrder.shipping || {}), company: paymentMethodTargetOrder.shipping?.company || '', trackingNumber: paymentMethodTargetOrder.shipping?.trackingNumber || '', cost: paymentMethodTargetOrder.shipping?.cost || 0, status: 'Shipped' };
-                        }
                         updateOrder(paymentMethodTargetOrder.id, updates);
                     }}
                 />

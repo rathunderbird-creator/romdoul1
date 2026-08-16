@@ -1479,11 +1479,9 @@ const PaymentTracking: React.FC = () => {
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
                     onConfirm={({ paymentMethod, settleDate }) => {
+                        // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
-                        if (paymentMethodTargetOrder.shipping?.status !== 'Delivered') {
-                            updates.shipping = { ...(paymentMethodTargetOrder.shipping || {}), company: paymentMethodTargetOrder.shipping?.company || '', trackingNumber: paymentMethodTargetOrder.shipping?.trackingNumber || '', cost: paymentMethodTargetOrder.shipping?.cost || 0, status: 'Shipped' };
-                        }
                         updateOrder(paymentMethodTargetOrder.id, updates);
                     }}
                 />

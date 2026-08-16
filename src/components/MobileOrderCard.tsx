@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { Edit, Eye, Printer, Copy, MapPin, Phone, Globe, Package, CreditCard } from 'lucide-react';
 import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
@@ -51,6 +51,47 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
         return `hsl(${Math.abs(hash % 360)}, 60%, 55%)`;
     };
 
+    // --- Swipe-left row actions (inbox style) ---
+    const SWIPE_BTN_W = 64;
+    const actionsWidth = SWIPE_BTN_W * (canEdit ? 3 : 2); // View, Copy, (Edit)
+    const [swipeOpen, setSwipeOpen] = useState(false);
+    const [dragOffset, setDragOffset] = useState<number | null>(null);
+    const touchRef = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
+    const suppressClickRef = useRef(false);
+
+    const baseX = swipeOpen ? -actionsWidth : 0;
+    const swipeX = dragOffset !== null ? Math.min(0, Math.max(-actionsWidth, baseX + dragOffset)) : baseX;
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, horizontal: null };
+    };
+    const handleTouchMove = (e: React.TouchEvent) => {
+        const t = touchRef.current;
+        if (!t) return;
+        const dx = e.touches[0].clientX - t.x;
+        const dy = e.touches[0].clientY - t.y;
+        if (t.horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+            t.horizontal = Math.abs(dx) > Math.abs(dy);
+        }
+        if (t.horizontal) setDragOffset(dx);
+    };
+    const handleTouchEnd = () => {
+        const t = touchRef.current;
+        touchRef.current = null;
+        if (!t || t.horizontal === null || dragOffset === null) { setDragOffset(null); return; }
+        suppressClickRef.current = true;
+        setSwipeOpen(swipeX < -actionsWidth / 2);
+        setDragOffset(null);
+        // Allow the click suppression to clear after the tap that ends the swipe.
+        setTimeout(() => { suppressClickRef.current = false; }, 80);
+    };
+    const closeSwipe = () => setSwipeOpen(false);
+    const handleRowClick = () => {
+        if (suppressClickRef.current) return;
+        if (swipeOpen) { closeSwipe(); return; }
+        onToggleExpand();
+    };
+
     // Inbox-style timestamp: time for today, "Yesterday", else short date.
     const formatOrderTime = (d: string) => {
         const dt = new Date(d);
@@ -92,8 +133,29 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
 
     return (
         <div className={cardClass}>
-            {/* Header / Summary Row — inbox style */}
-            <div className="moc-header" onClick={onToggleExpand}>
+            {/* Header / Summary Row — inbox style, swipe left for quick actions */}
+            <div className="moc-swipe-wrap">
+                <div className="moc-swipe-actions" style={{ width: `${actionsWidth}px` }}>
+                    <button className="moc-swipe-btn" style={{ background: '#6366F1' }} onClick={(e) => { e.stopPropagation(); closeSwipe(); onView(order); }}>
+                        <Eye size={18} /><span>View</span>
+                    </button>
+                    <button className="moc-swipe-btn" style={{ background: '#6B7280' }} onClick={(e) => { e.stopPropagation(); closeSwipe(); onCopy(order); }}>
+                        <Copy size={18} /><span>Copy</span>
+                    </button>
+                    {canEdit && (
+                        <button className="moc-swipe-btn" style={{ background: '#2563EB' }} onClick={(e) => { e.stopPropagation(); closeSwipe(); onEdit(order); }}>
+                            <Edit size={18} /><span>Edit</span>
+                        </button>
+                    )}
+                </div>
+                <div
+                    className="moc-swipe-content"
+                    style={{ transform: `translateX(${swipeX}px)`, transition: dragOffset !== null ? 'none' : 'transform 0.25s ease' }}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                >
+            <div className="moc-header" onClick={handleRowClick}>
                 {/* Avatar */}
                 <div className="moc-avatar" style={{ background: avatarColor(order.customer?.name || 'Unknown') }}>
                     {getInitials(order.customer?.name || 'Unknown')}
@@ -128,6 +190,8 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             ${order.total.toFixed(2)}
                         </span>
                     </div>
+                </div>
+            </div>
                 </div>
             </div>
 
