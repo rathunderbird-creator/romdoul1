@@ -29,6 +29,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
     const [activePreset, setActivePreset] = useState<Preset>('Custom Range');
     const [viewDate, setViewDate] = useState(new Date()); // Date to control which month is shown
     const pickerRef = useRef<HTMLDivElement>(null);
+    const isMobile = useMobile();
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -153,6 +154,25 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
 
     const handleDateClick = (date: Date) => {
         setActivePreset('Custom Range');
+        if (!isMobile) {
+            // Desktop: one click selects that day as BOTH start and end, so a
+            // single-day range is one click. Clicking a second, different day
+            // extends the range — the new day becomes the end date (swapped if
+            // it lies before the start). Any click after that starts over.
+            if (startDate && endDate && startDate.getTime() === endDate.getTime() && date.getTime() !== startDate.getTime()) {
+                if (date < startDate) {
+                    setEndDate(startDate);
+                    setStartDate(date);
+                } else {
+                    setEndDate(date);
+                }
+            } else {
+                setStartDate(date);
+                setEndDate(date);
+            }
+            return;
+        }
+        // Mobile keeps the original two-tap flow (tap start, tap end).
         if (!startDate || (startDate && endDate)) {
             // Start new selection
             setStartDate(date);
@@ -185,8 +205,6 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
         }
         return days;
     };
-
-    const isMobile = useMobile();
 
     const renderMonth = (offset: number) => {
         const year = viewDate.getFullYear();
