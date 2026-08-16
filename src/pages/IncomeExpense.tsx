@@ -641,8 +641,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 setFilterCategory('All');
                                 setFilterShippingCo('All');
                             }}
-                            className="secondary-button"
-                            style={{ padding: '8px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', height: '38px', borderRadius: '10px' }}
+                            style={{ padding: '8px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', color: '#EF4444', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}
                             title="Clear Filters"
                         >
                             <FilterX size={16} />
