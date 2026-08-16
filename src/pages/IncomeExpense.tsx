@@ -623,17 +623,20 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 />
             </div>
 
-            {/* Unified Command Bar */}
-            <div className="glass-panel" style={{ 
-                padding: isMobile ? '12px' : '16px', 
-                marginBottom: '16px', 
-                display: 'flex', 
+            {/* Unified Command Bar — sticky so filters stay reachable while scrolling */}
+            <div className="glass-panel" style={{
+                padding: isMobile ? '12px' : '16px',
+                marginBottom: '16px',
+                display: 'flex',
                 flexDirection: 'column',
-                gap: '12px', 
-                backgroundColor: 'var(--color-surface)', 
-                border: '1px solid var(--color-border)', 
+                gap: '12px',
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
                 borderRadius: '16px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+                position: 'sticky',
+                top: 0,
+                zIndex: 60
             }}>
                 {/* Top Row: Search & Actions */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', width: '100%' }}>
