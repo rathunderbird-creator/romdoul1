@@ -566,3 +566,15 @@ div:has(> svg) .search-input {
         font-size: 16px !important;
     }
 }
+
+/* Mobile header is black — pages inject titles/subtitles with inline dark
+   colors, so force them light here (!important beats the inline styles). */
+@media (max-width: 767px) {
+    .header-mobile-dark h1 {
+        color: #FFFFFF !important;
+    }
+
+    .header-mobile-dark p {
+        color: #9CA3AF !important;
+    }
+}

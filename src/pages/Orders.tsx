@@ -472,7 +472,9 @@ const Orders: React.FC = () => {
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage and track all customer orders</p>
                 </div>
             ),
-            actions: (
+            // Hidden on mobile: Order List / POS / Shipping Points tabs are desktop-only
+            // (mobile reaches POS via the New Order FAB).
+            actions: isMobile ? undefined : (
                 <div style={{ display: 'flex', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', border: '1px solid var(--color-border)', width: isMobile ? '100%' : 'auto' }}>
                     {hasPermission('view_orders') && (
                         <button
@@ -1009,6 +1011,8 @@ const Orders: React.FC = () => {
     // Derived State (filteredOrders, paginatedOrders, stats) -> kept same essentially
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(200);
+    // Mobile ignores itemsPerPage and infinite-scrolls in batches of this size.
+    const MOBILE_PAGE_SIZE = 100;
     const [totalCount, setTotalCount] = useState(0);
 
     const [serverOrders, setServerOrders] = useState<Sale[]>([]);
@@ -1017,7 +1021,7 @@ const Orders: React.FC = () => {
     // Reset pagination when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, columnFilters, itemsPerPage]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, columnFilters, itemsPerPage, isMobile]);
 
     const fetchOrders = React.useCallback(async () => {
         setIsLoadingOrders(true);
@@ -1278,8 +1282,11 @@ const Orders: React.FC = () => {
             }
             query = query.order(dbSortCol, { ascending: sortConfig?.direction === 'asc' });
 
-            const from = (currentPage - 1) * itemsPerPage;
-            const to = from + itemsPerPage - 1;
+            // Mobile infinite scroll: each "page" widens the window from row 0, so a
+            // refetch (edit, realtime update) rebuilds the whole loaded list idempotently
+            // instead of replacing it with just the latest slice.
+            const from = isMobile ? 0 : (currentPage - 1) * itemsPerPage;
+            const to = isMobile ? currentPage * MOBILE_PAGE_SIZE - 1 : from + itemsPerPage - 1;
             query = query.range(from, to);
 
             const { data, count, error } = await query;
@@ -1294,11 +1301,26 @@ const Orders: React.FC = () => {
         } finally {
             setIsLoadingOrders(false);
         }
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt, columnFilters]);
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, sortConfig, currentPage, itemsPerPage, currentUser, salesUpdatedAt, columnFilters, isMobile]);
 
     useEffect(() => {
         fetchOrders();
     }, [fetchOrders]);
+
+    // Mobile infinite scroll: widen the window when the bottom sentinel nears the viewport.
+    const loadMoreSentinelRef = React.useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        if (!isMobile || activeTab !== 'list') return;
+        const el = loadMoreSentinelRef.current;
+        if (!el) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting && !isLoadingOrders && serverOrders.length < totalCount) {
+                setCurrentPage(p => p + 1);
+            }
+        }, { rootMargin: '400px' });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [isMobile, activeTab, isLoadingOrders, serverOrders.length, totalCount]);
 
     // Derived states based on the SINGLE PAGE of fetched items
     const filteredOrders = serverOrders;
@@ -2848,6 +2870,26 @@ const Orders: React.FC = () => {
                                     />
                                 ))}
 
+                                {/* Infinite scroll sentinel: auto-loads the next batch near the bottom */}
+                                {paginatedOrders.length > 0 && (
+                                    <div ref={loadMoreSentinelRef} style={{ padding: '18px 0 6px', textAlign: 'center' }}>
+                                        {isLoadingOrders ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#9CA3AF', fontSize: '13px', fontWeight: 500 }}>
+                                                <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Loading more…
+                                            </div>
+                                        ) : paginatedOrders.length < totalCount ? (
+                                            <button
+                                                onClick={() => setCurrentPage(p => p + 1)}
+                                                style={{ padding: '10px 22px', borderRadius: '20px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                            >
+                                                Load older orders
+                                            </button>
+                                        ) : (
+                                            <div style={{ color: '#9CA3AF', fontSize: '12px' }}>All {totalCount} orders loaded</div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Mobile FAB - New Order */}
                                 {hasPermission('create_orders') && (
                                     <button
@@ -2878,11 +2920,11 @@ const Orders: React.FC = () => {
                                 }}>
                                     <div>
                                         <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Orders</div>
-                                        <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>{filteredOrders.length}</div>
+                                        <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>{totalCount}</div>
                                     </div>
                                     <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Page</div>
-                                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151' }}>{currentPage}/{Math.max(1, Math.ceil(totalCount / itemsPerPage))}</div>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Loaded</div>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151' }}>{filteredOrders.length}/{totalCount}</div>
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
                                         <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
@@ -3572,8 +3614,9 @@ const Orders: React.FC = () => {
                 />
             )}
 
+            {/* Desktop pagination bar — mobile uses infinite scroll instead */}
             {
-                activeTab === 'list' && filteredOrders.length > 0 && (
+                !isMobile && activeTab === 'list' && filteredOrders.length > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                             <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>

@@ -208,12 +208,12 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
 
     return (
         <>
-        <header style={{
+        <header className={isMobile ? 'header-mobile-dark' : undefined} style={{
             height: isMobile ? 'auto' : 'var(--header-height)',
             minHeight: 'var(--header-height)',
-            backgroundColor: 'var(--color-surface)',
+            backgroundColor: isMobile ? '#000000' : 'var(--color-surface)',
             backdropFilter: 'blur(10px)',
-            borderBottom: '1px solid var(--color-border)',
+            borderBottom: isMobile ? '1px solid #1F2937' : '1px solid var(--color-border)',
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
             alignItems: isMobile ? 'stretch' : 'center',
@@ -235,7 +235,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                 {/* Left: Menu Toggle & Title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '24px', flex: 1 }}>
                     {isMobile && toggleSidebar && (
-                        <button onClick={toggleSidebar} className="icon-button">
+                        <button onClick={toggleSidebar} className="icon-button" style={{ color: '#F9FAFB' }}>
                             <Menu size={20} />
                         </button>
                     )}
@@ -258,7 +258,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         className="hover-opacity"
                         style={{
                             background: 'none',
-                            color: 'var(--color-text-secondary)',
+                            color: isMobile ? '#D1D5DB' : 'var(--color-text-secondary)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -276,7 +276,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             onClick={handleBellClick}
                             style={{
                                 background: 'none',
-                                color: isOpen ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                color: isOpen ? 'var(--color-primary)' : (isMobile ? '#D1D5DB' : 'var(--color-text-secondary)'),
                                 position: 'relative',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -347,7 +347,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             width: '32px',
                             height: '32px',
                             borderRadius: '50%',
-                            backgroundColor: 'var(--color-surface-hover)',
+                            backgroundColor: isMobile ? '#1F2937' : 'var(--color-surface-hover)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -365,7 +365,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             background: 'none',
                             border: 'none',
                             cursor: 'pointer',
-                            color: 'var(--color-text-secondary)',
+                            color: isMobile ? '#D1D5DB' : 'var(--color-text-secondary)',
                             display: 'flex',
                             alignItems: 'center',
                             padding: '4px',
@@ -400,7 +400,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                     gap: '8px',
                     justifyContent: 'flex-start',
                     width: '100%',
-                    borderTop: '1px solid var(--color-border)',
+                    borderTop: '1px solid #1F2937',
                     paddingTop: '8px',
                     overflowX: 'auto'
                 }}>
