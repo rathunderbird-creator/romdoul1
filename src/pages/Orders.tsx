@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
+import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -935,29 +935,8 @@ const Orders: React.FC = () => {
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
 
-    // Auto-hide the filter bar on mobile: hide while scrolling down, show on scroll up.
-    // The bar is sticky and hides via transform — never by collapsing its layout
-    // height, which would shift the list mid-scroll (a jarring jump) and feed a
-    // phantom "scroll up" event back into this handler.
-    const [hideMobileFilters, setHideMobileFilters] = useState(false);
-    const lastScrollYRef = useRef(0);
-    useEffect(() => {
-        if (!isMobile) { setHideMobileFilters(false); return; }
-        const mainEl = document.querySelector('main');
-        if (!mainEl) return;
-        let acc = 0; // accumulated same-direction scroll distance (hysteresis)
-        const onScroll = () => {
-            const y = mainEl.scrollTop;
-            const dy = y - lastScrollYRef.current;
-            lastScrollYRef.current = y;
-            if ((dy > 0 && acc < 0) || (dy < 0 && acc > 0)) acc = 0;
-            acc += dy;
-            if (acc > 24 && y > 60) { setHideMobileFilters(true); acc = 0; }
-            else if (acc < -24 || y <= 10) { setHideMobileFilters(false); if (acc < -24) acc = 0; }
-        };
-        mainEl.addEventListener('scroll', onScroll, { passive: true });
-        return () => mainEl.removeEventListener('scroll', onScroll);
-    }, [isMobile]);
+    // Mobile: the filter bar is replaced by a right-side slide-in drawer.
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
     const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
@@ -982,6 +961,15 @@ const Orders: React.FC = () => {
     );
     const [isPageOpen, setIsPageOpen] = useState(false);
     useEffect(() => { localStorage.setItem('orders_pageFilter', JSON.stringify(pageFilter)); }, [pageFilter]);
+
+    // Number of active filter groups — shown as a badge on the mobile filter button.
+    const activeFilterCount =
+        (statusFilter.length > 0 ? 1 : 0) +
+        (payStatusFilter.length > 0 ? 1 : 0) +
+        (salesmanFilter !== 'All' ? 1 : 0) +
+        (shippingCoFilter.length > 0 ? 1 : 0) +
+        (pageFilter.length > 0 ? 1 : 0) +
+        ((dateRange.start || dateRange.end) ? 1 : 0);
     const pageFilterRef = useClickOutside<HTMLDivElement>(() => setIsPageOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
@@ -1783,17 +1771,63 @@ const Orders: React.FC = () => {
 
 
                     {/* Filters Bar */}
+                    {/* Mobile: slim trigger bar — search + filter button opening the drawer */}
+                    {isMobile && (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search orders..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+                                />
+                            </div>
+                            <button
+                                onClick={() => setIsFilterDrawerOpen(true)}
+                                style={{ position: 'relative', width: '42px', height: '42px', borderRadius: '12px', border: '1px solid var(--color-border)', background: activeFilterCount > 0 ? 'var(--color-primary)' : 'var(--color-surface)', color: activeFilterCount > 0 ? 'white' : 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                            >
+                                <Filter size={19} />
+                                {activeFilterCount > 0 && (
+                                    <span style={{ position: 'absolute', top: '-5px', right: '-5px', minWidth: '18px', height: '18px', borderRadius: '9px', background: '#EF4444', color: 'white', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{activeFilterCount}</span>
+                                )}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mobile: drawer backdrop */}
+                    {isMobile && isFilterDrawerOpen && (
+                        <div onClick={() => setIsFilterDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1199 }} />
+                    )}
+
                     <div className="glass-panel" style={{
-                        marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', position: 'relative', zIndex: 50,
-                        ...(isMobile ? {
-                            position: 'sticky' as const,
-                            top: 0,
-                            transform: hideMobileFilters ? 'translateY(-130%)' : 'translateY(0)',
-                            opacity: hideMobileFilters ? 0 : 1,
-                            transition: 'transform 0.28s ease, opacity 0.25s ease',
-                            pointerEvents: hideMobileFilters ? 'none' as const : undefined
-                        } : {})
+                        ...(!isMobile ? {
+                            marginBottom: '12px', padding: '16px', display: 'flex', flexWrap: 'wrap' as const, gap: '16px', alignItems: 'center', position: 'relative' as const, zIndex: 50
+                        } : {
+                            // Right-side slide-in filter drawer
+                            position: 'fixed' as const,
+                            top: 0, right: 0, bottom: 0,
+                            width: '85%', maxWidth: '340px',
+                            zIndex: 1200,
+                            display: 'flex', flexDirection: 'column' as const, flexWrap: 'nowrap' as const,
+                            gap: '14px', padding: '16px',
+                            overflowY: 'auto' as const,
+                            borderRadius: '16px 0 0 16px',
+                            background: 'var(--color-surface)',
+                            transform: isFilterDrawerOpen ? 'translateX(0)' : 'translateX(105%)',
+                            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                            boxShadow: '-8px 0 30px rgba(0,0,0,0.18)'
+                        })
                     }}>
+                        {isMobile && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
+                                <button onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        )}
 
 
                         {/* Search and DatePicker Row */}
@@ -2630,6 +2664,33 @@ const Orders: React.FC = () => {
                                                 )}
                                             </div>
                                         )}
+                            </div>
+                        )}
+
+                        {/* Mobile drawer footer: Clear + Done */}
+                        {isMobile && (
+                            <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--color-surface)', paddingTop: '12px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '10px' }}>
+                                <button
+                                    onClick={() => {
+                                        setStatusFilter([]);
+                                        setPayStatusFilter([]);
+                                        setSalesmanFilter('All');
+                                        setShippingCoFilter([]);
+                                        setPageFilter([]);
+                                        setDateRange({ start: '', end: '' });
+                                        setSearchTerm('');
+                                    }}
+                                    style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
+                                >
+                                    Clear
+                                </button>
+                                <button
+                                    onClick={() => setIsFilterDrawerOpen(false)}
+                                    className="primary-button"
+                                    style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 600, fontSize: '14px' }}
+                                >
+                                    Filter
+                                </button>
                             </div>
                         )}
                     </div >
