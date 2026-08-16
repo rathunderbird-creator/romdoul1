@@ -106,6 +106,36 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         setCurrentPage(1);
     }, [pageSize]);
 
+    // Phone / tracking-ID search: transactions only store the customer name, so when
+    // the search term looks up nothing directly, also match orders by phone or tracking
+    // number and surface those customers' transactions. Debounced DB lookup.
+    const [orderSearchNames, setOrderSearchNames] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        const term = searchTerm.trim();
+        if (term.length < 3) { setOrderSearchNames(new Set()); return; }
+        const handle = setTimeout(async () => {
+            try {
+                // Strip spaces and PostgREST filter syntax characters.
+                const cleaned = term.replace(/[\s(),]/g, '');
+                if (!cleaned) { setOrderSearchNames(new Set()); return; }
+                const { data } = await supabase
+                    .from('sales')
+                    .select('customer_snapshot')
+                    .or(`tracking_number.ilike.%${cleaned}%,customer_snapshot->>phone.ilike.%${cleaned}%`)
+                    .limit(50);
+                const names = new Set<string>();
+                (data || []).forEach((r: any) => {
+                    const n = r.customer_snapshot?.name;
+                    if (n) names.add(String(n).trim().toLowerCase());
+                });
+                setOrderSearchNames(names);
+            } catch {
+                setOrderSearchNames(new Set());
+            }
+        }, 350);
+        return () => clearTimeout(handle);
+    }, [searchTerm]);
+
     // Close the transaction modal on Escape.
     useEffect(() => {
         if (!isAddModalOpen) return;
@@ -237,7 +267,9 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             const matchesShippingCo = filterShippingCo === 'All' || t.shipping_co === filterShippingCo;
             const matchesSearch = (t.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                 (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                (t.shipping_co?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+                (t.shipping_co?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                // Customers matched by phone / tracking ID on their orders.
+                orderSearchNames.has((t.description || '').trim().toLowerCase());
 
             const itemDate = parseDate(t.date);
 
@@ -279,7 +311,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             
             return timeB - timeA;
         });
-    }, [localTransactions, filterType, filterCategory, filterShippingCo, searchTerm, dateRange, shippingCompanies]);
+    }, [localTransactions, filterType, filterCategory, filterShippingCo, searchTerm, dateRange, shippingCompanies, orderSearchNames]);
 
     // Reset page when filters change
     useEffect(() => {
@@ -609,7 +641,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                         <input
                             type="text"
-                            placeholder="Search category or description..."
+                            placeholder="Search name, category, phone, tracking ID..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{

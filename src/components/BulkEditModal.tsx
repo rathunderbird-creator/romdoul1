@@ -19,12 +19,15 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
 
     useEffect(() => {
         if (field === 'paymentStatus' && (value === 'Paid' || value === 'Settled')) {
+            // Settle date is no longer asked for in the form — it is always today.
             const now = new Date();
             const yyyy = now.getFullYear();
             const mm = String(now.getMonth() + 1).padStart(2, '0');
             const dd = String(now.getDate()).padStart(2, '0');
             setSettleDate(`${yyyy}-${mm}-${dd}`);
-            setPayBy(paymentMethods[0] || 'Cash');
+            // Default Pay By to the bank method when one exists.
+            const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
+            setPayBy(bankMethod || paymentMethods[0] || 'Bank');
         } else {
             setSettleDate('');
             setPayBy('');
@@ -239,66 +242,25 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             </select>
 
                             {(value === 'Paid' || value === 'Settled') && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                                            Settle Date
-                                        </label>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <input
-                                                type="date"
-                                                value={settleDate}
-                                                onChange={(e) => setSettleDate(e.target.value)}
-                                                style={{
-                                                    flex: 1,
-                                                    padding: '12px',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid var(--color-border)',
-                                                    fontSize: '14px'
-                                                }}
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    const now = new Date();
-                                                    const yyyy = now.getFullYear();
-                                                    const mm = String(now.getMonth() + 1).padStart(2, '0');
-                                                    const dd = String(now.getDate()).padStart(2, '0');
-                                                    setSettleDate(`${yyyy}-${mm}-${dd}`);
-                                                }}
-                                                style={{
-                                                    padding: '0 16px',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid var(--color-primary)',
-                                                    background: 'var(--color-surface)',
-                                                    color: 'var(--color-primary)',
-                                                    fontWeight: 500,
-                                                    cursor: 'pointer',
-                                                    fontSize: '13px',
-                                                    whiteSpace: 'nowrap'
-                                                }}
-                                            >
-                                                Now
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                                            Pay By
-                                        </label>
-                                        <select
-                                            value={payBy}
-                                            onChange={(e) => setPayBy(e.target.value)}
-                                            style={{
-                                                width: '100%',
-                                                padding: '12px',
-                                                borderRadius: '8px',
-                                                border: '1px solid var(--color-border)',
-                                                fontSize: '14px'
-                                            }}
-                                        >
-                                            {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-                                        </select>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                                        Pay By
+                                    </label>
+                                    <select
+                                        value={payBy}
+                                        onChange={(e) => setPayBy(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--color-border)',
+                                            fontSize: '14px'
+                                        }}
+                                    >
+                                        {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+                                        Settle date will be set to today.
                                     </div>
                                 </div>
                             )}
