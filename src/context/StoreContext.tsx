@@ -2734,18 +2734,35 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             ));
             
             // 4. Update sales records to ReStock and Cancelled
-            // DB Update
+            // DB Update — stamped as an edit, so the Last Edit column shows the
+            // restock. Without the stamp a Returned order restocked today kept
+            // the older edit's date (this path bypasses updateOrder).
             await supabase.from('sales').update({
                 shipping_status: 'ReStock',
-                payment_status: 'Cancel'
+                payment_status: 'Cancel',
+                ...(currentUser ? { last_edited_at: now, last_edited_by: currentUser.name } : {})
             }).in('id', orderIds);
 
             // Local State Update
-            setSales(prev => prev.map(sale => 
+            setSales(prev => prev.map(sale =>
                 orderIds.includes(sale.id)
-                ? { ...sale, paymentStatus: 'Cancel', shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any } }
+                ? {
+                    ...sale,
+                    paymentStatus: 'Cancel',
+                    lastEditedAt: currentUser ? now : sale.lastEditedAt,
+                    lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
+                    shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any }
+                }
                 : sale
             ));
+
+            dispatchActivity({
+                action: 'stock_restock',
+                description: `Restocked ${orderIds.length} order${orderIds.length === 1 ? '' : 's'}: ${orderIds.map(id => '#' + id.slice(0, 8)).join(', ')}`,
+                userId: currentUser?.id,
+                userName: currentUser?.name,
+                metadata: { orderIds }
+            });
 
             // Trigger single refresh event for UI listeners
             setProductsUpdatedAt(Date.now());
