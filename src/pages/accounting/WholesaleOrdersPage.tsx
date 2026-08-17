@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2, Eye, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, ChevronLeft, ChevronRight, Copy, PackageCheck, Ban } from 'lucide-react';
+import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2, Eye, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, ChevronLeft, ChevronRight, Copy, PackageCheck, Ban, Printer } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
+import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -29,8 +30,8 @@ const orderStatusConfig = (s?: string) => {
 const WholesaleOrdersPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
-    const { products, warehouses, currentUser, refreshData } = useStore();
-    const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
+    const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo } = useStore();
+    const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
 
     const [search, setSearch] = useState('');
     const [payFilter, setPayFilter] = useState<'All' | 'Unpaid' | 'Partial' | 'Paid'>('All');
@@ -115,6 +116,8 @@ const WholesaleOrdersPage: React.FC = () => {
         setOrderDate(today()); setDueDate(''); setInvoiceNumber(''); setOrderStatus('Open'); setNotes('');
         setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);
         setIsCreateOpen(true);
+        // Prefill the next sequential invoice number (still editable).
+        nextInvoiceNumber().then(setInvoiceNumber);
     };
 
     const lineTotal = (l: Partial<WholesaleOrderItem>) => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
@@ -137,14 +140,25 @@ const WholesaleOrdersPage: React.FC = () => {
                 quantity: Number(l.quantity) || 0,
                 unit_price: Number(l.unit_price) || 0
             }));
+            // If the field was cleared, still assign the next number at save time.
+            const inv = invoiceNumber.trim() || await nextInvoiceNumber();
             await createWholesaleOrder(
-                { invoice_number: invoiceNumber, customer_name: customerName.trim(), customer_phone: customerPhone.trim(), warehouse_id: warehouseId, order_date: orderDate, due_date: dueDate, status: orderStatus, notes },
+                { invoice_number: inv, customer_name: customerName.trim(), customer_phone: customerPhone.trim(), warehouse_id: warehouseId, order_date: orderDate, due_date: dueDate, status: orderStatus, notes },
                 items,
                 currentUser?.name
             );
             setIsCreateOpen(false);
             refreshData(true); // keep in-memory product stock in sync after the deduction
         } catch { /* hook toasts */ } finally { setSaving(false); }
+    };
+
+    // Printable A4 invoice for sending to the customer (print or save as PDF).
+    const handlePrintInvoice = (o: WholesaleOrder) => {
+        printWholesaleInvoice(
+            o,
+            { storeName, storeAddress, phone, email, logo },
+            warehouses.find(w => w.id === o.warehouse_id)?.name
+        );
     };
 
     // Copy a formatted text summary of the order to the clipboard (for chat/Telegram).
@@ -432,6 +446,9 @@ const WholesaleOrdersPage: React.FC = () => {
                                                 <button onClick={() => handleCopyOrder(o)} title="Copy Details" style={{ background: 'rgba(107,114,128,0.08)', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Copy size={15} />
                                                 </button>
+                                                <button onClick={() => handlePrintInvoice(o)} title="Print Invoice" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <Printer size={15} />
+                                                </button>
                                                 {o.status === 'Open' && (
                                                     <button onClick={() => handleMarkDelivered(o)} title="Mark Delivered" style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: 'pointer', color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <PackageCheck size={15} />
@@ -668,6 +685,9 @@ const WholesaleOrdersPage: React.FC = () => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: orderStatusConfig(viewOrder.status).bg, color: orderStatusConfig(viewOrder.status).color }}>{viewOrder.status || 'Open'}</span>
                                     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: pc.bg, color: pc.color }}>{viewOrder.payment_status || 'Unpaid'}</span>
+                                    <button onClick={() => handlePrintInvoice(viewOrder)} title="Print Invoice" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #3B82F6, #2563EB)', color: 'white', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                        <Printer size={14} /> Invoice
+                                    </button>
                                     <button onClick={() => setViewOrder(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <X size={18} />
                                     </button>

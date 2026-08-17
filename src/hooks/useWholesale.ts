@@ -318,12 +318,35 @@ export const useWholesale = () => {
         }
     }, [showToast, fetchCustomers]);
 
+    // Next sequential invoice number (WO-0001, WO-0002, …): highest numeric
+    // suffix among existing WO-… invoices, plus one. Manually typed invoices
+    // in other formats are ignored by the pattern and never disturbed.
+    const nextInvoiceNumber = useCallback(async (): Promise<string> => {
+        try {
+            const { data, error } = await supabase.from('wholesale_orders')
+                .select('invoice_number')
+                .like('invoice_number', 'WO-%');
+            if (error) throw error;
+            let max = 0;
+            for (const r of data || []) {
+                const m = String(r.invoice_number || '').match(/^WO-(\d+)$/i);
+                if (m) max = Math.max(max, parseInt(m[1], 10));
+            }
+            return `WO-${String(max + 1).padStart(4, '0')}`;
+        } catch (e) {
+            console.error('Failed to compute next invoice number:', e);
+            // Timestamp fallback still yields a unique, recognizable number.
+            return `WO-${Date.now().toString().slice(-6)}`;
+        }
+    }, []);
+
     return {
         wholesaleOrders,
         customers,
         isLoading,
         tableMissing,
         fetchWholesaleOrders,
+        nextInvoiceNumber,
         createWholesaleOrder,
         deleteWholesaleOrder,
         updateWholesaleOrderStatus,
