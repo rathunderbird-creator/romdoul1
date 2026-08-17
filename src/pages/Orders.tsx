@@ -2776,13 +2776,15 @@ const Orders: React.FC = () => {
 
                     {/* Table or Mobile List */}
                     <div style={{
-                        overflowX: 'auto',
+                        // visible on mobile so the full-bleed list (negative margins)
+                        // isn't clipped into a horizontal scrollbar
+                        overflowX: isMobile ? 'visible' : 'auto',
                         overflowY: isMobile ? 'visible' : 'auto',
                         maxHeight: isMobile ? 'none' : 'calc(100vh - 200px)',
                         paddingBottom: '0'
                     }}>
                         {isMobile ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', padding: '0 0 100px 0', background: 'var(--color-surface)', borderRadius: '12px', overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', padding: '0 0 100px 0', margin: '0 -12px' /* full-bleed: cancels the layout's 12px gutter */, background: 'var(--color-surface)', overflow: 'hidden' }}>
                                 {paginatedOrders.length === 0 && !isLoadingOrders && (
                                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                         {emptyStateContent}
