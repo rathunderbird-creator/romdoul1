@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2 } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -8,6 +8,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
+import StockMovementSummaryModal from '../components/StockMovementSummaryModal';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 
@@ -400,7 +401,7 @@ const Orders: React.FC = () => {
             // Hidden on mobile: Order List / POS / Shipping Points tabs are desktop-only
             // (mobile reaches POS via the New Order FAB).
             actions: isMobile ? undefined : (
-                <div style={{ display: 'flex', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', border: '1px solid var(--color-border)', width: isMobile ? '100%' : 'auto' }}>
+                <div style={{ display: 'flex', gap: '3px', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', border: '1px solid var(--color-border)', width: isMobile ? '100%' : 'auto' }}>
                     {hasPermission('view_orders') && (
                         <button
                             onClick={() => setActiveTab('list')}
@@ -455,6 +456,23 @@ const Orders: React.FC = () => {
                             onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)'; }}
                         >
                             <Wallet size={18} /> Check Income
+                        </button>
+                    )}
+                    {isAdmin && !isMobile && (
+                        <button
+                            onClick={() => setIsMovementSummaryOpen(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
+                                color: 'white',
+                                fontWeight: 600, cursor: 'pointer', border: 'none',
+                                boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
+                                transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.3)'; }}
+                        >
+                            <Table2 size={18} /> Show Movement
                         </button>
                     )}
 
@@ -514,6 +532,8 @@ const Orders: React.FC = () => {
     const [shippingOrderToUpdate, setShippingOrderToUpdate] = useState<Sale | null>(null);
     const [shippingTargetStatus, setShippingTargetStatus] = useState<'Confirmed' | 'Shipped'>('Shipped');
     const [isShippingPointModalOpen, setIsShippingPointModalOpen] = useState(false);
+    // "Show Movement" opens the shared stock recap popup (defaults to today).
+    const [isMovementSummaryOpen, setIsMovementSummaryOpen] = useState(false);
     useEffect(() => {
         if (location.state) {
             const state = location.state as any;
@@ -3917,6 +3937,12 @@ const Orders: React.FC = () => {
                     });
                     setDepositTargetOrder(null);
                 }}
+            />
+            {/* Stock Movement Summary (shared with the Stock Movements page) — opens on today */}
+            <StockMovementSummaryModal
+                isOpen={isMovementSummaryOpen}
+                onClose={() => setIsMovementSummaryOpen(false)}
+                initialRange={{ start: new Date().toLocaleDateString('en-CA'), end: new Date().toLocaleDateString('en-CA') }}
             />
             <DataImportModal
                 isOpen={isImportModalOpen}

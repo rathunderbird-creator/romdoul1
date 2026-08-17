@@ -111,14 +111,25 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     const payStatus = order.paymentStatus || 'Unpaid';
 
     const isPaidOrSettle = payStatus === 'Paid';
-    const isDelivered = order.shipping?.status === 'Delivered';
     const isCancelled = payStatus === 'Cancel';
 
-    let cardClass = `mobile-order-card status-${shippingStatus}`;
-    if (isSelected) cardClass += ' selected';
-    else if (isCancelled) { /* no extra bg class */ }
-    else if (isPaidOrSettle) cardClass += ' paid-settled';
-    else if (isDelivered) cardClass += ' delivered';
+    const cardClass = `mobile-order-card status-${shippingStatus}`;
+
+    // Row background — same colors and priority as the desktop table
+    // (getRowClass / getRowBackgroundColor in Orders.tsx).
+    const rowBackground = (() => {
+        if (isSelected) return 'var(--color-primary-light)';
+        const s = order.shipping?.status;
+        if (s === 'ReStock') return '#2596be';
+        if (payStatus === 'Cancel') return '#FCA5A5';
+        if (s === 'Confirmed') return '#F0F9FF';
+        if (s === 'Pending') return '#FFFBEB';
+        if (s === 'Shipped') return '#EFF6FF';
+        if (s === 'Delivered') return '#ECFDF5';
+        if (s === 'Returned' || s === 'Cancelled') return '#FCA5A5';
+        if (payStatus === 'Paid') return '#EFF6FF';
+        return 'white';
+    })();
 
     const getPayBadgeClass = () => {
         switch (payStatus) {
@@ -134,7 +145,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     const canPrint = ['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '');
 
     return (
-        <div className={cardClass}>
+        <div className={cardClass} style={{ background: rowBackground }}>
             {/* Header / Summary Row — inbox style, swipe left for quick actions */}
             <div className="moc-swipe-wrap">
                 <div className="moc-swipe-actions" style={{ width: `${actionsWidth}px` }}>

@@ -1,6 +1,8 @@
 /* MobileOrderCard.css – Redesigned */
 
-/* Flat inbox-style rows: no card chrome, hairline separators, left status bar. */
+/* Flat inbox-style rows: no card chrome, hairline separators. The status color
+   is a rounded pill bar on the left, inset top/bottom so consecutive rows'
+   bars have a little space between them. */
 .mobile-order-card {
     background: white;
     border-radius: 0;
@@ -8,41 +10,41 @@
     overflow: hidden;
     transition: background-color 0.15s ease;
     position: relative;
-    border-left: 4px solid #9CA3AF;
     border-bottom: 1px solid #F3F4F6;
 }
 
-.mobile-order-card:active {
-    background: #F9FAFB;
+/* The rounded left status bar. Color comes from the status-* classes below. */
+.mobile-order-card::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 10px;
+    bottom: 10px;
+    width: 4px;
+    border-radius: 99px;
+    background: var(--moc-accent, #9CA3AF);
+    z-index: 2;
+    pointer-events: none;
 }
 
-.mobile-order-card.selected {
-    background: #E0F2FE;
-}
+/* Row backgrounds are set inline by MobileOrderCard.tsx so they exactly match
+   the desktop table's status colors (selected / ReStock / Cancel / etc.). */
 
-.mobile-order-card.paid-settled {
-    background: #F0FDF4;
-}
+/* Status accent colors (drive the rounded left bar) */
+.mobile-order-card.status-drafted { --moc-accent: #9CA3AF; }
+.mobile-order-card.status-pending { --moc-accent: #D97706; }
+.mobile-order-card.status-confirmed { --moc-accent: #0369A1; }
+.mobile-order-card.status-shipped { --moc-accent: #2563EB; }
+.mobile-order-card.status-delivered { --moc-accent: #059669; }
+.mobile-order-card.status-returned { --moc-accent: #DC2626; }
+.mobile-order-card.status-restock { --moc-accent: #7E22CE; }
+.mobile-order-card.status-cancelled { --moc-accent: #DC2626; }
 
-.mobile-order-card.delivered {
-    background: #FEFCE8;
-}
-
-/* Status accent border colors */
-.mobile-order-card.status-drafted { border-left-color: #9CA3AF; }
-.mobile-order-card.status-pending { border-left-color: #D97706; }
-.mobile-order-card.status-confirmed { border-left-color: #0369A1; }
-.mobile-order-card.status-shipped { border-left-color: #2563EB; }
-.mobile-order-card.status-delivered { border-left-color: #059669; }
-.mobile-order-card.status-returned { border-left-color: #DC2626; }
-.mobile-order-card.status-restock { border-left-color: #7E22CE; }
-.mobile-order-card.status-cancelled { border-left-color: #DC2626; }
-
-/* Header Row */
+/* Header Row (left padding clears the rounded status bar) */
 .moc-header {
     display: flex;
     align-items: flex-start;
-    padding: 10px 12px 8px 12px;
+    padding: 10px 12px 8px 16px;
     gap: 10px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -271,7 +273,7 @@
 
 /* ===== Expanded Content ===== */
 .moc-expanded {
-    padding: 0 14px 14px 14px;
+    padding: 0 14px 14px 18px;
     animation: moc-slideDown 0.25s ease-out;
 }
 
