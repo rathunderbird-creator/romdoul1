@@ -12,7 +12,8 @@ interface MovementSummaryRow {
     id: string;
     name: string;
     oldStock: number;
-    sold: number;
+    sold: number;      // retail stock-outs
+    wholesale: number; // wholesale-order stock-outs
     ret: number;
     buy: number;
     newStock: number;
@@ -53,32 +54,37 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         try {
             // Only the date range and warehouse restriction apply here — callers'
             // other filters (e.g. the movements page In/Out toggle) can't skew it.
-            let query = supabase.from('stock_movements').select('product_id, product_name, type, quantity, source');
+            let query = supabase.from('stock_movements').select('product_id, product_name, type, quantity, source, reason');
             if (r.start) query = query.gte('movement_date', r.start);
             if (r.end) query = query.lte('movement_date', r.end);
             if (warehouseId) query = query.eq('warehouse_id', warehouseId);
             const { data, error } = await query;
             if (error) throw error;
 
-            const byProduct = new Map<string, { sold: number; ret: number; buy: number; name: string }>();
+            const byProduct = new Map<string, { sold: number; wholesale: number; ret: number; buy: number; name: string }>();
             for (const m of (data || []) as any[]) {
                 const key = m.product_id || m.product_name || '?';
-                const agg = byProduct.get(key) || { sold: 0, ret: 0, buy: 0, name: m.product_name || 'Unknown' };
-                if (m.type === 'out') agg.sold += m.quantity || 0;
+                const agg = byProduct.get(key) || { sold: 0, wholesale: 0, ret: 0, buy: 0, name: m.product_name || 'Unknown' };
+                if (m.type === 'out') {
+                    // Wholesale-order outs are split from retail sales.
+                    if (m.source === 'Wholesale Order' || m.reason === 'Wholesale Sale') agg.wholesale += m.quantity || 0;
+                    else agg.sold += m.quantity || 0;
+                }
                 else if (m.source === 'Customer Return') agg.ret += m.quantity || 0;
                 else agg.buy += m.quantity || 0; // PO receipts + other stock-ins
                 byProduct.set(key, agg);
             }
 
             const built: MovementSummaryRow[] = products.map(p => {
-                const agg = byProduct.get(p.id) || { sold: 0, ret: 0, buy: 0, name: p.name };
+                const agg = byProduct.get(p.id) || { sold: 0, wholesale: 0, ret: 0, buy: 0, name: p.name };
                 byProduct.delete(p.id);
                 const newStock = p.stock || 0;
                 return {
                     id: p.id,
                     name: p.name,
-                    oldStock: newStock - agg.buy - agg.ret + agg.sold,
+                    oldStock: newStock - agg.buy - agg.ret + agg.sold + agg.wholesale,
                     sold: agg.sold,
+                    wholesale: agg.wholesale,
                     ret: agg.ret,
                     buy: agg.buy,
                     newStock
@@ -86,7 +92,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             });
             // Movements whose product was deleted still show up, with zero current stock.
             for (const [key, agg] of byProduct) {
-                built.push({ id: key, name: agg.name, oldStock: agg.sold - agg.buy - agg.ret, sold: agg.sold, ret: agg.ret, buy: agg.buy, newStock: 0 });
+                built.push({ id: key, name: agg.name, oldStock: agg.sold + agg.wholesale - agg.buy - agg.ret, sold: agg.sold, wholesale: agg.wholesale, ret: agg.ret, buy: agg.buy, newStock: 0 });
             }
             setRows(built);
         } catch (e: any) {
@@ -107,7 +113,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
-    const hasMovement = (r: MovementSummaryRow) => r.sold > 0 || r.ret > 0 || r.buy > 0;
+    const hasMovement = (r: MovementSummaryRow) => r.sold > 0 || r.wholesale > 0 || r.ret > 0 || r.buy > 0;
     const movementCount = useMemo(() => rows.filter(hasMovement).length, [rows]);
 
     const displayedRows = useMemo(() => {
@@ -130,20 +136,21 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         (acc, r) => ({
             oldStock: acc.oldStock + r.oldStock,
             sold: acc.sold + r.sold,
+            wholesale: acc.wholesale + r.wholesale,
             ret: acc.ret + r.ret,
             buy: acc.buy + r.buy,
             newStock: acc.newStock + r.newStock
         }),
-        { oldStock: 0, sold: 0, ret: 0, buy: 0, newStock: 0 }
+        { oldStock: 0, sold: 0, wholesale: 0, ret: 0, buy: 0, newStock: 0 }
     ), [displayedRows]);
 
     const exportSummary = () => {
         if (displayedRows.length === 0) return;
         const exportData = displayedRows.map(r => ({
-            'Model': r.name, 'Old Stock': r.oldStock, 'Sold': r.sold,
+            'Model': r.name, 'Old Stock': r.oldStock, 'Sold': r.sold, 'Wholesale': r.wholesale,
             'Return': r.ret, 'Buy': r.buy, 'New Stock': r.newStock
         }));
-        exportData.push({ 'Model': 'Total', 'Old Stock': totals.oldStock, 'Sold': totals.sold, 'Return': totals.ret, 'Buy': totals.buy, 'New Stock': totals.newStock });
+        exportData.push({ 'Model': 'Total', 'Old Stock': totals.oldStock, 'Sold': totals.sold, 'Wholesale': totals.wholesale, 'Return': totals.ret, 'Buy': totals.buy, 'New Stock': totals.newStock });
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Movement Summary');
@@ -273,12 +280,13 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             No products with movement in this period.
                         </div>
                     ) : (
-                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '560px', background: '#FFFFFF' }}>
+                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '640px', background: '#FFFFFF' }}>
                             <thead>
                                 <tr>
                                     <th onClick={() => toggleSort('name')} style={{ ...thBase, textAlign: 'left' }}>Model{arrow('name')}</th>
                                     <th onClick={() => toggleSort('oldStock')} style={thBase}>Old Stock{arrow('oldStock')}</th>
                                     <th onClick={() => toggleSort('sold')} style={{ ...thBase, color: '#DC2626' }}>Sold{arrow('sold')}</th>
+                                    <th onClick={() => toggleSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>Wholesale{arrow('wholesale')}</th>
                                     <th onClick={() => toggleSort('ret')} style={{ ...thBase, color: '#B45309' }}>Return{arrow('ret')}</th>
                                     <th onClick={() => toggleSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>Buy{arrow('buy')}</th>
                                     <th onClick={() => toggleSort('newStock')} style={{ ...thBase, color: '#2563EB' }}>New Stock{arrow('newStock')}</th>
@@ -295,6 +303,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                             </td>
                                             <td style={{ ...numTd, color: 'var(--color-text-secondary)' }}>{r.oldStock}</td>
                                             <td style={numTd}>{r.sold > 0 ? <span style={pill('rgba(239,68,68,0.1)', '#DC2626')}>-{r.sold}</span> : zero}</td>
+                                            <td style={numTd}>{r.wholesale > 0 ? <span style={pill('rgba(99,102,241,0.1)', '#4F46E5')}>-{r.wholesale}</span> : zero}</td>
                                             <td style={numTd}>{r.ret > 0 ? <span style={pill('rgba(245,158,11,0.12)', '#B45309')}>+{r.ret}</span> : zero}</td>
                                             <td style={numTd}>{r.buy > 0 ? <span style={pill('rgba(147,51,234,0.1)', '#7E22CE')}>+{r.buy}</span> : zero}</td>
                                             <td style={{ ...numTd, fontWeight: 800, color: 'var(--color-text-main)' }}>
@@ -316,6 +325,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                     </td>
                                     <td style={{ ...footTd, color: 'var(--color-text-secondary)' }}>{totals.oldStock}</td>
                                     <td style={{ ...footTd, color: '#DC2626' }}>{totals.sold > 0 ? `-${totals.sold}` : 0}</td>
+                                    <td style={{ ...footTd, color: '#4F46E5' }}>{totals.wholesale > 0 ? `-${totals.wholesale}` : 0}</td>
                                     <td style={{ ...footTd, color: '#B45309' }}>{totals.ret > 0 ? `+${totals.ret}` : 0}</td>
                                     <td style={{ ...footTd, color: '#7E22CE' }}>{totals.buy > 0 ? `+${totals.buy}` : 0}</td>
                                     <td style={{ ...footTd, color: '#2563EB' }}>{totals.newStock}</td>
