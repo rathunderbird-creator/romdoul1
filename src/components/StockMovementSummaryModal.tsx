@@ -163,11 +163,12 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         ? `${range.start || '…'} → ${range.end || '…'}`
         : 'All time';
 
-    const numTd: React.CSSProperties = { padding: '9px 14px', textAlign: 'center', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', borderBottom: '1px solid var(--color-border)' };
-    const pill = (bg: string, color: string): React.CSSProperties => ({ display: 'inline-block', minWidth: '36px', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700, background: bg, color });
+    // Tighter cells on phones so more of the table fits before scrolling.
+    const numTd: React.CSSProperties = { padding: isMobile ? '7px 8px' : '9px 14px', textAlign: 'center', fontSize: isMobile ? '12px' : '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', borderBottom: '1px solid var(--color-border)' };
+    const pill = (bg: string, color: string): React.CSSProperties => ({ display: 'inline-block', minWidth: isMobile ? '30px' : '36px', padding: isMobile ? '2px 7px' : '3px 10px', borderRadius: '12px', fontSize: isMobile ? '11px' : '12px', fontWeight: 700, background: bg, color });
     const zero = <span style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>0</span>;
-    const thBase: React.CSSProperties = { position: 'sticky', top: 0, zIndex: 2, padding: '10px 14px', background: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', textAlign: 'center', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
-    const footTd: React.CSSProperties = { ...numTd, position: 'sticky', bottom: 0, background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', borderBottom: 'none', fontWeight: 800, padding: '11px 14px' };
+    const thBase: React.CSSProperties = { position: 'sticky', top: 0, zIndex: 2, padding: isMobile ? '8px 8px' : '10px 14px', background: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)', fontSize: isMobile ? '10px' : '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', textAlign: 'center', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
+    const footTd: React.CSSProperties = { ...numTd, position: 'sticky', bottom: 0, background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', borderBottom: 'none', fontWeight: 800, padding: isMobile ? '9px 8px' : '11px 14px' };
     const chip = (active: boolean): React.CSSProperties => ({ padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : '#FFFFFF', color: active ? 'white' : 'var(--color-text-secondary)', cursor: 'pointer', transition: 'all 0.15s' });
     // Every header is clickable — show a faint ↕ on inactive columns so
     // sortability is visible, and a solid ↑ / ↓ on the active one.
@@ -280,7 +281,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             No products with movement in this period.
                         </div>
                     ) : (
-                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '640px', background: '#FFFFFF' }}>
+                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: '#FFFFFF' }}>
                             <thead>
                                 <tr>
                                     <th onClick={() => toggleSort('name')} style={{ ...thBase, textAlign: 'left' }}>Model{arrow('name')}</th>
@@ -298,7 +299,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                     const net = r.newStock - r.oldStock;
                                     return (
                                         <tr key={r.id} style={{ background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : '#FFFFFF' }}>
-                                            <td style={{ padding: '9px 14px', fontSize: '13px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', color: moved ? 'var(--color-text-main)' : 'var(--color-text-secondary)', borderLeft: `3px solid ${moved ? '#3B82F6' : 'transparent'}`, whiteSpace: 'nowrap', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            <td style={{ padding: isMobile ? '7px 10px' : '9px 14px', fontSize: isMobile ? '12px' : '13px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', color: moved ? 'var(--color-text-main)' : 'var(--color-text-secondary)', borderLeft: `3px solid ${moved ? '#3B82F6' : 'transparent'}`, whiteSpace: 'nowrap', maxWidth: isMobile ? '140px' : '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {r.name}
                                             </td>
                                             <td style={{ ...numTd, color: 'var(--color-text-secondary)' }}>{r.oldStock}</td>

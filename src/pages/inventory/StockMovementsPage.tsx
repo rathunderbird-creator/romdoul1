@@ -601,6 +601,51 @@ const StockMovementsPage: React.FC = () => {
                             <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>No movements found</h3>
                             <p style={{ fontSize: '14px', opacity: 0.7 }}>Adjust your filters or date range.</p>
                         </div>
+                    ) : isMobile ? (
+                        // Mobile: flat inbox-style rows — tap for the detail popup.
+                        <div>
+                            {paginatedMovements.map(record => {
+                                const isIn = record.type === 'in';
+                                const accent = isIn ? '#10B981' : '#EF4444';
+                                const who = record.supplier || record.customer_name;
+                                return (
+                                    <div
+                                        key={record.id}
+                                        onClick={() => setDetailRecord(record)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderBottom: '1px solid var(--color-border)', borderLeft: `3px solid ${accent}`, cursor: 'pointer' }}
+                                    >
+                                        <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: isIn ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            {isIn ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {record.product_name}
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {(isIn ? record.source : record.reason) || '—'}{who ? ` · ${who}` : ''}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                            <div style={{ fontSize: '14px', fontWeight: 800, color: accent, fontVariantNumeric: 'tabular-nums' }}>
+                                                {isIn ? '+' : '-'}{record.quantity}
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
+                                                {formatDate(record.movement_date || record.created_at)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {/* Compact page totals */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Page Totals</span>
+                                <span style={{ fontSize: '13px', fontWeight: 800 }}>
+                                    <span style={{ color: '#10B981' }}>+{pageTotals.qtyIn}</span>
+                                    {' / '}
+                                    <span style={{ color: '#EF4444' }}>-{pageTotals.qtyOut}</span>
+                                </span>
+                            </div>
+                        </div>
                     ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
                             <thead>
@@ -802,7 +847,7 @@ const StockMovementsPage: React.FC = () => {
                         position: 'fixed', inset: 0, zIndex: 10000,
                         background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        padding: '24px',
+                        padding: isMobile ? '10px' : '24px',
                         animation: 'fadeIn 0.2s ease',
                     }}
                 >
