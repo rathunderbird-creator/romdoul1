@@ -974,7 +974,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 id: transactionId,
                 date: new Date().toISOString(),
                 type: 'Income' as const,
-                category: 'លក់ឥវ៉ាន់',
+                category: 'លក់រាយ',
                 amount: newSale.amountReceived || newSale.total,
                 description: newSale.customer?.name || 'Customer',
                 addedBy: currentUser?.name || 'System'
@@ -1293,7 +1293,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 id: transactionId,
                 date: normalizedDate,
                 type: 'Income' as const,
-                category: 'លក់ឥវ៉ាន់',
+                category: 'លក់រាយ',
                 amount: newSale.amountReceived || newSale.total,
                 description: newSale.customer?.name || 'Customer',
                 addedBy: currentUser?.name || 'System'
@@ -1667,7 +1667,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const { data: paidTxns } = await supabase.from('transactions')
                     .select('id')
                     .eq('type', 'Income')
-                    .eq('category', 'លក់ឥវ៉ាន់')
+                    // Also match the pre-rename category so older rows still clean up.
+                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
                     .eq('description', custName)
                     .or(amountMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
@@ -1743,7 +1744,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 id: transactionId,
                 date: normalizedDate,
                 type: 'Income' as const,
-                category: 'លក់ឥវ៉ាន់',
+                category: 'លក់រាយ',
                 amount: amountToRecord || 0,
                 description: customerName,
                 addedBy: currentUser?.name || 'System',
@@ -1795,7 +1796,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const { data: txns } = await supabase.from('transactions')
                     .select('id, amount')
                     .eq('type', 'Income')
-                    .eq('category', 'លក់ឥវ៉ាន់')
+                    // Also match the pre-rename category so older rows still sync.
+                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
                     .eq('description', customerName)
                     .or(syncMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
@@ -1809,7 +1811,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         id: generateUUID(),
                         date: normalizedDate,
                         type: 'Income' as const,
-                        category: 'លក់ឥវ៉ាន់',
+                        category: 'លក់រាយ',
                         amount: amountToRecord || 0,
                         description: customerName,
                         addedBy: currentUser?.name || 'System',
@@ -1836,7 +1838,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } else if (updates.paymentStatus === 'Deposit' && existingOrder && existingOrder.paymentStatus !== 'Deposit') {
             // Deposit received: log it as income right away (category កក់ប្រាក់).
             // Deposits are always kept — cancelling the order later never removes
-            // this entry (the cancel cleanup only targets 'លក់ឥវ៉ាន់').
+            // this entry (the cancel cleanup only targets 'លក់រាយ').
             const depAmount = Number(updates.depositAmount) || 0;
             if (depAmount > 0) {
                 const custName = updates.customer?.name || existingOrder.customer?.name || 'Customer';

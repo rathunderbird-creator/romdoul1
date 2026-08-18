@@ -872,7 +872,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     ) : (
                         paginatedTransactions.map(t => {
                             const isExpanded = expandedCards.has(t.id);
-                            const relatedOrder = t.type === 'Income' && t.category === 'លក់ឥវ៉ាន់'
+                            const relatedOrder = t.type === 'Income' && (t.category === 'លក់រាយ' || t.category === 'លក់ឥវ៉ាន់')
                                 ? sales.find(s => s.customer?.name === t.description && (s.amountReceived === t.amount || s.total === t.amount))
                                 : null;
 
@@ -1026,7 +1026,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 </tr>
                             ) : (
                                 paginatedTransactions.map(t => {
-                                    const relatedOrder = t.type === 'Income' && t.category === 'លក់ឥវ៉ាន់'
+                                    const relatedOrder = t.type === 'Income' && (t.category === 'លក់រាយ' || t.category === 'លក់ឥវ៉ាន់')
                                         ? sales.find(s => s.customer?.name === t.description && (s.amountReceived === t.amount || s.total === t.amount))
                                         : null;
 
