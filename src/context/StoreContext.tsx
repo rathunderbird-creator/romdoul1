@@ -1314,6 +1314,38 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }]).then(({ error }) => {
                 if (error) console.error('Failed to create transaction for online order:', error);
             });
+        } else if (newSale.paymentStatus === 'Deposit' && (newSale.depositAmount || 0) > 0) {
+            // Order created straight from checkout with a partial payment:
+            // log the deposit as income right away (mirror of the updateOrder
+            // Deposit branch — deposits are always kept, never removed).
+            const depAmount = Number(newSale.depositAmount) || 0;
+            const rawDepDate = newSale.depositDate || new Date().toISOString();
+            const depDateIso = rawDepDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDepDate).toISOString() : rawDepDate;
+            const depTxn = {
+                id: generateUUID(),
+                date: depDateIso,
+                type: 'Income' as const,
+                category: 'កក់ប្រាក់',
+                amount: depAmount,
+                description: `${newSale.customer?.name || 'Customer'} #DEP-${newSale.id.slice(0, 8)}`,
+                addedBy: currentUser?.name || 'System',
+                shipping_co: newSale.shipping?.company || null,
+                pay_by: newSale.depositMethod || null
+            };
+            setTransactions(prev => [depTxn, ...prev]);
+            supabase.from('transactions').insert([{
+                id: depTxn.id,
+                date: depTxn.date,
+                type: depTxn.type,
+                category: depTxn.category,
+                amount: depTxn.amount,
+                description: depTxn.description,
+                added_by: depTxn.addedBy,
+                pay_by: depTxn.pay_by,
+                shipping_co: depTxn.shipping_co
+            }]).then(({ error }) => {
+                if (error) console.error('Failed to log deposit income for new order:', error);
+            });
         }
 
         setSales(prev => [newSale, ...prev]);
@@ -1330,6 +1362,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             customer_care: newSale.customerCare,
             amount_received: newSale.amountReceived,
             payment_status: newSale.paymentStatus,
+            deposit_amount: newSale.depositAmount || 0,
+            deposit_date: newSale.depositDate || null,
+            deposit_method: newSale.depositMethod || null,
             customer_snapshot: newSale.customer,
             order_status: 'Open',
             page_source: newSale.customer?.page || null,

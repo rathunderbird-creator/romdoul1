@@ -463,6 +463,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
             const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
 
+            // Partial payment = deposit. Enforced here at save time regardless of
+            // what the dropdown shows, so the table always marks it Deposit.
+            const isPartialDeposit = !formData.paymentAfterDelivery
+                && amountReceivedVal > 0
+                && amountReceivedVal < total
+                && !['Get File', 'Cancel'].includes(formData.paymentStatus);
+            const effectivePaymentStatus = isPartialDeposit ? ('Deposit' as const) : formData.paymentStatus;
+
             setIsSubmitting(true);
 
             const cleanCity = formData.city ? formData.city.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim() : '';
@@ -478,7 +486,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 remark: formData.remark,
                 amountReceived: formData.paymentAfterDelivery ? 0 : amountReceivedVal,
                 settleDate: formData.settleDate,
-                paymentStatus: formData.paymentStatus,
+                paymentStatus: effectivePaymentStatus,
+                ...(isPartialDeposit ? {
+                    depositAmount: amountReceivedVal,
+                    // Editing an existing deposit keeps its original date/method.
+                    depositDate: orderToEdit?.depositDate || new Date().toLocaleDateString('en-CA'),
+                    depositMethod: formData.paymentMethod || orderToEdit?.depositMethod
+                } : {}),
                 customer: {
                     name: formData.customerName,
                     phone: formData.customerPhone,
@@ -1014,7 +1028,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Deposit', name: 'Deposit'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -1069,10 +1083,31 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     value={formData.amountReceived}
                                     onChange={e => {
                                         const val = e.target.value;
-                                        setFormData({ ...formData, amountReceived: val === '' ? '' : Number(val) });
+                                        const num = val === '' ? 0 : Number(val);
+                                        // Partial amount auto-detects as a deposit; clearing or
+                                        // filling it flips back (only among Unpaid/Paid/Deposit —
+                                        // Get File and Cancel are never overridden).
+                                        const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                                        const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                        let status = formData.paymentStatus;
+                                        if (!formData.paymentAfterDelivery && ['Unpaid', 'Paid', 'Deposit'].includes(status)) {
+                                            if (num > 0 && num < totalNow) status = 'Deposit';
+                                            else if (status === 'Deposit') status = (totalNow > 0 && num >= totalNow) ? 'Paid' : 'Unpaid';
+                                        }
+                                        setFormData({ ...formData, amountReceived: val === '' ? '' : Number(val), paymentStatus: status });
                                     }}
                                     disabled={formData.paymentAfterDelivery}
                                 />
+                                {(() => {
+                                    const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+                                    const subtotalNow = cartItems.reduce((s, i) => s + (i.price * i.quantity), 0);
+                                    const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                    return !formData.paymentAfterDelivery && num > 0 && num < totalNow ? (
+                                        <p style={{ fontSize: '11px', color: '#7E22CE', margin: '6px 0 0 0', fontWeight: 600 }}>
+                                            កក់ប្រាក់ ${num.toFixed(2)} — saved as Deposit · balance ${(totalNow - num).toFixed(2)}
+                                        </p>
+                                    ) : null;
+                                })()}
                             </div>
                         </div>
                         <div>
