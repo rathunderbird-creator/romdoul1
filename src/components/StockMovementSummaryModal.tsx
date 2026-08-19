@@ -29,11 +29,12 @@ interface StockMovementSummaryModalProps {
 }
 
 /**
- * "Show Movements" popup: per-product recap of Old Stock / Sold / Return /
- * Buy / New Stock over a period. New Stock = the product's current stock;
- * Old Stock is back-calculated so every row satisfies
- * New = Old + Buy + Return - Sold.
- * Shared by the Stock Movements page and Orders Management.
+ * "Show Movements" popup: per-product recap of Old Stock / Sold / Wholesale /
+ * Return / Buy / New Stock over a period. New Stock = the stock as it stood at
+ * the END of the period (current stock rolled back through any later
+ * movements), so every day keeps its own historical record. Old Stock is
+ * back-calculated so every row satisfies New = Old + Buy + Return - Sold -
+ * Wholesale. Shared by the Stock Movements page and Orders Management.
  */
 const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ isOpen, onClose, initialRange, warehouseId }) => {
     const { products, warehouses } = useStore();
@@ -61,6 +62,23 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             const { data, error } = await query;
             if (error) throw error;
 
+            // Each day keeps its own record: when the period ends in the past,
+            // roll TODAY's stock back through every movement made AFTER the
+            // period, so New/Old Stock show what the stock actually was on
+            // those days (yesterday's summary stays yesterday's forever).
+            const netAfter = new Map<string, number>();
+            if (r.end) {
+                let afterQuery = supabase.from('stock_movements').select('product_id, type, quantity').gt('movement_date', r.end);
+                if (warehouseId) afterQuery = afterQuery.eq('warehouse_id', warehouseId);
+                const { data: afterData, error: afterErr } = await afterQuery;
+                if (afterErr) throw afterErr;
+                for (const m of (afterData || []) as any[]) {
+                    const key = m.product_id || '?';
+                    const delta = (m.type === 'in' ? 1 : -1) * (m.quantity || 0);
+                    netAfter.set(key, (netAfter.get(key) || 0) + delta);
+                }
+            }
+
             const byProduct = new Map<string, { sold: number; wholesale: number; ret: number; buy: number; name: string }>();
             for (const m of (data || []) as any[]) {
                 const key = m.product_id || m.product_name || '?';
@@ -78,7 +96,8 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             const built: MovementSummaryRow[] = products.map(p => {
                 const agg = byProduct.get(p.id) || { sold: 0, wholesale: 0, ret: 0, buy: 0, name: p.name };
                 byProduct.delete(p.id);
-                const newStock = p.stock || 0;
+                // Stock as it stood at the END of the selected period.
+                const newStock = (p.stock || 0) - (netAfter.get(p.id) || 0);
                 return {
                     id: p.id,
                     name: p.name,
