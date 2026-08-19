@@ -367,6 +367,9 @@ const Orders: React.FC = () => {
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
     const canManage = hasPermission('manage_orders');
+    // Grantable per role in Roles & Permissions (admins always pass).
+    const canUseCheckbox = hasPermission('use_checkbox');
+    const canRestock = hasPermission('restock_orders');
 
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
@@ -670,6 +673,10 @@ const Orders: React.FC = () => {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
+        }
+        if (!canRestock) {
+            showToast('You do not have permission to restock orders.', 'error');
+            return;
         }
         if (confirm(`Are you sure you want to restock ${selectedIds.size} orders ? `)) {
             try {
@@ -2815,6 +2822,10 @@ const Orders: React.FC = () => {
                                                 showToast(postDispatchMessage(order.shipping?.status || 'Pending', status), 'error');
                                                 return;
                                             }
+                                            if (status === 'ReStock' && !canRestock) {
+                                                showToast('You do not have permission to restock orders.', 'error');
+                                                return;
+                                            }
                                             // Shipped -> Delivered is a plain status change: no payment
                                             // method popup, and payment fields stay untouched.
                                             if (status === 'Shipped' || status === 'Confirmed') {
@@ -2857,6 +2868,7 @@ const Orders: React.FC = () => {
                                         }}
                                         canEdit={canEdit}
                                         isAdmin={isAdmin}
+                                        canRestock={canRestock}
                                     />
                                 ))}
 
@@ -2944,7 +2956,7 @@ const Orders: React.FC = () => {
                                     <thead>
                                         <tr>
                                             <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: '#e5e7eb' }} className="sticky-col-first">
-                                                {isAdmin && (
+                                                {canUseCheckbox && (
                                                     <input
                                                         type="checkbox"
                                                         checked={filteredOrders.length > 0 && selectedIds.size === filteredOrders.length}
@@ -3152,7 +3164,7 @@ const Orders: React.FC = () => {
                                             return (
                                                 <tr key={order.id} className={rowClass}>
                                                     <td style={{ textAlign: 'center', position: 'sticky', left: 0, zIndex: 15, borderLeft: order.paymentStatus === 'Cancel' ? '2px solid #991B1B' : (order.shipping?.status === 'Drafted' ? '2px solid transparent' : `2px solid ${getStatusBorderColor(order.shipping?.status || 'Pending')}`) }} className="sticky-col-first">
-                                                        {isAdmin && (
+                                                        {canUseCheckbox && (
                                                             <input
                                                                 type="checkbox"
                                                                 checked={selectedIds.has(order.id)}
@@ -3321,21 +3333,24 @@ const Orders: React.FC = () => {
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
                                                                             readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
-                                                                            disabledOptions={
-                                                                                (order.shipping?.status === 'Shipped')
-                                                                                    ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
-                                                                                    : (order.shipping?.status === 'Delivered')
-                                                                                        // From Delivered only a return is allowed (post-delivery
-                                                                                        // return, or correcting a mistaken Delivered).
-                                                                                        ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
-                                                                                        : ['Delivered', 'Returned']
-                                                                            }
+                                                                            disabledOptions={((order.shipping?.status === 'Shipped')
+                                                                                ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
+                                                                                : (order.shipping?.status === 'Delivered')
+                                                                                    // From Delivered only a return is allowed (post-delivery
+                                                                                    // return, or correcting a mistaken Delivered).
+                                                                                    ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
+                                                                                    : ['Delivered', 'Returned']
+                                                                            ).concat(canRestock ? [] : ['ReStock'])}
                                                                             onChange={(newStatus: string) => {
                                                                                 // Backstop for the disabledOptions above, and it also covers
                                                                                 // 'Returned' — reaching it without shipping would credit
                                                                                 // stock on delete that was never deducted.
                                                                                 if (POST_DISPATCH_STATUSES.includes(newStatus) && !canEnterPostDispatch(order, newStatus)) {
                                                                                     showToast(postDispatchMessage(order.shipping?.status || 'Pending', newStatus), 'error');
+                                                                                    return;
+                                                                                }
+                                                                                if (newStatus === 'ReStock' && !canRestock) {
+                                                                                    showToast('You do not have permission to restock orders.', 'error');
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'Shipped') {
@@ -3537,13 +3552,14 @@ const Orders: React.FC = () => {
                         )}
                     </div>
 
-                    {/* Bulk Actions Bar */}
+                    {/* Bulk Actions Bar — visible to anyone who can select rows;
+                        the buttons inside keep their own permission gates. */}
                     {
-                        selectedIds.size > 0 && canManage && (
+                        selectedIds.size > 0 && canUseCheckbox && (
                             <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
                                 <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
                                 <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
-                                {Array.from(selectedIds).some(id => {
+                                {canManage && (Array.from(selectedIds).some(id => {
                                     const order = filteredOrders.find(o => o.id === id);
                                     const phone = order?.customer?.phone;
                                     return phone && blockedCustomers.some(bc => String(bc.phone || '') === String(phone).trim());
@@ -3568,11 +3584,14 @@ const Orders: React.FC = () => {
                                     <button type="button" onClick={(e) => { e.preventDefault(); setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                         <ShieldOff size={18} /> Mark as Scammer
                                     </button>
+                                ))}
+                                {isAdmin && (
+                                    <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                                        <Trash2 size={18} /> Delete
+                                    </button>
                                 )}
-                                <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                    <Trash2 size={18} /> Delete
-                                </button>
                                 { (() => {
+                                    if (!canRestock) return null;
                                     const allReturned = Array.from(selectedIds).every(id => filteredOrders.find(o => o.id === id)?.shipping?.status === 'Returned');
                                     if (!allReturned) return null;
                                     return (

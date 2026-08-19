@@ -40,6 +40,8 @@ const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: 'view_orders', label: 'View Orders', description: 'View orders in read-only mode' },
             { key: 'create_orders', label: 'Create Orders', description: 'Create new customer orders' },
             { key: 'manage_orders', label: 'Manage Orders', description: 'Edit, delete, and manage shipping, payments and scammers' },
+            { key: 'use_checkbox', label: 'Use Checkbox', description: 'Select order rows with checkboxes for batch operations' },
+            { key: 'restock_orders', label: 'ReStock', description: 'Restock returned orders back into inventory' },
         ],
     },
     {

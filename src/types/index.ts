@@ -326,7 +326,9 @@ export type Permission =
     | 'manage_hr'
     | 'manage_crm'
     | 'manage_procurement'
-    | 'manage_accounting';
+    | 'manage_accounting'
+    | 'use_checkbox'
+    | 'restock_orders';
 
 // Canonical runtime list of every permission. Keep in sync with the Permission union
 // above. The `satisfies` check makes TypeScript flag any value that isn't a valid
@@ -335,7 +337,7 @@ export const ALL_PERMISSIONS = [
     'view_dashboard', 'process_sales', 'manage_inventory', 'view_reports', 'manage_settings',
     'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock',
     'manage_income_expense', 'manage_attendance', 'manage_payroll', 'manage_hr', 'manage_crm',
-    'manage_procurement', 'manage_accounting',
+    'manage_procurement', 'manage_accounting', 'use_checkbox', 'restock_orders',
 ] satisfies Permission[];
 
 export interface Role {

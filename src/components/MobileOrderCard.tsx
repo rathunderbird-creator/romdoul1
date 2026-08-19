@@ -20,6 +20,7 @@ interface MobileOrderCardProps {
     onUpdatePaymentStatus: (id: string, status: any) => void;
     canEdit: boolean;
     isAdmin?: boolean;
+    canRestock?: boolean;
 }
 
 const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
@@ -35,7 +36,8 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     onUpdateStatus,
     onUpdatePaymentStatus,
     canEdit,
-    isAdmin = false
+    isAdmin = false,
+    canRestock = true
 }) => {
     const getInitials = (name: string) => {
         return name
@@ -277,13 +279,12 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     <StatusBadge
                                         status={order.shipping?.status || 'Pending'}
                                         readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
-                                        disabledOptions={
-                                            (order.shipping?.status === 'Shipped')
-                                                ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
-                                                : (order.shipping?.status === 'Delivered')
-                                                    ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
-                                                    : ['Delivered', 'Returned']
-                                        }
+                                        disabledOptions={((order.shipping?.status === 'Shipped')
+                                            ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
+                                            : (order.shipping?.status === 'Delivered')
+                                                ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
+                                                : ['Delivered', 'Returned']
+                                        ).concat(canRestock ? [] : ['ReStock'])}
                                         onChange={(newStatus) => onUpdateStatus(order.id, newStatus)}
                                     />
                                 </div>
