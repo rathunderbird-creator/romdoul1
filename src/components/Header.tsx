@@ -3,7 +3,8 @@ import ReactDOM from 'react-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useActivityLog } from '../context/ActivityLogContext';
-import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X } from 'lucide-react';
+import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { useMobile } from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -84,6 +85,109 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         if (!isOpen) {
             // Opening the panel - mark as read
             markAllRead();
+        }
+    };
+
+    // --- Today's Tasks drawer (right-side popup fed by the Todo page's table) ---
+    interface HeaderTodo {
+        id: string;
+        title: string;
+        due_date: string | null;
+        status: string;
+        remind_at: string | null;
+        priority: number;
+        updated_at: string;
+        created_at: string;
+    }
+    const [isTasksOpen, setIsTasksOpen] = React.useState(false);
+    const [tasks, setTasks] = React.useState<HeaderTodo[]>([]);
+    const [tasksLoading, setTasksLoading] = React.useState(false);
+    const [openTaskCount, setOpenTaskCount] = React.useState(0);
+
+    const localYMD = (d: Date) => d.toLocaleDateString('en-CA');
+
+    const fetchTasks = React.useCallback(async () => {
+        if (!currentUser) return;
+        setTasksLoading(true);
+        try {
+            const { data, error } = await supabase.from('todos')
+                .select('id, title, due_date, status, remind_at, priority, updated_at, created_at')
+                .eq('user_id', currentUser.id)
+                .order('priority', { ascending: true })
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            const today = localYMD(new Date());
+            // Same rules as the Todo page's "Today" view: open tasks due today or
+            // overdue (or undated ones created today); completed tasks only if
+            // they were finished today or were due today.
+            const isTodayTask = (t: HeaderTodo) => {
+                if (t.status === 'completed') {
+                    const completedToday = t.updated_at && localYMD(new Date(t.updated_at)) === today;
+                    return completedToday || t.due_date === today || (!t.due_date && localYMD(new Date(t.created_at)) === today);
+                }
+                return (!!t.due_date && t.due_date <= today) || (!t.due_date && localYMD(new Date(t.created_at)) === today);
+            };
+            const list = ((data || []) as HeaderTodo[]).filter(isTodayTask);
+            list.sort((a, b) => (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0));
+            setTasks(list);
+            setOpenTaskCount(list.filter(t => t.status !== 'completed').length);
+        } catch (e) {
+            console.error('Failed to fetch today\'s tasks:', e);
+        } finally {
+            setTasksLoading(false);
+        }
+    }, [currentUser]);
+
+    // Badge count on load (and when the user changes).
+    React.useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+    const toggleTask = async (t: HeaderTodo) => {
+        const newStatus = t.status === 'completed' ? 'open' : 'completed';
+        const now = new Date().toISOString();
+        setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: newStatus, updated_at: now } : x));
+        setOpenTaskCount(prev => Math.max(0, prev + (newStatus === 'completed' ? -1 : 1)));
+        const { error } = await supabase.from('todos')
+            .update({ status: newStatus, updated_at: now })
+            .eq('id', t.id)
+            .eq('user_id', currentUser?.id);
+        if (error) {
+            console.error('Failed to toggle task:', error);
+            fetchTasks();
+        }
+    };
+
+    // Quick-add from the drawer: new open task due today (same shape the
+    // Todo page inserts — unfiled, default priority).
+    const [newTaskTitle, setNewTaskTitle] = React.useState('');
+    const [isAddingTask, setIsAddingTask] = React.useState(false);
+
+    const addTask = async () => {
+        const title = newTaskTitle.trim();
+        if (!title || !currentUser || isAddingTask) return;
+        setIsAddingTask(true);
+        try {
+            const { data, error } = await supabase.from('todos').insert([{
+                title,
+                priority: 4,
+                status: 'open',
+                due_date: localYMD(new Date()),
+                user_id: currentUser.id,
+                repeat_rule: null,
+                remind_at: null,
+                last_reminded_on: null,
+                updated_at: new Date().toISOString()
+            }]).select('id, title, due_date, status, remind_at, priority, updated_at, created_at').single();
+            if (error) throw error;
+            if (data) {
+                setTasks(prev => [data as HeaderTodo, ...prev]);
+                setOpenTaskCount(prev => prev + 1);
+            }
+            setNewTaskTitle('');
+        } catch (e: any) {
+            console.error('Failed to add task:', e);
+            alert('Failed to add task: ' + (e?.message || 'unknown error'));
+        } finally {
+            setIsAddingTask(false);
         }
     };
 
@@ -368,6 +472,43 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         </div>
                     </div>
 
+                    {/* Today's Tasks */}
+                    <button
+                        onClick={() => { setIsTasksOpen(true); fetchTasks(); }}
+                        title="Today's Tasks"
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: isMobile ? '#D1D5DB' : 'var(--color-text-secondary)',
+                            position: 'relative',
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '4px'
+                        }}
+                    >
+                        <ClipboardList size={18} />
+                        {openTaskCount > 0 && (
+                            <span style={{
+                                position: 'absolute',
+                                top: -2,
+                                right: -4,
+                                minWidth: '16px',
+                                height: '16px',
+                                borderRadius: '8px',
+                                backgroundColor: '#F59E0B',
+                                color: 'white',
+                                fontSize: '9px',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '0 4px',
+                                lineHeight: 1,
+                            }}>{openTaskCount > 9 ? '9+' : openTaskCount}</span>
+                        )}
+                    </button>
+
                     {/* Logout Button */}
                     <button
                         onClick={handleLogout}
@@ -457,6 +598,125 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         {renderActivityLogContent()}
                     </div>
                 </div>,
+                document.body
+            )}
+
+            {/* Today's Tasks — right-side drawer */}
+            {ReactDOM.createPortal(
+                <>
+                    {isTasksOpen && (
+                        <div onClick={() => setIsTasksOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1198 }} />
+                    )}
+                    <div style={{
+                        position: 'fixed', top: 0, right: 0, bottom: 0,
+                        width: isMobile ? '85%' : '360px', maxWidth: '360px', zIndex: 1199,
+                        display: 'flex', flexDirection: 'column',
+                        background: 'var(--color-surface)',
+                        transform: isTasksOpen ? 'translateX(0)' : 'translateX(105%)',
+                        transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        boxShadow: '-8px 0 30px rgba(0,0,0,0.18)',
+                        borderRadius: '16px 0 0 16px',
+                    }}>
+                        {/* Drawer header */}
+                        <div style={{ padding: '16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                    <ClipboardList size={18} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Today's Tasks</h3>
+                                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                        {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })} · {openTaskCount} open
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsTasksOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Quick add */}
+                        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: '8px' }}>
+                            <input
+                                type="text"
+                                placeholder="Add a task for today…"
+                                value={newTaskTitle}
+                                onChange={(e) => setNewTaskTitle(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
+                                style={{ flex: 1, padding: '9px 12px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text-main)', outline: 'none' }}
+                            />
+                            <button
+                                onClick={addTask}
+                                disabled={!newTaskTitle.trim() || isAddingTask}
+                                title="Add Task"
+                                style={{
+                                    width: '38px', height: '38px', borderRadius: '10px', border: 'none', flexShrink: 0,
+                                    background: newTaskTitle.trim() && !isAddingTask ? 'linear-gradient(135deg, #F59E0B, #D97706)' : 'var(--color-bg)',
+                                    color: newTaskTitle.trim() && !isAddingTask ? 'white' : 'var(--color-text-muted)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: newTaskTitle.trim() && !isAddingTask ? 'pointer' : 'not-allowed',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                <Plus size={18} />
+                            </button>
+                        </div>
+
+                        {/* Task list */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+                            {tasksLoading && tasks.length === 0 ? (
+                                <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                                    Loading tasks…
+                                </div>
+                            ) : tasks.length === 0 ? (
+                                <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                                    🎉 No tasks for today
+                                </div>
+                            ) : (
+                                tasks.map(t => {
+                                    const done = t.status === 'completed';
+                                    const today = localYMD(new Date());
+                                    const overdue = !done && !!t.due_date && t.due_date < today;
+                                    return (
+                                        <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 16px', borderBottom: '1px solid var(--color-border)' }}>
+                                            <button
+                                                onClick={() => toggleTask(t)}
+                                                title={done ? 'Mark as open' : 'Mark as done'}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '1px', color: done ? '#10B981' : 'var(--color-text-muted)', display: 'flex', flexShrink: 0 }}
+                                            >
+                                                {done ? <CheckCircle2 size={19} /> : <Circle size={19} />}
+                                            </button>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '13px', fontWeight: 500, color: done ? 'var(--color-text-muted)' : 'var(--color-text-main)', textDecoration: done ? 'line-through' : 'none', wordBreak: 'break-word', lineHeight: 1.4 }}>
+                                                    {t.title}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '8px', marginTop: '3px', fontSize: '11px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                    {overdue ? (
+                                                        <span style={{ color: '#DC2626', fontWeight: 700 }}>Overdue · {t.due_date}</span>
+                                                    ) : t.due_date ? (
+                                                        <span style={{ color: 'var(--color-text-muted)' }}>{t.due_date === today ? 'Today' : t.due_date}</span>
+                                                    ) : null}
+                                                    {t.remind_at && <span style={{ color: 'var(--color-text-muted)' }}>⏰ {t.remind_at}</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)' }}>
+                            <button
+                                onClick={() => { setIsTasksOpen(false); navigate('/todo'); }}
+                                className="primary-button"
+                                style={{ width: '100%', padding: '11px', borderRadius: '10px', fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                            >
+                                <ExternalLink size={15} /> Open Todo
+                            </button>
+                        </div>
+                    </div>
+                </>,
                 document.body
             )}
         </>
