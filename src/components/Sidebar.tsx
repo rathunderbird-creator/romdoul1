@@ -27,7 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
-        navItems.push({ icon: CheckSquare, label: 'Todo', path: '/todo' });
+        navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
     }
 
     if (hasPermission('manage_orders') || hasPermission('create_orders') || hasPermission('view_orders')) {
@@ -39,8 +39,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
                 { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
-                { label: 'Scammers', path: '/orders/scammers', icon: AlertTriangle },
-                { label: 'Deleted Orders', path: '/orders/deleted', icon: Trash2 }
+                { label: t('nav.scammers'), path: '/orders/scammers', icon: AlertTriangle },
+                { label: t('nav.deletedOrders'), path: '/orders/deleted', icon: Trash2 }
             ]
         });
     }
@@ -55,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
                 { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
                 { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign },
-                { label: 'Income Prediction', path: '/income-expense/prediction', icon: Calendar }
+                { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar }
             ]
         });
     }
@@ -63,12 +63,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_procurement')) {
         navItems.push({
             icon: ShoppingCart,
-            label: 'Purchasing',
+            label: t('nav.procurement'),
             path: '/procurement',
             subItems: [
-                { label: 'Purchase Orders', path: '/procurement/purchase-orders', icon: FileCheck },
-                { label: 'Suppliers', path: '/procurement/suppliers', icon: Building2 },
-                { label: 'Receiving', path: '/procurement/receiving', icon: PackageCheck }
+                { label: t('nav.purchaseOrders'), path: '/procurement/purchase-orders', icon: FileCheck },
+                { label: t('nav.suppliers'), path: '/procurement/suppliers', icon: Building2 },
+                { label: t('nav.receiving'), path: '/procurement/receiving', icon: PackageCheck }
             ]
         });
     }
@@ -76,11 +76,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_orders')) {
         navItems.push({
             icon: Store,
-            label: 'Wholesale',
+            label: t('nav.wholesale'),
             path: '/wholesale',
             subItems: [
-                { label: 'Wholesale Orders', path: '/wholesale/orders', icon: ShoppingCart },
-                { label: 'Customers', path: '/wholesale/customers', icon: Users }
+                { label: t('nav.wholesaleOrders'), path: '/wholesale/orders', icon: ShoppingCart },
+                { label: t('nav.wholesaleCustomers'), path: '/wholesale/customers', icon: Users }
             ]
         });
     }
@@ -91,10 +91,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             label: t('nav.inventory'),
             path: '/inventory',
             subItems: [
-                { label: 'Products', path: '/inventory', icon: PackageSearch },
-                { label: 'Categories', path: '/inventory/categories', icon: Tags },
-                { label: 'Warehouses', path: '/inventory/warehouses', icon: Warehouse },
-                { label: 'Stock Movements', path: '/inventory/stock-movements', icon: ArrowRightLeft }
+                { label: t('nav.products'), path: '/inventory', icon: PackageSearch },
+                { label: t('nav.categories'), path: '/inventory/categories', icon: Tags },
+                { label: t('nav.warehouses'), path: '/inventory/warehouses', icon: Warehouse },
+                { label: t('nav.stockMovements'), path: '/inventory/stock-movements', icon: ArrowRightLeft }
             ]
         });
     }
@@ -102,14 +102,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_accounting')) {
         navItems.push({
             icon: Calculator,
-            label: 'Accounting',
+            label: t('nav.accounting'),
             path: '/accounting',
             subItems: [
-                { label: 'Chart of Accounts', path: '/accounting/chart-of-accounts', icon: Network },
-                { label: 'Journal Entries', path: '/accounting/journal-entries', icon: BookOpen },
-                { label: 'Accounts Payable', path: '/accounting/payable', icon: Wallet },
-                { label: 'Accounts Receivable', path: '/accounting/receivable', icon: HandCoins },
-                { label: 'Payments', path: '/accounting/payments', icon: CreditCard }
+                { label: t('nav.chartOfAccounts'), path: '/accounting/chart-of-accounts', icon: Network },
+                { label: t('nav.journalEntries'), path: '/accounting/journal-entries', icon: BookOpen },
+                { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
+                { label: t('nav.accountsReceivable'), path: '/accounting/receivable', icon: HandCoins },
+                { label: t('nav.payments'), path: '/accounting/payments', icon: CreditCard }
             ]
         });
     }
@@ -117,13 +117,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_hr') || hasPermission('manage_attendance')) {
         navItems.push({
             icon: Briefcase,
-            label: 'HR & Payroll',
+            label: t('nav.hrPayroll'),
             path: '/hr',
             subItems: [
-                { label: 'Attendance', path: '/hr/attendance', icon: CalendarClock },
-                { label: 'Employees', path: '/hr/employees', icon: Users },
-                { label: 'Leaves', path: '/hr/leaves', icon: CalendarOff },
-                { label: 'Payroll', path: '/hr/payroll', icon: Banknote }
+                { label: t('nav.attendance'), path: '/hr/attendance', icon: CalendarClock },
+                { label: t('nav.employees'), path: '/hr/employees', icon: Users },
+                { label: t('nav.leaves'), path: '/hr/leaves', icon: CalendarOff },
+                { label: t('nav.payroll'), path: '/hr/payroll', icon: Banknote }
             ]
         });
     }
@@ -131,12 +131,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     if (hasPermission('manage_crm')) {
         navItems.push({
             icon: HeartHandshake,
-            label: 'CRM',
+            label: t('nav.crm'),
             path: '/crm',
             subItems: [
-                { label: 'Leads', path: '/crm/leads', icon: UserPlus },
-                { label: 'Interactions', path: '/crm/interactions', icon: MessageSquare },
-                { label: 'Quotations', path: '/crm/quotations', icon: FileText }
+                { label: t('nav.leads'), path: '/crm/leads', icon: UserPlus },
+                { label: t('nav.interactions'), path: '/crm/interactions', icon: MessageSquare },
+                { label: t('nav.quotations'), path: '/crm/quotations', icon: FileText }
             ]
         });
     }
@@ -163,7 +163,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     }
 
     if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: History, label: 'Activity Log', path: '/activity-log' });
+        navItems.push({ icon: History, label: t('nav.activityLog'), path: '/activity-log' });
     }
 
     const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>(() => {
