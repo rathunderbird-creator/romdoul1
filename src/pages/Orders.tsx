@@ -348,6 +348,20 @@ const postDispatchMessage = (current: string, target: string) =>
 // Statuses that count as (expected) revenue in the mobile footer's Total.
 const REVENUE_TOTAL_STATUSES = ['Confirmed', 'Shipped', 'Delivered'];
 
+// Balance still owed on an order. Zero when payment is cancelled / restocked,
+// and for orders that are Drafted, Pending, or Cancelled — nothing is
+// collectible before dispatch or after a void.
+const orderBalance = (order: Sale): number => {
+    // Special case: a Deposit order always shows what's still owed —
+    // total minus the deposit received — regardless of shipping status.
+    if (order.paymentStatus === 'Deposit') {
+        return Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0));
+    }
+    const s = order.shipping?.status;
+    if (order.paymentStatus === 'Cancel' || s === 'ReStock' || s === 'Drafted' || s === 'Pending' || s === 'Cancelled') return 0;
+    return order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0));
+};
+
 const LOCKED_ORDER_STATUSES = ['ReStock', 'Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
@@ -1398,7 +1412,9 @@ const Orders: React.FC = () => {
             const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
             return sum + (isCancelled ? 0 : (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)));
         }, 0);
-        const totalOutstanding = totalRevenue - totalReceived;
+        // Sum of the per-row Balance column (same rule as the cells, so the
+        // footer always matches what's shown).
+        const totalOutstanding = filteredOrders.reduce((sum, order) => sum + orderBalance(order), 0);
         const totalProducts = filteredOrders.reduce((sum, order) => {
             const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
             return sum + (isCancelled ? 0 : order.items.reduce((s, item) => s + item.quantity, 0));
@@ -3274,7 +3290,9 @@ const Orders: React.FC = () => {
                                                                 // Blue = money in hand (fully paid, or a deposit received); red = outstanding.
                                                                 color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit') ? '#2563EB' : '#DC2626',
                                                                 fontWeight: 'bold'
-                                                            }}>${(order.amountReceived ?? order.total).toFixed(2)}</td>;
+                                                            }}>${(order.paymentStatus === 'Deposit'
+                                                                ? (order.depositAmount || order.amountReceived || 0)
+                                                                : (order.amountReceived ?? order.total)).toFixed(2)}</td>;
                                                             case 'payStatus':
                                                                 return (
                                                                     <td key={colId} style={{
@@ -3313,8 +3331,7 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'balance': {
-                                                                const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
-                                                                const balance = isCancelled ? 0 : (order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)));
+                                                                const balance = orderBalance(order);
                                                                 return (
                                                                     <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
                                                                         ${balance.toFixed(2)}
