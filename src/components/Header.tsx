@@ -3,8 +3,9 @@ import ReactDOM from 'react-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useActivityLog } from '../context/ActivityLogContext';
-import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus } from 'lucide-react';
+import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus, Calculator } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import CalculatorDrawer from './CalculatorDrawer';
 import { useMobile } from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -100,6 +101,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         created_at: string;
     }
     const [isTasksOpen, setIsTasksOpen] = React.useState(false);
+    const [isCalcOpen, setIsCalcOpen] = React.useState(false);
     const [tasks, setTasks] = React.useState<HeaderTodo[]>([]);
     const [tasksLoading, setTasksLoading] = React.useState(false);
     const [openTaskCount, setOpenTaskCount] = React.useState(0);
@@ -472,9 +474,26 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         </div>
                     </div>
 
+                    {/* Calculator */}
+                    <button
+                        onClick={() => { setIsTasksOpen(false); setIsCalcOpen(true); }}
+                        title="Calculator"
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: isMobile ? '#D1D5DB' : 'var(--color-text-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '4px'
+                        }}
+                    >
+                        <Calculator size={18} />
+                    </button>
+
                     {/* Today's Tasks */}
                     <button
-                        onClick={() => { setIsTasksOpen(true); fetchTasks(); }}
+                        onClick={() => { setIsCalcOpen(false); setIsTasksOpen(true); fetchTasks(); }}
                         title="Today's Tasks"
                         style={{
                             background: 'none',
@@ -719,6 +738,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                 </>,
                 document.body
             )}
+
+            {/* Calculator — right-side drawer */}
+            <CalculatorDrawer isOpen={isCalcOpen} onClose={() => setIsCalcOpen(false)} isMobile={isMobile} />
         </>
     );
 };
