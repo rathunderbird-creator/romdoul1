@@ -31,7 +31,10 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
         };
         if (isOpen) {
-            setSelectedMethod(initialMethod || paymentMethods[0] || 'Cash');
+            // Bank is the default Pay By — settlements normally arrive by bank
+            // transfer from the shipping company (still changeable in the dropdown).
+            const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
+            setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
             setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : getLocalYYYYMMDD());
         }
     }, [isOpen, initialMethod, initialDate, paymentMethods]);
