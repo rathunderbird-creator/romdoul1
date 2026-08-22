@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, lazy } from 'react';
+import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -340,6 +341,120 @@ const DrawerChipGroup: React.FC<{ title: string; options: string[]; selected: st
         </div>
     </div>
 );
+// Column filter popover for the table header. Rendered through a portal with
+// fixed positioning so the scrolling table container can never clip it, and
+// edits a local draft that is applied on Apply / Enter / click-outside — not
+// on every keystroke (which used to fire a server query per character).
+const ColumnFilterPopover: React.FC<{
+    anchor: HTMLElement | null;
+    label: string;
+    isDate: boolean;
+    value: string;
+    onApply: (value: string) => void;
+    onClear: () => void;
+    onClose: () => void;
+}> = ({ anchor, label, isDate, value, onApply, onClear, onClose }) => {
+    const [draft, setDraft] = useState(value);
+    const ref = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+    const WIDTH = 240;
+
+    useEffect(() => {
+        const update = () => {
+            if (!anchor) return;
+            const r = anchor.getBoundingClientRect();
+            setPos({
+                top: r.bottom + 6,
+                left: Math.max(8, Math.min(r.left, window.innerWidth - WIDTH - 8))
+            });
+        };
+        update();
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update, true);
+        return () => {
+            window.removeEventListener('resize', update);
+            window.removeEventListener('scroll', update, true);
+        };
+    }, [anchor]);
+
+    const commit = () => {
+        if (draft !== value) onApply(draft);
+        onClose();
+    };
+
+    useEffect(() => {
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (ref.current?.contains(t) || anchor?.contains(t)) return;
+            commit();
+        };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draft, value, anchor]);
+
+    const [start, end] = draft.includes('|') ? draft.split('|') : [draft, ''];
+    const setRange = (s: string, e: string) => setDraft(s || e ? `${s}|${e}` : '');
+    const inputStyle: React.CSSProperties = { flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none', minWidth: 0 };
+
+    return createPortal(
+        <div
+            ref={ref}
+            className="glass-panel"
+            style={{
+                position: 'fixed', top: pos.top, left: pos.left, width: `${WIDTH}px`, zIndex: 9999,
+                padding: '12px', background: 'white', boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
+                borderRadius: '10px', border: '1px solid var(--color-border)',
+                display: 'flex', flexDirection: 'column', gap: '8px'
+            }}
+        >
+            {isDate ? (
+                <>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', width: '38px', color: 'var(--color-text-secondary)' }}>From</span>
+                        <input type="date" value={start} onChange={(e) => setRange(e.target.value, end)} className="search-input" style={inputStyle} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', width: '38px', color: 'var(--color-text-secondary)' }}>To</span>
+                        <input type="date" value={end} onChange={(e) => setRange(start, e.target.value)} className="search-input" style={inputStyle} />
+                    </div>
+                </>
+            ) : (
+                <input
+                    type="text"
+                    autoFocus
+                    placeholder={`Filter ${label}...`}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+                    className="search-input"
+                    style={{ ...inputStyle, width: '100%' }}
+                />
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
+                <button
+                    onClick={() => { onClear(); onClose(); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#6B7280', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 500 }}
+                >
+                    <X size={14} /> Clear
+                </button>
+                <button
+                    onClick={commit}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 500 }}
+                >
+                    <Check size={14} /> Apply
+                </button>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 const postDispatchMessage = (current: string, target: string) =>
     ['Delivered', 'Returned'].includes(current)
         ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
@@ -539,6 +654,8 @@ const Orders: React.FC = () => {
         return saved ? JSON.parse(saved) : {};
     });
     const [activeColFilter, setActiveColFilter] = useState<string | null>(null);
+    // Anchors for the column-filter popover (one button per header cell).
+    const filterBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
     useEffect(() => { localStorage.setItem('orders_columnFilters', JSON.stringify(columnFilters)); }, [columnFilters]);
 
@@ -1121,39 +1238,24 @@ const Orders: React.FC = () => {
                 const esc = v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
                 
                 switch (key) {
-                    case 'date': {
-                        const parts = v.split('|');
-                        const startStr = parts[0];
-                        const endStr = parts.length > 1 ? parts[1] : '';
-                        
-                        if (startStr) {
-                            const start = new Date(startStr);
-                            start.setHours(0, 0, 0, 0);
-                            query = query.gte('date', start.toISOString());
-                        }
-                        const actualEndStr = endStr || startStr;
-                        if (actualEndStr) {
-                            const end = new Date(actualEndStr);
-                            end.setHours(23, 59, 59, 999);
-                            query = query.lte('date', end.toISOString());
-                        }
-                        break;
-                    }
+                    // Date-range column filters: "From" only = that day onward,
+                    // "To" only = up to that day, both = the inclusive range.
+                    // (Previously a lone From collapsed to a single day.)
+                    case 'date':
                     case 'settleDate': {
+                        const col = key === 'date' ? 'date' : 'settle_date';
                         const parts = v.split('|');
                         const startStr = parts[0];
                         const endStr = parts.length > 1 ? parts[1] : '';
-                        
                         if (startStr) {
                             const start = new Date(startStr);
                             start.setHours(0, 0, 0, 0);
-                            query = query.gte('settle_date', start.toISOString());
+                            query = query.gte(col, start.toISOString());
                         }
-                        const actualEndStr = endStr || startStr;
-                        if (actualEndStr) {
-                            const end = new Date(actualEndStr);
+                        if (endStr) {
+                            const end = new Date(endStr);
                             end.setHours(23, 59, 59, 999);
-                            query = query.lte('settle_date', end.toISOString());
+                            query = query.lte(col, end.toISOString());
                         }
                         break;
                     }
@@ -1201,10 +1303,10 @@ const Orders: React.FC = () => {
                         } else {
                             itemQuery = itemQuery.ilike('name', `%${esc}%`);
                         }
-                        const { data: colItemMatches } = await itemQuery.limit(50);
-                        
+                        const { data: colItemMatches } = await itemQuery.limit(300);
+
                         if (colItemMatches && colItemMatches.length > 0) {
-                            const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id))).slice(0, 50);
+                            const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id))).slice(0, 200);
                             query = query.in('id', ids);
                         } else {
                             query = query.eq('id', 'NO_MATCH');
@@ -1214,8 +1316,14 @@ const Orders: React.FC = () => {
                     case 'total':
                         if (!isNaN(Number(v))) query = query.eq('total', Number(v));
                         break;
+                    case 'received':
+                        if (!isNaN(Number(v))) query = query.eq('amount_received', Number(v));
+                        break;
                     case 'balance':
                         if (!isNaN(Number(v))) query = query.eq('total', Number(v));
+                        break;
+                    case 'lastEdit':
+                        query = query.ilike('last_edited_by', `%${esc}%`);
                         break;
                 }
             }
@@ -1559,7 +1667,8 @@ const Orders: React.FC = () => {
         }
     };
 
-    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any) => {
+    // settleDate / payBy come from the Bulk Edit modal's Payment section.
+    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string, payBy?: string) => {
         if (selectedIds.size === 0) return;
 
         try {
@@ -1582,10 +1691,12 @@ const Orders: React.FC = () => {
                     if (!order) return Promise.resolve();
                     
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
-                    
+
                     if (value === 'Paid' || value === 'Settled' || value === 'Get File') {
                         individualUpdates.amountReceived = order.total;
-                        individualUpdates.settleDate = now;
+                        individualUpdates.settleDate = settleDate ? new Date(settleDate).toISOString() : now;
+                        // Pay By chosen in the modal — also feeds the income row's pay_by.
+                        if (payBy) individualUpdates.paymentMethod = payBy as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null as any;
@@ -3034,6 +3145,7 @@ const Orders: React.FC = () => {
                                                                 {colId !== 'actions' && (
                                                                     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
                                                                         <button
+                                                                            ref={(el) => { filterBtnRefs.current[colId] = el; }}
                                                                             onClick={() => setActiveColFilter(activeColFilter === colId ? null : colId)}
                                                                             style={{
                                                                                 background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px',
@@ -3046,77 +3158,6 @@ const Orders: React.FC = () => {
                                                                         >
                                                                             <Filter size={14} />
                                                                         </button>
-                                                                        {activeColFilter === colId && (
-                                                                            <div className="glass-panel" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '8px',
-                                                                                padding: '12px', zIndex: 100, background: 'white',
-                                                                                boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                                                                                width: '220px',
-                                                                                display: 'flex', flexDirection: 'column', gap: '8px',
-                                                                                borderRadius: '8px', border: '1px solid var(--color-border)'
-                                                                            }}>
-                                                                                {colId === 'date' || colId === 'settleDate' ? (
-                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                                                            <span style={{ fontSize: '12px', width: '35px', color: 'var(--color-text-secondary)' }}>From:</span>
-                                                                                            <input
-                                                                                                type="date"
-                                                                                                value={(columnFilters[colId] || '').split('|')[0] || ''}
-                                                                                                onChange={(e) => {
-                                                                                                    const current = columnFilters[colId] || '';
-                                                                                                    const [_, end] = current.includes('|') ? current.split('|') : [current, ''];
-                                                                                                    const newStart = e.target.value;
-                                                                                                    setColumnFilters({...columnFilters, [colId]: newStart || end ? `${newStart}|${end}` : ''});
-                                                                                                }}
-                                                                                                className="search-input"
-                                                                                                style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
-                                                                                            />
-                                                                                        </div>
-                                                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                                                            <span style={{ fontSize: '12px', width: '35px', color: 'var(--color-text-secondary)' }}>To:</span>
-                                                                                            <input
-                                                                                                type="date"
-                                                                                                value={(columnFilters[colId] || '').split('|')[1] || ''}
-                                                                                                onChange={(e) => {
-                                                                                                    const current = columnFilters[colId] || '';
-                                                                                                    const [start, _] = current.includes('|') ? current.split('|') : [current, ''];
-                                                                                                    const newEnd = e.target.value;
-                                                                                                    setColumnFilters({...columnFilters, [colId]: start || newEnd ? `${start}|${newEnd}` : ''});
-                                                                                                }}
-                                                                                                className="search-input"
-                                                                                                style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
-                                                                                            />
-                                                                                        </div>
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <div style={{ position: 'relative' }}>
-                                                                                        <input
-                                                                                            type="text"
-                                                                                            autoFocus
-                                                                                            placeholder={`Filter ${colDef?.label}...`}
-                                                                                            value={columnFilters[colId] || ''}
-                                                                                            onChange={(e) => setColumnFilters({...columnFilters, [colId]: e.target.value})}
-                                                                                            onKeyDown={(e) => { if (e.key === 'Enter') setActiveColFilter(null); }}
-                                                                                            className="search-input"
-                                                                                            style={{ width: '100%', padding: '8px 28px 8px 8px', borderRadius: '4px', border: '1px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
-                                                                                        />
-                                                                                        <ChevronDown size={14} color="#9CA3AF" style={{ position: 'absolute', right: '8px', top: '10px', pointerEvents: 'none' }} />
-                                                                                    </div>
-                                                                                )}
-                                                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
-                                                                                    <button onClick={() => {
-                                                                                        const newFilters = {...columnFilters};
-                                                                                        delete newFilters[colId];
-                                                                                        setColumnFilters(newFilters);
-                                                                                        setActiveColFilter(null);
-                                                                                    }} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#6B7280', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 500 }}>
-                                                                                        <X size={14} /> Clear
-                                                                                    </button>
-                                                                                    <button onClick={() => setActiveColFilter(null)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 500 }}>
-                                                                                        <Check size={14} /> Apply
-                                                                                    </button>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -3958,6 +3999,29 @@ const Orders: React.FC = () => {
                         updates.amountReceived = paymentMethodTargetOrder.total;
                         updateOrder(paymentMethodTargetOrder.id, updates);
                     }}
+                />
+            )}
+            {/* Column filter popover (portal — never clipped by the table scroller) */}
+            {activeColFilter && (
+                <ColumnFilterPopover
+                    key={activeColFilter}
+                    anchor={filterBtnRefs.current[activeColFilter]}
+                    label={allColumnsDef.find(c => c.id === activeColFilter)?.label || activeColFilter}
+                    isDate={activeColFilter === 'date' || activeColFilter === 'settleDate'}
+                    value={columnFilters[activeColFilter] || ''}
+                    onApply={(v) => {
+                        const col = activeColFilter;
+                        setColumnFilters(prev => {
+                            const next = { ...prev };
+                            if (v.trim()) next[col] = v; else delete next[col];
+                            return next;
+                        });
+                    }}
+                    onClear={() => {
+                        const col = activeColFilter;
+                        setColumnFilters(prev => { const next = { ...prev }; delete next[col]; return next; });
+                    }}
+                    onClose={() => setActiveColFilter(null)}
                 />
             )}
             {/* Deposit Modal */}
