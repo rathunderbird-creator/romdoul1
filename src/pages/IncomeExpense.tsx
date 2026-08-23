@@ -1307,30 +1307,34 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             )}
 
             {/* Add/Edit Modal — PO-style popup */}
+            {/* Mobile: bottom sheet (full width, slides up, compact). Desktop: centered dialog. */}
             {isAddModalOpen && (
-            <div onClick={() => setIsAddModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: '24px', width: '100%', maxWidth: '560px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+            <div onClick={() => setIsAddModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: isMobile ? 'blur(4px)' : 'blur(8px)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : '24px' }}>
+                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: isMobile ? '20px 20px 0 0' : '24px', width: '100%', maxWidth: isMobile ? '100%' : '560px', maxHeight: isMobile ? '94vh' : '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: isMobile ? 'sheetUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' : 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                     {/* Header */}
-                    <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: formData.type === 'Income' ? 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(96,165,250,0.03))' : 'linear-gradient(135deg, rgba(239,68,68,0.06), rgba(248,113,113,0.03))' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: formData.type === 'Income' ? 'linear-gradient(135deg, #3b82f6, #60a5fa)' : 'linear-gradient(135deg, #ef4444, #f87171)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                {formData.type === 'Income' ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                    <div style={{ padding: isMobile ? '10px 16px 12px' : '18px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '8px', background: formData.type === 'Income' ? 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(96,165,250,0.03))' : 'linear-gradient(135deg, rgba(239,68,68,0.06), rgba(248,113,113,0.03))' }}>
+                        {isMobile && <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--color-border)', margin: '0 auto' }} />}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '13px' }}>
+                                <div style={{ width: isMobile ? '34px' : '40px', height: isMobile ? '34px' : '40px', borderRadius: '10px', background: formData.type === 'Income' ? 'linear-gradient(135deg, #3b82f6, #60a5fa)' : 'linear-gradient(135deg, #ef4444, #f87171)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
+                                    {formData.type === 'Income' ? <TrendingUp size={isMobile ? 17 : 20} /> : <TrendingDown size={isMobile ? 17 : 20} />}
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 700, margin: 0 }}>{editingTransaction ? 'Edit Transaction' : 'New Transaction'}</h2>
+                                    {!isMobile && <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{formData.type === 'Income' ? 'Money coming in' : 'Money going out'}</p>}
+                                </div>
                             </div>
-                            <div>
-                                <h2 style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>{editingTransaction ? 'Edit Transaction' : 'New Transaction'}</h2>
-                                <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{formData.type === 'Income' ? 'Money coming in' : 'Money going out'}</p>
-                            </div>
+                            <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <X size={18} />
+                            </button>
                         </div>
-                        <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <X size={18} />
-                        </button>
                     </div>
 
                     {/* Body */}
-                    <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ padding: isMobile ? '12px' : '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '16px' }}>
 
                     {/* Section: Type & Amount */}
-                    <div style={ieSection}>
+                    <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
                     <h4 style={ieSectionTitle}><DollarSign size={14} /> Type & Amount</h4>
                     <div style={{ display: 'flex', gap: '8px', padding: '4px', background: 'var(--color-background)', borderRadius: '12px' }}>
                         <button
@@ -1476,10 +1480,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     </div>
 
                     {/* Section: Details */}
-                    <div style={ieSection}>
+                    <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
                     <h4 style={ieSectionTitle}><Tag size={14} /> Details</h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {/* Mobile: Date and Category full width, Shipping Co + Pay By side by side */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
                             <div style={{ position: 'relative' }}>
                                 <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
@@ -1510,7 +1515,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
                             <div style={{ position: 'relative' }} ref={categoryRef}>
                                 <Tag size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
@@ -1645,7 +1650,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Description / Note</label>
                         <textarea
-                            rows={3}
+                            rows={isMobile ? 2 : 3}
                             placeholder="Optional details..."
                             value={formData.description}
                             onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
@@ -1665,12 +1670,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     </div>
                     </div>
 
-                    {/* Footer */}
-                    <div style={{ padding: '14px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '12px', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.01)' }}>
+                    {/* Footer — mobile: full-width Save with safe-area padding */}
+                    <div style={{ padding: isMobile ? '10px 12px calc(10px + env(safe-area-inset-bottom))' : '14px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: isMobile ? '10px' : '12px', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.01)' }}>
                         <button
                             onClick={() => setIsAddModalOpen(false)}
                             className="secondary-button"
-                            style={{ padding: '11px 20px', borderRadius: '10px', fontWeight: 600 }}
+                            style={{ padding: isMobile ? '12px 16px' : '11px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}
                         >
                             Cancel
                         </button>
@@ -1678,14 +1683,17 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onClick={handleSave}
                             disabled={!canSaveTxn}
                             className="primary-button"
-                            style={{ padding: '11px 24px', borderRadius: '10px', fontWeight: 600, background: formData.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', opacity: canSaveTxn ? 1 : 0.5, cursor: canSaveTxn ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
+                            style={{ padding: isMobile ? '12px 16px' : '11px 24px', borderRadius: '10px', fontWeight: 600, background: formData.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', opacity: canSaveTxn ? 1 : 0.5, cursor: canSaveTxn ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined, fontSize: isMobile ? '15px' : undefined }}
                         >
                             {formData.type === 'Income' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                             Save {formData.type}
                         </button>
                     </div>
                 </div>
-                <style>{`@keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
+                <style>{`
+                    @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+                    @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+                `}</style>
             </div>
             )}
         </div>
