@@ -27,6 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
+        navItems.push({ icon: Tags, label: t('nav.priceList'), path: '/price-list' });
         navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
     }
 

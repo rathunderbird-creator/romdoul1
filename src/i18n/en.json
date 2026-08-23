@@ -55,7 +55,8 @@
     "leads": "Leads",
     "interactions": "Interactions",
     "quotations": "Quotations",
-    "activityLog": "Activity Log"
+    "activityLog": "Activity Log",
+    "priceList": "Price List"
   },
   "login": {
     "title": "POS Login",

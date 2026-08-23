@@ -31,6 +31,7 @@ const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPa
 const Revenue = lazy(() => import('./pages/Revenue'));
 const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
 const ActivityLogPage = lazy(() => import('./pages/ActivityLogPage'));
+const PriceListPage = lazy(() => import('./pages/PriceListPage'));
 
 const ReportsLayout = lazy(() => import('./pages/reports/ReportsLayout'));
 const SalesSummary = lazy(() => import('./pages/reports/SalesSummary'));
@@ -104,6 +105,7 @@ const ProtectedApp = () => {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
+          <Route path="/price-list" element={<ProtectedRoute requiredPermission="view_dashboard"><PriceListPage /></ProtectedRoute>} />
           <Route path="/todo" element={<ProtectedRoute requiredPermission="view_dashboard"><TodoPage /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
           <Route path="/inventory" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><Inventory /></ProtectedRoute>} />
