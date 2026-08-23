@@ -560,10 +560,10 @@ const WholesaleOrdersPage: React.FC = () => {
 
             {/* Create modal — styled like the Purchase Order popup */}
             {isCreateOpen && (
-                <div style={modalOverlay} onClick={() => setIsCreateOpen(false)}>
+                <div style={{ ...modalOverlay, padding: isMobile ? '10px' : (modalOverlay as any).padding }} onClick={() => setIsCreateOpen(false)}>
                     <div
                         onClick={e => e.stopPropagation()}
-                        style={{ background: 'var(--color-surface)', borderRadius: '24px', width: '100%', maxWidth: '940px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
+                        style={{ background: 'var(--color-surface)', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '940px', maxHeight: isMobile ? '96vh' : '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
                     >
                         {/* Header */}
                         <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05))' }}>
@@ -582,11 +582,11 @@ const WholesaleOrdersPage: React.FC = () => {
                         </div>
 
                         {/* Body */}
-                        <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ padding: isMobile ? '12px' : '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '20px' }}>
                             {/* Customer */}
                             <div style={sectionCard}>
                                 <h4 style={sectionHeading}><User size={15} /> Customer Information</h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={fieldLabel}>Customer *</label>
                                         <input list="ws-customer-names" style={fieldInput} value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Type or pick a customer" />
@@ -604,7 +604,7 @@ const WholesaleOrdersPage: React.FC = () => {
                             {/* Order details */}
                             <div style={sectionCard}>
                                 <h4 style={sectionHeading}><Calendar size={15} /> Order Details</h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : '1fr 1fr 1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={fieldLabel}>From Warehouse</label>
                                         <select style={fieldInput} value={warehouseId} onChange={e => setWarehouseId(e.target.value)}>
@@ -633,7 +633,7 @@ const WholesaleOrdersPage: React.FC = () => {
                             {/* Reference */}
                             <div style={sectionCard}>
                                 <h4 style={sectionHeading}><FileSignature size={15} /> Reference & Notes</h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={fieldLabel}>Invoice Number</label>
                                         <input style={{ ...fieldInput, fontFamily: 'monospace' }} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="e.g. WS-2026-001" />
@@ -656,8 +656,9 @@ const WholesaleOrdersPage: React.FC = () => {
                                         <Plus size={14} /> Add Product
                                     </button>
                                 </div>
-                                <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                {/* Mobile: the fixed-width columns need sideways scroll inside the card */}
+                                <div style={{ borderRadius: '10px', overflow: 'hidden', overflowX: 'auto', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '560px' : undefined }}>
                                         <thead>
                                             <tr style={{ background: 'var(--color-bg)' }}>
                                                 <th style={liTh(36)}>#</th>
@@ -699,15 +700,15 @@ const WholesaleOrdersPage: React.FC = () => {
                         </div>
 
                         {/* Footer */}
-                        <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Total</span>
-                                <span style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{fmt(orderTotal)}</span>
+                        <div style={{ padding: isMobile ? '12px 14px' : '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: isMobile ? '8px' : '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total</span>
+                                <span style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{fmt(orderTotal)}</span>
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
                             </div>
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <button className="secondary-button" onClick={() => setIsCreateOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
-                                <button className="primary-button" onClick={submitCreate} disabled={saving} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                                <button className="secondary-button" onClick={() => setIsCreateOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                                <button className="primary-button" onClick={submitCreate} disabled={saving} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
                                     <CheckCircle2 size={16} /> {saving ? 'Saving…' : 'Create Order'}
                                 </button>
                             </div>

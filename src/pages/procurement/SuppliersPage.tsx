@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2, FileText, Users, AlertTriangle, DollarSign, ArrowUpDown } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useMobile } from '../../hooks/useMobile';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
 import { Modal, StatusBadge } from '../../components';
 import { useProcurement } from '../../hooks/useProcurement';
 import type { Supplier } from '../../types';
@@ -36,6 +38,8 @@ const SuppliersPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const isMobile = useMobile();
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [sortBy, setSortBy] = useState<SortOption>('name');
     const [formData, setFormData] = useState<Partial<Supplier>>({
@@ -174,7 +178,15 @@ const SuppliersPage = () => {
 
     return (
         <div className="page-container fade-in">
-            {/* Summary Stats Bar */}
+            {/* Summary Stats Bar — mobile: four compact cards on one row */}
+            {isMobile ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
+                    <MiniStatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Suppliers" value={String(summaryStats.total)} />
+                    <MiniStatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Active" value={String(summaryStats.activeCount)} valueColor="#10b981" />
+                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summaryStats.overdueCount)} valueColor={summaryStats.overdueCount > 0 ? '#ef4444' : undefined} />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Balance" value={formatCurrency(summaryStats.totalOutstanding)} valueColor={summaryStats.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                </div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
                     <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
@@ -215,8 +227,45 @@ const SuppliersPage = () => {
                     </div>
                 </div>
             </div>
+            )}
 
-            {/* Toolbar: Filters, Search, Actions */}
+            {/* Mobile: slim search/filter bar + right-side drawer */}
+            {isMobile && (
+                <>
+                    <MobileSearchBar
+                        searchValue={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        placeholder="Search suppliers..."
+                        activeCount={(statusFilter !== 'All' ? 1 : 0)}
+                        onOpenFilter={() => setIsFilterDrawerOpen(true)}
+                        onAdd={() => handleOpenModal()}
+                    />
+                    <MobileFilterDrawer
+                        isOpen={isFilterDrawerOpen}
+                        onClose={() => setIsFilterDrawerOpen(false)}
+                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setSortBy('name'); }}
+                        searchValue={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        searchPlaceholder="Search suppliers..."
+                    >
+                        <MobileChipGroup
+                            title="Status"
+                            options={statusTabs.map(t => ({ value: t.value, label: t.label, count: t.count }))}
+                            selected={statusFilter}
+                            onSelect={(v) => setStatusFilter(v as any)}
+                        />
+                        <MobileChipGroup
+                            title="Sort By"
+                            options={[{ value: 'name', label: 'Name' }, { value: 'balance', label: 'Balance' }, { value: 'newest', label: 'Newest' }]}
+                            selected={sortBy}
+                            onSelect={(v) => setSortBy(v as any)}
+                        />
+                    </MobileFilterDrawer>
+                </>
+            )}
+
+            {/* Toolbar: Filters, Search, Actions (desktop) */}
+            {!isMobile && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     {/* Status filter tabs */}
@@ -297,8 +346,53 @@ const SuppliersPage = () => {
                     </button>
                 </div>
             </div>
+            )}
 
-            {/* Supplier Table */}
+            {/* Mobile: inbox-style supplier rows — tap to open the supplier */}
+            {isMobile ? (
+                <div className="glass-panel" style={{ borderRadius: '16px', padding: 0, overflow: 'hidden' }}>
+                    {isLoading ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading suppliers...</div>
+                    ) : filteredSuppliers.length === 0 ? (
+                        <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            <Building2 size={36} style={{ opacity: 0.3, margin: '0 auto 10px', display: 'block' }} />
+                            No suppliers found.
+                        </div>
+                    ) : (
+                        filteredSuppliers.map(supplier => {
+                            const bal = supplierBalances[supplier.id] || { totalAmount: 0, amountPaid: 0, balance: 0, overdue: false, overdueDays: 0, poCount: 0 };
+                            return (
+                                <div
+                                    key={supplier.id}
+                                    onClick={() => navigate(`/procurement/suppliers/${supplier.id}`)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${supplier.is_active === false ? '#9CA3AF' : '#10b981'}`, cursor: 'pointer' }}
+                                >
+                                    <div style={{
+                                        width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0,
+                                        background: `linear-gradient(135deg, ${stringToColor(supplier.name)}, ${stringToColor(supplier.name + 'x')})`,
+                                        color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px'
+                                    }}>
+                                        {getInitials(supplier.name)}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{supplier.name}</div>
+                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {[supplier.contact_name, supplier.phone].filter(Boolean).join(' · ') || '—'}
+                                            {bal.poCount > 0 && ` · ${bal.poCount} PO${bal.poCount === 1 ? '' : 's'}`}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 800, color: bal.balance > 0.005 ? '#ef4444' : '#10b981', fontVariantNumeric: 'tabular-nums' }}>
+                                            {formatCurrency(bal.balance)}
+                                        </div>
+                                        {bal.overdue && <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>OVERDUE</div>}
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            ) : (
             <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                 <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
@@ -451,8 +545,9 @@ const SuppliersPage = () => {
                     </tbody>
                 </table>
             </div>
+            )}
 
-            <Modal 
+            <Modal
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
                 title={editingSupplier ? 'Edit Supplier Details' : 'Register New Supplier'}

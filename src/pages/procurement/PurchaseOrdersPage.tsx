@@ -625,6 +625,47 @@ const PurchaseOrdersPage = () => {
                         {searchQuery || statusFilter !== 'All' || paymentFilter !== 'All' ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
                     </p>
                 </div>
+            ) : isMobile ? (
+                // Mobile: inbox-style rows (like Orders Management) — tap for details.
+                <div className="glass-panel" style={{ borderRadius: '16px', padding: 0, overflow: 'hidden' }}>
+                    {paginatedPOs.map(po => {
+                        const statusCfg = getStatusConfig(po.status);
+                        const payCfg = getPaymentConfig(po.payment_status || 'Unpaid');
+                        const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();
+                        const balance = (po.total_amount || 0) - (po.amount_paid || 0);
+                        return (
+                            <div
+                                key={po.id}
+                                onClick={() => setViewPO(po)}
+                                style={{ padding: '10px 12px 10px 14px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${statusCfg.color}`, cursor: 'pointer' }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
+                                        {po.invoice_number || `PO-${po.id.substring(0, 8).toUpperCase()}`}
+                                    </span>
+                                    <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {formatCurrency(po.total_amount)}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {po.supplier?.name || '—'} · {new Date(po.order_date).toLocaleDateString('en-GB').replace(/\//g, '-')}
+                                    </span>
+                                    {balance > 0.005 && (
+                                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>
+                                            Owe {formatCurrency(balance)}
+                                        </span>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: statusCfg.bg, color: statusCfg.color }}>{po.status}</span>
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: payCfg.bg, color: payCfg.color }}>{po.payment_status || 'Unpaid'}</span>
+                                    {isOverdue && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>OVERDUE</span>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
@@ -830,14 +871,14 @@ const PurchaseOrdersPage = () => {
                 <div style={{
                     position: 'fixed', inset: 0, zIndex: 9999,
                     background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '10px' : '24px'
                 }}>
                     <div style={{
                         background: '#ffffff',
-                        borderRadius: '24px',
+                        borderRadius: isMobile ? '16px' : '24px',
                         width: '100%',
                         maxWidth: '940px',
-                        maxHeight: '92vh',
+                        maxHeight: isMobile ? '96vh' : '92vh',
                         display: 'flex',
                         flexDirection: 'column',
                         boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
@@ -863,14 +904,14 @@ const PurchaseOrdersPage = () => {
                         </div>
 
                         {/* Modal Body */}
-                        <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <div style={{ padding: isMobile ? '12px' : '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '24px' }}>
                             
                             {/* Section: Order Information */}
-                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                            <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     <ShoppingCart size={15} /> Order Information
                                 </h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier *</label>
                                         <select 
@@ -903,11 +944,11 @@ const PurchaseOrdersPage = () => {
                             </div>
 
                             {/* Section: Schedule & Dates */}
-                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                            <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     <Clock size={15} /> Schedule & Dates
                                 </h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Order Date *</label>
                                         <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
@@ -924,11 +965,11 @@ const PurchaseOrdersPage = () => {
                             </div>
 
                             {/* Section: Reference & Notes */}
-                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                            <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     <FileSignature size={15} /> Reference & Notes
                                 </h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
                                         <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', fontFamily: 'monospace' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
@@ -941,7 +982,7 @@ const PurchaseOrdersPage = () => {
                             </div>
 
                             {/* Section: Line Items */}
-                            <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                            <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
                                         <Package size={15} /> Line Items
@@ -955,8 +996,9 @@ const PurchaseOrdersPage = () => {
                                         <Plus size={14} /> Add Product
                                     </button>
                                 </div>
-                                <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: '#ffffff' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                {/* Mobile: fixed-width columns scroll sideways inside the card */}
+                                <div style={{ borderRadius: '10px', overflow: 'hidden', overflowX: 'auto', border: '1px solid var(--color-border)', background: '#ffffff' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '560px' : undefined }}>
                                         <thead>
                                             <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
                                                 <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '36px', borderBottom: '1px solid var(--color-border)' }}>#</th>
@@ -1010,15 +1052,15 @@ const PurchaseOrdersPage = () => {
                         </div>
 
                         {/* Modal Footer */}
-                        <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Total</span>
-                                <span style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{formatCurrency(totalAmount)}</span>
+                        <div style={{ padding: isMobile ? '12px 14px' : '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: isMobile ? '8px' : '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total</span>
+                                <span style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{formatCurrency(totalAmount)}</span>
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
                             </div>
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px' }}>Cancel</button>
-                                <button className="primary-button" onClick={handleSave} disabled={!isFormValid} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                                <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                                <button className="primary-button" onClick={handleSave} disabled={!isFormValid} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
                                     <CheckCircle2 size={16} /> {editingPOId ? 'Update Order' : 'Create Order'}
                                 </button>
                             </div>
@@ -1063,7 +1105,7 @@ const PurchaseOrdersPage = () => {
                             {/* Body */}
                             <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                 {/* Info grid */}
-                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
+                                <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
                                     <DetailItem label="Order Date" value={viewPO.order_date ? new Date(viewPO.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
                                     <DetailItem label="Expected Delivery" value={viewPO.expected_delivery_date ? new Date(viewPO.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
                                     <DetailItem label="Payment Due" value={viewPO.payment_due_date ? new Date(viewPO.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} valueColor={isOverdue ? '#ef4444' : undefined} />
@@ -1072,7 +1114,7 @@ const PurchaseOrdersPage = () => {
                                 </div>
 
                                 {/* Line items */}
-                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                         <Package size={15} /> Line Items
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPO.items?.length || 0}</span>
@@ -1104,7 +1146,7 @@ const PurchaseOrdersPage = () => {
                                 </div>
 
                                 {/* Payments */}
-                                <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                         <DollarSign size={15} /> Payment History
                                         <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPayments.length}</span>

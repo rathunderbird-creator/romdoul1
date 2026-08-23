@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Users, Building2, DollarSign, AlertTriangle, RefreshCw, Database, FileText, ArrowUpDown } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
+import { useMobile } from '../../hooks/useMobile';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
 import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleCustomer } from '../../types';
 
@@ -27,6 +29,8 @@ const WholesaleCustomersPage: React.FC = () => {
     const { customers, wholesaleOrders, tableMissing, fetchCustomers, fetchWholesaleOrders, saveCustomer, deleteCustomer } = useWholesale();
 
     const [search, setSearch] = useState('');
+    const isMobile = useMobile();
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [sortBy, setSortBy] = useState<SortOption>('name');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -124,16 +128,63 @@ const WholesaleCustomersPage: React.FC = () => {
     ];
 
     return (
-        <div style={{ padding: '24px' }}>
-            {/* Summary cards */}
+        <div style={{ padding: isMobile ? '12px' : '24px' }}>
+            {/* Summary cards — mobile: four compact cards on one row */}
+            {isMobile ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
+                    <MiniStatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Customers" value={String(summary.total)} />
+                    <MiniStatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Active" value={String(summary.active)} valueColor="#10b981" />
+                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summary.overdueCount)} valueColor={summary.overdueCount > 0 ? '#ef4444' : undefined} />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(summary.totalOutstanding)} valueColor={summary.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                </div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <StatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Customers" value={String(summary.total)} />
                 <StatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Active" value={String(summary.active)} valueColor="#10b981" />
                 <StatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summary.overdueCount)} valueColor={summary.overdueCount > 0 ? '#ef4444' : undefined} />
                 <StatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(summary.totalOutstanding)} valueColor={summary.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
             </div>
+            )}
 
-            {/* Toolbar */}
+            {/* Mobile: slim search/filter bar + right-side drawer */}
+            {isMobile && (
+                <>
+                    <MobileSearchBar
+                        searchValue={search}
+                        onSearchChange={setSearch}
+                        placeholder="Search customers..."
+                        activeCount={(statusFilter !== 'All' ? 1 : 0)}
+                        onOpenFilter={() => setIsFilterDrawerOpen(true)}
+                        onAdd={() => openModal()}
+                        addDisabled={tableMissing}
+                    />
+                    <MobileFilterDrawer
+                        isOpen={isFilterDrawerOpen}
+                        onClose={() => setIsFilterDrawerOpen(false)}
+                        onClear={() => { setSearch(''); setStatusFilter('All'); setSortBy('name'); }}
+                        searchValue={search}
+                        onSearchChange={setSearch}
+                        searchPlaceholder="Search customers..."
+                        onRefresh={() => { fetchCustomers(); fetchWholesaleOrders(); }}
+                    >
+                        <MobileChipGroup
+                            title="Status"
+                            options={statusTabs.map(t => ({ value: t.value, label: t.label, count: t.count }))}
+                            selected={statusFilter}
+                            onSelect={(v) => setStatusFilter(v as any)}
+                        />
+                        <MobileChipGroup
+                            title="Sort By"
+                            options={[{ value: 'name', label: 'Name' }, { value: 'balance', label: 'Balance' }, { value: 'newest', label: 'Newest' }]}
+                            selected={sortBy}
+                            onSelect={(v) => setSortBy(v as any)}
+                        />
+                    </MobileFilterDrawer>
+                </>
+            )}
+
+            {/* Toolbar (desktop) */}
+            {!isMobile && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     {/* Status tabs */}
@@ -165,12 +216,49 @@ const WholesaleCustomersPage: React.FC = () => {
                     <button className="primary-button" disabled={tableMissing} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}><Plus size={18} /> New Customer</button>
                 </div>
             </div>
+            )}
 
             {tableMissing ? (
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
                     <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
                     <p style={{ fontSize: '13px' }}>Run <code>migrations/wholesale_orders.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                </div>
+            ) : isMobile ? (
+                // Mobile: inbox-style customer rows — tap to open the ledger.
+                <div className="glass-panel" style={{ borderRadius: '16px', padding: 0, overflow: 'hidden' }}>
+                    {filtered.length === 0 ? (
+                        <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            <Users size={36} style={{ opacity: 0.25, margin: '0 auto 10px', display: 'block' }} />
+                            {search || statusFilter !== 'All' ? 'No customers match your filters.' : 'No customers yet.'}
+                        </div>
+                    ) : (
+                        filtered.map(c => {
+                            const s = statFor(c.name);
+                            return (
+                                <div
+                                    key={c.id}
+                                    onClick={() => navigate(`/wholesale/customers/${c.id}`)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${c.is_active ? '#10b981' : '#9CA3AF'}`, cursor: 'pointer' }}
+                                >
+                                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0, background: `linear-gradient(135deg, ${stringToColor(c.name)}, ${stringToColor(c.name + 'x')})`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px' }}>
+                                        {initials(c.name)}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {[c.phone, c.contact_name].filter(Boolean).join(' · ') || '—'}
+                                            {s.orders > 0 && ` · ${s.orders} order${s.orders === 1 ? '' : 's'}`}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 800, color: s.balance > 0.005 ? '#ef4444' : '#10b981', fontVariantNumeric: 'tabular-nums' }}>{fmt(s.balance)}</div>
+                                        {s.overdue && <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>{s.overdueDays}d OVERDUE</div>}
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>

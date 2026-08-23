@@ -587,3 +587,16 @@ div:has(> svg) .search-input {
 .header-page-title > div {
     margin-bottom: 0 !important;
 }
+
+/* Native date inputs on phones have an intrinsic min-width that overflows
+   narrow columns (iOS especially). Constrain them everywhere. */
+@media (max-width: 767px) {
+    input[type="date"] {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+        -webkit-appearance: none;
+        appearance: none;
+        min-height: 42px;
+    }
+}
