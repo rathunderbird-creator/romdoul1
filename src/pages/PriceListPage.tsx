@@ -12,6 +12,10 @@ type SortKey = 'sold' | 'name' | 'model' | 'category' | 'price' | 'stock';
 // Window used for the "top sold" ordering.
 const SOLD_WINDOW_DAYS = 90;
 
+// Product lines left out of the price list (matched case-insensitively
+// against the category and the product name).
+const EXCLUDED_TERMS = ['partybox', 'portable'];
+
 const fmt = (n: number) => '$' + (Number(n) || 0).toFixed(2);
 
 const PriceListPage: React.FC = () => {
@@ -25,6 +29,9 @@ const PriceListPage: React.FC = () => {
     // Top-sold products first by default.
     const [sort, setSort] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'sold', direction: 'desc' });
     const [copied, setCopied] = useState(false);
+    // Quick filters (independent toggles).
+    const [onlyTopSold, setOnlyTopSold] = useState(false);
+    const [onlyInStock, setOnlyInStock] = useState(false);
 
     // Units sold per product over the last SOLD_WINDOW_DAYS (order line items).
     const [soldMap, setSoldMap] = useState<Record<string, number>>({});
@@ -63,8 +70,13 @@ const PriceListPage: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent, isMobile]);
 
-    // Active products only (inactive ones are hidden from the sellable list).
-    const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
+    // Active products only (inactive ones are hidden from the sellable list),
+    // minus the excluded product lines.
+    const activeProducts = useMemo(() => products.filter(p => {
+        if (p.isActive === false) return false;
+        const hay = `${p.category || ''} ${p.name || ''}`.toLowerCase();
+        return !EXCLUDED_TERMS.some(term => hay.includes(term));
+    }), [products]);
 
     const categories = useMemo(() => {
         const set = new Set<string>();
@@ -76,6 +88,8 @@ const PriceListPage: React.FC = () => {
         const q = search.trim().toLowerCase();
         let list = activeProducts.filter(p =>
             (category === 'All' || p.category === category) &&
+            (!onlyTopSold || (soldMap[p.id] || 0) > 0) &&
+            (!onlyInStock || (p.stock ?? 0) > 0) &&
             (!q || (p.name || '').toLowerCase().includes(q) || (p.model || '').toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q))
         );
         const { key, direction } = sort;
@@ -90,7 +104,7 @@ const PriceListPage: React.FC = () => {
             return (direction === 'asc' ? cmp : -cmp) || a.name.localeCompare(b.name);
         });
         return list;
-    }, [activeProducts, search, category, sort, soldMap]);
+    }, [activeProducts, search, category, sort, soldMap, onlyTopSold, onlyInStock]);
 
     const toggleSort = (key: SortKey) => {
         setSort(prev => prev.key === key ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' });
@@ -175,6 +189,25 @@ const PriceListPage: React.FC = () => {
                             </button>
                         );
                     })}
+                    <div style={{ width: '1px', height: '18px', background: 'var(--color-border)', margin: '0 4px' }} />
+                    {/* Quick filters */}
+                    <button
+                        onClick={() => {
+                            const next = !onlyTopSold;
+                            setOnlyTopSold(next);
+                            // Turning it on also orders by sold count, highest first.
+                            if (next) setSort({ key: 'sold', direction: 'desc' });
+                        }}
+                        style={{ padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${onlyTopSold ? '#059669' : 'var(--color-border)'}`, background: onlyTopSold ? '#059669' : 'var(--color-surface)', color: onlyTopSold ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                    >
+                        🔥 Top Sold
+                    </button>
+                    <button
+                        onClick={() => setOnlyInStock(v => !v)}
+                        style={{ padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${onlyInStock ? '#2563EB' : 'var(--color-border)'}`, background: onlyInStock ? '#2563EB' : 'var(--color-surface)', color: onlyInStock ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                    >
+                        In Stock
+                    </button>
                     <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{rows.length} products</span>
                 </div>
             </div>

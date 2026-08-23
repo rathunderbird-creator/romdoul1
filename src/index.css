@@ -578,3 +578,12 @@ div:has(> svg) .search-input {
         color: #9CA3AF !important;
     }
 }
+
+/* Page headers: show only the title — every page's description <p> is hidden,
+   and the wrapper margin pages add under it is removed so the title centers. */
+.header-page-title p {
+    display: none !important;
+}
+.header-page-title > div {
+    margin-bottom: 0 !important;
+}

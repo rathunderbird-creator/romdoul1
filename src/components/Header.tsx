@@ -356,7 +356,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             <Menu size={20} />
                         </button>
                     )}
-                    {headerContent?.title}
+                    {/* Pages inject an h1 + description <p>; the description is hidden
+                        globally via CSS (.header-page-title p) to keep headers compact. */}
+                    <div className="header-page-title">{headerContent?.title}</div>
                 </div>
 
                 {/* Right: Date, Profile & Bell */}
