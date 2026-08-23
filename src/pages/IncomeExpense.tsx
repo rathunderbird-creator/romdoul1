@@ -1310,7 +1310,9 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             {/* Mobile: bottom sheet (full width, slides up, compact). Desktop: centered dialog. */}
             {isAddModalOpen && (
             <div onClick={() => setIsAddModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: isMobile ? 'blur(4px)' : 'blur(8px)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : '24px' }}>
-                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: isMobile ? '20px 20px 0 0' : '24px', width: '100%', maxWidth: isMobile ? '100%' : '560px', maxHeight: isMobile ? '94vh' : '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: isMobile ? 'sheetUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' : 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                {/* Mobile sheet is sized against the overlay (100%), never vh, so the
+                    on-screen keyboard can't push the header/amount off the top. */}
+                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: isMobile ? '20px 20px 0 0' : '24px', width: '100%', maxWidth: isMobile ? '100%' : '560px', height: isMobile ? 'calc(100% - 16px)' : undefined, maxHeight: isMobile ? '100%' : '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: isMobile ? 'sheetUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' : 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                     {/* Header */}
                     <div style={{ padding: isMobile ? '10px 16px 12px' : '18px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '8px', background: formData.type === 'Income' ? 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(96,165,250,0.03))' : 'linear-gradient(135deg, rgba(239,68,68,0.06), rgba(248,113,113,0.03))' }}>
                         {isMobile && <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--color-border)', margin: '0 auto' }} />}
@@ -1331,7 +1333,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     </div>
 
                     {/* Body */}
-                    <div style={{ padding: isMobile ? '12px' : '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '16px' }}>
+                    <div style={{ padding: isMobile ? '12px' : '20px 24px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '16px', WebkitOverflowScrolling: 'touch' as any }}>
 
                     {/* Section: Type & Amount */}
                     <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
@@ -1424,9 +1426,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 <input
                                     type="number"
                                     required
-                                    autoFocus
+                                    autoFocus={!isMobile}
                                     min="0"
                                     step="any"
+                                    inputMode="decimal"
                                     value={formData.amount}
                                     onChange={(e) => setFormData(p => ({ ...p, amount: e.target.value }))}
                                     style={{
@@ -1482,8 +1485,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     {/* Section: Details */}
                     <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
                     <h4 style={ieSectionTitle}><Tag size={14} /> Details</h4>
-                    {/* Mobile: Date and Category full width, Shipping Co + Pay By side by side */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
+                    {/* Mobile: one field per row (selects clip their text side by side on phones) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
                             <div style={{ position: 'relative' }}>
