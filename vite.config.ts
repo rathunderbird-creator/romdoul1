@@ -33,7 +33,11 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           supabase: ['@supabase/supabase-js'],
-          ui: ['lucide-react', 'recharts']
+          // Icons are needed by the shell (sidebar/header) on first paint;
+          // charts are not — keep recharts in its own chunk so it only loads
+          // on pages that actually render a chart.
+          ui: ['lucide-react'],
+          charts: ['recharts']
         }
       }
     }

@@ -1485,12 +1485,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     {/* Section: Details */}
                     <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
                     <h4 style={ieSectionTitle}><Tag size={14} /> Details</h4>
-                    {/* Mobile: one field per row (selects clip their text side by side on phones) */}
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined }}>
+                    {/* Mobile: one field per row (selects clip their text side by side on phones).
+                        minmax(0, 1fr) + minWidth 0 stop the native date input from overflowing. */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: isMobile ? '10px' : '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined, minWidth: 0 }}>
                             <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
-                            <div style={{ position: 'relative' }}>
-                                <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                            <div style={{ position: 'relative', minWidth: 0 }}>
+                                <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                                 <input
                                     type="date"
                                     required
@@ -1498,12 +1499,18 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                     onChange={(e) => setFormData(p => ({ ...p, date: e.target.value }))}
                                     style={{
                                         width: '100%',
+                                        maxWidth: '100%',
+                                        minWidth: 0,
+                                        boxSizing: 'border-box',
+                                        WebkitAppearance: 'none',
+                                        appearance: 'none',
                                         padding: '12px 12px 12px 40px',
                                         borderRadius: '8px',
                                         border: '1px solid var(--color-border)',
                                         background: 'var(--color-surface)',
                                         color: 'var(--color-text-main)',
-                                        fontSize: '14px'
+                                        fontSize: '14px',
+                                        minHeight: '44px'
                                     }}
                                 />
                             </div>

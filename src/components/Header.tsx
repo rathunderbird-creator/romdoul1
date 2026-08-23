@@ -140,8 +140,12 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         }
     }, [currentUser]);
 
-    // Badge count on load (and when the user changes).
-    React.useEffect(() => { fetchTasks(); }, [fetchTasks]);
+    // Badge count on load (and when the user changes) — deferred a moment so
+    // it doesn't compete with the store's initial data loads for bandwidth.
+    React.useEffect(() => {
+        const t = setTimeout(() => fetchTasks(), 2500);
+        return () => clearTimeout(t);
+    }, [fetchTasks]);
 
     const toggleTask = async (t: HeaderTodo) => {
         const newStatus = t.status === 'completed' ? 'open' : 'completed';
