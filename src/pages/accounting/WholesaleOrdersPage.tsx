@@ -6,6 +6,8 @@ import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
 import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
+import { useMobile } from '../../hooks/useMobile';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -33,9 +35,12 @@ const WholesaleOrdersPage: React.FC = () => {
     const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo } = useStore();
     const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
 
+    const isMobile = useMobile();
     const [search, setSearch] = useState('');
     const [payFilter, setPayFilter] = useState<'All' | 'Unpaid' | 'Partial' | 'Paid'>('All');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Delivered' | 'Cancelled'>('All');
+    // Mobile: filters live in a right-side drawer (same pattern as Orders).
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
     // Create modal
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -300,15 +305,65 @@ const WholesaleOrdersPage: React.FC = () => {
     const safePage = Math.min(currentPage, totalPages);
     const paginatedOrders = sortedOrders.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
-    return (
-        <div style={{ padding: '24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <SummaryCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Wholesale Sales" value={fmt(totals.sales)} />
-                <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Collected" value={fmt(totals.collected)} valueColor="#10b981" />
-                <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
-                <SummaryCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`Overdue${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
-            </div>
+    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0);
 
+    return (
+        <div style={{ padding: isMobile ? '12px' : '24px' }}>
+            {isMobile ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
+                    <MiniStatCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Sales" value={fmt(totals.sales)} />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Collected" value={fmt(totals.collected)} valueColor="#10b981" />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`Overdue${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
+                </div>
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                    <SummaryCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Wholesale Sales" value={fmt(totals.sales)} />
+                    <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Collected" value={fmt(totals.collected)} valueColor="#10b981" />
+                    <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <SummaryCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`Overdue${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
+                </div>
+            )}
+
+            {/* Mobile: slim search/filter bar + right-side drawer */}
+            {isMobile && (
+                <>
+                    <MobileSearchBar
+                        searchValue={search}
+                        onSearchChange={setSearch}
+                        placeholder="Search customer, phone, invoice…"
+                        activeCount={activeFilterCount}
+                        onOpenFilter={() => setIsFilterDrawerOpen(true)}
+                        onAdd={openCreate}
+                        addDisabled={tableMissing}
+                    />
+                    <MobileFilterDrawer
+                        isOpen={isFilterDrawerOpen}
+                        onClose={() => setIsFilterDrawerOpen(false)}
+                        onClear={() => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); }}
+                        searchValue={search}
+                        onSearchChange={setSearch}
+                        searchPlaceholder="Search customer, phone, invoice…"
+                        onRefresh={() => fetchWholesaleOrders()}
+                        isRefreshing={isLoading}
+                    >
+                        <MobileChipGroup
+                            title="Pay Status"
+                            options={(['All', 'Unpaid', 'Partial', 'Paid'] as const).map(v => ({ value: v, count: payCounts[v] || 0 }))}
+                            selected={payFilter}
+                            onSelect={(v) => setPayFilter(v as any)}
+                        />
+                        <MobileChipGroup
+                            title="Order Status"
+                            options={['All', 'Open', 'Delivered', 'Cancelled'].map(v => ({ value: v }))}
+                            selected={statusFilter}
+                            onSelect={(v) => setStatusFilter(v as any)}
+                        />
+                    </MobileFilterDrawer>
+                </>
+            )}
+
+            {!isMobile && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
                 <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '200px' }}>
                     <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
@@ -347,6 +402,7 @@ const WholesaleOrdersPage: React.FC = () => {
                 </button>
                 <button className="primary-button" disabled={tableMissing} onClick={openCreate}><Plus size={18} /> New Wholesale Order</button>
             </div>
+            )}
 
             {tableMissing ? (
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>

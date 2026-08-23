@@ -6,6 +6,8 @@ import { useProcurement } from '../../hooks/useProcurement';
 import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
+import { useMobile } from '../../hooks/useMobile';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -113,6 +115,9 @@ const PurchaseOrdersPage = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const isMobile = useMobile();
+    // Mobile: filters live in a right-side drawer (same pattern as Orders).
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('All');
 
@@ -433,9 +438,19 @@ const PurchaseOrdersPage = () => {
         document.addEventListener('mouseup', onUp);
     };
 
+    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (paymentFilter !== 'All' ? 1 : 0);
+
     return (
         <div className="page-container fade-in">
-            {/* Summary Stats */}
+            {/* Summary Stats — mobile: four compact cards on one row */}
+            {isMobile ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
+                    <MiniStatCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="POs" value={String(summaryStats.totalPOs)} />
+                    <MiniStatCard icon={Package} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label="Value" value={formatCurrency(summaryStats.totalValue)} />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={formatCurrency(summaryStats.outstanding)} valueColor={summaryStats.outstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summaryStats.overdueCount)} valueColor={summaryStats.overdueCount > 0 ? '#ef4444' : undefined} />
+                </div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
                     <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
@@ -474,8 +489,47 @@ const PurchaseOrdersPage = () => {
                     </div>
                 </div>
             </div>
+            )}
 
-            {/* Toolbar */}
+            {/* Mobile: slim search/filter bar + right-side drawer */}
+            {isMobile && (
+                <>
+                    <MobileSearchBar
+                        searchValue={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        placeholder="Search PO, supplier, invoice..."
+                        activeCount={activeFilterCount}
+                        onOpenFilter={() => setIsFilterDrawerOpen(true)}
+                        onAdd={handleOpenModal}
+                    />
+                    <MobileFilterDrawer
+                        isOpen={isFilterDrawerOpen}
+                        onClose={() => setIsFilterDrawerOpen(false)}
+                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setPaymentFilter('All'); }}
+                        searchValue={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        searchPlaceholder="Search PO, supplier, invoice..."
+                        onRefresh={() => { fetchPurchaseOrders(); fetchSuppliers(); }}
+                        isRefreshing={isLoading}
+                    >
+                        <MobileChipGroup
+                            title="Status"
+                            options={(['All', 'Draft', 'Sent', 'Received', 'Cancelled'] as StatusFilter[]).map(v => ({ value: v, count: statusCounts[v] || 0 }))}
+                            selected={statusFilter}
+                            onSelect={(v) => setStatusFilter(v as StatusFilter)}
+                        />
+                        <MobileChipGroup
+                            title="Payment"
+                            options={['All', 'Unpaid', 'Partial', 'Paid'].map(v => ({ value: v }))}
+                            selected={paymentFilter}
+                            onSelect={(v) => setPaymentFilter(v as PaymentFilter)}
+                        />
+                    </MobileFilterDrawer>
+                </>
+            )}
+
+            {/* Toolbar (desktop) */}
+            {!isMobile && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     {/* Status filter tabs */}
@@ -555,6 +609,7 @@ const PurchaseOrdersPage = () => {
                     </button>
                 </div>
             </div>
+            )}
 
             {/* Table */}
             {isLoading ? (
