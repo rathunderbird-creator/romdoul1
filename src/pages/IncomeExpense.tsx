@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, FilterX, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Wallet, Truck, Download, PieChart, X, ArrowUp, ArrowDown, ChevronsUpDown, ArrowRightLeft } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, Filter, FilterX, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Wallet, Truck, Download, PieChart, X, ArrowUp, ArrowDown, ChevronsUpDown, ArrowRightLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
@@ -100,6 +100,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(() => Number(localStorage.getItem('ie_pageSize')) || 50);
     const [showBreakdown, setShowBreakdown] = useState(false);
+    // Mobile: the filter bar is replaced by a right-side drawer.
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
     useEffect(() => {
         localStorage.setItem('ie_pageSize', String(pageSize));
@@ -325,6 +327,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     useEffect(() => {
         setCurrentPage(1);
     }, [filterType, filterCategory, filterShippingCo, searchTerm, dateRange]);
+
+    // Number of active filter groups — badge on the mobile filter button.
+    const ieActiveFilterCount =
+        (filterType !== 'All' ? 1 : 0) +
+        (filterCategory !== 'All' ? 1 : 0) +
+        (filterShippingCo !== 'All' ? 1 : 0) +
+        ((dateRange.start || dateRange.end) ? 1 : 0);
 
     // --- Column sorting (mirror of the order tables). null = default ordering. ---
     type IeSortKey = 'date' | 'type' | 'category' | 'shipping' | 'description' | 'payby' | 'amount';
@@ -591,47 +600,177 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
     return (
         <div style={{ paddingBottom: '40px', maxWidth: '100%', margin: '0 auto' }}>
-            {/* Stats Grid */}
+            {/* Stats Grid — mobile: four compact cards on one row */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
-                gap: isMobile ? '12px' : '16px',
-                marginBottom: '24px',
-                marginTop: '12px'
+                gridTemplateColumns: isMobile ? 'repeat(4, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(190px, 1fr))',
+                gap: isMobile ? '6px' : '16px',
+                marginBottom: isMobile ? '12px' : '24px',
+                marginTop: isMobile ? '4px' : '12px'
             }}>
                 <IeStatCard
+                    compact={isMobile}
                     icon={TrendingUp}
                     gradient="linear-gradient(135deg, #3b82f6, #60a5fa)"
-                    label="Total Income"
+                    label={isMobile ? 'Income' : 'Total Income'}
                     value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     sub={`${stats.incomeCount} record${stats.incomeCount === 1 ? '' : 's'}`}
                     valueColor="var(--color-blue)"
                 />
                 <IeStatCard
+                    compact={isMobile}
                     icon={TrendingDown}
                     gradient="linear-gradient(135deg, #ef4444, #f87171)"
-                    label="Total Expense"
+                    label={isMobile ? 'Expense' : 'Total Expense'}
                     value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     sub={`${stats.expenseCount} record${stats.expenseCount === 1 ? '' : 's'}`}
                     valueColor="var(--color-red)"
                 />
                 <IeStatCard
+                    compact={isMobile}
                     icon={DollarSign}
                     gradient={stats.netBalance >= 0 ? 'linear-gradient(135deg, #10b981, #34d399)' : 'linear-gradient(135deg, #f59e0b, #fbbf24)'}
-                    label="Net Balance"
+                    label={isMobile ? 'Net' : 'Net Balance'}
                     value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     valueColor={stats.netBalance >= 0 ? '#10b981' : 'var(--color-red)'}
                 />
                 <IeStatCard
+                    compact={isMobile}
                     icon={ArrowRightLeft}
                     gradient="linear-gradient(135deg, #6366f1, #8b5cf6)"
-                    label="Transactions"
+                    label={isMobile ? 'Txns' : 'Transactions'}
                     value={String(filteredTransactions.length)}
                     sub={`${stats.incomeCount} in · ${stats.expenseCount} out`}
                 />
             </div>
 
-            {/* Unified Command Bar — sticky so filters stay reachable while scrolling */}
+            {/* Mobile: slim trigger bar (search + filter + add) and a right-side
+                filter drawer — same pattern as Orders Management. */}
+            {isMobile && (
+                <>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', position: 'sticky', top: 0, zIndex: 60, background: 'var(--color-bg)', padding: '4px 0' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search transactions..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
+                            />
+                        </div>
+                        <button
+                            onClick={() => setIsFilterDrawerOpen(true)}
+                            style={{ position: 'relative', width: '42px', height: '42px', borderRadius: '12px', border: '1px solid var(--color-border)', background: ieActiveFilterCount > 0 ? 'var(--color-primary)' : 'var(--color-surface)', color: ieActiveFilterCount > 0 ? 'white' : 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                        >
+                            <Filter size={19} />
+                            {ieActiveFilterCount > 0 && (
+                                <span style={{ position: 'absolute', top: '-5px', right: '-5px', minWidth: '18px', height: '18px', borderRadius: '9px', background: '#EF4444', color: 'white', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{ieActiveFilterCount}</span>
+                            )}
+                        </button>
+                        {selectedIds.size > 0 && currentUser?.roleId === 'admin' && (
+                            <button onClick={handleBulkDelete} title="Delete Selected" style={{ width: '42px', height: '42px', borderRadius: '12px', border: 'none', background: 'var(--color-red)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                                <Trash2 size={18} />
+                            </button>
+                        )}
+                        <button onClick={handleOpenAddModal} className="primary-button" title="Add Transaction" style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>
+                            <Plus size={22} />
+                        </button>
+                    </div>
+
+                    {isFilterDrawerOpen && (
+                        <div onClick={() => setIsFilterDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1199 }} />
+                    )}
+                    <div className="glass-panel" style={{
+                        position: 'fixed', top: 0, right: 0, bottom: 0,
+                        width: '85%', maxWidth: '340px', zIndex: 1200,
+                        display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px',
+                        overflowY: 'auto', borderRadius: '16px 0 0 16px',
+                        background: 'var(--color-surface)',
+                        transform: isFilterDrawerOpen ? 'translateX(0)' : 'translateX(105%)',
+                        transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        boxShadow: '-8px 0 30px rgba(0,0,0,0.18)'
+                    }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
+                            <button onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Search */}
+                        <div style={{ position: 'relative' }}>
+                            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search transactions..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
+                            />
+                        </div>
+
+                        {/* Date range + refresh */}
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <DateRangePicker value={dateRange} onChange={setDateRange} />
+                            </div>
+                            <button
+                                onClick={() => { refreshData(true); fetchTransactions(); }}
+                                title="Refresh"
+                                style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                            >
+                                <RefreshCw size={17} />
+                            </button>
+                        </div>
+
+                        {/* Expanded filter groups */}
+                        <IeChipGroup title="Type" options={['All', 'Income', 'Expense']} selected={filterType} onSelect={(v) => setFilterType(v as any)} />
+                        <IeChipGroup title="Category" options={['All', ...uniqueCategories]} selected={filterCategory} onSelect={setFilterCategory} />
+                        <IeChipGroup title="Shipping Co" options={['All', ...allShippingCo]} selected={filterShippingCo} onSelect={setFilterShippingCo} />
+
+                        {/* Tools */}
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Tools</div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={() => { setShowBreakdown(v => !v); setIsFilterDrawerOpen(false); }} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: `1px solid ${showBreakdown ? 'var(--color-primary)' : 'var(--color-border)'}`, background: showBreakdown ? 'var(--color-primary)' : 'var(--color-bg)', color: showBreakdown ? 'white' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    <PieChart size={15} /> Breakdown
+                                </button>
+                                <button onClick={exportToExcel} disabled={filteredTransactions.length === 0} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: filteredTransactions.length === 0 ? 0.5 : 1 }}>
+                                    <Download size={15} /> Export
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Footer: Clear + Filter */}
+                        <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--color-surface)', paddingTop: '12px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '10px' }}>
+                            <button
+                                onClick={() => {
+                                    setDateRange({ start: '', end: '' });
+                                    setSearchTerm('');
+                                    setFilterType('All');
+                                    setFilterCategory('All');
+                                    setFilterShippingCo('All');
+                                }}
+                                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
+                            >
+                                Clear
+                            </button>
+                            <button
+                                onClick={() => setIsFilterDrawerOpen(false)}
+                                className="primary-button"
+                                style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 600, fontSize: '14px' }}
+                            >
+                                Filter
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Unified Command Bar (desktop) — sticky so filters stay reachable while scrolling */}
+            {!isMobile && (
             <div className="glass-panel" style={{
                 padding: isMobile ? '12px' : '16px',
                 marginBottom: '16px',
@@ -671,26 +810,28 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         />
                     </div>
 
-                    <div style={{ flex: isMobile ? '1 1 100%' : 'none' }}>
-                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    {/* Date picker + clear-filters stay on one row (mobile: picker stretches, button beside it) */}
+                    <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', alignItems: 'center', flex: isMobile ? '1 1 100%' : 'none' }}>
+                        <div style={{ flex: isMobile ? 1 : 'none', minWidth: 0 }}>
+                            <DateRangePicker value={dateRange} onChange={setDateRange} />
+                        </div>
+                        {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All' || filterCategory !== 'All' || filterShippingCo !== 'All') && (
+                            <button
+                                onClick={() => {
+                                    setDateRange({ start: '', end: '' });
+                                    setSearchTerm('');
+                                    setFilterType('All');
+                                    setFilterCategory('All');
+                                    setFilterShippingCo('All');
+                                }}
+                                style={{ padding: '8px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', color: '#EF4444', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s', flexShrink: 0 }}
+                                title="Clear Filters"
+                            >
+                                <FilterX size={16} />
+                                {!isMobile && 'Clear'}
+                            </button>
+                        )}
                     </div>
-                    
-                    {(dateRange.start || dateRange.end || searchTerm || filterType !== 'All' || filterCategory !== 'All' || filterShippingCo !== 'All') && (
-                        <button
-                            onClick={() => {
-                                setDateRange({ start: '', end: '' });
-                                setSearchTerm('');
-                                setFilterType('All');
-                                setFilterCategory('All');
-                                setFilterShippingCo('All');
-                            }}
-                            style={{ padding: '8px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', color: '#EF4444', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}
-                            title="Clear Filters"
-                        >
-                            <FilterX size={16} />
-                            {!isMobile && 'Clear'}
-                        </button>
-                    )}
 
                     <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
                         {selectedIds.size > 0 && currentUser?.roleId === 'admin' && (
@@ -821,6 +962,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Category Breakdown */}
             {showBreakdown && (
@@ -1715,13 +1857,45 @@ const ieSection: React.CSSProperties = { background: 'var(--color-bg)', padding:
 const ieSectionTitle: React.CSSProperties = { fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 };
 
 // Standard gradient stat card matching the rest of the app.
-const IeStatCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; gradient: string; label: string; value: string; sub?: string; valueColor?: string }> = ({ icon: Icon, gradient, label, value, sub, valueColor }) => (
-    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
-        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}><Icon size={20} /></div>
-        <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{label}</div>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: valueColor, whiteSpace: 'nowrap' }}>{value}</div>
-            {sub && <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{sub}</div>}
+const IeStatCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; gradient: string; label: string; value: string; sub?: string; valueColor?: string; compact?: boolean }> = ({ icon: Icon, gradient, label, value, sub, valueColor, compact }) => (
+    compact ? (
+        // Mobile: stacked mini card — four of these fit on one row.
+        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 8px', minWidth: 0, borderRadius: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+                <div style={{ width: '20px', height: '20px', borderRadius: '6px', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}><Icon size={11} /></div>
+                <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+            </div>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: valueColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        </div>
+    ) : (
+        <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}><Icon size={20} /></div>
+            <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{label}</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: valueColor, whiteSpace: 'nowrap' }}>{value}</div>
+                {sub && <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{sub}</div>}
+            </div>
+        </div>
+    )
+);
+
+// Single-select chip group for the mobile filter drawer (always expanded).
+const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string; onSelect: (v: string) => void }> = ({ title, options, selected, onSelect }) => (
+    <div>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {options.map(opt => {
+                const active = selected === opt;
+                return (
+                    <button
+                        key={opt}
+                        onClick={() => onSelect(opt)}
+                        style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                    >
+                        {opt}
+                    </button>
+                );
+            })}
         </div>
     </div>
 );
