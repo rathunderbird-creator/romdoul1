@@ -12,9 +12,10 @@ type SortKey = 'sold' | 'name' | 'model' | 'category' | 'price' | 'stock';
 // Window used for the "top sold" ordering.
 const SOLD_WINDOW_DAYS = 90;
 
-// Product lines left out of the price list (matched case-insensitively
-// against the category and the product name).
-const EXCLUDED_TERMS = ['partybox', 'portable'];
+// Category filter chips hidden from the toolbar (matched case-insensitively).
+// The products themselves stay in the list — the Top Sold / In Stock quick
+// filters replace these chips.
+const HIDDEN_CATEGORY_CHIPS = ['partybox', 'portable'];
 
 const fmt = (n: number) => '$' + (Number(n) || 0).toFixed(2);
 
@@ -70,17 +71,19 @@ const PriceListPage: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent, isMobile]);
 
-    // Active products only (inactive ones are hidden from the sellable list),
-    // minus the excluded product lines.
-    const activeProducts = useMemo(() => products.filter(p => {
-        if (p.isActive === false) return false;
-        const hay = `${p.category || ''} ${p.name || ''}`.toLowerCase();
-        return !EXCLUDED_TERMS.some(term => hay.includes(term));
-    }), [products]);
+    // Active products only (inactive ones are hidden from the sellable list).
+    const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
 
+    // Category chips, minus the hidden ones. Only shown when there is a real
+    // choice to make (more than just "All").
     const categories = useMemo(() => {
         const set = new Set<string>();
-        activeProducts.forEach(p => { if (p.category) set.add(p.category); });
+        activeProducts.forEach(p => {
+            if (!p.category) return;
+            const lower = p.category.toLowerCase();
+            if (HIDDEN_CATEGORY_CHIPS.some(h => lower.includes(h))) return;
+            set.add(p.category);
+        });
         return ['All', ...Array.from(set).sort()];
     }, [activeProducts]);
 
@@ -175,9 +178,9 @@ const PriceListPage: React.FC = () => {
                         <Download size={15} /> {!isMobile && 'Export'}
                     </button>
                 </div>
-                {/* Category chips */}
+                {/* Category chips (only when there's more than "All") + quick filters */}
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    {categories.map(c => {
+                    {categories.length > 1 && categories.map(c => {
                         const active = category === c;
                         return (
                             <button
@@ -189,7 +192,7 @@ const PriceListPage: React.FC = () => {
                             </button>
                         );
                     })}
-                    <div style={{ width: '1px', height: '18px', background: 'var(--color-border)', margin: '0 4px' }} />
+                    {categories.length > 1 && <div style={{ width: '1px', height: '18px', background: 'var(--color-border)', margin: '0 4px' }} />}
                     {/* Quick filters */}
                     <button
                         onClick={() => {
