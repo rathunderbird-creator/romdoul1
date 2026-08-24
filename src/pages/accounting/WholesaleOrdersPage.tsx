@@ -415,6 +415,55 @@ const WholesaleOrdersPage: React.FC = () => {
                     <ShoppingCart size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
                     <p>No wholesale orders yet. Create one to start tracking customer credit.</p>
                 </div>
+            ) : isMobile ? (
+                // Mobile: inbox-style rows (same pattern as Purchase Orders) — tap for details.
+                <div className="glass-panel" style={{ borderRadius: '16px', padding: 0, overflow: 'hidden' }}>
+                    {paginatedOrders.map(o => {
+                        const pc = payConfig(o.payment_status);
+                        const oc = orderStatusConfig(o.status);
+                        const late = daysLate(o.due_date);
+                        const balance = (o.total_amount || 0) - (o.amount_paid || 0);
+                        return (
+                            <div
+                                key={o.id}
+                                onClick={() => setViewOrder(o)}
+                                style={{ padding: '10px 12px 10px 14px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${oc.color}`, cursor: 'pointer', opacity: o.status === 'Cancelled' ? 0.55 : 1 }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
+                                        {o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`}
+                                    </span>
+                                    <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {fmt(o.total_amount || 0)}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {o.customer_name}{o.order_date ? ` · ${new Date(o.order_date).toLocaleDateString('en-GB').replace(/\//g, '-')}` : ''}
+                                    </span>
+                                    {balance > 0.005 && o.status !== 'Cancelled' && (
+                                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>
+                                            Owe {fmt(balance)}
+                                        </span>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: oc.bg, color: oc.color }}>{o.status || 'Open'}</span>
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: pc.bg, color: pc.color }}>{o.payment_status || 'Unpaid'}</span>
+                                    {late !== null && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>{late}d OVERDUE</span>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {/* Compact pager */}
+                    {totalPages > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)' }}>
+                            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: safePage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}>Prev</button>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Page {safePage} / {totalPages}</span>
+                            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: safePage >= totalPages ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: safePage >= totalPages ? 'not-allowed' : 'pointer' }}>Next</button>
+                        </div>
+                    )}
+                </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', minWidth: '960px' }}>

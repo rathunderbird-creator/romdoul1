@@ -346,7 +346,8 @@ const WholesaleCustomersPage: React.FC = () => {
             )}
 
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? 'Edit Customer' : 'Register New Customer'}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '4px 0', minWidth: '480px' }}>
+                {/* minWidth 480 forced the modal wider than a phone screen */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '20px', padding: '4px 0', minWidth: isMobile ? undefined : '480px', maxWidth: '100%' }}>
                     <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
                         <h4 style={sectionHeading}><Building2 size={16} /> Customer Information</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -354,7 +355,7 @@ const WholesaleCustomersPage: React.FC = () => {
                                 <label style={labelStyle}>Customer Name *</label>
                                 <input className="search-input" style={{ width: '100%' }} value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus placeholder="Company or person name" />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                 <div><label style={labelStyle}>Contact Person</label><input className="search-input" style={{ width: '100%' }} value={form.contact_name || ''} onChange={e => setForm({ ...form, contact_name: e.target.value })} placeholder="Full name" /></div>
                                 <div><label style={labelStyle}>Phone</label><input className="search-input" style={{ width: '100%' }} value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+855 ..." /></div>
                             </div>
@@ -375,9 +376,9 @@ const WholesaleCustomersPage: React.FC = () => {
                         <span style={{ fontWeight: 500, fontSize: '14px' }}>Active customer</span>
                     </label>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--color-border)', paddingTop: '18px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px' }}>Cancel</button>
-                        <button className="primary-button" disabled={saving || !form.name?.trim()} onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600 }}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Register Customer')}</button>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--color-border)', paddingTop: isMobile ? '12px' : '18px' }}>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                        <button className="primary-button" disabled={saving || !form.name?.trim()} onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, flex: isMobile ? 1 : undefined }}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Register Customer')}</button>
                     </div>
                 </div>
             </Modal>

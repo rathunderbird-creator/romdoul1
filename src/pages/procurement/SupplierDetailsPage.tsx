@@ -4,6 +4,8 @@ import { ArrowLeft, Building2, Phone, Receipt, FileText, DollarSign, Trash2, Cal
 import { supabase } from '../../lib/supabase';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
+import { useMobile } from '../../hooks/useMobile';
+import { MiniStatCard } from '../../components/MobileFilterKit';
 import type { Supplier } from '../../types';
 
 interface LedgerEntry {
@@ -34,6 +36,7 @@ const SupplierDetailsPage = () => {
     const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const isMobile = useMobile();
     const [dateStart, setDateStart] = useState('');
     const [dateEnd, setDateEnd] = useState('');
 
@@ -273,7 +276,26 @@ const SupplierDetailsPage = () => {
 
     return (
         <div className="page-container fade-in">
-            {/* Summary Cards */}
+            {/* Summary Cards — mobile: supplier strip + 3 compact cards on one row */}
+            {isMobile ? (
+                <div style={{ marginBottom: '12px' }}>
+                    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '12px', marginBottom: '6px' }}>
+                        <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Building2 size={16} />
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.name}</div>
+                            {supplier.phone && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{supplier.phone}</div>}
+                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: stats.paidPercent >= 100 ? '#10b981' : '#f59e0b', flexShrink: 0 }}>{stats.paidPercent}% paid</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' }}>
+                        <MiniStatCard icon={Receipt} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Invoiced" value={formatCurrency(stats.totalDebt)} valueColor="#ef4444" />
+                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Paid" value={formatCurrency(stats.totalPaid)} valueColor="#10b981" />
+                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Outstanding" value={formatCurrency(stats.balance)} valueColor={stats.balance > 0 ? '#ef4444' : '#10b981'} />
+                    </div>
+                </div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 {/* Supplier Info Card */}
                 <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
@@ -334,25 +356,26 @@ const SupplierDetailsPage = () => {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Date Range Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                <Calendar size={16} color="var(--color-text-muted)" />
-                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Filter by date:</span>
-                <input 
-                    type="date" 
-                    value={dateStart} 
-                    onChange={(e) => setDateStart(e.target.value)} 
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', marginBottom: isMobile ? '12px' : '20px', flexWrap: 'wrap' }}>
+                {!isMobile && <Calendar size={16} color="var(--color-text-muted)" />}
+                {!isMobile && <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Filter by date:</span>}
+                <input
+                    type="date"
+                    value={dateStart}
+                    onChange={(e) => setDateStart(e.target.value)}
                     className="input-field"
-                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }}
+                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)', flex: isMobile ? 1 : undefined, minWidth: 0 }}
                 />
                 <span style={{ color: 'var(--color-text-muted)' }}>→</span>
-                <input 
-                    type="date" 
-                    value={dateEnd} 
-                    onChange={(e) => setDateEnd(e.target.value)} 
+                <input
+                    type="date"
+                    value={dateEnd}
+                    onChange={(e) => setDateEnd(e.target.value)}
                     className="input-field"
-                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }}
+                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)', flex: isMobile ? 1 : undefined, minWidth: 0 }}
                 />
                 {(dateStart || dateEnd) && (
                     <button 
@@ -367,7 +390,63 @@ const SupplierDetailsPage = () => {
                 </span>
             </div>
 
-            {/* Ledger Table */}
+            {/* Mobile: ledger as inbox-style rows with a totals footer */}
+            {isMobile ? (
+                <div className="glass-panel" style={{ borderRadius: '16px', padding: 0, overflow: 'hidden' }}>
+                    {filteredLedger.length === 0 ? (
+                        <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            <FileText size={32} style={{ opacity: 0.4, margin: '0 auto 10px', display: 'block' }} />
+                            No transactions found for this supplier.
+                        </div>
+                    ) : (
+                        <>
+                            {filteredLedger.map(entry => {
+                                const isInvoice = entry.type === 'Invoice';
+                                return (
+                                    <div key={entry.id} style={{ padding: '10px 12px 10px 14px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${isInvoice ? '#ef4444' : '#3b82f6'}` }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                                <span style={{ color: isInvoice ? '#ef4444' : '#3b82f6', fontWeight: 700, padding: '2px 9px', background: isInvoice ? 'rgba(239,68,68,0.08)' : 'rgba(59,130,246,0.08)', borderRadius: '12px', fontSize: '11px', flexShrink: 0 }}>
+                                                    {isInvoice ? 'ជំពាក់' : 'សង'}
+                                                </span>
+                                                <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                                                    {new Date(entry.date).toLocaleDateString('en-GB').replace(/\//g, '-')}
+                                                </span>
+                                            </span>
+                                            <span style={{ fontSize: '14px', fontWeight: 800, color: isInvoice ? '#ef4444' : '#3b82f6', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                                                {isInvoice ? formatCurrency(entry.debt) : formatCurrency(entry.paid)}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                            <span style={{ fontSize: '12px', color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                                                {entry.invoiceNumber || (isInvoice ? `PO-${entry.reference}` : '')}{entry.description ? ` · ${entry.description}` : ''}
+                                                {entry.paymentMethod ? ` · ${entry.paymentMethod}` : ''}
+                                            </span>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                                <span style={{ fontSize: '11px', fontWeight: 700, color: entry.balance > 0 ? '#ef4444' : '#10b981' }}>
+                                                    Bal {formatCurrency(entry.balance)}
+                                                </span>
+                                                <button onClick={() => handleDeleteLedgerEntry(entry)} title="Delete Entry" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.6, padding: '2px', display: 'flex' }}>
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {/* Totals */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)', fontSize: '12px', fontWeight: 700, flexWrap: 'wrap', gap: '6px' }}>
+                                <span style={{ color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '11px' }}>Totals{(dateStart || dateEnd) ? ' (filtered)' : ''}</span>
+                                <span style={{ display: 'flex', gap: '10px' }}>
+                                    <span style={{ color: '#ef4444' }}>{formatCurrency(filteredTotals.totalDebt)}</span>
+                                    <span style={{ color: '#3b82f6' }}>{formatCurrency(filteredTotals.totalPaid)}</span>
+                                    <span style={{ color: stats.balance > 0 ? '#ef4444' : '#10b981' }}>= {formatCurrency(stats.balance)}</span>
+                                </span>
+                            </div>
+                        </>
+                    )}
+                </div>
+            ) : (
             <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                 <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
@@ -476,6 +555,7 @@ const SupplierDetailsPage = () => {
                     </tbody>
                 </table>
             </div>
+            )}
         </div>
     );
 };

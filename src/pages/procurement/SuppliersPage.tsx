@@ -552,7 +552,8 @@ const SuppliersPage = () => {
                 onClose={() => setIsModalOpen(false)} 
                 title={editingSupplier ? 'Edit Supplier Details' : 'Register New Supplier'}
             >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px 0', minWidth: '500px' }}>
+                {/* minWidth 500 forced the modal wider than a phone screen */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '20px', padding: isMobile ? '8px 0' : '16px 0', minWidth: isMobile ? undefined : '500px', maxWidth: '100%' }}>
                     
                     <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
                         <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -571,7 +572,7 @@ const SuppliersPage = () => {
                                     autoFocus
                                 />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Contact Person</label>
                                     <input 
@@ -603,7 +604,7 @@ const SuppliersPage = () => {
                             <MapPin size={16} /> Contact Details
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Email Address</label>
                                     <input 
@@ -652,13 +653,13 @@ const SuppliersPage = () => {
                         </label>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px' }}>Cancel</button>
-                        <button 
-                            className="primary-button" 
-                            onClick={handleSave} 
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: isMobile ? '8px' : '16px', borderTop: '1px solid var(--color-border)', paddingTop: isMobile ? '12px' : '20px' }}>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                        <button
+                            className="primary-button"
+                            onClick={handleSave}
                             disabled={!formData.name}
-                            style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                            style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}
                         >
                             {editingSupplier ? 'Save Changes' : 'Register Supplier'}
                         </button>
