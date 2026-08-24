@@ -167,9 +167,9 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         if (displayedRows.length === 0) return;
         const exportData = displayedRows.map(r => ({
             'Model': r.name, 'Old Stock': r.oldStock, 'Sold': r.sold, 'Wholesale': r.wholesale,
-            'Return': r.ret, 'Buy': r.buy, 'New Stock': r.newStock
+            'ReStock': r.ret, 'Buy': r.buy, 'New Stock': r.newStock
         }));
-        exportData.push({ 'Model': 'Total', 'Old Stock': totals.oldStock, 'Sold': totals.sold, 'Wholesale': totals.wholesale, 'Return': totals.ret, 'Buy': totals.buy, 'New Stock': totals.newStock });
+        exportData.push({ 'Model': 'Total', 'Old Stock': totals.oldStock, 'Sold': totals.sold, 'Wholesale': totals.wholesale, 'ReStock': totals.ret, 'Buy': totals.buy, 'New Stock': totals.newStock });
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Movement Summary');
@@ -307,7 +307,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                     <th onClick={() => toggleSort('oldStock')} style={thBase}>Old Stock{arrow('oldStock')}</th>
                                     <th onClick={() => toggleSort('sold')} style={{ ...thBase, color: '#DC2626' }}>Sold{arrow('sold')}</th>
                                     <th onClick={() => toggleSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>Wholesale{arrow('wholesale')}</th>
-                                    <th onClick={() => toggleSort('ret')} style={{ ...thBase, color: '#B45309' }}>Return{arrow('ret')}</th>
+                                    <th onClick={() => toggleSort('ret')} style={{ ...thBase, color: '#B45309' }}>ReStock{arrow('ret')}</th>
                                     <th onClick={() => toggleSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>Buy{arrow('buy')}</th>
                                     <th onClick={() => toggleSort('newStock')} style={{ ...thBase, color: '#2563EB' }}>New Stock{arrow('newStock')}</th>
                                 </tr>
