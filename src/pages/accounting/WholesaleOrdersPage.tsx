@@ -7,7 +7,7 @@ import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
 import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
 import { useMobile } from '../../hooks/useMobile';
-import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -423,11 +423,22 @@ const WholesaleOrdersPage: React.FC = () => {
                         const oc = orderStatusConfig(o.status);
                         const late = daysLate(o.due_date);
                         const balance = (o.total_amount || 0) - (o.amount_paid || 0);
+                        const canPay = o.status !== 'Cancelled' && balance > 0.005;
                         return (
-                            <div
+                            <SwipeRow
                                 key={o.id}
                                 onClick={() => setViewOrder(o)}
-                                style={{ padding: '10px 12px 10px 14px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${oc.color}`, cursor: 'pointer', opacity: o.status === 'Cancelled' ? 0.55 : 1 }}
+                                style={{ borderBottom: '1px solid var(--color-border)' }}
+                                actions={[
+                                    { icon: Eye, label: 'View', color: '#6366F1', onClick: () => setViewOrder(o) },
+                                    canPay
+                                        ? { icon: DollarSign, label: 'Pay', color: '#10B981', onClick: () => openPay(o) }
+                                        : { icon: Printer, label: 'Invoice', color: '#2563EB', onClick: () => handlePrintInvoice(o) },
+                                    { icon: Copy, label: 'Copy', color: '#6B7280', onClick: () => handleCopyOrder(o) },
+                                ]}
+                            >
+                            <div
+                                style={{ padding: '10px 12px 10px 14px', borderLeft: `4px solid ${oc.color}`, opacity: o.status === 'Cancelled' ? 0.55 : 1 }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
@@ -453,6 +464,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                     {late !== null && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>{late}d OVERDUE</span>}
                                 </div>
                             </div>
+                            </SwipeRow>
                         );
                     })}
                     {/* Compact pager */}

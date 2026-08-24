@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
-import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -634,10 +634,18 @@ const PurchaseOrdersPage = () => {
                         const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();
                         const balance = (po.total_amount || 0) - (po.amount_paid || 0);
                         return (
-                            <div
+                            <SwipeRow
                                 key={po.id}
                                 onClick={() => setViewPO(po)}
-                                style={{ padding: '10px 12px 10px 14px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${statusCfg.color}`, cursor: 'pointer' }}
+                                style={{ borderBottom: '1px solid var(--color-border)' }}
+                                actions={[
+                                    { icon: Eye, label: 'View', color: '#6366F1', onClick: () => handleViewPO(po) },
+                                    { icon: Copy, label: 'Copy', color: '#6B7280', onClick: () => handleCopyPO(po) },
+                                    { icon: Edit, label: 'Edit', color: '#2563EB', onClick: () => handleEditPO(po) },
+                                ]}
+                            >
+                            <div
+                                style={{ padding: '10px 12px 10px 14px', borderLeft: `4px solid ${statusCfg.color}` }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
@@ -663,6 +671,7 @@ const PurchaseOrdersPage = () => {
                                     {isOverdue && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>OVERDUE</span>}
                                 </div>
                             </div>
+                            </SwipeRow>
                         );
                     })}
                 </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Search, Filter, X, RefreshCw, Plus } from 'lucide-react';
 
 /**
@@ -129,6 +129,84 @@ export const MobileFilterDrawer: React.FC<{
         </div>
     </>
 );
+
+// Swipe-left row (same interaction as the Orders mobile cards): dragging the
+// row left reveals action buttons; tap outside or the row to close. Vertical
+// scrolling stays native via touch-action: pan-y.
+export const SwipeRow: React.FC<{
+    actions: Array<{ icon: React.ComponentType<{ size?: number }>; label: string; color: string; onClick: () => void }>;
+    onClick?: () => void;
+    style?: React.CSSProperties;
+    children: React.ReactNode;
+}> = ({ actions, onClick, style, children }) => {
+    const BTN_W = 64;
+    const width = BTN_W * actions.length;
+    const [open, setOpen] = useState(false);
+    const [drag, setDrag] = useState<number | null>(null);
+    const touchRef = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
+    const suppressClickRef = useRef(false);
+
+    const baseX = open ? -width : 0;
+    const x = drag !== null ? Math.min(0, Math.max(-width, baseX + drag)) : baseX;
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, horizontal: null };
+    };
+    const handleTouchMove = (e: React.TouchEvent) => {
+        const t = touchRef.current;
+        if (!t) return;
+        const dx = e.touches[0].clientX - t.x;
+        const dy = e.touches[0].clientY - t.y;
+        if (t.horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+            t.horizontal = Math.abs(dx) > Math.abs(dy);
+        }
+        if (t.horizontal) setDrag(dx);
+    };
+    const handleTouchEnd = () => {
+        const t = touchRef.current;
+        touchRef.current = null;
+        if (!t || t.horizontal === null || drag === null) { setDrag(null); return; }
+        suppressClickRef.current = true;
+        setOpen(x < -width / 2);
+        setDrag(null);
+        setTimeout(() => { suppressClickRef.current = false; }, 80);
+    };
+
+    return (
+        <div style={{ position: 'relative', overflow: 'hidden', ...style }}>
+            <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, display: 'flex' }}>
+                {actions.map(a => (
+                    <button
+                        key={a.label}
+                        onClick={(e) => { e.stopPropagation(); setOpen(false); a.onClick(); }}
+                        style={{ width: `${BTN_W}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: '#ffffff', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer', background: a.color }}
+                    >
+                        <a.icon size={18} /><span>{a.label}</span>
+                    </button>
+                ))}
+            </div>
+            <div
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onClick={() => {
+                    if (suppressClickRef.current) return;
+                    if (open) { setOpen(false); return; }
+                    onClick?.();
+                }}
+                style={{
+                    position: 'relative', zIndex: 1, background: 'var(--color-surface)',
+                    transform: `translateX(${x}px)`,
+                    transition: drag !== null ? 'none' : 'transform 0.25s ease',
+                    touchAction: 'pan-y',
+                    cursor: onClick ? 'pointer' : 'default'
+                }}
+            >
+                {children}
+            </div>
+        </div>
+    );
+};
 
 // Single-select chip group (always expanded); options may carry a count.
 export const MobileChipGroup: React.FC<{
