@@ -1692,11 +1692,16 @@ const Orders: React.FC = () => {
                     
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
 
-                    if (value === 'Paid' || value === 'Settled' || value === 'Get File') {
+                    if (value === 'Paid' || value === 'Settled') {
                         individualUpdates.amountReceived = order.total;
                         individualUpdates.settleDate = settleDate ? new Date(settleDate).toISOString() : now;
                         // Pay By chosen in the modal — also feeds the income row's pay_by.
                         if (payBy) individualUpdates.paymentMethod = payBy as any;
+                    } else if (value === 'Get File') {
+                        // File collected, money not settled yet — no settle date. Keep a
+                        // deposit visible in Received when one was taken.
+                        individualUpdates.amountReceived = order.depositAmount || 0;
+                        individualUpdates.settleDate = null as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null as any;
