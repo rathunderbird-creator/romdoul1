@@ -358,8 +358,11 @@ const TodoPage: React.FC = () => {
     const toggleTodoStatus = async (id: string, currentStatus: string) => {
         const todo = todos.find(t => t.id === id);
 
-        // Completing a repeating task rolls it to its next occurrence and leaves it
-        // open, rather than closing it out — otherwise the series ends on first tick.
+        // Completing a repeating task: THIS occurrence is marked completed (so it
+        // stays visible, struck through, in Today) and the next occurrence is
+        // spawned as a fresh open task carrying the series settings. Rolling the
+        // same row forward — the old behavior — made completions vanish from
+        // Today, since no completed row was ever left behind.
         if (todo?.repeat_rule && currentStatus === 'open') {
             const base = todo.due_date || toLocalDateStr(new Date());
             let next = advanceDate(base, todo.repeat_rule);
@@ -368,14 +371,34 @@ const TodoPage: React.FC = () => {
             const today = toLocalDateStr(new Date());
             while (next <= today) next = advanceDate(next, todo.repeat_rule);
 
-            const updates = { due_date: next, last_reminded_on: null };
-            setTodos(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
-            setSelectedTodo(prev => (prev && prev.id === id ? { ...prev, ...updates } : prev));
-            showToast(`Repeats next on ${next}`, 'success');
+            const now = new Date().toISOString();
+            // The completed instance drops its repeat rule — reopening it later
+            // must not spawn a second series.
+            setTodos(prev => prev.map(t => t.id === id ? { ...t, status: 'completed', repeat_rule: null, updated_at: now } : t));
+            setSelectedTodo(prev => (prev && prev.id === id ? { ...prev, status: 'completed', repeat_rule: null, updated_at: now } : prev));
+            showToast(`Done — repeats next on ${next}`, 'success');
             try {
-                await supabase.from('todos').update(toDbTodo(updates)).eq('id', id).eq('user_id', currentUser?.id);
+                await supabase.from('todos')
+                    .update({ status: 'completed', repeat_rule: null, updated_at: now })
+                    .eq('id', id).eq('user_id', currentUser?.id);
+
+                const nextTask = {
+                    title: todo.title,
+                    description: todo.description,
+                    priority: todo.priority,
+                    status: 'open',
+                    due_date: next,
+                    project_id: todo.project_id,
+                    user_id: currentUser?.id,
+                    repeat_rule: todo.repeat_rule,
+                    remind_at: todo.remind_at,
+                    last_reminded_on: null
+                };
+                const { data, error } = await supabase.from('todos').insert([toDbTodo(nextTask)]).select().single();
+                if (error) throw error;
+                if (data) setTodos(prev => [fromDbTodo(data), ...prev]);
             } catch (error) {
-                console.error('Error advancing repeating task:', error);
+                console.error('Error completing repeating task:', error);
                 fetchData();
             }
             return;

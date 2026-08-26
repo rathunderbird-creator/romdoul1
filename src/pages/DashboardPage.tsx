@@ -110,6 +110,9 @@ const Dashboard: React.FC = () => {
     }, [dateRange]);
 
     const [filteredSales, setFilteredSales] = React.useState<Sale[]>([]);
+    // Get File is a settlement pipeline (files waiting for payout), so its card
+    // counts ALL orders in that status — independent of the dashboard date range.
+    const [getFileGlobal, setGetFileGlobal] = React.useState({ count: 0, total: 0 });
     const [stockInCount, setStockInCount] = React.useState(0);
     const [stockOutCount, setStockOutCount] = React.useState(0);
     const [isLoadingSales, setIsLoadingSales] = React.useState(false);
@@ -149,6 +152,13 @@ const Dashboard: React.FC = () => {
 
             const { data, error } = await query;
             if (error) throw error;
+
+            // Global Get File pipeline, ignoring the date range.
+            const { data: gfRows } = await supabase.from('sales').select('total').eq('payment_status', 'Get File');
+            setGetFileGlobal({
+                count: (gfRows || []).length,
+                total: (gfRows || []).reduce((s: number, r: any) => s + (Number(r.total) || 0), 0)
+            });
 
             const mapped = (data || []).map(mapSaleEntity);
             setFilteredSales(mapped);
@@ -204,12 +214,20 @@ const Dashboard: React.FC = () => {
             stats[status].total += sale.total;
         });
 
+        // Get File shows the GLOBAL pipeline (all orders awaiting settlement),
+        // not just those ordered inside the date range.
+        if (getFileGlobal.count > 0) {
+            stats['Get File'] = { ...getFileGlobal };
+        } else {
+            delete stats['Get File'];
+        }
+
         return Object.entries(stats).map(([status, data]) => ({
             status,
             count: data.count,
             total: data.total
         })).sort((a, b) => b.total - a.total);
-    }, [filteredSales]);
+    }, [filteredSales, getFileGlobal]);
 
     const orderStatusStats = useMemo(() => {
         const stats: Record<string, { count: number; total: number }> = {};
@@ -603,7 +621,9 @@ const Dashboard: React.FC = () => {
                             onClick={() => {
                                 localStorage.setItem('orders_payStatusFilter', JSON.stringify([stat.status]));
                                 localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+                                // Get File is counted globally, so open Orders without a
+                                // date filter — otherwise the table would show fewer.
+                                localStorage.setItem('orders_dateRange', JSON.stringify(stat.status === 'Get File' ? { start: '', end: '' } : dateRange));
                                 localStorage.setItem('orders_salesmanFilter', 'All');
                                 localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
                                 localStorage.setItem('orders_pageFilter', JSON.stringify([]));

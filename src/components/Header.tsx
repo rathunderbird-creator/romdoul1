@@ -99,6 +99,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         priority: number;
         updated_at: string;
         created_at: string;
+        repeat_rule: string | null;
+        description: string | null;
+        project: string | null;
     }
     const [isTasksOpen, setIsTasksOpen] = React.useState(false);
     const [isCalcOpen, setIsCalcOpen] = React.useState(false);
@@ -113,7 +116,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         setTasksLoading(true);
         try {
             const { data, error } = await supabase.from('todos')
-                .select('id, title, due_date, status, remind_at, priority, updated_at, created_at')
+                .select('id, title, due_date, status, remind_at, priority, updated_at, created_at, repeat_rule, description, project')
                 .eq('user_id', currentUser.id)
                 .order('priority', { ascending: true })
                 .order('created_at', { ascending: false });
@@ -147,16 +150,56 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
         return () => clearTimeout(t);
     }, [fetchTasks]);
 
+    // Advance a YYYY-MM-DD by one repeat interval (mirror of the Todo page's
+    // advanceDate; monthly clamps to the end of shorter months).
+    const advanceRepeat = (dateStr: string, rule: string): string => {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const mk = (dt: Date) => dt.toLocaleDateString('en-CA');
+        if (rule === 'daily') return mk(new Date(y, m - 1, d + 1));
+        if (rule === 'weekly') return mk(new Date(y, m - 1, d + 7));
+        const lastDay = new Date(y, m + 1, 0).getDate();
+        return mk(new Date(y, m, Math.min(d, lastDay)));
+    };
+
     const toggleTask = async (t: HeaderTodo) => {
         const newStatus = t.status === 'completed' ? 'open' : 'completed';
         const now = new Date().toISOString();
-        setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: newStatus, updated_at: now } : x));
+        setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: newStatus, repeat_rule: newStatus === 'completed' ? null : x.repeat_rule, updated_at: now } : x));
         setOpenTaskCount(prev => Math.max(0, prev + (newStatus === 'completed' ? -1 : 1)));
-        const { error } = await supabase.from('todos')
-            .update({ status: newStatus, updated_at: now })
-            .eq('id', t.id)
-            .eq('user_id', currentUser?.id);
-        if (error) {
+        try {
+            if (newStatus === 'completed' && t.repeat_rule) {
+                // Same rule as the Todo page: this occurrence completes (and stays
+                // visible), the next occurrence is spawned as a fresh open task.
+                const today = localYMD(new Date());
+                let next = advanceRepeat(t.due_date || today, t.repeat_rule);
+                while (next <= today) next = advanceRepeat(next, t.repeat_rule);
+
+                const { error } = await supabase.from('todos')
+                    .update({ status: 'completed', repeat_rule: null, updated_at: now })
+                    .eq('id', t.id).eq('user_id', currentUser?.id);
+                if (error) throw error;
+                const { error: insErr } = await supabase.from('todos').insert([{
+                    title: t.title,
+                    description: t.description,
+                    priority: t.priority,
+                    status: 'open',
+                    due_date: next,
+                    project: t.project,
+                    user_id: currentUser?.id,
+                    repeat_rule: t.repeat_rule,
+                    remind_at: t.remind_at,
+                    last_reminded_on: null,
+                    updated_at: now
+                }]);
+                if (insErr) throw insErr;
+            } else {
+                const { error } = await supabase.from('todos')
+                    .update({ status: newStatus, updated_at: now })
+                    .eq('id', t.id)
+                    .eq('user_id', currentUser?.id);
+                if (error) throw error;
+            }
+        } catch (error) {
             console.error('Failed to toggle task:', error);
             fetchTasks();
         }
@@ -182,7 +225,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                 remind_at: null,
                 last_reminded_on: null,
                 updated_at: new Date().toISOString()
-            }]).select('id, title, due_date, status, remind_at, priority, updated_at, created_at').single();
+            }]).select('id, title, due_date, status, remind_at, priority, updated_at, created_at, repeat_rule, description, project').single();
             if (error) throw error;
             if (data) {
                 setTasks(prev => [data as HeaderTodo, ...prev]);
