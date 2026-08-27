@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
-import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, SwipeRow } from '../../components/MobileFilterKit';
+import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, MobileMultiChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -32,7 +32,7 @@ const getPaymentConfig = (status: string) => {
 };
 
 type StatusFilter = 'All' | 'Draft' | 'Sent' | 'Received' | 'Cancelled';
-type PaymentFilter = 'All' | 'Unpaid' | 'Partial' | 'Paid';
+const PAYMENT_FILTER_OPTIONS = ['Unpaid', 'Partial', 'Paid'] as const;
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
@@ -119,7 +119,10 @@ const PurchaseOrdersPage = () => {
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
-    const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('All');
+    // Multi-select: empty = all payments.
+    const [paymentFilter, setPaymentFilter] = useState<string[]>([]);
+    const togglePaymentFilter = (v: string) =>
+        setPaymentFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
 
     // Form state
     const [editingPOId, setEditingPOId] = useState<string | null>(null);
@@ -321,7 +324,7 @@ const PurchaseOrdersPage = () => {
             // Status filter
             if (statusFilter !== 'All' && po.status !== statusFilter) return false;
             // Payment filter
-            if (paymentFilter !== 'All' && (po.payment_status || 'Unpaid') !== paymentFilter) return false;
+            if (paymentFilter.length > 0 && !paymentFilter.includes(po.payment_status || 'Unpaid')) return false;
             // Search
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase();
@@ -438,7 +441,7 @@ const PurchaseOrdersPage = () => {
         document.addEventListener('mouseup', onUp);
     };
 
-    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (paymentFilter !== 'All' ? 1 : 0);
+    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0);
 
     return (
         <div className="page-container fade-in">
@@ -505,7 +508,7 @@ const PurchaseOrdersPage = () => {
                     <MobileFilterDrawer
                         isOpen={isFilterDrawerOpen}
                         onClose={() => setIsFilterDrawerOpen(false)}
-                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setPaymentFilter('All'); }}
+                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setPaymentFilter([]); }}
                         searchValue={searchQuery}
                         onSearchChange={setSearchQuery}
                         searchPlaceholder="Search PO, supplier, invoice..."
@@ -518,11 +521,11 @@ const PurchaseOrdersPage = () => {
                             selected={statusFilter}
                             onSelect={(v) => setStatusFilter(v as StatusFilter)}
                         />
-                        <MobileChipGroup
+                        <MobileMultiChipGroup
                             title="Payment"
-                            options={['All', 'Unpaid', 'Partial', 'Paid'].map(v => ({ value: v }))}
+                            options={PAYMENT_FILTER_OPTIONS.map(v => ({ value: v }))}
                             selected={paymentFilter}
-                            onSelect={(v) => setPaymentFilter(v as PaymentFilter)}
+                            onToggle={togglePaymentFilter}
                         />
                     </MobileFilterDrawer>
                 </>
@@ -564,20 +567,27 @@ const PurchaseOrdersPage = () => {
                         ))}
                     </div>
 
-                    {/* Payment filter */}
-                    <select
-                        value={paymentFilter}
-                        onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
-                        style={{
-                            padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                            background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
-                        }}
-                    >
-                        <option value="All">All Payments</option>
-                        <option value="Unpaid">Unpaid</option>
-                        <option value="Partial">Partial</option>
-                        <option value="Paid">Paid</option>
-                    </select>
+                    {/* Payment filter — multi-select toggles (none selected = all) */}
+                    <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                        {PAYMENT_FILTER_OPTIONS.map(opt => {
+                            const active = paymentFilter.includes(opt);
+                            return (
+                                <button
+                                    key={opt}
+                                    onClick={() => togglePaymentFilter(opt)}
+                                    title="Toggle — combine several payment statuses"
+                                    style={{
+                                        padding: '7px 14px', border: 'none',
+                                        background: active ? 'var(--color-primary)' : 'transparent',
+                                        color: active ? 'white' : 'var(--color-text-secondary)',
+                                        fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s ease',
+                                    }}
+                                >
+                                    {opt}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -622,7 +632,7 @@ const PurchaseOrdersPage = () => {
                     <FileText size={48} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
                     <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '8px' }}>No Purchase Orders Found</h3>
                     <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        {searchQuery || statusFilter !== 'All' || paymentFilter !== 'All' ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
+                        {searchQuery || statusFilter !== 'All' || paymentFilter.length > 0 ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
                     </p>
                 </div>
             ) : isMobile ? (

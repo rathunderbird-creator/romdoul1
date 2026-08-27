@@ -208,6 +208,35 @@ export const SwipeRow: React.FC<{
     );
 };
 
+// Multi-select chip group (always expanded); empty selection = no filter.
+export const MobileMultiChipGroup: React.FC<{
+    title: string;
+    options: Array<{ value: string; label?: string; count?: number }>;
+    selected: string[];
+    onToggle: (v: string) => void;
+}> = ({ title, options, selected, onToggle }) => (
+    <div>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {options.map(opt => {
+                const active = selected.includes(opt.value);
+                return (
+                    <button
+                        key={opt.value}
+                        onClick={() => onToggle(opt.value)}
+                        style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    >
+                        {opt.label ?? opt.value}
+                        {opt.count !== undefined && (
+                            <span style={{ background: active ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)', padding: '0 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 700 }}>{opt.count}</span>
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    </div>
+);
+
 // Single-select chip group (always expanded); options may carry a count.
 export const MobileChipGroup: React.FC<{
     title: string;
