@@ -278,12 +278,15 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                 <div className="moc-status-control">
                                     <StatusBadge
                                         status={order.shipping?.status || 'Pending'}
-                                        readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
+                                        // Admins may reopen a ReStock order (to Drafted only).
+                                        readOnly={!canEdit || ((order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel') && !(isAdmin && order.shipping?.status === 'ReStock'))}
                                         disabledOptions={((order.shipping?.status === 'Shipped')
                                             ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
                                             : (order.shipping?.status === 'Delivered')
                                                 ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
-                                                : ['Delivered', 'Returned']
+                                                : (order.shipping?.status === 'ReStock')
+                                                    ? ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'Cancelled']
+                                                    : ['Delivered', 'Returned']
                                         ).concat(canRestock ? [] : ['ReStock'])}
                                         onChange={(newStatus) => onUpdateStatus(order.id, newStatus)}
                                     />

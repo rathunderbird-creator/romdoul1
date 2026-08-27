@@ -2960,6 +2960,12 @@ const Orders: React.FC = () => {
                                                 showToast('You do not have permission to restock orders.', 'error');
                                                 return;
                                             }
+                                            if (order.shipping?.status === 'ReStock' && status === 'Drafted') {
+                                                // Admin reopening a restocked order (see desktop handler).
+                                                updateOrderStatus(id, 'Drafted');
+                                                updateOrder(id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any });
+                                                return;
+                                            }
                                             // Shipped -> Delivered is a plain status change: no payment
                                             // method popup, and payment fields stay untouched.
                                             if (status === 'Shipped' || status === 'Confirmed') {
@@ -3397,14 +3403,18 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
-                                                                            readOnly={!canEdit || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'}
+                                                                            // Admins may reopen a ReStock order (to Drafted only).
+                                                                            readOnly={!canEdit || ((order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel') && !(isAdmin && order.shipping?.status === 'ReStock'))}
                                                                             disabledOptions={((order.shipping?.status === 'Shipped')
                                                                                 ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
                                                                                 : (order.shipping?.status === 'Delivered')
                                                                                     // From Delivered only a return is allowed (post-delivery
                                                                                     // return, or correcting a mistaken Delivered).
                                                                                     ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
-                                                                                    : ['Delivered', 'Returned']
+                                                                                    : (order.shipping?.status === 'ReStock')
+                                                                                        // Reopening a restocked order: Drafted only.
+                                                                                        ? ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'Cancelled']
+                                                                                        : ['Delivered', 'Returned']
                                                                             ).concat(canRestock ? [] : ['ReStock'])}
                                                                             onChange={(newStatus: string) => {
                                                                                 // Backstop for the disabledOptions above, and it also covers
@@ -3416,6 +3426,14 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 if (newStatus === 'ReStock' && !canRestock) {
                                                                                     showToast('You do not have permission to restock orders.', 'error');
+                                                                                    return;
+                                                                                }
+                                                                                if (order.shipping?.status === 'ReStock' && newStatus === 'Drafted') {
+                                                                                    // Admin reopening a restocked order: back to Drafted with
+                                                                                    // payment reset so it can run the normal flow again
+                                                                                    // (stock deducts fresh when it ships).
+                                                                                    updateOrderStatus(order.id, 'Drafted');
+                                                                                    updateOrder(order.id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any });
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'Shipped') {
