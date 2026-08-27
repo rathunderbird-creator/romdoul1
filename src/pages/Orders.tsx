@@ -477,7 +477,9 @@ const orderBalance = (order: Sale): number => {
     return order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0));
 };
 
-const LOCKED_ORDER_STATUSES = ['ReStock', 'Cancelled', 'Returned'];
+// ReStock orders stay editable (fixing details after a restock is a real
+// need); only Cancelled and Returned remain locked.
+const LOCKED_ORDER_STATUSES = ['Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
     `This order is ${order.shipping?.status} and can no longer be edited. ` +
