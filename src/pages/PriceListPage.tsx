@@ -40,16 +40,26 @@ const PriceListPage: React.FC = () => {
         const load = async () => {
             try {
                 const since = new Date(Date.now() - SOLD_WINDOW_DAYS * 86400000).toISOString();
-                const { data, error } = await supabase
-                    .from('sale_items')
-                    .select('product_id, quantity, sales!inner(date, shipping_status)')
-                    .gte('sales.date', since)
-                    .not('sales.shipping_status', 'in', '("Cancelled","Returned","ReStock")');
-                if (error) throw error;
+                // Chunked like the Orders revenue sum: one unbounded select is silently
+                // truncated at the API's max-rows limit (~1000 line items), which
+                // undercounted Sold and mis-ranked Top Sold. .order('id') makes the
+                // paging windows deterministic.
                 const map: Record<string, number> = {};
-                for (const r of (data || []) as any[]) {
-                    if (!r.product_id) continue;
-                    map[r.product_id] = (map[r.product_id] || 0) + (Number(r.quantity) || 0);
+                const CHUNK = 1000;
+                for (let from = 0; from < 100000; from += CHUNK) {
+                    const { data, error } = await supabase
+                        .from('sale_items')
+                        .select('id, product_id, quantity, sales!inner(date, shipping_status)')
+                        .gte('sales.date', since)
+                        .not('sales.shipping_status', 'in', '("Cancelled","Returned","ReStock")')
+                        .order('id', { ascending: true })
+                        .range(from, from + CHUNK - 1);
+                    if (error) throw error;
+                    for (const r of (data || []) as any[]) {
+                        if (!r.product_id) continue;
+                        map[r.product_id] = (map[r.product_id] || 0) + (Number(r.quantity) || 0);
+                    }
+                    if (!data || data.length < CHUNK) break;
                 }
                 setSoldMap(map);
             } catch (e) {

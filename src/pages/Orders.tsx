@@ -1095,6 +1095,9 @@ const Orders: React.FC = () => {
     // Mobile ignores itemsPerPage and infinite-scrolls in batches of this size.
     const MOBILE_PAGE_SIZE = 100;
     const [totalCount, setTotalCount] = useState(0);
+    // Guards the infinite scroll: false once a fetch proves the server has no more
+    // matching rows, so a count/length mismatch can never loop the loader forever.
+    const [hasMoreMobile, setHasMoreMobile] = useState(true);
     // Revenue across ALL orders matching the filters (Confirmed/Shipped/Delivered
     // only). null = query failed; the footer then falls back to the loaded rows.
     const [revenueTotal, setRevenueTotal] = useState<number | null>(null);
@@ -1339,9 +1342,6 @@ const Orders: React.FC = () => {
     const fetchOrders = React.useCallback(async () => {
         setIsLoadingOrders(true);
         try {
-            let query: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
-            query = (await applyOrderFilters(query)).query;
-
             let dbSortCol = 'date';
             if (sortConfig) {
                 const map: Record<string, string> = {
@@ -1366,17 +1366,52 @@ const Orders: React.FC = () => {
                 };
                 dbSortCol = map[sortConfig.key] || 'date';
             }
-            query = query.order(dbSortCol, { ascending: sortConfig?.direction === 'asc' });
 
-            // Mobile infinite scroll: each "page" widens the window from row 0, so a
-            // refetch (edit, realtime update) rebuilds the whole loaded list idempotently
-            // instead of replacing it with just the latest slice.
-            const from = isMobile ? 0 : (currentPage - 1) * itemsPerPage;
-            const to = isMobile ? currentPage * MOBILE_PAGE_SIZE - 1 : from + itemsPerPage - 1;
-            query = query.range(from, to);
+            let data: any[] | null = null;
+            let count: number | null = null;
 
-            const { data, count, error } = await query;
-            if (error) throw error;
+            if (isMobile) {
+                // Mobile infinite scroll: each "page" widens the window from row 0, so a
+                // refetch (edit, realtime update) rebuilds the whole loaded list
+                // idempotently. Fetched in sub-cap chunks (rebuilt per chunk, like the
+                // revenue sum below) because one wide .range() is silently truncated at
+                // the API's max-rows limit — which hid orders past ~1000 and left the
+                // "loaded < total" sentinel below firing forever.
+                const targetTo = currentPage * MOBILE_PAGE_SIZE - 1;
+                const CHUNK = 1000;
+                const rows: any[] = [];
+                let serverRanDry = false;
+                for (let fromRow = 0; fromRow <= targetTo; fromRow += CHUNK) {
+                    let chunkQuery: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
+                    chunkQuery = (await applyOrderFilters(chunkQuery)).query;
+                    const toRow = Math.min(fromRow + CHUNK - 1, targetTo);
+                    const { data: chunk, count: chunkCount, error: chunkError } = await chunkQuery
+                        .order(dbSortCol, { ascending: sortConfig?.direction === 'asc' })
+                        .order('id', { ascending: true })
+                        .range(fromRow, toRow);
+                    if (chunkError) throw chunkError;
+                    if (count === null) count = chunkCount ?? 0;
+                    rows.push(...(chunk || []));
+                    if (!chunk || chunk.length < (toRow - fromRow + 1)) { serverRanDry = true; break; }
+                }
+                data = rows;
+                setHasMoreMobile(!serverRanDry && rows.length < (count || 0));
+            } else {
+                // Desktop: one page. Built here (not before the branch) so the mobile
+                // path doesn't pay for a filtered query it never executes —
+                // applyOrderFilters can run real sale_items subqueries.
+                let query: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
+                query = (await applyOrderFilters(query)).query;
+                // Secondary sort on id keeps paged windows deterministic when the
+                // primary sort column has ties (row order is unspecified otherwise).
+                query = query.order(dbSortCol, { ascending: sortConfig?.direction === 'asc' }).order('id', { ascending: true });
+                const from = (currentPage - 1) * itemsPerPage;
+                const to = from + itemsPerPage - 1;
+                const res = await query.range(from, to);
+                if (res.error) throw res.error;
+                data = res.data;
+                count = res.count;
+            }
 
             setTotalCount(count || 0);
 
@@ -1396,6 +1431,10 @@ const Orders: React.FC = () => {
                         sumQuery = (await applyOrderFilters(sumQuery)).query;
                         const { data: rows, error: sumError } = await sumQuery
                             .in('shipping_status', REVENUE_TOTAL_STATUSES)
+                            // Stable order keeps the chunk windows non-overlapping —
+                            // without it rows can shift between requests and be
+                            // double-counted or skipped.
+                            .order('id', { ascending: true })
                             .range(fromRow, fromRow + CHUNK - 1);
                         if (sumError) throw sumError;
                         for (const r of rows || []) revenue += Number((r as any).total) || 0;
@@ -1425,13 +1464,13 @@ const Orders: React.FC = () => {
         const el = loadMoreSentinelRef.current;
         if (!el) return;
         const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && !isLoadingOrders && serverOrders.length < totalCount) {
+            if (entries[0].isIntersecting && !isLoadingOrders && hasMoreMobile && serverOrders.length < totalCount) {
                 setCurrentPage(p => p + 1);
             }
         }, { rootMargin: '400px' });
         observer.observe(el);
         return () => observer.disconnect();
-    }, [isMobile, activeTab, isLoadingOrders, serverOrders.length, totalCount]);
+    }, [isMobile, activeTab, isLoadingOrders, hasMoreMobile, serverOrders.length, totalCount]);
 
     // Derived states based on the SINGLE PAGE of fetched items
     const filteredOrders = serverOrders;
@@ -1681,8 +1720,17 @@ const Orders: React.FC = () => {
                 updates.date = new Date(value).toISOString();
                 await updateOrders(ids, updates);
             } else if (field === 'status') {
-                updates.shipping = { status: value } as any;
-                await updateOrders(ids, updates);
+                // Route through updateOrderStatus (not updateOrders) so bulk status
+                // changes run the same stock handling as single-row changes —
+                // deducting/restoring products.stock and inventory_items, not just
+                // logging movements. Sequential: parallel updates on orders sharing
+                // a product would race the read-modify-write of its stock. Rows
+                // already at the target status are skipped as quiet no-ops.
+                for (const id of ids) {
+                    const current = (serverOrders.find(s => s.id === id) || sales.find(s => s.id === id))?.shipping?.status;
+                    if (current === value) continue;
+                    await updateOrderStatus(id, value);
+                }
             } else if (field === 'settleDate') {
                 updates.settleDate = value ? new Date(value).toISOString() : null as any;
                 await updateOrders(ids, updates);
@@ -2974,16 +3022,26 @@ const Orders: React.FC = () => {
                                                 setIsShippingModalOpen(true);
                                                 return;
                                             }
-                                            updateOrderStatus(id, status);
-                                            if (status === 'ReStock') {
-                                                // Pass the shipping status so updateOrder doesn't reset it to Pending.
-                                                updateOrder(id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
-                                                restockOrder(id);
-                                            } else if (status === 'Returned' || status === 'Cancelled') {
-                                                // null, not undefined — updateOrder skips undefined fields,
-                                                // which left the old settle_date on cancelled orders.
-                                                updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
-                                            }
+                                            // Awaited in sequence — see the desktop handler: updateOrder
+                                            // must read the status updateOrderStatus just wrote so the
+                                            // stock-ledger handling never runs twice for one transition.
+                                            (async () => {
+                                                try {
+                                                    await updateOrderStatus(id, status);
+                                                    if (status === 'ReStock') {
+                                                        // Pass the shipping status so updateOrder doesn't reset it to Pending.
+                                                        await updateOrder(id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
+                                                        restockOrder(id);
+                                                    } else if (status === 'Returned' || status === 'Cancelled') {
+                                                        // null, not undefined — updateOrder skips undefined fields,
+                                                        // which left the old settle_date on cancelled orders.
+                                                        await updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
+                                                    }
+                                                } catch (e) {
+                                                    console.error('Status change failed:', e);
+                                                    showToast('Failed to update order status', 'error');
+                                                }
+                                            })();
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
                                             const updates: any = { paymentStatus: status };
@@ -2997,8 +3055,10 @@ const Orders: React.FC = () => {
                                                 setPaymentMethodTargetOrder(order);
                                                 setIsPaymentMethodModalOpen(true);
                                                 return;
-                                            } else if (status === 'Cancel') {
-                                                updates.amountReceived = 0;
+                                            } else if (status === 'Get File') {
+                                                // Same as bulk edit: keep a deposit visible
+                                                // in Received when one was taken.
+                                                updates.amountReceived = order.depositAmount || 0;
                                                 updates.settleDate = null;
                                             } else {
                                                 updates.amountReceived = 0;
@@ -3019,7 +3079,7 @@ const Orders: React.FC = () => {
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#9CA3AF', fontSize: '13px', fontWeight: 500 }}>
                                                 <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Loading more…
                                             </div>
-                                        ) : paginatedOrders.length < totalCount ? (
+                                        ) : hasMoreMobile && paginatedOrders.length < totalCount ? (
                                             <button
                                                 onClick={() => setCurrentPage(p => p + 1)}
                                                 style={{ padding: '10px 22px', borderRadius: '20px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
@@ -3368,6 +3428,11 @@ const Orders: React.FC = () => {
                                                                                 } else if (newStatus === 'Deposit') {
                                                                                     setDepositTargetOrder(order);
                                                                                     return;
+                                                                                } else if (newStatus === 'Get File') {
+                                                                                    // Same as bulk edit: keep a deposit visible
+                                                                                    // in Received when one was taken.
+                                                                                    updates.amountReceived = order.depositAmount || 0;
+                                                                                    updates.settleDate = null;
                                                                                 } else if (newStatus === 'Cancel') {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
@@ -3455,16 +3520,26 @@ const Orders: React.FC = () => {
                                                                                 }
                                                                                 // Shipped -> Delivered is a plain status change: no payment
                                                                                 // method popup, and payment fields stay untouched.
-                                                                                updateOrderStatus(order.id, newStatus as any);
-                                                                                if (newStatus === 'ReStock') {
-                                                                                    // Pass the shipping status so updateOrder doesn't reset it to Pending.
-                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
-                                                                                    restockOrder(order.id);
-                                                                                } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
-                                                                                    // null, not undefined — updateOrder skips undefined fields,
-                                                                                    // which left the old settle_date on cancelled orders.
-                                                                                    updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
-                                                                                }
+                                                                                // Awaited in sequence: updateOrder reads the DB status
+                                                                                // updateOrderStatus just wrote, so the transition (and its
+                                                                                // stock-ledger handling) is never replayed twice.
+                                                                                (async () => {
+                                                                                    try {
+                                                                                        await updateOrderStatus(order.id, newStatus as any);
+                                                                                        if (newStatus === 'ReStock') {
+                                                                                            // Pass the shipping status so updateOrder doesn't reset it to Pending.
+                                                                                            await updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
+                                                                                            restockOrder(order.id);
+                                                                                        } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
+                                                                                            // null, not undefined — updateOrder skips undefined fields,
+                                                                                            // which left the old settle_date on cancelled orders.
+                                                                                            await updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
+                                                                                        }
+                                                                                    } catch (e) {
+                                                                                        console.error('Status change failed:', e);
+                                                                                        showToast('Failed to update order status', 'error');
+                                                                                    }
+                                                                                })();
                                                                             }}
                                                                         />
                                                                     </td>

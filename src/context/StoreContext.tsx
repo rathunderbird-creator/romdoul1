@@ -65,6 +65,18 @@ const getLocalYYYYMMDD = () => {
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
+// Local calendar day of a stored date value: plain YYYY-MM-DD strings pass
+// through; ISO timestamps convert to the LOCAL day (a settle stamped between
+// midnight and 07:00 local lives on the previous UTC day, so comparing raw
+// ISO slices would miss a genuine one-day correction).
+const localDayOf = (v: string | null | undefined): string => {
+    if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return v.slice(0, 10);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 // Stock leaves the building at 'Shipped', and only then. Delivery is a later
 // confirmation of the same physical movement, so it must not deduct again or rewrite
 // the original stock-out record — the goods are counted out exactly once.
@@ -185,47 +197,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const safePin = String(pin).trim();
         let user: User | undefined;
 
-        // Debugging: Find user by ID first to see what we have
-        if (userId) {
-            const potentialUser = users.find(u => u.id === userId);
-            if (potentialUser) {
-                console.log('Login Debug: Found potential user:', potentialUser.name);
-                console.log('Login Debug: Comparison -> ', {
-                    storedPin: potentialUser.pin,
-                    inputPin: safePin,
-                    match: String(potentialUser.pin).trim() === safePin
-                });
-            } else {
-                console.warn('Login Debug: No user found with ID:', userId);
-            }
-        }
-
         if (userId) {
             user = users.find(u => u.id === userId && String(u.pin).trim() === safePin);
         } else {
             user = users.find(u => String(u.pin).trim() === safePin);
         }
 
-        // EMERGENCY FALLBACK: If login fails but PIN is 1234, allow admin access
-        if (!user && safePin === '1234') {
-            const adminUser = users.find(u => u.roleId === 'admin' || u.id === 'admin');
-            if (adminUser) {
-                console.warn('Login: Using Emergency Fallback for existing admin user');
-                user = adminUser;
-            } else {
-                console.warn('Login: Creating temporary admin user for emergency access');
-                user = {
-                    id: 'admin',
-                    name: 'Admin (Rescue)',
-                    email: 'admin@example.com',
-                    roleId: 'admin',
-                    pin: '1234'
-                };
-            }
-        }
-
         if (user) {
-            console.log('User found:', user);
             setCurrentUser(user);
             localStorage.setItem('currentUser', JSON.stringify(user));
             dispatchActivity({ action: 'user_login', description: `${user.name} logged in`, userId: user.id, userName: user.name });
@@ -1428,6 +1406,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
                 currentStatus = data?.shipping_status || 'Pending';
             }
+            // Already at the target status: a silent no-op, not an error. Bulk
+            // selections routinely mix rows already in the target status — each
+            // one must not pop a blocking alert.
+            if (currentStatus === status) {
+                return;
+            }
             if (!canEnterPostDispatch(currentStatus, status)) {
                 alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
                 return;
@@ -1484,8 +1468,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // Case 1: Changing TO 'Shipped' (from a status where stock is still on hand)
             // -> DEDUCT Stock. Delivered deliberately does not deduct: the goods already
-            // left at Shipped, and counting again would double-deduct.
-            if (countsAsStockOut(status) && !isStockConsumed(oldStatus)) {
+            // left at Shipped, and counting again would double-deduct. 'Returned' is
+            // excluded too: the goods left at the original Shipped and never came back
+            // (Case 2 deliberately keeps them counted out), so re-shipping a Returned
+            // order is a stock no-op — deducting again would double-deduct.
+            if (countsAsStockOut(status) && !isStockConsumed(oldStatus) && oldStatus !== 'Returned') {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1517,7 +1504,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Case 2: Changing FROM 'Shipped' or 'Delivered' (to non-shipped) -> RESTORE Stock
             // EXCEPTION: If changing to 'Returned', do NOT restore stock automatically.
             // 'Returned' means it's on the way back but hasn't arrived. (Restock button in Inventory will restore it).
-            else if (isStockConsumed(oldStatus) && !isStockConsumed(status) && status !== 'Returned') {
+            // 'Returned' -> pre-ship (un-returning to Pending/Confirmed/Drafted) is a full
+            // reversal too: the goods are still counted out from the original shipment, so
+            // restore here — otherwise a later re-ship would deduct them a second time.
+            // ReStock is excluded from that: the Restock flow does its own stock restore.
+            else if ((isStockConsumed(oldStatus) || (oldStatus === 'Returned' && status !== 'ReStock')) && !isStockConsumed(status) && status !== 'Returned') {
                 for (const item of salesOrder.items) {
                     // Local
                     setProducts(prev => prev.map(p => {
@@ -1544,8 +1535,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                 }
                 
-                // Delete stock-out records since the order is no longer shipped
-                await supabase.from('stock_movements').delete().eq('reference_id', id).eq('type', 'out');
+                // Delete stock-out records since the order is no longer shipped.
+                // Only the NEWEST generation: an order re-shipped after a return/restock
+                // cycle carries one out generation per shipment (each insert batch shares
+                // a created_at), and only the shipment being reversed here — one item
+                // set's worth of stock was restored above — may leave the ledger.
+                const { data: outRows } = await supabase.from('stock_movements')
+                    .select('id, created_at')
+                    .eq('reference_id', id)
+                    .eq('type', 'out');
+                if (outRows && outRows.length > 0) {
+                    const newest = outRows.reduce((m, r: any) => (r.created_at > m ? r.created_at : m), outRows[0].created_at);
+                    const idsToDelete = outRows.filter((r: any) => r.created_at === newest).map((r: any) => r.id);
+                    await supabase.from('stock_movements').delete().in('id', idsToDelete);
+                }
             }
         }
         // ------------------------------
@@ -1559,7 +1562,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updates.last_edited_by = currentUser.name;
         }
 
-        await supabase.from('sales').update(updates).eq('id', id);
+        // Surface a failed status write instead of continuing on optimistic state —
+        // callers (e.g. the bulk-edit loops) rely on this to show their error toast.
+        const { error: statusWriteError } = await supabase.from('sales').update(updates).eq('id', id);
+        if (statusWriteError) {
+            console.error('Failed to update order status:', statusWriteError);
+            setSalesUpdatedAt(Date.now());
+            throw statusWriteError;
+        }
 
         // Log the stock-out movement only when the order ships. Delivery must leave the
         // existing record untouched — rewriting it re-dated the movement to the delivery
@@ -1589,13 +1599,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
                 const customerInfo = [finalCustomerName, finalCustomerPhone].filter(Boolean).join(' | ');
 
-                if (existingMovements && existingMovements.length > 0) {
-                    // Update existing records 
+                // Did Case 1 above actually deduct stock on this transition? If so, this
+                // is a genuinely new shipment (e.g. a ReStock-reopened order shipping
+                // again) and must INSERT fresh out rows even when the first shipment's
+                // rows still exist — otherwise the ledger nets 0 while stock netted −N.
+                const stockDeductedThisTransition = !isStockConsumed(oldStatus) && oldStatus !== 'Returned';
+
+                if (existingMovements && existingMovements.length > 0 && !stockDeductedThisTransition) {
+                    // Refresh existing records without re-dating them: a correction like
+                    // Delivered -> Shipped must keep the date the goods actually left.
                     await supabase.from('stock_movements')
                         .update({
                             reason: 'Shipped',
                             source: 'Order Shipped',
-                            movement_date: getLocalYYYYMMDD(),
                             customer_name: finalCustomerName,
                             customer_phone: finalCustomerPhone
                         })
@@ -1667,6 +1683,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        // The stock-movement block at the end keys off the status BEFORE this update.
+        // The local cache can be stale: the status badges run updateOrderStatus (which
+        // owns stock + ledger) and then this function for payment side-effects with
+        // the same target status — by then the cache still shows the pre-transition
+        // status, and replaying the transition here would delete a second movement
+        // generation. Read the DB so an already-applied transition reads as a no-op.
+        let shippingStatusBeforeUpdate = existingOrder?.shipping?.status;
+        if (updates.shipping?.status) {
+            const { data: freshStatusRow } = await supabase.from('sales').select('shipping_status').eq('id', id).single();
+            if (freshStatusRow?.shipping_status) {
+                shippingStatusBeforeUpdate = freshStatusRow.shipping_status;
+            }
+        }
+
         // Same rule as updateOrderStatus — this is a second way in (including the bulk
         // edit path, which calls through here per order), so it needs the same guard.
         //
@@ -1716,6 +1746,38 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        // A paid order's customer rename must follow through to its income row:
+        // every later lookup (settle-date sync, leaving-Paid cleanup) matches by
+        // description, so a row left under the old name would be missed — and the
+        // settle-date heal branch would then insert a duplicate income row.
+        if (
+            updates.customer?.name && existingOrder?.customer?.name &&
+            updates.customer.name !== existingOrder.customer.name &&
+            PAID_STATUSES.includes(existingOrder.paymentStatus || '') &&
+            (updates.paymentStatus === undefined || PAID_STATUSES.includes(updates.paymentStatus || ''))
+        ) {
+            const oldName = existingOrder.customer.name;
+            const newName = updates.customer.name;
+            const renameDep = existingOrder.depositAmount || 0;
+            const renameMatches = [existingOrder.amountReceived || 0, existingOrder.total];
+            if (renameDep > 0) renameMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - renameDep), Math.max(0, existingOrder.total - renameDep));
+            try {
+                const { data: rowToRename } = await supabase.from('transactions')
+                    .select('id')
+                    .eq('type', 'Income')
+                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
+                    .eq('description', oldName)
+                    .or(renameMatches.map(a => `amount.eq.${a}`).join(','))
+                    .limit(1);
+                if (rowToRename && rowToRename.length > 0) {
+                    await supabase.from('transactions').update({ description: newName }).eq('id', rowToRename[0].id);
+                    setTransactions(prev => prev.map(t => t.id === rowToRename[0].id ? { ...t, description: newName } : t));
+                }
+            } catch (e) {
+                console.error('Failed to rename income row with customer:', e);
+            }
+        }
+
         if (updates.paymentStatus === 'Cancel') {
             // Cancelling payment normally sends shipping back to 'Pending' so the order can
             // be re-processed. But when the caller ALSO sets a shipping status (the
@@ -1751,11 +1813,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Sync Income/Expense: If changed to 'Paid'/'Settled' (and wasn't before)
         if (isPaidStatus(updates.paymentStatus) && existingOrder && !isPaidStatus(existingOrder.paymentStatus)) {
             const transactionId = generateUUID();
-            // A deposit was already logged as income when it was received, so a
-            // deposit order only logs the COD remainder here. When no explicit
+            // A deposit was already logged as income when it was received, so an
+            // order that ever took a deposit only logs the COD remainder here —
+            // even when it settles from 'Get File' or a reverted 'Unpaid', where
+            // the deposit row (កក់ប្រាក់) is still on the books. When no explicit
             // amount is passed, a deposit order is treated as fully collected
             // (amountReceived currently holds just the deposit).
-            const depositPaid = existingOrder.paymentStatus === 'Deposit' ? (existingOrder.depositAmount || 0) : 0;
+            const depositPaid = existingOrder.depositAmount || 0;
             if (depositPaid > 0 && updates.amountReceived === undefined) {
                 updates.amountReceived = existingOrder.total;
             }
@@ -1808,6 +1872,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } else if (
             updates.settleDate &&
             existingOrder &&
+            // Run when the settle day actually moved (compared as LOCAL days), or
+            // when a paid order's received amount was corrected — both must reach
+            // the income row. An ordinary no-op re-save (CheckoutForm resends the
+            // stored settleDate, and COD orders resend amountReceived 0) skips, so
+            // edits like fixing a customer-name typo can't duplicate the row via
+            // the heal branch below.
+            (
+                localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate) ||
+                (updates.amountReceived !== undefined && updates.amountReceived > 0 && updates.amountReceived !== (existingOrder.amountReceived || 0))
+            ) &&
             isPaidStatus(updates.paymentStatus !== undefined ? updates.paymentStatus : existingOrder.paymentStatus)
         ) {
             // A paid order's settle date changed without a payment-status transition
@@ -1815,7 +1889,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Move its income transaction to the new date so Income & Expense matches
             // the settle-date view — and if it was never logged (silent failure or
             // legacy data), create it now.
-            const customerName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
+            const settleDayChanged = localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate);
+            // Look the row up under BOTH names: normally it still carries the old
+            // customer name, but when a rename lands in the same save the rename
+            // sync above has already moved it to the new one.
+            const lookupName = existingOrder.customer?.name || 'Customer';
+            const customerName = updates.customer?.name || lookupName;
+            const lookupNames = Array.from(new Set([lookupName, customerName]));
             // Deposit orders keep the deposit income separate — the sales entry only
             // holds the remainder, so match and update against remainder amounts too.
             const depositHeld = existingOrder.depositAmount || 0;
@@ -1833,15 +1913,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     .eq('type', 'Income')
                     // Also match the pre-rename category so older rows still sync.
                     .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                    .eq('description', customerName)
+                    .in('description', lookupNames)
                     .or(syncMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
                 if (txns && txns.length > 0) {
                     await supabase.from('transactions')
-                        .update({ date: normalizedDate, amount: amountToRecord || txns[0].amount })
+                        .update({ date: normalizedDate, amount: amountToRecord || txns[0].amount, description: customerName })
                         .eq('id', txns[0].id);
-                    setTransactions(prev => prev.map(t => t.id === txns[0].id ? { ...t, date: normalizedDate, amount: amountToRecord || t.amount } : t));
-                } else {
+                    setTransactions(prev => prev.map(t => t.id === txns[0].id ? { ...t, date: normalizedDate, amount: amountToRecord || t.amount, description: customerName } : t));
+                } else if (settleDayChanged) {
+                    // Heal a missing row only on a real settle-day change — an
+                    // amount-only correction that fails to find its row must not
+                    // insert a fresh one (that would risk duplicate revenue).
                     const healed = {
                         id: generateUUID(),
                         date: normalizedDate,
@@ -2012,8 +2095,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // 5. Log stock-out movement only when shipping status changes to Shipped or Delivered
             if (updates.shipping?.status && existingOrder) {
                 const newStatus = updates.shipping.status;
-                const oldStatus = existingOrder.shipping?.status || 'Pending';
-                if (countsAsStockOut(newStatus) && oldStatus !== newStatus) {
+                // Fresh DB status from the top of this function — NOT the possibly
+                // stale cache — so a transition updateOrderStatus already applied
+                // is a no-op here instead of a second ledger delete/insert.
+                const oldStatus = shippingStatusBeforeUpdate || 'Pending';
+                // The caller must also have MEANT a change: forms and the tracking
+                // field echo the rendered row's status back verbatim, and when the
+                // DB has moved on in the meantime that echo must not manufacture a
+                // transition (deleting or inserting ledger rows with no stock change).
+                const callerIntendedChange = newStatus !== (existingOrder.shipping?.status || 'Pending');
+                if (callerIntendedChange && countsAsStockOut(newStatus) && oldStatus !== newStatus) {
                     // Check if stock-out records already exist for this order
                     const { data: existingMovements } = await supabase.from('stock_movements')
                         .select('id')
@@ -2038,12 +2129,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (existingMovements && existingMovements.length > 0) {
                         // Update existing records
                         // Only reached when shipping, so the reason/source stay 'Shipped'
-                        // and the movement keeps the date the goods actually left.
+                        // and the movement keeps the date the goods actually left
+                        // (movement_date is deliberately NOT rewritten here).
                         await supabase.from('stock_movements')
                             .update({
                                 reason: 'Shipped',
                                 source: 'Order Shipped',
-                                movement_date: getLocalYYYYMMDD(),
                                 customer_name: finalCustomerName,
                                 customer_phone: finalCustomerPhone
                             })
@@ -2082,10 +2173,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             });
                         }
                     }
-                } else if (isStockConsumed(oldStatus) && !isStockConsumed(newStatus) && newStatus !== 'Returned') {
+                } else if (callerIntendedChange && isStockConsumed(oldStatus) && !isStockConsumed(newStatus) && newStatus !== 'Returned') {
                     // Only when the order genuinely comes back out of a shipped/delivered
-                    // state — Shipped -> Delivered keeps its record.
-                    await supabase.from('stock_movements').delete().eq('reference_id', id).eq('type', 'out');
+                    // state — Shipped -> Delivered keeps its record. Only the NEWEST
+                    // generation is removed: a re-shipped order carries one out
+                    // generation per shipment, and earlier trips stay on the ledger.
+                    const { data: outRows } = await supabase.from('stock_movements')
+                        .select('id, created_at')
+                        .eq('reference_id', id)
+                        .eq('type', 'out');
+                    if (outRows && outRows.length > 0) {
+                        const newest = outRows.reduce((m, r: any) => (r.created_at > m ? r.created_at : m), outRows[0].created_at);
+                        const idsToDelete = outRows.filter((r: any) => r.created_at === newest).map((r: any) => r.id);
+                        await supabase.from('stock_movements').delete().in('id', idsToDelete);
+                    }
                 }
             }
 

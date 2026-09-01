@@ -93,11 +93,28 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                 byProduct.set(key, agg);
             }
 
+            // When restricted to one warehouse, base the stock columns on THAT
+            // warehouse's stock — using company-wide products.stock here labeled a
+            // global figure as warehouse stock. Fetched live (not from the store's
+            // boot-time cache) so it lines up with the live movement queries above;
+            // warehouse_stock is mutated by exactly the warehouse-tagged movements
+            // those queries return, keeping the rollback math consistent.
+            let whQty: Map<string, number> | null = null;
+            if (warehouseId) {
+                const { data: whRows, error: whErr } = await supabase
+                    .from('warehouse_stock')
+                    .select('product_id, quantity')
+                    .eq('warehouse_id', warehouseId);
+                if (whErr) throw whErr;
+                whQty = new Map((whRows || []).map((ws: any) => [ws.product_id, ws.quantity || 0]));
+            }
+
             const built: MovementSummaryRow[] = products.map(p => {
                 const agg = byProduct.get(p.id) || { sold: 0, wholesale: 0, ret: 0, buy: 0, name: p.name };
                 byProduct.delete(p.id);
                 // Stock as it stood at the END of the selected period.
-                const newStock = (p.stock || 0) - (netAfter.get(p.id) || 0);
+                const baseStock = whQty ? (whQty.get(p.id) || 0) : (p.stock || 0);
+                const newStock = baseStock - (netAfter.get(p.id) || 0);
                 return {
                     id: p.id,
                     name: p.name,

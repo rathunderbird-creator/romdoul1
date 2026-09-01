@@ -646,7 +646,9 @@ const PurchaseOrdersPage = () => {
                         return (
                             <SwipeRow
                                 key={po.id}
-                                onClick={() => setViewPO(po)}
+                                // handleViewPO (not setViewPO) so the tap fetches THIS
+                                // PO's payment history instead of showing the last one's.
+                                onClick={() => handleViewPO(po)}
                                 style={{ borderBottom: '1px solid var(--color-border)' }}
                                 actions={[
                                     { icon: Eye, label: 'View', color: '#6366F1', onClick: () => handleViewPO(po) },

@@ -210,20 +210,33 @@ const PaymentTracking: React.FC = () => {
                 updates.settleDate = new Date(value).toISOString();
                 await updateOrders(ids, updates);
             } else if (field === 'status') {
-                updates.shipping = { status: value } as any;
-                await updateOrders(ids, updates);
+                // Route through updateOrderStatus (not updateOrders) so bulk status
+                // changes run the same stock handling as single-row changes.
+                // Sequential: parallel updates on orders sharing a product would
+                // race the read-modify-write of its stock. Rows already at the
+                // target status are skipped as quiet no-ops.
+                for (const id of ids) {
+                    const current = serverOrders.find(s => s.id === id)?.shipping?.status;
+                    if (current === value) continue;
+                    await updateOrderStatus(id, value);
+                }
             } else if (field === 'paymentStatus') {
                 const now = settleDateInput ? new Date(settleDateInput).toISOString() : new Date().toISOString();
                 const promises = ids.map(id => {
                     const order = serverOrders.find(s => s.id === id);
                     if (!order) return Promise.resolve();
-                    
+
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
-                    
-                    if (value === 'Paid' || value === 'Settled' || value === 'Get File') {
+
+                    if (value === 'Paid' || value === 'Settled') {
                         individualUpdates.amountReceived = order.total;
                         individualUpdates.settleDate = now;
                         if (payByInput) individualUpdates.paymentMethod = payByInput as any;
+                    } else if (value === 'Get File') {
+                        // File collected, money not settled yet — no settle date. Keep a
+                        // deposit visible in Received when one was taken.
+                        individualUpdates.amountReceived = order.depositAmount || 0;
+                        individualUpdates.settleDate = null as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null as any;
@@ -627,10 +640,12 @@ const PaymentTracking: React.FC = () => {
 
             // Sort
             if (sortConfig) {
+                // Column names must exist on sales — a nonexistent column makes the
+                // query throw and silently freezes every refresh (see Orders.tsx map).
                 const columnMap: Record<string, string> = {
                     settleDate: 'settle_date',
                     date: 'date',
-                    customer: 'customer_id',
+                    customer: 'customer_snapshot->name',
                     salesman: 'salesman',
                     shippingCo: 'shipping_company',
                     payBy: 'payment_method',
@@ -638,7 +653,7 @@ const PaymentTracking: React.FC = () => {
                     remaining: 'amount_received',
                     status: 'payment_status',
                     remark: 'remark',
-                    total: 'total_amount'
+                    total: 'total'
                 };
                 const dbCol = columnMap[sortConfig.key];
                 if (dbCol) {
@@ -1231,13 +1246,24 @@ const PaymentTracking: React.FC = () => {
                                                 : ['Delivered', 'Returned']
                                         }
                                         onChange={(newStatus: string) => {
-                                            updateOrderStatus(order.id, newStatus as any);
-                                            if (newStatus === 'ReStock') {
-                                                updateOrder(order.id, { paymentStatus: 'Cancel' });
-                                                restockOrder(order.id);
-                                            } else if (newStatus === 'Returned') {
-                                                updateOrder(order.id, { paymentStatus: 'Cancel' });
-                                            }
+                                            // Awaited in sequence — see the Orders handlers: the second
+                                            // call must observe the status the first one wrote.
+                                            (async () => {
+                                                try {
+                                                    await updateOrderStatus(order.id, newStatus as any);
+                                                    if (newStatus === 'ReStock') {
+                                                        // Pass the shipping status (like the Orders handlers) so
+                                                        // updateOrder's Cancel branch doesn't reset it to Pending.
+                                                        await updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
+                                                        restockOrder(order.id);
+                                                    } else if (newStatus === 'Returned') {
+                                                        await updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'Returned' } as any });
+                                                    }
+                                                } catch (e) {
+                                                    console.error('Status change failed:', e);
+                                                    showToast('Failed to update order status', 'error');
+                                                }
+                                            })();
                                         }}
                                     />
                                 </td>}

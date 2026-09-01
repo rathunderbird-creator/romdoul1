@@ -644,14 +644,17 @@ const DeliveryTracking: React.FC = () => {
 
             // Sort
             if (sortConfig) {
+                // Column names must exist on sales — a nonexistent column makes the
+                // query throw and silently freezes every refresh (see Orders.tsx map).
+                // deliveryMan has no DB column (staffName is never persisted), so it
+                // deliberately falls through to the default date sort.
                 const columnMap: Record<string, string> = {
                     date: 'date',
-                    customer: 'customer_id',
-                    phone: 'customer_id',
-                    address: 'customer_id',
+                    customer: 'customer_snapshot->name',
+                    phone: 'customer_snapshot->phone',
+                    address: 'customer_snapshot->address',
                     shippingCo: 'shipping_company',
                     tracking: 'tracking_number',
-                    deliveryMan: 'shipping_staff',
                     status: 'shipping_status',
                     cost: 'shipping_cost',
                     remark: 'remark'
