@@ -3150,9 +3150,10 @@ const Orders: React.FC = () => {
                                         borderSpacing: 0,
                                         // Apply CSS Variables
                                         ['--table-font-size' as any]: `${tableSettings.fontSize}px`,
-                                        // Header + footer read 2px larger than the body rows
-                                        // (tracks the Font Size slider).
-                                        ['--table-header-font-size' as any]: `${tableSettings.fontSize + 2}px`,
+                                        // Header reads 4px, footer 2px larger than the body
+                                        // rows (both track the Font Size slider).
+                                        ['--table-header-font-size' as any]: `${tableSettings.fontSize + 4}px`,
+                                        ['--table-footer-font-size' as any]: `${tableSettings.fontSize + 2}px`,
                                         ['--table-padding' as any]: `${tableSettings.padding}px 6px`, // Reduced side padding too
                                         ['--table-row-height' as any]: tableSettings.height === 'auto' ? 'auto' : tableSettings.height
                                     }}>
@@ -3684,9 +3685,8 @@ const Orders: React.FC = () => {
 
                                                 const commonStyle = {
                                                     padding: '8px 12px',
-                                                    // Matches the header: 2px above the body font,
-                                                    // tracking the Font Size slider.
-                                                    fontSize: 'var(--table-header-font-size, 14px)',
+                                                    // 2px above the body font, tracking the slider.
+                                                    fontSize: 'var(--table-footer-font-size, 14px)',
                                                     fontWeight: 'bold',
                                                     borderTop: '2px solid var(--color-border)',
                                                     background: 'var(--color-bg)',
