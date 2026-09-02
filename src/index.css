@@ -202,6 +202,9 @@ button {
   /* Darker text for headers */
   font-weight: 700;
   /* Bold headers */
+  /* Tables that set --table-header-font-size (Orders Management) get a larger
+     header than the body rows; everywhere else inherits the table font. */
+  font-size: var(--table-header-font-size, inherit);
   position: sticky;
   top: 0;
   z-index: 30;
