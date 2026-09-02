@@ -57,6 +57,25 @@ body {
   overflow-x: hidden;
 }
 
+/* Compact desktop UI: one knob that shrinks fonts, paddings, and controls
+   together — the codebase styles everything in inline px, so scaling the root
+   is the only change that reaches all of it uniformly. Mobile keeps its own
+   tuned sizing (and shrinking form fonts below 16px would re-trigger iOS's
+   auto-zoom on input focus). Adjust the factor here to taste. */
+@media screen and (min-width: 768px) {
+  body {
+    zoom: 0.9;
+  }
+}
+
+/* Receipts print from THIS document (ReceiptModal calls window.print), so the
+   on-screen compacting must never shrink the printed page. */
+@media print {
+  body {
+    zoom: 1;
+  }
+}
+
 h1 {
   font-size: 16px;
   color: var(--color-primary);
