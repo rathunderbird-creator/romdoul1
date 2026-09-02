@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
@@ -63,6 +63,19 @@ const generateUUID = () => {
 const getLocalYYYYMMDD = () => {
     const d = new Date();
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+// Digits-only phone comparison: blocklist entries and order snapshots carry
+// mixed formats ('012 345 678', '+855 12…', Excel imports without the leading
+// zero), so an exact-string match let blocked customers slip through.
+export const normalizePhone = (v: any): string => String(v ?? '').replace(/\D/g, '');
+
+// True only for "the function does not exist" (migration not applied yet) —
+// network blips and server errors must NOT be treated as a missing migration.
+export const isRpcMissingError = (err: any): boolean => {
+    const code = String(err?.code || '');
+    const msg = String(err?.message || '');
+    return code === 'PGRST202' || code === '42883' || /could not find the function/i.test(msg);
 };
 
 // Local calendar day of a stored date value: plain YYYY-MM-DD strings pass
@@ -185,31 +198,73 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // Authentication
     const [currentUser, setCurrentUser] = useState<User | null>(() => {
-        const saved = localStorage.getItem('currentUser');
-        return saved ? JSON.parse(saved) : null;
+        // Guarded: a corrupt localStorage value must not crash-loop the whole
+        // app at the very first render (the error boundary's only offer is
+        // Reload, which would just re-parse the same bad value forever).
+        try {
+            const saved = localStorage.getItem('currentUser');
+            return saved ? JSON.parse(saved) : null;
+        } catch {
+            localStorage.removeItem('currentUser');
+            return null;
+        }
     });
+    // Live view of the session for async completions: a refresh that was
+    // in flight across a logout/user switch must not act on the old session.
+    const currentUserRef = useRef(currentUser);
+    currentUserRef.current = currentUser;
 
     const login = async (pin: string, userId?: string): Promise<boolean> => {
-        // Find user
-        console.log('Attempting login with PIN:', pin, 'UserID:', userId);
-        console.log('Current users in state:', users);
-
         const safePin = String(pin).trim();
+        if (!safePin) return false;
+
         let user: User | undefined;
 
-        if (userId) {
-            user = users.find(u => u.id === userId && String(u.pin).trim() === safePin);
+        // Server-side verification (check_pin, SECURITY DEFINER): the PIN is
+        // compared in the database and never needs to exist in the browser.
+        const { data: matched, error: rpcError } = await supabase.rpc('check_pin', {
+            p_pin: safePin,
+            p_user_id: userId || null
+        });
+        if (!rpcError) {
+            const row = Array.isArray(matched) ? matched[0] : matched;
+            if (row) {
+                const known = users.find(u => u.id === row.id);
+                user = {
+                    ...(known || {}),
+                    id: row.id,
+                    name: row.name,
+                    email: row.email,
+                    roleId: row.role_id
+                } as User;
+            }
+        } else if (isRpcMissingError(rpcError)) {
+            // secure_pin_check.sql not applied yet: fall back to the legacy
+            // client-side comparison via a one-off read. This path dies the
+            // moment the migration runs (the pin column read is then rejected
+            // and the RPC exists).
+            console.warn('check_pin RPC unavailable, using legacy login:', rpcError.message);
+            const { data: legacyUsers } = await supabase.from('users').select('id, name, email, role_id, pin');
+            const hit = (legacyUsers || []).find((u: any) =>
+                String(u.pin || '').trim() === safePin && (!userId || u.id === userId)
+            );
+            if (hit) {
+                user = { id: hit.id, name: hit.name, email: hit.email, roleId: hit.role_id } as User;
+            }
         } else {
-            user = users.find(u => String(u.pin).trim() === safePin);
+            // A real failure (network blip, server error) — never report it as a
+            // wrong password. The Login page's catch shows its own message.
+            console.error('check_pin failed:', rpcError);
+            throw new Error('Could not verify password — check the connection and try again');
         }
 
         if (user) {
+            // Note: the stored snapshot never contains the PIN.
             setCurrentUser(user);
             localStorage.setItem('currentUser', JSON.stringify(user));
             dispatchActivity({ action: 'user_login', description: `${user.name} logged in`, userId: user.id, userName: user.name });
             return true;
         }
-        console.log('User not found or PIN incorrect');
         return false;
     };
 
@@ -298,7 +353,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 supabase.from('customers').select('id, name, phone, email, address, city, platform, page'),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
-                supabase.from('users').select('*'),
+                // Explicit columns — never the pin. PINs are verified server-side
+                // (check_pin RPC) and must not be downloaded to the browser.
+                supabase.from('users').select('id, name, email, role_id, created_at, base_salary, daily_target, weekly_target, monthly_target'),
                 supabase.from('restocks').select('*').order('date', { ascending: false }).limit(50),
                 supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
                 supabase.from('telegram_notifications').select('*'),
@@ -419,19 +476,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 setTransactions(transactionsResult.data);
             }
 
-            // Users
+            // Users (PINs deliberately never leave the database — see login()).
             if (usersResult.data) {
                 setUsers(usersResult.data.map((u: any) => ({
                     id: u.id,
                     name: u.name,
                     email: u.email,
                     roleId: u.role_id, // Map snake_case to camelCase
-                    pin: u.pin,
                     baseSalary: Number(u.base_salary) || 0,
                     dailyTarget: Number(u.daily_target) || 0,
                     weeklyTarget: Number(u.weekly_target) || 0,
                     monthlyTarget: Number(u.monthly_target) || 0
                 })));
+
+                // Revalidate the persisted session against the fresh users table:
+                // a deleted account is logged out; a renamed or demoted/promoted
+                // one gets its fresh role immediately instead of keeping the old
+                // localStorage snapshot's access forever. Only runs when the
+                // users fetch succeeded, so a network blip can't log anyone out.
+                // Reads the LIVE session (ref, not this closure) so a refresh
+                // spanning a logout or user switch acts on the current user.
+                const liveUser = currentUserRef.current;
+                if (liveUser) {
+                    const freshSelf = usersResult.data.find((u: any) => u.id === liveUser.id);
+                    if (!freshSelf) {
+                        setCurrentUser(null);
+                        localStorage.removeItem('currentUser');
+                    } else if (
+                        freshSelf.role_id !== liveUser.roleId ||
+                        freshSelf.name !== liveUser.name ||
+                        (freshSelf.email || '') !== (liveUser.email || '')
+                    ) {
+                        const updatedSelf = { ...liveUser, roleId: freshSelf.role_id, name: freshSelf.name, email: freshSelf.email };
+                        setCurrentUser(updatedSelf);
+                        localStorage.setItem('currentUser', JSON.stringify(updatedSelf));
+                    }
+                }
             }
 
             // Config
@@ -663,6 +743,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    // Prepend a new order id to config.salesOrder WITHOUT clobbering the rest
+    // of the config. Order creation used to upsert the entire in-memory blob,
+    // so a terminal holding a stale config (roles, blocklist, settings edited
+    // on another machine) silently reverted those edits with every new order.
+    // Read-merge-write scopes the change to salesOrder alone.
+    const prependToSalesOrder = async (saleId: string) => {
+        setConfig(prev => ({ ...prev, salesOrder: [saleId, ...(prev.salesOrder || [])] }));
+        try {
+            const { data: cfgRow, error: readErr } = await supabase.from('app_config').select('data').eq('id', 1).single();
+            // NEVER write after a failed/empty read: merging into {} would
+            // replace the whole config blob with just salesOrder, destroying
+            // roles, the scammer blocklist, shipping settings, everything.
+            // The manual row position for one order is not worth that risk.
+            if (readErr || !cfgRow?.data || typeof cfgRow.data !== 'object') {
+                console.error('Skipped persisting sales order position (config read failed):', readErr?.message || 'no config data');
+                return;
+            }
+            const freshData = cfgRow.data as any;
+            const merged = { ...freshData, salesOrder: [saleId, ...(freshData.salesOrder || [])] };
+            const { error } = await supabase.from('app_config').upsert({ id: 1, data: merged });
+            if (error) console.error('Failed to persist sales order position:', error);
+        } catch (e) {
+            console.error('Failed to persist sales order position:', e);
+        }
+    };
+
     const addShippingCompany = (name: string) => {
         if (!config.shippingCompanies.includes(name)) {
             updateConfig({ ...config, shippingCompanies: [...config.shippingCompanies, name] });
@@ -737,9 +843,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateConfig({ ...config, cities: config.cities.filter(c => c !== name) });
     };
 
+    // All blocklist matching is by normalized (digits-only) phone — entries and
+    // order snapshots carry mixed formats, and exact-string comparison let
+    // blocked customers slip through.
     const addBlockedCustomer = async (customer: BlockedCustomer) => {
         const existing = config.blockedCustomers || [];
-        if (existing.some(c => c.phone === customer.phone)) return; // already blocked
+        if (existing.some(c => normalizePhone(c.phone) === normalizePhone(customer.phone))) return; // already blocked
         try {
             await updateConfig({ ...config, blockedCustomers: [...existing, customer] });
         } catch (error: any) {
@@ -749,7 +858,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const addBlockedCustomers = async (customers: BlockedCustomer[]) => {
         const existing = config.blockedCustomers || [];
-        const newCustomers = customers.filter(c => !existing.some(e => e.phone === c.phone));
+        const seen = new Set(existing.map(e => normalizePhone(e.phone)));
+        const newCustomers: BlockedCustomer[] = [];
+        for (const c of customers) {
+            const key = normalizePhone(c.phone);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            newCustomers.push(c);
+        }
         if (newCustomers.length === 0) return;
         try {
             await updateConfig({ ...config, blockedCustomers: [...existing, ...newCustomers] });
@@ -759,15 +875,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const removeBlockedCustomer = (phone: string) => {
+        const key = normalizePhone(phone);
         const existing = config.blockedCustomers || [];
-        updateConfig({ ...config, blockedCustomers: existing.filter(c => c.phone !== phone) });
+        updateConfig({ ...config, blockedCustomers: existing.filter(c => normalizePhone(c.phone) !== key) });
+    };
+
+    // Batched unblock in ONE config write: looping removeBlockedCustomer built
+    // every removal from the same stale array, so only the last call survived.
+    const removeBlockedCustomers = (phones: string[]) => {
+        const keys = new Set(phones.map(normalizePhone));
+        const existing = config.blockedCustomers || [];
+        updateConfig({ ...config, blockedCustomers: existing.filter(c => !keys.has(normalizePhone(c.phone))) });
     };
 
     const updateBlockedCustomer = (phone: string, updates: Partial<BlockedCustomer>) => {
+        const key = normalizePhone(phone);
         const existing = config.blockedCustomers || [];
         updateConfig({
             ...config,
-            blockedCustomers: existing.map(c => c.phone === phone ? { ...c, ...updates } : c)
+            blockedCustomers: existing.map(c => normalizePhone(c.phone) === key ? { ...c, ...updates } : c)
         });
     };
 
@@ -1033,9 +1159,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
         */
 
-        // Update salesOrder config
-        const currentSalesOrder = config.salesOrder || [];
-        updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
+        // Update salesOrder config (scoped write — see prependToSalesOrder)
+        prependToSalesOrder(newSale.id);
 
         return newSale;
     };
@@ -1146,7 +1271,29 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const id = generateUUID();
             const date = new Date().toISOString();
 
-            // 1. Insert restock record
+            // 1. Fetch current product (stock from the DB — the local closure is
+            // stale inside the PO-receive loop and after other edits).
+            const product = products.find(p => p.id === productId);
+            if (!product) throw new Error("Product not found");
+            const { data: dbProduct, error: readError } = await supabase.from('products').select('stock').eq('id', productId).single();
+            if (readError) throw readError;
+            const newStock = (dbProduct ? Number(dbProduct.stock) : product.stock) + quantity;
+
+            // 2. Insert into inventory_items
+            const inventoryItems = Array.from({ length: quantity }).map(() => ({
+                product_id: productId,
+                cost_of_purchase: cost || product.purchaseCost || 0,
+                status: 'in_stock'
+            }));
+            const { error: invError } = await supabase.from('inventory_items').insert(inventoryItems);
+            if (invError) throw invError;
+
+            // 3. Update product stock in DB
+            const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
+            if (productError) throw productError;
+
+            // 4. Insert restock record — AFTER the stock update, so a failure
+            // earlier never leaves history for stock that was never added.
             const { error: restockError } = await supabase.from('restocks').insert([{
                 id,
                 product_id: productId,
@@ -1156,29 +1303,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 added_by: currentUser?.name || 'Unknown',
                 note: note || ''
             }]);
-
             if (restockError) throw restockError;
 
-            // 2. Fetch current product
-            const product = products.find(p => p.id === productId);
-            if (!product) throw new Error("Product not found");
-
-            // 2.5 Insert into inventory_items
-            const inventoryItems = Array.from({ length: quantity }).map(() => ({
-                product_id: productId,
-                cost_of_purchase: cost || product.purchaseCost || 0,
-                status: 'in_stock'
-            }));
-            const { error: invError } = await supabase.from('inventory_items').insert(inventoryItems);
-            if (invError) throw invError;
-
-            const newStock = product.stock + quantity;
-
-            // 3. Update product stock in DB
-            const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
-            if (productError) throw productError;
-
-            // 3.5 Log to stock_movements
+            // 4.5 Log to stock_movements
             const { error: movementError } = await supabase.from('stock_movements').insert({
                 product_id: productId,
                 product_name: product.name,
@@ -1193,24 +1320,33 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             });
             if (movementError) console.error('Failed to log stock movement:', movementError);
 
-            // 4. Update local state
-            setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
+            // 5. Update local state (functional form — loops must compose)
+            setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock } : p));
             setProductsUpdatedAt(Date.now());
         } catch (error: any) {
+            // Rethrow so callers can react — the PO receive flow must NOT mark a
+            // PO 'Received' (and toast success) when the stock was never added.
             console.error("Error adding stock:", error);
-            alert(`Failed to add stock: ${error.message}`);
+            throw error;
         } finally {
             setIsLoading(false);
         }
     };
 
+    // NOTE: deliberately does NOT toggle the global isLoading — App renders a
+    // full-screen loader on that flag, and this runs from inline cell edits and
+    // bulk loops where blanking the app (and losing page state) is wrong.
     const adjustStock = async (productId: string, newStock: number, reason: string) => {
-        setIsLoading(true);
         try {
             const product = products.find(p => p.id === productId);
             if (!product) throw new Error("Product not found");
 
-            const currentStock = product.stock;
+            // Read the current stock from the DB, not the render closure — in a
+            // bulk loop or right after another edit the closure value is stale
+            // and would produce a wrong ledger delta.
+            const { data: dbProduct, error: readError } = await supabase.from('products').select('stock').eq('id', productId).single();
+            if (readError) throw readError;
+            const currentStock = dbProduct ? Number(dbProduct.stock) : product.stock;
             const difference = newStock - currentStock;
 
             if (difference === 0) return; // No change
@@ -1239,14 +1375,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // 3. (Optional) If positive adjustment, we could add to inventory_items, 
             // but for a generic adjustment, we'll just adjust the total stock for now.
 
-            // 4. Update local state
-            setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
+            // 4. Update local state — functional form, so concurrent/looped
+            // adjustments and a preceding updateProduct compose instead of the
+            // last call clobbering the others with a stale array.
+            setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock } : p));
             setProductsUpdatedAt(Date.now());
         } catch (error: any) {
             console.error("Error adjusting stock:", error);
             alert(`Failed to adjust stock: ${error.message}`);
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -1380,9 +1516,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
         */
 
-        // Update salesOrder config
-        const currentSalesOrder = config.salesOrder || [];
-        updateConfig({ ...config, salesOrder: [newSale.id, ...currentSalesOrder] });
+        // Update salesOrder config (scoped write — see prependToSalesOrder)
+        prependToSalesOrder(newSale.id);
         setSalesUpdatedAt(Date.now());
         dispatchActivity({ action: 'order_created', description: `New order #${newSale.id.slice(0, 8)} created — $${newSale.total}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: newSale.id, total: newSale.total } });
         return newSale;
@@ -1725,17 +1860,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         ) {
             const custName = existingOrder.customer?.name || 'Customer';
             // Deposit orders logged only the remainder as sales income — match that too.
+            // Zero amounts are excluded: real income rows are always > 0 (the paid
+            // transition never inserts $0 rows), and matching amount.eq.0 could
+            // only ever hit an unrelated row of the same customer.
             const dep = existingOrder.depositAmount || 0;
             const amountMatches = [existingOrder.amountReceived || 0, existingOrder.total];
             if (dep > 0) amountMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - dep), Math.max(0, existingOrder.total - dep));
-            try {
+            const positiveMatches = amountMatches.filter(a => a > 0);
+            if (positiveMatches.length > 0) try {
                 const { data: paidTxns } = await supabase.from('transactions')
                     .select('id')
                     .eq('type', 'Income')
                     // Also match the pre-rename category so older rows still clean up.
                     .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
                     .eq('description', custName)
-                    .or(amountMatches.map(a => `amount.eq.${a}`).join(','))
+                    .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
                 if (paidTxns && paidTxns.length > 0) {
                     await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
@@ -1761,13 +1900,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const renameDep = existingOrder.depositAmount || 0;
             const renameMatches = [existingOrder.amountReceived || 0, existingOrder.total];
             if (renameDep > 0) renameMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - renameDep), Math.max(0, existingOrder.total - renameDep));
-            try {
+            // Zero amounts excluded — see the leaving-Paid cleanup above.
+            const positiveRenameMatches = renameMatches.filter(a => a > 0);
+            if (positiveRenameMatches.length > 0) try {
                 const { data: rowToRename } = await supabase.from('transactions')
                     .select('id')
                     .eq('type', 'Income')
                     .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
                     .eq('description', oldName)
-                    .or(renameMatches.map(a => `amount.eq.${a}`).join(','))
+                    .or(positiveRenameMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
                 if (rowToRename && rowToRename.length > 0) {
                     await supabase.from('transactions').update({ description: newName }).eq('id', rowToRename[0].id);
@@ -1839,36 +1980,41 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             const shippingCoToRecord = updates.shipping?.company || existingOrder.shipping?.company || null;
 
-            const newTransaction = {
-                id: transactionId,
-                date: normalizedDate,
-                type: 'Income' as const,
-                category: 'លក់រាយ',
-                amount: amountToRecord || 0,
-                description: customerName,
-                addedBy: currentUser?.name || 'System',
-                shipping_co: shippingCoToRecord,
-                // The Pay By chosen in the settle modal (falls back to the order's method).
-                pay_by: updates.paymentMethod || existingOrder.paymentMethod || null
-            };
+            // Nothing to book when the deposit already covered everything —
+            // inserting a $0 row would only clutter Income & Expense (and could
+            // be matched by later amount.eq.0 lookups).
+            if (amountToRecord > 0) {
+                const newTransaction = {
+                    id: transactionId,
+                    date: normalizedDate,
+                    type: 'Income' as const,
+                    category: 'លក់រាយ',
+                    amount: amountToRecord,
+                    description: customerName,
+                    addedBy: currentUser?.name || 'System',
+                    shipping_co: shippingCoToRecord,
+                    // The Pay By chosen in the settle modal (falls back to the order's method).
+                    pay_by: updates.paymentMethod || existingOrder.paymentMethod || null
+                };
 
-            // Optimistic update
-            setTransactions(prev => [newTransaction, ...prev]);
+                // Optimistic update
+                setTransactions(prev => [newTransaction, ...prev]);
 
-            // Async insert
-            supabase.from('transactions').insert([{
-                id: newTransaction.id,
-                date: newTransaction.date,
-                type: newTransaction.type,
-                category: newTransaction.category,
-                amount: newTransaction.amount,
-                description: newTransaction.description,
-                added_by: newTransaction.addedBy,
-                shipping_co: newTransaction.shipping_co,
-                pay_by: newTransaction.pay_by
-            }]).then(({ error }) => {
-                if (error) console.error('Failed to create transaction for updated order:', error);
-            });
+                // Async insert
+                supabase.from('transactions').insert([{
+                    id: newTransaction.id,
+                    date: newTransaction.date,
+                    type: newTransaction.type,
+                    category: newTransaction.category,
+                    amount: newTransaction.amount,
+                    description: newTransaction.description,
+                    added_by: newTransaction.addedBy,
+                    shipping_co: newTransaction.shipping_co,
+                    pay_by: newTransaction.pay_by
+                }]).then(({ error }) => {
+                    if (error) console.error('Failed to create transaction for updated order:', error);
+                });
+            }
         } else if (
             updates.settleDate &&
             existingOrder &&
@@ -1905,32 +2051,38 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const amountToRecord = Math.max(0, (grossForSync || 0) - depositHeld);
             const syncMatches = [existingOrder.amountReceived || 0, existingOrder.total];
             if (depositHeld > 0) syncMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - depositHeld), Math.max(0, existingOrder.total - depositHeld));
+            // Zero amounts excluded — real income rows are always > 0, and a
+            // deposit-covered order (no income row by design) must not have its
+            // lookup land on an unrelated row of the same customer.
+            const positiveSyncMatches = syncMatches.filter(a => a > 0);
             const rawDate = updates.settleDate;
             const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDate).toISOString() : rawDate;
-            try {
+            if (positiveSyncMatches.length > 0) try {
                 const { data: txns } = await supabase.from('transactions')
                     .select('id, amount')
                     .eq('type', 'Income')
                     // Also match the pre-rename category so older rows still sync.
                     .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
                     .in('description', lookupNames)
-                    .or(syncMatches.map(a => `amount.eq.${a}`).join(','))
+                    .or(positiveSyncMatches.map(a => `amount.eq.${a}`).join(','))
                     .limit(1);
                 if (txns && txns.length > 0) {
                     await supabase.from('transactions')
                         .update({ date: normalizedDate, amount: amountToRecord || txns[0].amount, description: customerName })
                         .eq('id', txns[0].id);
                     setTransactions(prev => prev.map(t => t.id === txns[0].id ? { ...t, date: normalizedDate, amount: amountToRecord || t.amount, description: customerName } : t));
-                } else if (settleDayChanged) {
-                    // Heal a missing row only on a real settle-day change — an
-                    // amount-only correction that fails to find its row must not
-                    // insert a fresh one (that would risk duplicate revenue).
+                } else if (settleDayChanged && amountToRecord > 0) {
+                    // Heal a missing row only on a real settle-day change AND when
+                    // there is actual income to book — a deposit-covered order has
+                    // no income row by design, and an amount-only correction that
+                    // fails to find its row must not insert a fresh one (that
+                    // would risk duplicate revenue).
                     const healed = {
                         id: generateUUID(),
                         date: normalizedDate,
                         type: 'Income' as const,
                         category: 'លក់រាយ',
-                        amount: amountToRecord || 0,
+                        amount: amountToRecord,
                         description: customerName,
                         addedBy: currentUser?.name || 'System',
                         shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null,
@@ -1953,14 +2105,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             } catch (e) {
                 console.error('Failed to sync income transaction with settle date:', e);
             }
-        } else if (updates.paymentStatus === 'Deposit' && existingOrder && existingOrder.paymentStatus !== 'Deposit') {
+        } else if (updates.paymentStatus === 'Deposit' && existingOrder) {
             // Deposit received: log it as income right away (category កក់ប្រាក់).
             // Deposits are always kept — cancelling the order later never removes
             // this entry (the cancel cleanup only targets 'លក់រាយ').
-            const depAmount = Number(updates.depositAmount) || 0;
+            // Fires on ANY save into/within Deposit and logs only the POSITIVE
+            // DELTA: a first deposit logs its full amount (prev = 0), raising an
+            // existing deposit ($30 -> $50) logs the extra $20, and re-saving an
+            // unchanged deposit logs nothing (delta 0 — no duplicate rows).
+            const prevDep = existingOrder.paymentStatus === 'Deposit' ? (existingOrder.depositAmount || 0) : 0;
+            const depAmount = Math.max(0, (Number(updates.depositAmount) || 0) - prevDep);
             if (depAmount > 0) {
                 const custName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
-                const rawDepDate = updates.depositDate || new Date().toISOString();
+                // A top-up delta is money received TODAY — the edit forms resend
+                // the original deposit date, and backdating the delta row would
+                // silently rewrite a past day's income totals. Only a first
+                // deposit honors the passed date.
+                const rawDepDate = (prevDep > 0 ? null : updates.depositDate) || new Date().toISOString();
                 const depDateIso = rawDepDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDepDate).toISOString() : rawDepDate;
                 const depTxn = {
                     id: generateUUID(),
@@ -2269,7 +2430,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     last_edited_at: o.last_edited_at, last_edited_by: o.last_edited_by,
                     created_at: o.created_at, daily_number: o.daily_number
                 }));
-                const { error: insOrdErr } = await supabase.from('deleted_orders').insert(archiveOrders);
+                // Deposit fields must survive delete+restore, or settling a
+                // restored deposit order double-counts revenue. Retry without
+                // them if add_deposit_to_deleted_orders.sql hasn't run yet.
+                const withDeposits = archiveOrders.map((a, idx) => ({
+                    ...a,
+                    deposit_amount: ordersToDelete[idx].deposit_amount || 0,
+                    deposit_date: ordersToDelete[idx].deposit_date || null,
+                    deposit_method: ordersToDelete[idx].deposit_method || null
+                }));
+                let { error: insOrdErr } = await supabase.from('deleted_orders').insert(withDeposits);
+                if (insOrdErr) {
+                    ({ error: insOrdErr } = await supabase.from('deleted_orders').insert(archiveOrders));
+                }
                 if (insOrdErr) throw insOrdErr;
             }
             if (allItemsToDelete.length > 0) {
@@ -2295,6 +2468,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         if (originProduct) {
                             await supabase.from('products').update({ stock: originProduct.stock + item.quantity }).eq('id', item.product_id);
                         }
+                    }
+
+                    // Keep the ledger and FIFO pool consistent with the restock:
+                    // return this order's sold inventory items to the pool (done
+                    // BEFORE the sales rows are deleted, while sale_id still
+                    // links them), and remove the NEWEST out-movement generation
+                    // — exactly the shipment whose stock was just restored;
+                    // earlier trips (already balanced by return/restock rows)
+                    // stay on the ledger.
+                    await supabase.from('inventory_items')
+                        .update({ status: 'in_stock', sale_id: null })
+                        .eq('sale_id', order.id)
+                        .eq('status', 'sold');
+                    const { data: outRows } = await supabase.from('stock_movements')
+                        .select('id, created_at')
+                        .eq('reference_id', order.id)
+                        .eq('type', 'out');
+                    if (outRows && outRows.length > 0) {
+                        const newest = outRows.reduce((m, r: any) => (r.created_at > m ? r.created_at : m), outRows[0].created_at);
+                        const idsToDelete = outRows.filter((r: any) => r.created_at === newest).map((r: any) => r.id);
+                        await supabase.from('stock_movements').delete().in('id', idsToDelete);
                     }
                 }
             }
@@ -2351,7 +2545,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (insItemErr) throw insItemErr;
             }
 
-            // Deduct stock if it was previously restocked upon deletion
+            // Deduct stock if it was previously restocked upon deletion — and
+            // rebuild what the deletion removed from the ledger/FIFO pool, so
+            // stock, stock_movements, and inventory_items stay in step.
             for (const order of ordersToRestore) {
                 const status = order.shipping_status || 'Pending';
                 if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
@@ -2361,6 +2557,47 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         if (originProduct) {
                             await supabase.from('products').update({ stock: Math.max(0, originProduct.stock - item.quantity) }).eq('id', item.product_id);
                         }
+
+                        // Re-mark FIFO items as sold for this order (deletion
+                        // returned them to the pool).
+                        const { data: invItems } = await supabase.from('inventory_items')
+                            .select('id')
+                            .eq('product_id', item.product_id)
+                            .eq('status', 'in_stock')
+                            .order('created_at', { ascending: true })
+                            .limit(item.quantity);
+                        if (invItems && invItems.length > 0) {
+                            await supabase.from('inventory_items')
+                                .update({ status: 'sold', sale_id: order.id })
+                                .in('id', invItems.map((i: any) => i.id));
+                        }
+                    }
+
+                    // Re-log the out movements the deletion removed (dated today
+                    // — the original ship date left with the deleted rows).
+                    const customerName = order.customer_snapshot?.name || '';
+                    const customerPhone = order.customer_snapshot?.phone || '';
+                    const restoredMovements = orderItems
+                        .filter(item => item.product_id)
+                        .map(item => ({
+                            product_id: item.product_id,
+                            product_name: item.name || 'Unknown',
+                            type: 'out',
+                            quantity: item.quantity,
+                            unit_price: item.price || 0,
+                            reason: 'Shipped',
+                            reference_id: order.id,
+                            source: 'Order Shipped',
+                            shipping_co: order.shipping_company || '',
+                            note: `Order #${String(order.id).slice(0, 8)} — restored from deleted`,
+                            movement_date: getLocalYYYYMMDD(),
+                            created_by: currentUser?.id || 'unknown',
+                            customer_name: customerName,
+                            customer_phone: customerPhone
+                        }));
+                    if (restoredMovements.length > 0) {
+                        const { error: moveErr } = await supabase.from('stock_movements').insert(restoredMovements);
+                        if (moveErr) console.error('Failed to re-log movements for restored order:', moveErr);
                     }
                 }
             }
@@ -2717,6 +2954,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }, ...prev]);
             }
 
+            // Return the shipment's FIFO items to the pool — shipping marked them
+            // status 'sold' with this sale_id, and without this flip every
+            // return/restock cycle permanently drains in_stock rows while
+            // products.stock recovers. The status guard keeps re-runs idempotent.
+            await supabase.from('inventory_items')
+                .update({ status: 'in_stock', sale_id: null })
+                .eq('sale_id', orderId)
+                .eq('status', 'sold');
+
             if (restockRecords.length > 0) {
                 const { error: insertErr } = await supabase.from('restocks').insert(restockRecords);
                 if (insertErr) {
@@ -2783,6 +3029,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
 
             // 3. Update product stock in DB and Local
+            // Return the shipments' FIFO items to the pool first (shipping marked
+            // them 'sold' with these sale_ids); the status guard keeps re-runs
+            // idempotent. Without this every restock permanently drains in_stock
+            // rows while products.stock recovers.
+            await supabase.from('inventory_items')
+                .update({ status: 'in_stock', sale_id: null })
+                .in('sale_id', orderIds)
+                .eq('status', 'sold');
+
             const now = new Date().toISOString();
             const restockRecords: any[] = [];
             const localProductUpdates: Record<string, number> = {};
@@ -3064,7 +3319,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const addUser = async (userData: Omit<User, 'id'>) => {
         const newUser: User = { ...userData, id: Date.now().toString() + Math.random().toString(36).substring(2) };
 
-        const { data, error } = await supabase.from('users').insert({
+        // No .select() on the insert: it would request RETURNING * — and once
+        // secure_pin_check.sql revokes read access on the pin column, the whole
+        // INSERT would be rejected. Nothing needs the returned row anyway.
+        const { error } = await supabase.from('users').insert({
             id: newUser.id,
             name: newUser.name,
             email: newUser.email,
@@ -3074,15 +3332,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             daily_target: newUser.dailyTarget || 0,
             weekly_target: newUser.weeklyTarget || 0,
             monthly_target: newUser.monthlyTarget || 0
-        }).select();
+        });
 
         if (error) {
             console.error('Failed to add user to database:', error);
             throw new Error('Failed to add user: ' + error.message);
         }
 
-        console.log('User added to database:', data);
-        setUsers(prev => [...prev, newUser]);
+        setUsers(prev => [...prev, { ...newUser, pin: undefined }]);
     };
 
     const updateUser = async (id: string, updates: Partial<User>) => {
@@ -3353,6 +3610,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addBlockedCustomer,
             addBlockedCustomers,
             removeBlockedCustomer,
+            removeBlockedCustomers,
             updateBlockedCustomer,
             refreshData
         }}>

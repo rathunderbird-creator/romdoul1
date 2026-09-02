@@ -199,10 +199,23 @@ const UserManagement: React.FC = () => {
             showToast('A user with this email already exists', 'error');
             return;
         }
+        // A new account needs a password up front: PINs can't be read back
+        // anymore, so an account created without one would look normal in the
+        // list ('••••') but could never log in (check_pin refuses empty PINs).
+        if (!editingUser && !(userFormData.pin || '').trim()) {
+            showToast('Please set a login password for the new user', 'error');
+            return;
+        }
 
         try {
             if (editingUser) {
-                await updateUser(editingUser.id, { ...userFormData, name, email });
+                // PINs can't be read back anymore, so the form field starts empty
+                // on edit: blank means "keep the current password" (as the
+                // placeholder says) — only a typed value changes it.
+                const { pin: pinInput, ...restForm } = userFormData;
+                const editPayload: Partial<User> = { ...restForm, name, email };
+                if (pinInput && pinInput.trim()) editPayload.pin = pinInput.trim();
+                await updateUser(editingUser.id, editPayload);
                 showToast('User updated successfully', 'success');
             } else {
                 await addUser({ ...userFormData, name, email } as Omit<User, 'id'>);
@@ -488,7 +501,8 @@ const UserManagement: React.FC = () => {
                                             <td style={{ padding: '14px 16px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)' }}>
                                                     <Lock size={14} />
-                                                    <span>{user.pin ? '••••' : 'Not Set'}</span>
+                                                    {/* PINs are never downloaded to the browser anymore. */}
+                                                    <span>••••</span>
                                                 </div>
                                             </td>
                                             <td style={{ padding: '14px 16px', textAlign: 'right' }}>
@@ -706,7 +720,7 @@ const UserManagement: React.FC = () => {
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         type={showUserPassword ? 'text' : 'password'}
-                                        value={userFormData.pin}
+                                        value={userFormData.pin || ''}
                                         onChange={e => setUserFormData({ ...userFormData, pin: e.target.value })}
                                         placeholder={editingUser ? 'Leave blank to keep current' : 'Set a login password'}
                                         style={{ width: '100%', padding: '10px 40px 10px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}

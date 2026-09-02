@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
-import { useStore } from '../context/StoreContext';
+import { useStore, normalizePhone } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
@@ -488,7 +488,7 @@ const lockedOrderMessage = (order: Sale) =>
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, addOnlineOrder } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder } = useStore();
     const [isDuplicating, setIsDuplicating] = useState(false);
 
     const filterShippingCompanies = useMemo(() => {
@@ -3358,7 +3358,7 @@ const Orders: React.FC = () => {
                                                             case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
                                                             case 'customer': {
                                                                 const orderPhone = String(order.customer?.phone || '').trim();
-                                                                const isScammer = blockedCustomers.some(bc => String(bc.phone || '').trim() === orderPhone);
+                                                                const isScammer = blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(orderPhone));
                                                                 return (
                                                                     <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -3720,20 +3720,23 @@ const Orders: React.FC = () => {
                                 {canManage && (Array.from(selectedIds).some(id => {
                                     const order = filteredOrders.find(o => o.id === id);
                                     const phone = order?.customer?.phone;
-                                    return phone && blockedCustomers.some(bc => String(bc.phone || '') === String(phone).trim());
+                                    return phone && blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(phone));
                                 }) ? (
                                     <button type="button" onClick={(e) => {
                                         e.preventDefault();
-                                        let count = 0;
+                                        // One batched call: looping the single remove rebuilt
+                                        // the list from stale state each time, so only the
+                                        // last phone actually stayed unblocked.
+                                        const phonesToUnblock: string[] = [];
                                         selectedIds.forEach(id => {
                                             const order = filteredOrders.find(o => o.id === id);
                                             const phone = order?.customer?.phone;
-                                            if (phone && blockedCustomers.some(bc => String(bc.phone || '') === String(phone).trim())) {
-                                                removeBlockedCustomer(String(phone).trim());
-                                                count++;
+                                            if (phone && blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(phone))) {
+                                                phonesToUnblock.push(String(phone));
                                             }
                                         });
-                                        showToast(`Unblocked ${count} customer(s)`, 'success');
+                                        removeBlockedCustomers(phonesToUnblock);
+                                        showToast(`Unblocked ${phonesToUnblock.length} customer(s)`, 'success');
                                         setSelectedIds(new Set());
                                     }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#ECFCCB', color: '#65A30D', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                                         <ShieldCheck size={18} /> Unblock
@@ -3995,7 +3998,7 @@ const Orders: React.FC = () => {
                                     >
                                         <ExternalLink size={16} /> Open
                                     </button>
-                                    {selectedOrder.customer?.phone && blockedCustomers.some(bc => String(bc.phone || '') === String(selectedOrder.customer!.phone || '').trim()) ? (
+                                    {selectedOrder.customer?.phone && blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(selectedOrder.customer!.phone)) ? (
                                         <button
                                             onClick={() => {
                                                 removeBlockedCustomer(String(selectedOrder.customer!.phone || '').trim());
@@ -4204,12 +4207,17 @@ const Orders: React.FC = () => {
                                     }
                                 } else {
                                     const customersToBlock: any[] = [];
+                                    const seenPhones = new Set<string>();
                                     selectedIds.forEach(id => {
-                                        const order = sales.find(s => s.id === id);
-                                        if (order?.customer?.phone) {
+                                        // The table renders serverOrders; the store's sales cache only
+                                        // holds a recent page, so older selected orders miss it.
+                                        const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
+                                        const phone = String(order?.customer?.phone || '').trim();
+                                        if (phone && !seenPhones.has(phone)) {
+                                            seenPhones.add(phone);
                                             customersToBlock.push({
-                                                phone: String(order.customer.phone || '').trim(),
-                                                name: order.customer.name || 'Unknown',
+                                                phone,
+                                                name: order!.customer!.name || 'Unknown',
                                                 reason: scammerReason,
                                                 blockedAt: new Date().toISOString(),
                                                 blockedBy: currentUser?.name
@@ -4219,6 +4227,8 @@ const Orders: React.FC = () => {
                                     if (customersToBlock.length > 0) {
                                         await addBlockedCustomers(customersToBlock);
                                         showToast(`${customersToBlock.length} customer(s) marked as scammers`, 'success');
+                                    } else {
+                                        showToast('No customer phone found on the selected orders — nobody was blocked', 'error');
                                     }
                                 }
                                 setIsScammerModalOpen(false);

@@ -14,9 +14,10 @@ export const useAttendance = () => {
         try {
             // First select all staff (users)
             // Wait, we can get active users where role is not something we want to ignore, but let's just get all users for now.
+            // Explicit columns — never the pin (see secure_pin_check.sql).
             const { data: usersData, error: usersError } = await supabase
                 .from('users')
-                .select('*')
+                .select('id, name, email, role_id')
                 .order('name', { ascending: true });
 
             if (usersError) throw usersError;
@@ -25,8 +26,7 @@ export const useAttendance = () => {
                 id: u.id,
                 name: u.name,
                 email: u.email,
-                roleId: u.role_id,
-                pin: u.pin
+                roleId: u.role_id
             })) as User[];
             
             setStaff(mappedStaff);

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -80,15 +80,22 @@ const LoadingFallback = () => (
 const ProtectedApp = () => {
   const { currentUser, isLoading, refreshData } = useStore();
 
+  // refreshData is recreated on every store render; depending on it directly
+  // reset the 20-minute countdown on every state change, so on an actively
+  // used terminal the silent refresh effectively never fired. The ref keeps
+  // the interval alive across renders while always calling the latest fn.
+  const refreshRef = useRef(refreshData);
+  refreshRef.current = refreshData;
+  const isLoggedIn = !!currentUser;
   useEffect(() => {
-    if (currentUser) {
+    if (isLoggedIn) {
       // Auto refresh every 20 minutes
       const interval = setInterval(() => {
-        refreshData(true).catch(console.error);
+        refreshRef.current(true).catch(console.error);
       }, 20 * 60 * 1000);
       return () => clearInterval(interval);
     }
-  }, [currentUser, refreshData]);
+  }, [isLoggedIn]);
 
   if (isLoading) {
     return <LoadingFallback />;

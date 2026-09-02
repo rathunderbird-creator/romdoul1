@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Modal from './Modal';
 import DateRangePicker from './DateRangePicker';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
 import { Truck, Package, CheckCircle, Clock, XCircle, Loader2, Printer, RotateCcw, FileText } from 'lucide-react';
 import { getShippingCoColor } from '../utils/orderUtils';
 
@@ -32,23 +33,21 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
   const fetchReport = useCallback(async (range: { start: string; end: string }) => {
     setIsLoading(true);
     try {
-      let query = supabase.from('sales').select('total, shipping_company, shipping_status, shipping_cost, shipping_staff_name, date');
-
-      if (range.start) {
-        const start = new Date(range.start);
-        start.setHours(0, 0, 0, 0);
-        query = query.gte('date', start.toISOString());
-      }
-      if (range.end) {
-        const end = new Date(range.end);
-        end.setHours(23, 59, 59, 999);
-        query = query.lte('date', end.toISOString());
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const rows = data || [];
+      // Chunk-fetched so a wide range isn't silently truncated at the API cap.
+      const rows = await fetchAll((from, to) => {
+        let query = supabase.from('sales').select('id, total, shipping_company, shipping_status, shipping_cost, shipping_staff_name, date');
+        if (range.start) {
+          const start = new Date(range.start);
+          start.setHours(0, 0, 0, 0);
+          query = query.gte('date', start.toISOString());
+        }
+        if (range.end) {
+          const end = new Date(range.end);
+          end.setHours(23, 59, 59, 999);
+          query = query.lte('date', end.toISOString());
+        }
+        return query.order('id', { ascending: true }).range(from, to);
+      });
       const totalOrders = rows.length;
       const totalShippingCost = rows.reduce((s, r) => s + (r.shipping_cost || 0), 0);
 

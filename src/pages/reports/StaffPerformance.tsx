@@ -6,6 +6,7 @@ import { Users, Award, Target, Save, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
+import { fetchAll } from '../../utils/fetchAll';
 
 const StaffPerformance: React.FC = () => {
     const { users, updateUser, salesmen, currentUser } = useStore();
@@ -34,16 +35,19 @@ const StaffPerformance: React.FC = () => {
             try {
                 const now = endDate ? new Date(endDate) : new Date();
                 const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                
-                const { data, error } = await supabase
-                    .from('sales')
-                    .select('total, date, salesman, payment_status')
-                    .eq('payment_status', 'Paid')
-                    .gte('date', startOfMonth.toISOString())
-                    .lte('date', new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString());
 
-                if (error) throw error;
-                setSalesForTargets(data || []);
+                // Chunk-fetched so a >1000-order month isn't silently truncated.
+                const data = await fetchAll((from, to) =>
+                    supabase
+                        .from('sales')
+                        .select('id, total, date, salesman, payment_status')
+                        .eq('payment_status', 'Paid')
+                        .gte('date', startOfMonth.toISOString())
+                        .lte('date', new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString())
+                        .order('id', { ascending: true })
+                        .range(from, to)
+                );
+                setSalesForTargets(data);
             } catch (err) {
                 console.error("Failed to fetch sales for targets:", err);
             } finally {

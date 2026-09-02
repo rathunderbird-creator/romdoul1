@@ -71,6 +71,33 @@ export const useWholesale = () => {
         createdBy?: string
     ) => {
         try {
+            // Availability check BEFORE anything is written: the deduction below
+            // clamps at 0 (stock 4 - order 10 = 0), but cancel/delete restores the
+            // FULL ordered quantity — an oversell would mint phantom stock. Sum
+            // quantities per product so multiple lines are checked together.
+            const neededByProduct = new Map<string, { qty: number; name: string }>();
+            for (const i of items) {
+                if (!i.product_id || !i.quantity) continue;
+                const cur = neededByProduct.get(i.product_id) || { qty: 0, name: i.product_name || 'product' };
+                cur.qty += i.quantity;
+                neededByProduct.set(i.product_id, cur);
+            }
+            for (const [productId, need] of neededByProduct) {
+                const { data: prod } = await supabase.from('products').select('stock, name').eq('id', productId).single();
+                const available = prod?.stock || 0;
+                if (need.qty > available) {
+                    throw new Error(`Insufficient stock for ${prod?.name || need.name}: have ${available}, need ${need.qty}`);
+                }
+                if (order.warehouse_id) {
+                    const { data: ws } = await supabase.from('warehouse_stock')
+                        .select('quantity').eq('warehouse_id', order.warehouse_id).eq('product_id', productId).maybeSingle();
+                    const whAvailable = ws?.quantity || 0;
+                    if (need.qty > whAvailable) {
+                        throw new Error(`Insufficient warehouse stock for ${prod?.name || need.name}: have ${whAvailable}, need ${need.qty}`);
+                    }
+                }
+            }
+
             const total = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
             const { data: inserted, error: oErr } = await supabase.from('wholesale_orders').insert([{
                 invoice_number: order.invoice_number || null,
@@ -97,7 +124,12 @@ export const useWholesale = () => {
                 unit_price: i.unit_price || 0
             }));
             const { error: iErr } = await supabase.from('wholesale_order_items').insert(itemsPayload);
-            if (iErr) throw iErr;
+            if (iErr) {
+                // Don't leave an orphan order with no items (savePurchaseOrder
+                // does the same); a retry would otherwise duplicate the order.
+                await supabase.from('wholesale_orders').delete().eq('id', orderId);
+                throw iErr;
+            }
 
             // Deduct stock (leaves the company).
             for (const i of items) {
@@ -163,8 +195,19 @@ export const useWholesale = () => {
                 // Remove the stock-out movements logged at creation.
                 await supabase.from('stock_movements').delete().eq('reference_id', order.id).eq('type', 'out');
             }
+            // Payments cascade away with the order — capture their ids FIRST
+            // (a failed read aborts the delete), remove the order, then clean
+            // their linked Income rows. This ordering means a partial failure
+            // at worst leaves an orphaned ledger row (recoverable clutter),
+            // never a live order whose books already vanished.
+            const { data: cascadingPays, error: paysErr } = await supabase.from('customer_payments').select('id').eq('wholesale_order_id', order.id);
+            if (paysErr) throw paysErr;
             const { error } = await supabase.from('wholesale_orders').delete().eq('id', order.id);
             if (error) throw error;
+            for (const p of cascadingPays || []) {
+                const { error: txErr } = await supabase.from('transactions').delete().like('description', `%#WSP-${String(p.id).slice(0, 8)}%`);
+                if (txErr) console.error('Failed to remove income row for deleted wholesale payment:', txErr);
+            }
             showToast('Wholesale order deleted', 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {

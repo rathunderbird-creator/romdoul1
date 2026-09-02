@@ -82,6 +82,9 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
 
     const handleBackToGrid = () => {
         if (orderToEdit && onCancelEdit) {
+            // The cart is global context state and survives unmount — without this,
+            // the cancelled edit's items leak into the next "New Order".
+            clearCart();
             onCancelEdit();
         }
         setViewMode('grid');

@@ -9,6 +9,7 @@ import { DateRangePicker } from '../components';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
+import { fetchAll } from '../utils/fetchAll';
 import type { Sale } from '../types';
 
 // Canonical status ordering used by every performance section.
@@ -122,45 +123,49 @@ const Dashboard: React.FC = () => {
     const fetchDashboardSales = React.useCallback(async () => {
         setIsLoadingSales(true);
         try {
-            let invQuery = supabase.from('stock_movements').select('type, quantity');
-            if (dateRange.start) {
-                invQuery = invQuery.gte('movement_date', dateRange.start.split('T')[0]);
-            }
-            if (dateRange.end) {
-                invQuery = invQuery.lte('movement_date', dateRange.end.split('T')[0]);
-            }
-            const { data: invData } = await invQuery;
-            if (invData) {
-                const inTotal = invData.filter((d: any) => d.type === 'in').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
-                const outTotal = invData.filter((d: any) => d.type === 'out').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
-                setStockInCount(inTotal);
-                setStockOutCount(outTotal);
-            }
+            // All three queries are chunk-fetched (fetchAll) so wide ranges are
+            // never silently truncated at the API's ~1000-row cap.
+            const invData = await fetchAll((from, to) => {
+                let invQuery = supabase.from('stock_movements').select('id, type, quantity');
+                if (dateRange.start) {
+                    invQuery = invQuery.gte('movement_date', dateRange.start.split('T')[0]);
+                }
+                if (dateRange.end) {
+                    invQuery = invQuery.lte('movement_date', dateRange.end.split('T')[0]);
+                }
+                return invQuery.order('id', { ascending: true }).range(from, to);
+            });
+            const inTotal = invData.filter((d: any) => d.type === 'in').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
+            const outTotal = invData.filter((d: any) => d.type === 'out').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
+            setStockInCount(inTotal);
+            setStockOutCount(outTotal);
 
-            let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
-
-            if (dateRange.start) {
-                const start = new Date(dateRange.start);
-                start.setHours(0, 0, 0, 0);
-                query = query.gte('date', start.toISOString());
-            }
-            if (dateRange.end) {
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                query = query.lte('date', end.toISOString());
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-
-            // Global Get File pipeline, ignoring the date range.
-            const { data: gfRows } = await supabase.from('sales').select('total').eq('payment_status', 'Get File');
-            setGetFileGlobal({
-                count: (gfRows || []).length,
-                total: (gfRows || []).reduce((s: number, r: any) => s + (Number(r.total) || 0), 0)
+            const data = await fetchAll((from, to) => {
+                let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
+                if (dateRange.start) {
+                    const start = new Date(dateRange.start);
+                    start.setHours(0, 0, 0, 0);
+                    query = query.gte('date', start.toISOString());
+                }
+                if (dateRange.end) {
+                    const end = new Date(dateRange.end);
+                    end.setHours(23, 59, 59, 999);
+                    query = query.lte('date', end.toISOString());
+                }
+                return query.order('id', { ascending: true }).range(from, to);
             });
 
-            const mapped = (data || []).map(mapSaleEntity);
+            // Global Get File pipeline, ignoring the date range.
+            const gfRows = await fetchAll((from, to) =>
+                supabase.from('sales').select('id, total').eq('payment_status', 'Get File')
+                    .order('id', { ascending: true }).range(from, to)
+            );
+            setGetFileGlobal({
+                count: gfRows.length,
+                total: gfRows.reduce((s: number, r: any) => s + (Number(r.total) || 0), 0)
+            });
+
+            const mapped = data.map(mapSaleEntity);
             setFilteredSales(mapped);
 
         } catch (error) {

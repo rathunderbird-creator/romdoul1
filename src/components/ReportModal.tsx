@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Modal from './Modal';
 import DateRangePicker from './DateRangePicker';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
 import { FileText, CheckCircle, Clock, XCircle, Loader2, Printer } from 'lucide-react';
 
 interface ReportModalProps {
@@ -33,23 +34,21 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => {
   const fetchReport = useCallback(async (range: { start: string; end: string }) => {
     setIsLoading(true);
     try {
-      let query = supabase.from('sales').select('total, amount_received, payment_status, shipping_company, salesman');
-
-      if (range.start) {
-        const start = new Date(range.start);
-        start.setHours(0, 0, 0, 0);
-        query = query.gte('date', start.toISOString());
-      }
-      if (range.end) {
-        const end = new Date(range.end);
-        end.setHours(23, 59, 59, 999);
-        query = query.lte('date', end.toISOString());
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const rows = data || [];
+      // Chunk-fetched so a wide range isn't silently truncated at the API cap.
+      const rows = await fetchAll((from, to) => {
+        let query = supabase.from('sales').select('id, total, amount_received, payment_status, shipping_company, salesman');
+        if (range.start) {
+          const start = new Date(range.start);
+          start.setHours(0, 0, 0, 0);
+          query = query.gte('date', start.toISOString());
+        }
+        if (range.end) {
+          const end = new Date(range.end);
+          end.setHours(23, 59, 59, 999);
+          query = query.lte('date', end.toISOString());
+        }
+        return query.order('id', { ascending: true }).range(from, to);
+      });
       const totalOrders = rows.length;
       const totalAmount = rows.reduce((s, r) => s + (r.total || 0), 0);
       const totalReceived = rows.reduce((s, r) => s + (r.amount_received || 0), 0);

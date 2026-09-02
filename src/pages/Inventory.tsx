@@ -146,7 +146,7 @@ const InlineEditCell = ({
 const PIE_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4'];
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock, addOnlineOrder } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock, addOnlineOrder, updateOrderStatus, hasPermission } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
@@ -156,10 +156,12 @@ const Inventory: React.FC = () => {
         fetchWholesaleCustomers();
     }, [fetchWholesaleCustomers]);
 
-    // Permission Logic
-    const restrictedRoles = ['store_manager', 'salesman', 'customer_care'];
-    const canViewFinancials = !restrictedRoles.includes(currentUser?.roleId || '');
-    const canManageInventory = !restrictedRoles.includes(currentUser?.roleId || '');
+    // Permission Logic — driven by the Roles & Permissions matrix, not a
+    // hardcoded role blacklist: a custom "view-only" role must NOT get edit,
+    // delete, or stock-adjust rights just because its id isn't on a list.
+    // (hasPermission returns true for admins automatically.)
+    const canManageInventory = hasPermission('manage_inventory');
+    const canViewFinancials = hasPermission('manage_inventory') || hasPermission('view_reports');
 
     // Header effect moved below openAddModal
 
@@ -312,6 +314,11 @@ const Inventory: React.FC = () => {
 
         setIsWholesaleSubmitting(true);
         try {
+            // Stock is deducted by the Confirmed -> Shipped TRANSITION, never at
+            // creation — an order born 'Shipped'/'Delivered' would skip deduction
+            // entirely. So create it as 'Confirmed' and drive the transitions.
+            const chosenStatus = wholesaleShippingStatus as string;
+            const bornShipped = ['Shipped', 'Delivered'].includes(chosenStatus);
             const sale = {
                 customer: {
                     name: wholesaleCustomer,
@@ -333,9 +340,9 @@ const Inventory: React.FC = () => {
                 paymentMethod: wholesalePaymentMethod as any,
                 paymentStatus: wholesalePaymentStatus as any,
                 shipping: {
-                    company: '', 
+                    company: '',
                     trackingNumber: '',
-                    status: wholesaleShippingStatus as any
+                    status: (bornShipped ? 'Confirmed' : chosenStatus) as any
                 },
                 salesman: currentUser?.name || 'System',
                 customerCare: '',
@@ -345,7 +352,16 @@ const Inventory: React.FC = () => {
                 lastEditedAt: null
             };
 
-            await addOnlineOrder(sale);
+            const created = await addOnlineOrder(sale);
+            if (bornShipped && created?.id) {
+                // Runs Case 1's deduction, FIFO inventory_items flip, and the
+                // stock-out movement; Delivered is entered from Shipped, which
+                // satisfies the post-dispatch guard.
+                await updateOrderStatus(created.id, 'Shipped');
+                if (chosenStatus === 'Delivered') {
+                    await updateOrderStatus(created.id, 'Delivered');
+                }
+            }
             showToast(`Wholesale order created for ${qty}x ${wholesaleProduct.name}`, 'success');
             setWholesaleProduct(null);
             
@@ -407,10 +423,12 @@ const Inventory: React.FC = () => {
         }
     };
 
-    const handleBulkStockUpdate = (newStock: number) => {
-        Array.from(selectedIds).forEach(id => {
-            updateProduct(id, { stock: newStock });
-        });
+    const handleBulkStockUpdate = async (newStock: number) => {
+        // adjustStock (not updateProduct) so every stock change lands in the
+        // stock_movements ledger — silent edits corrupt the historical summary.
+        for (const id of Array.from(selectedIds)) {
+            await adjustStock(id, newStock, 'Bulk stock update');
+        }
         showToast(`Stock updated to ${newStock} for selected items`, 'success');
         setSelectedIds(new Set());
     };
@@ -696,7 +714,13 @@ const Inventory: React.FC = () => {
         };
 
         if (editingProduct) {
-            updateProduct(editingProduct.id, productData);
+            // Stock changes must go through the ledger — strip stock from the
+            // plain update and route any change through adjustStock instead.
+            const { stock: newStock, ...restData } = productData;
+            updateProduct(editingProduct.id, restData);
+            if (newStock !== editingProduct.stock) {
+                adjustStock(editingProduct.id, newStock, 'Edited in product form');
+            }
             showToast('Product updated successfully', 'success');
         } else {
             // Update sell price on all existing products with the same name
@@ -977,6 +1001,7 @@ const Inventory: React.FC = () => {
                                 onEdit={openEditModal}
                                 onDelete={promptDelete}
                                 onWholesale={openWholesaleModal}
+                                canManage={canManageInventory}
                             />
                         ))}
                         {paginatedProducts.length === 0 && (
@@ -1073,12 +1098,12 @@ const Inventory: React.FC = () => {
                                         />
                                     </td>
                                     <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
-                                        <InlineEditCell 
-                                            value={product.stock} 
-                                            type="stock" 
-                                            onSave={(val) => updateProduct(product.id, { stock: val })} 
-                                            isLowStock={isLowStock} 
-                                            canEdit={canManageInventory} 
+                                        <InlineEditCell
+                                            value={product.stock}
+                                            type="stock"
+                                            onSave={(val) => adjustStock(product.id, val, 'Inline stock edit')}
+                                            isLowStock={isLowStock}
+                                            canEdit={canManageInventory}
                                         /> pcs
                                     </td>
                                     {canViewFinancials && (
@@ -1103,7 +1128,7 @@ const Inventory: React.FC = () => {
                                     {canManageInventory && (
                                         <td style={{ padding: '16px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                                <button onClick={() => updateProduct(product.id, { stock: 0 })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
+                                                <button onClick={() => adjustStock(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
                                                     <AlertTriangle size={14} />
                                                 </button>
                                                 <button onClick={() => setAdjustStockProduct(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">

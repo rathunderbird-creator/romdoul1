@@ -13,6 +13,8 @@ interface MobileInventoryCardProps {
     onEdit: (product: Product) => void;
     onDelete: (id: string) => void;
     onWholesale?: (product: Product) => void;
+    /** Hides the edit/delete/wholesale actions for view-only roles. */
+    canManage?: boolean;
 }
 
 const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
@@ -23,7 +25,8 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
     onToggleExpand,
     onEdit,
     onDelete,
-    onWholesale
+    onWholesale,
+    canManage = true
 }) => {
     const isLowStock = product.stock < (product.lowStockThreshold || 5);
 
@@ -104,7 +107,8 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                         </div>
                     </div>
 
-                    {/* Actions Bar */}
+                    {/* Actions Bar — hidden for view-only roles */}
+                    {canManage && (
                     <div className="mic-actions">
                         <button
                             className="mic-action-btn delete"
@@ -137,6 +141,7 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                             <Edit2 size={18} />
                         </button>
                     </div>
+                    )}
                 </div>
             )}
         </div>

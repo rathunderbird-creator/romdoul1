@@ -52,7 +52,6 @@ const Login: React.FC = () => {
         }
 
         setIsLoading(true);
-        console.log('Login Page: Calling login with:', { pin, selectedUserId });
         try {
             const success = await login(pin, selectedUserId);
             if (success) {

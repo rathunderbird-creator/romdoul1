@@ -232,10 +232,17 @@ const PurchaseOrdersPage = () => {
         receivingRef.current.add(po.id);
         setReceivingId(po.id);
         try {
+            // Idempotent per item: addStock throws on failure (the PO then stays
+            // un-received), so a RETRY must skip items whose restock record
+            // already landed — otherwise their stock would be added twice.
             if (po.items && po.items.length > 0) {
+                const marker = `Received from PO-${po.id.substring(0, 8)}`;
                 for (const item of po.items) {
                     if (item.product_id) {
-                        await addStock(item.product_id, item.quantity, item.unit_price, `Received from PO-${po.id.substring(0, 8)}`, po.supplier?.name || '');
+                        const { data: already } = await supabase.from('restocks')
+                            .select('id').eq('product_id', item.product_id).like('note', `%${marker}%`).limit(1);
+                        if (already && already.length > 0) continue;
+                        await addStock(item.product_id, item.quantity, item.unit_price, marker, po.supplier?.name || '');
                     }
                 }
             }

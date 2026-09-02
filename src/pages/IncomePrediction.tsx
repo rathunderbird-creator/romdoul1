@@ -3,6 +3,7 @@ import { Calendar, DollarSign, TrendingUp, TrendingDown, Package, Truck, Megapho
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
 import { useStore } from '../context/StoreContext';
 
 // Formats YYYY-MM
@@ -162,16 +163,20 @@ const IncomePrediction: React.FC = () => {
             const firstDayStr = `${selectedMonth}-01`;
             const lastDayStr = `${selectedMonth}-${String(endDate.getDate()).padStart(2, '0')}`;
 
-            const [salesRes, predictionsRes] = await Promise.all([
-                supabase.from('sales')
-                    .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
-                    .gte('date', startStr).lt('date', endStr),
+            // Sales are chunk-fetched (fetchAll) so a >1000-order month is never
+            // silently truncated at the API's max-rows cap.
+            const [salesRows, predictionsRes] = await Promise.all([
+                fetchAll((from, to) =>
+                    supabase.from('sales')
+                        .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+                        .gte('date', startStr).lt('date', endStr)
+                        .order('id', { ascending: true }).range(from, to)
+                ),
                 supabase.from('income_predictions')
                     .select('*')
                     .gte('date', firstDayStr).lte('date', lastDayStr)
             ]);
 
-            if (salesRes.error) throw salesRes.error;
             if (predictionsRes.error) throw predictionsRes.error;
 
             const todayStr = getLocalYYYYMMDD(new Date());
@@ -215,7 +220,7 @@ const IncomePrediction: React.FC = () => {
             });
 
             // 2. Auto-calculate from live sales ONLY for unsaved days
-            (salesRes.data || []).forEach((sale: any) => {
+            salesRows.forEach((sale: any) => {
                 const saleDate = sale.date ? getLocalYYYYMMDD(new Date(sale.date)) : null;
                 if (!saleDate || !dailyMap.has(saleDate)) return;
                 const day = dailyMap.get(saleDate)!;

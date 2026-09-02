@@ -116,23 +116,37 @@ export const useProcurement = () => {
             let currentPoId = po.id;
             
             if (currentPoId) {
-                // Update
+                // Update. payment_status/amount_paid are owned by the payment
+                // flow (recordSupplierPayment) — only write them when the caller
+                // explicitly passes them, otherwise an ordinary edit (fixing a
+                // note) would reset a part-paid PO to Unpaid/$0 and invite a
+                // double payment.
+                const updatePayload: any = {
+                    supplier_id: po.supplier_id,
+                    order_date: po.order_date,
+                    expected_delivery_date: po.expected_delivery_date,
+                    status: po.status,
+                    total_amount: po.total_amount,
+                    payment_due_date: po.payment_due_date || null,
+                    invoice_number: po.invoice_number || null,
+                    notes: po.notes
+                };
+                if (po.payment_status !== undefined) updatePayload.payment_status = po.payment_status;
+                if (po.amount_paid !== undefined) updatePayload.amount_paid = po.amount_paid;
+                // When only the total changed, recompute the status from the
+                // stored amount_paid so a paid PO whose total was raised shows
+                // Partial (with its real balance) instead of a stale 'Paid'.
+                if (po.payment_status === undefined && po.total_amount !== undefined) {
+                    const { data: cur } = await supabase.from('purchase_orders').select('amount_paid').eq('id', currentPoId).single();
+                    const paid = Number(cur?.amount_paid) || 0;
+                    const total = Number(po.total_amount) || 0;
+                    updatePayload.payment_status = total > 0 && paid >= total ? 'Paid' : (paid > 0 ? 'Partial' : 'Unpaid');
+                }
                 const { error: poError } = await supabase
                     .from('purchase_orders')
-                    .update({
-                        supplier_id: po.supplier_id,
-                        order_date: po.order_date,
-                        expected_delivery_date: po.expected_delivery_date,
-                        status: po.status,
-                        total_amount: po.total_amount,
-                        payment_status: po.payment_status || 'Unpaid',
-                        amount_paid: po.amount_paid || 0,
-                        payment_due_date: po.payment_due_date || null,
-                        invoice_number: po.invoice_number || null,
-                        notes: po.notes
-                    })
+                    .update(updatePayload)
                     .eq('id', currentPoId);
-                
+
                 if (poError) throw poError;
 
                 // Delete old items
@@ -191,8 +205,19 @@ export const useProcurement = () => {
 
     const deletePurchaseOrder = useCallback(async (id: string) => {
         try {
+            // Payments cascade away with the PO — capture their ids FIRST (a
+            // failed read aborts the delete), remove the PO, then clean their
+            // linked Expense rows. A partial failure at worst leaves an
+            // orphaned ledger row (recoverable), never a live PO whose books
+            // already vanished.
+            const { data: cascadingPays, error: paysErr } = await supabase.from('supplier_payments').select('id').eq('purchase_order_id', id);
+            if (paysErr) throw paysErr;
             const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
             if (error) throw error;
+            for (const p of cascadingPays || []) {
+                const { error: txErr } = await supabase.from('transactions').delete().like('description', `%#SPP-${String(p.id).slice(0, 8)}%`);
+                if (txErr) console.error('Failed to remove expense row for deleted supplier payment:', txErr);
+            }
             showToast('Purchase Order deleted successfully', 'success');
             await fetchPurchaseOrders(true);
         } catch (error: any) {

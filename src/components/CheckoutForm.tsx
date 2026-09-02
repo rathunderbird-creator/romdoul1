@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Settings, X, Plus, Calendar, MapPin, User, Phone, AlertTriangle } from 'lucide-react';
-import { useStore } from '../context/StoreContext';
+import { useStore, normalizePhone } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import ConfigModal from './ConfigModal';
@@ -252,10 +252,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     }, []);
 
     // --- Scammer Detection ---
+    // Digits-only comparison: blocklist entries from imported orders carry
+    // formatted phones ('012 345 678', '+855…') that an exact match misses.
     const detectedScammer = React.useMemo(() => {
-        const phone = formData.customerPhone.trim();
+        const phone = normalizePhone(formData.customerPhone);
         if (!phone || phone.length < 3) return null;
-        return blockedCustomers.find(bc => bc.phone === phone) || null;
+        return blockedCustomers.find(bc => normalizePhone(bc.phone) === phone) || null;
     }, [formData.customerPhone, blockedCustomers]);
 
     // Close suggestions when clicking outside
@@ -398,13 +400,29 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         const product = products.find(p => p.id === productSelection.id);
         if (!product) return;
 
+        // Clamp: the input's min=1 only styles the field — a typed 0, negative,
+        // or fractional value would corrupt the total and, once the order
+        // ships, the stock-out movement. Also enforce the stock ceiling like
+        // the POS grid does. When editing an order whose stock already left
+        // (Shipped/Delivered/Returned), the cart's own units are already
+        // deducted from products.stock, so only the ADDED quantity counts
+        // against what's on the shelf.
+        const qty = Math.max(1, Math.floor(Number(productSelection.quantity) || 1));
+        const existingQty = cartItems.find(i => i.id === productSelection.id)?.quantity || 0;
+        const stockAlreadyDeducted = ['Shipped', 'Delivered', 'Returned'].includes(orderToEdit?.shipping?.status || '');
+        const claimed = stockAlreadyDeducted ? qty : existingQty + qty;
+        if (claimed > product.stock) {
+            showToast(`Only ${product.stock} in stock for ${product.name}`, 'error');
+            return;
+        }
+
         const newItems = [...cartItems];
         const existingIdx = newItems.findIndex(i => i.id === productSelection.id);
 
         if (existingIdx >= 0) {
-            newItems[existingIdx] = { ...newItems[existingIdx], quantity: newItems[existingIdx].quantity + productSelection.quantity };
+            newItems[existingIdx] = { ...newItems[existingIdx], quantity: newItems[existingIdx].quantity + qty };
         } else {
-            newItems.push({ ...product, quantity: productSelection.quantity });
+            newItems.push({ ...product, quantity: qty });
         }
 
         onUpdateCart(newItems);
@@ -469,7 +487,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 && amountReceivedVal > 0
                 && amountReceivedVal < total
                 && !['Get File', 'Cancel'].includes(formData.paymentStatus);
-            const effectivePaymentStatus = isPartialDeposit ? ('Deposit' as const) : formData.paymentStatus;
+            // Symmetric guard: a stale 'Deposit' with the full amount received is
+            // really Paid — never save Deposit with depositAmount 0.
+            const effectivePaymentStatus = isPartialDeposit
+                ? ('Deposit' as const)
+                : (formData.paymentStatus === 'Deposit' && !formData.paymentAfterDelivery && total > 0 && amountReceivedVal >= total
+                    ? ('Paid' as const)
+                    : formData.paymentStatus);
 
             setIsSubmitting(true);
 
@@ -1074,7 +1098,20 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ប្រាក់ទទួលបាន ($)</label>
-                                    <span style={{ fontSize: '11px', color: 'var(--color-primary)', cursor: 'pointer', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }} onClick={() => !formData.paymentAfterDelivery && setFormData({ ...formData, amountReceived: cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) })}>ដាក់ពេញ</span>
+                                    <span style={{ fontSize: '11px', color: 'var(--color-primary)', cursor: 'pointer', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }} onClick={() => {
+                                        if (formData.paymentAfterDelivery) return;
+                                        // Fill the DISCOUNTED total (not the raw subtotal) and run the
+                                        // same auto-status logic as the input below — otherwise a stale
+                                        // 'Deposit' survives with the full amount and revenue is
+                                        // overstated by the discount.
+                                        const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                                        const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                        let status = formData.paymentStatus;
+                                        if (['Unpaid', 'Paid', 'Deposit'].includes(status)) {
+                                            if (status === 'Deposit') status = totalNow > 0 ? 'Paid' : 'Unpaid';
+                                        }
+                                        setFormData({ ...formData, amountReceived: totalNow, paymentStatus: status });
+                                    }}>ដាក់ពេញ</span>
                                 </div>
                                 <input
                                     type="number"
@@ -1187,7 +1224,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         value={formData.discount}
                                         onChange={e => {
                                             const val = e.target.value;
-                                            setFormData({ ...formData, discount: val === '' ? '' : Number(val) });
+                                            // min="0" only styles the field — a typed negative
+                                            // INCREASED the total past the sum of items and
+                                            // mis-flagged full payments as deposits.
+                                            setFormData({ ...formData, discount: val === '' ? '' : Math.max(0, Number(val) || 0) });
                                         }}
                                         placeholder="0.00"
                                         min="0"

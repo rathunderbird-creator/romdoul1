@@ -4,6 +4,7 @@ import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck, DollarSign } fro
 import { DateRangePicker } from '../../components';
 import { supabase } from '../../lib/supabase';
 import { mapSaleEntity } from '../../utils/mapper';
+import { fetchAll } from '../../utils/fetchAll';
 import type { Sale, Transaction } from '../../types';
 
 const ReportsLayout: React.FC = () => {
@@ -35,26 +36,35 @@ const ReportsLayout: React.FC = () => {
         const fetchReportData = async () => {
             setIsLoadingReports(true);
             try {
-                let salesQuery = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
-                let transQuery = supabase.from('transactions').select('*');
+                // Chunk-fetched (fetchAll) so a busy month is never silently
+                // truncated at the API's ~1000-row cap; feeds every /reports tab.
+                const applyRange = (q: any) => {
+                    if (dateRange.start) {
+                        const start = new Date(dateRange.start);
+                        start.setHours(0, 0, 0, 0);
+                        q = q.gte('date', start.toISOString());
+                    }
+                    if (dateRange.end) {
+                        const end = new Date(dateRange.end);
+                        end.setHours(23, 59, 59, 999);
+                        q = q.lte('date', end.toISOString());
+                    }
+                    return q;
+                };
 
-                if (dateRange.start) {
-                    const start = new Date(dateRange.start);
-                    start.setHours(0,0,0,0);
-                    salesQuery = salesQuery.gte('date', start.toISOString());
-                    transQuery = transQuery.gte('date', start.toISOString());
-                }
-                if (dateRange.end) {
-                    const end = new Date(dateRange.end);
-                    end.setHours(23,59,59,999);
-                    salesQuery = salesQuery.lte('date', end.toISOString());
-                    transQuery = transQuery.lte('date', end.toISOString());
-                }
+                const [salesRows, transRows] = await Promise.all([
+                    fetchAll((from, to) =>
+                        applyRange(supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)'))
+                            .order('id', { ascending: true }).range(from, to)
+                    ),
+                    fetchAll((from, to) =>
+                        applyRange(supabase.from('transactions').select('*'))
+                            .order('id', { ascending: true }).range(from, to)
+                    ),
+                ]);
 
-                const [salesResult, transResult] = await Promise.all([salesQuery, transQuery]);
-
-                if (salesResult.data) setReportSales(salesResult.data.map(mapSaleEntity));
-                if (transResult.data) setReportTransactions(transResult.data);
+                setReportSales(salesRows.map(mapSaleEntity));
+                setReportTransactions(transRows);
             } catch (err) {
                 console.error("Failed to load report data:", err);
             } finally {

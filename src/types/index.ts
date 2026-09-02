@@ -269,6 +269,7 @@ export interface StoreContextType {
     addBlockedCustomer: (customer: BlockedCustomer) => Promise<void>;
     addBlockedCustomers: (customers: BlockedCustomer[]) => Promise<void>;
     removeBlockedCustomer: (phone: string) => void;
+    removeBlockedCustomers: (phones: string[]) => void;
     updateBlockedCustomer: (phone: string, updates: Partial<BlockedCustomer>) => void;
 
     // User & Role Management
@@ -352,7 +353,9 @@ export interface User {
     name: string;
     email: string;
     roleId: string;
-    pin?: string; // Optional numeric PIN for quick login
+    // Write-only from the client's perspective: set/changed via User Management,
+    // verified via the check_pin RPC, never read back from the database.
+    pin?: string;
     avatar?: string;
     baseSalary?: number;
     dailyTarget?: number;

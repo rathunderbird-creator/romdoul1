@@ -159,6 +159,20 @@ const AccountsReceivablePage: React.FC = () => {
         setSaving(true);
         try {
             const product = products.find(p => p.id === productId);
+
+            // Availability check BEFORE anything is written: the deduction
+            // helper clamps at 0 and silently skips a missing warehouse_stock
+            // row, so transferring more than the source holds would credit the
+            // destination with stock the source never had (phantom inventory).
+            const { data: sourceRow } = await supabase.from('warehouse_stock')
+                .select('quantity').eq('warehouse_id', fromWh).eq('product_id', productId).maybeSingle();
+            const availableAtSource = sourceRow?.quantity || 0;
+            if (q > availableAtSource) {
+                showToast(`Insufficient stock in the source warehouse: have ${availableAtSource}, need ${q}`, 'error');
+                setSaving(false);
+                return;
+            }
+
             const { error } = await supabase.from('warehouse_transfers').insert([{
                 kind: 'transfer',
                 transfer_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],

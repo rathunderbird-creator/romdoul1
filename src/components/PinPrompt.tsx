@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useStore } from '../context/StoreContext';
+import { useStore, isRpcMissingError } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
+import { supabase } from '../lib/supabase';
 import { Lock, X } from 'lucide-react';
 
 interface PinPromptProps {
@@ -33,21 +34,51 @@ const PinPrompt: React.FC<PinPromptProps> = ({
         }
     }, [isOpen]);
 
-    const handleSubmit = (e?: React.FormEvent) => {
-        e?.preventDefault();
+    const [isChecking, setIsChecking] = useState(false);
 
-        if (!currentUser?.pin) {
-            showToast('No password set for your account. Please set a password first.', 'error');
+    const handleSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (isChecking) return;
+
+        const entered = pin.trim();
+        if (!entered || !currentUser) {
+            showToast('Please enter your password', 'error');
             return;
         }
 
-        if (pin === currentUser.pin) {
-            onSuccess();
-            onClose();
-        } else {
-            showToast('Incorrect password', 'error');
-            setPin('');
-            inputRef.current?.focus();
+        setIsChecking(true);
+        try {
+            // Verified server-side (check_pin RPC) — the account's PIN is never
+            // present in the browser.
+            const { data, error } = await supabase.rpc('check_pin', {
+                p_pin: entered,
+                p_user_id: currentUser.id
+            });
+            let ok: boolean;
+            if (!error) {
+                ok = Array.isArray(data) ? data.length > 0 : !!data;
+            } else if (isRpcMissingError(error)) {
+                // secure_pin_check.sql not applied yet: read this account's pin
+                // the legacy way (still readable pre-migration) — the stored
+                // snapshot can't be trusted, new logins no longer carry the pin.
+                const { data: legacyRow } = await supabase.from('users').select('pin').eq('id', currentUser.id).single();
+                ok = !!legacyRow?.pin && entered === String(legacyRow.pin).trim();
+            } else {
+                // Network/server failure — never report it as a wrong password.
+                console.error('check_pin failed:', error);
+                showToast('Could not verify password — check the connection and try again', 'error');
+                return;
+            }
+            if (ok) {
+                onSuccess();
+                onClose();
+            } else {
+                showToast('Incorrect password', 'error');
+                setPin('');
+                inputRef.current?.focus();
+            }
+        } finally {
+            setIsChecking(false);
         }
     };
 
