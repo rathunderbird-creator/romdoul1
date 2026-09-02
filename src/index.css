@@ -64,7 +64,7 @@ body {
    auto-zoom on input focus). Adjust the factor here to taste. */
 @media screen and (min-width: 768px) {
   body {
-    zoom: 0.9;
+    zoom: 0.85;
   }
 }
 
