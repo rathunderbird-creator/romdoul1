@@ -37,7 +37,7 @@
 
   /* Spacing & Layout */
   --header-height: 60px;
-  --sidebar-width: 260px;
+  --sidebar-width: 235px;
   --border-radius: 12px;
 }
 
@@ -515,6 +515,7 @@ div:has(> svg) .search-input {
   text-decoration: none;
   color: #9CA3AF; /* Light gray for black bg */
   background-color: transparent;
+  font-size: 13px;
 }
 
 .sidebar-item:hover {
@@ -543,8 +544,8 @@ div:has(> svg) .search-input {
   text-decoration: none;
   color: #9CA3AF;
   background-color: transparent;
-  padding: 8px 12px;
-  font-size: 14px;
+  padding: 6px 10px;
+  font-size: 12.5px;
 }
 
 .sidebar-subitem:hover {

@@ -297,7 +297,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     )}
                 </div>
 
-                <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', overflowX: 'hidden' }}>
+                <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', overflowX: 'hidden' }}>
                     {navItems.map((item) => {
                         const hasSubItems = item.subItems && item.subItems.length > 0;
                         const isExpanded = expandedMenus[item.label] || false;
@@ -316,15 +316,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                         }}
                                         style={{
                                             justifyContent: visualCollapsed ? 'center' : 'space-between',
-                                            padding: visualCollapsed ? '12px' : '12px 16px',
+                                            padding: visualCollapsed ? '10px' : '9px 14px',
                                         }}
                                     >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <item.icon size={20} />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <item.icon size={17} />
                                             {!visualCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
                                         </div>
                                         {!visualCollapsed && (
-                                            <ChevronDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                                            <ChevronDown size={14} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
                                         )}
                                     </div>
                                 ) : (
@@ -339,18 +339,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                         }}
                                         style={{
                                             justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                                            padding: visualCollapsed ? '12px' : '12px 16px',
-                                            gap: '12px',
+                                            padding: visualCollapsed ? '10px' : '9px 14px',
+                                            gap: '10px',
                                         }}
                                     >
-                                        <item.icon size={20} />
+                                        <item.icon size={17} />
                                         {!visualCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
                                     </NavLink>
                                 )}
 
                                 {/* Render Sub Items */}
                                 {hasSubItems && isExpanded && !visualCollapsed && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', marginTop: '4px', marginLeft: '32px', gap: '4px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', marginTop: '3px', marginLeft: '28px', gap: '3px' }}>
                                         {item.subItems.map((subItem: any) => {
                                             const isSubActive = location.pathname === subItem.path || (subItem.path !== item.path && location.pathname.startsWith(subItem.path + '/'));
                                             return (
@@ -363,9 +363,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                                                         }
                                                     }}
                                                     className={isSubActive ? "sidebar-subitem active-sublink" : "sidebar-subitem"}
-                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                                                 >
-                                                    {subItem.icon && <subItem.icon size={16} />}
+                                                    {subItem.icon && <subItem.icon size={14} />}
                                                     {subItem.label}
                                                 </NavLink>
                                             );
@@ -390,11 +390,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             className={({ isActive }) => `sidebar-item ${isActive ? 'active-link' : ''}`}
                             style={{
                                 justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                                gap: '12px',
-                                padding: visualCollapsed ? '12px' : '12px 16px'
+                                gap: '10px',
+                                padding: visualCollapsed ? '10px' : '9px 14px'
                             }}
                         >
-                            <Users size={20} />
+                            <Users size={17} />
                             {!visualCollapsed && <span>{t('nav.userManagement')}</span>}
                         </NavLink>
                     )}
@@ -411,11 +411,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             className={({ isActive }) => `sidebar-item ${isActive ? 'active-link' : ''}`}
                             style={{
                                 justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                                gap: '12px',
-                                padding: visualCollapsed ? '12px' : '12px 16px'
+                                gap: '10px',
+                                padding: visualCollapsed ? '10px' : '9px 14px'
                             }}
                         >
-                            <Settings size={20} />
+                            <Settings size={17} />
                             {!visualCollapsed && <span>{t('nav.settings')}</span>}
                         </NavLink>
                     )}
@@ -428,14 +428,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                            gap: '12px',
-                            padding: visualCollapsed ? '12px' : '12px 16px',
+                            gap: '10px',
+                            padding: visualCollapsed ? '10px' : '9px 14px',
                             borderRadius: '8px',
                             background: 'transparent',
                             border: '1px solid #333',
                             color: '#9CA3AF',
                             cursor: 'pointer',
-                            fontSize: '13px',
+                            fontSize: '12px',
                             fontWeight: 500,
                             width: '100%',
                             transition: 'background 0.2s'
