@@ -258,7 +258,7 @@ const PriceListPage: React.FC = () => {
                         ))}
                     </div>
                 ) : (
-                    <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 290px)', overflowY: 'auto' }}>
+                    <div style={{ overflowX: 'auto', maxHeight: 'calc(var(--vh-full) - 290px)', overflowY: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '13px' }}>
                             <thead>
                                 <tr>

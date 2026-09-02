@@ -125,7 +125,7 @@ const JournalEntriesPage = () => {
     }, [journalEntries, searchQuery, dateRange]);
 
     return (
-        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: '100vh' }}>
+        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ position: 'relative', width: '350px' }}>

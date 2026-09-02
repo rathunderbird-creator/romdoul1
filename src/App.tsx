@@ -72,7 +72,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import TodoReminderService from './components/TodoReminderService';
 
 const LoadingFallback = () => (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'var(--vh-full)' }}>
     <div className="loader">Loading...</div>
   </div>
 );

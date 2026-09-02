@@ -39,6 +39,13 @@
   --header-height: 60px;
   --sidebar-width: 235px;
   --border-radius: 12px;
+
+  /* Compact-UI scale factor (matches the body zoom below). Inside a zoomed
+     body, viewport units render scaled — height:100vh ends short of the real
+     screen bottom — so full-viewport elements must size with these instead. */
+  --app-zoom: 1;
+  --vh-full: calc(100vh / var(--app-zoom));
+  --vw-full: calc(100vw / var(--app-zoom));
 }
 
 * {
@@ -63,8 +70,11 @@ body {
    tuned sizing (and shrinking form fonts below 16px would re-trigger iOS's
    auto-zoom on input focus). Adjust the factor here to taste. */
 @media screen and (min-width: 768px) {
+  :root {
+    --app-zoom: 0.88;
+  }
   body {
-    zoom: 0.85;
+    zoom: 0.88;
   }
 }
 

@@ -35,9 +35,11 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, width, 
                 style={{
                     backgroundColor: 'var(--color-surface)',
                     width: '100%',
-                    maxWidth: fullScreen ? '100vw' : (width || '500px'),
-                    height: fullScreen ? '100vh' : (height || 'auto'),
-                    maxHeight: fullScreen ? '100vh' : (isMobile ? '90vh' : '90vh'),
+                    // --vh-full/--vw-full, not raw viewport units: those render
+                    // short inside the zoomed desktop body (see index.css).
+                    maxWidth: fullScreen ? 'var(--vw-full)' : (width || '500px'),
+                    height: fullScreen ? 'var(--vh-full)' : (height || 'auto'),
+                    maxHeight: fullScreen ? 'var(--vh-full)' : 'calc(var(--vh-full) * 0.9)',
                     display: 'flex',
                     flexDirection: 'column',
                     borderRadius: fullScreen ? '0' : (isMobile ? '24px 24px 0 0' : '16px'),

@@ -2969,7 +2969,7 @@ const Orders: React.FC = () => {
                         // isn't clipped into a horizontal scrollbar
                         overflowX: isMobile ? 'visible' : 'auto',
                         overflowY: isMobile ? 'visible' : 'auto',
-                        maxHeight: isMobile ? 'none' : 'calc(100vh - 200px)',
+                        maxHeight: isMobile ? 'none' : 'calc(var(--vh-full) - 200px)',
                         paddingBottom: '0'
                     }}>
                         {isMobile ? (

@@ -73,8 +73,8 @@ const Login: React.FC = () => {
 
     return (
         <div style={{
-            height: '100vh',
-            width: '100vw',
+            height: 'var(--vh-full)',
+            width: 'var(--vw-full)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

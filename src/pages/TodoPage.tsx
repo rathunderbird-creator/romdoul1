@@ -666,7 +666,7 @@ const TodoPage: React.FC = () => {
 
     if (isMobile && showMobileHome) {
         return (
-            <div style={{ height: 'calc(100vh - 60px)', overflowY: 'auto', background: 'var(--color-background)', padding: '16px' }}>
+            <div style={{ height: 'calc(var(--vh-full) - 60px)', overflowY: 'auto', background: 'var(--color-background)', padding: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <div />
                     <button onClick={() => { setActiveView('settings'); setShowMobileHome(false); }} style={{ background: 'var(--color-surface)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -754,7 +754,7 @@ const TodoPage: React.FC = () => {
     }
 
     return (
-        <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ display: 'flex', height: 'calc(var(--vh-full) - 60px)', overflow: 'hidden', position: 'relative' }}>
             {/* Left Sidebar */}
             {!isMobile && (
                 <div className="glass-panel" style={{ 

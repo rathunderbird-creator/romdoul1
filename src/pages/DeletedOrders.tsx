@@ -379,7 +379,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
             <div style={{
                 overflowX: 'auto',
                 overflowY: 'auto',
-                maxHeight: 'calc(100vh - 200px)',
+                maxHeight: 'calc(var(--vh-full) - 200px)',
             }}>
                 <table
                     className="spreadsheet-table deleted-orders-table"

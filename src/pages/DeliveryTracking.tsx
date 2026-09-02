@@ -1274,9 +1274,9 @@ const DeliveryTracking: React.FC = () => {
             </div>
 
             {/* Table */}
-            <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(100vh - 260px)' }}> {/* changed overflow to visible for dropdowns if needed, or better keep auto but manage dropdown z-index/portal */}
+            <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(var(--vh-full) - 260px)' }}> {/* changed overflow to visible for dropdowns if needed, or better keep auto but manage dropdown z-index/portal */}
                 {/* Reverting to auto for scrolling, custom dropdown handles inline */}
-                <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
+                <div style={{ overflow: 'auto', maxHeight: 'calc(var(--vh-full) - 260px)' }}>
                     <table
                         className="spreadsheet-table"
                         style={{

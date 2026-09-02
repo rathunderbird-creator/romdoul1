@@ -167,7 +167,7 @@ const ReturnsRestocks: React.FC = () => {
                 <StatsCard title="Restocked Orders" value={restockedHistory.length} icon={ArchiveRestore} color="#2563EB" trend={`${restockedItemsCount} items restocked`} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', height: isMobile ? 'auto' : 'calc(100vh - 300px)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', height: isMobile ? 'auto' : 'calc(var(--vh-full) - 300px)' }}>
                 {/* ReStock Table (Returned Orders) */}
                 <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', minHeight: isMobile ? '400px' : 'auto' }}>
                     <h3 style={{ padding: '16px 20px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '15px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>

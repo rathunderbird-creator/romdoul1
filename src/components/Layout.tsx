@@ -48,7 +48,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     return (
 
-        <div style={{ height: '100vh', display: 'flex', overflow: 'hidden' }}>
+        // --vh-full/--vw-full, not 100vh/100vw: raw viewport units render short
+        // inside the zoomed body (see index.css) and left a bottom/right gap.
+        <div style={{ height: 'var(--vh-full)', display: 'flex', overflow: 'hidden' }}>
             <TopLoadingBar />
             <Sidebar isCollapsed={isCollapsed} toggleSidebar={() => setIsCollapsed(!isCollapsed)} isMobile={isMobile} />
             <div style={{
@@ -57,7 +59,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 flexDirection: 'column',
                 marginLeft: isMobile ? 0 : (isCollapsed ? '80px' : 'var(--sidebar-width)'),
                 transition: 'margin-left 0.3s ease',
-                width: isMobile ? '100%' : `calc(100vw - ${isCollapsed ? '80px' : 'var(--sidebar-width)'})`,
+                width: isMobile ? '100%' : `calc(var(--vw-full) - ${isCollapsed ? '80px' : 'var(--sidebar-width)'})`,
                 overflow: 'hidden'
             }}>
                 <Header isCollapsed={isCollapsed} toggleSidebar={() => setIsCollapsed(!isCollapsed)} isHidden={isHeaderHidden} />

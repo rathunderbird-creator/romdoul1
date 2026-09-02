@@ -240,7 +240,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 }}
                 style={{
                     width: sidebarWidth,
-                    height: '100vh',
+                    // Not 100vh: raw viewport units render short inside the
+                    // zoomed body (see index.css) — the black column would end
+                    // above the real screen bottom.
+                    height: 'var(--vh-full)',
                     position: 'fixed',
                     left: 0,
                     top: 0,

@@ -456,7 +456,7 @@ const IncomePrediction: React.FC = () => {
     );
 
     return (
-        <div style={{ padding: isMobile ? '12px' : '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
+        <div style={{ padding: isMobile ? '12px' : '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px', height: 'calc(var(--vh-full) - 60px)', overflow: 'hidden' }}>
             {/* Shimmer animation */}
             <style>{`
                 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }

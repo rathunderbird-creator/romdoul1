@@ -174,7 +174,7 @@ const ChartOfAccountsPage = () => {
     };
 
     return (
-        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: '100vh' }}>
+        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <div style={{ position: 'relative', width: '300px' }}>
                     <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
