@@ -555,14 +555,22 @@ const Dashboard: React.FC = () => {
                 icon={ShoppingBag}
                 title="Sales & Orders"
                 extra={(() => {
-                    const totalQty = filteredSales.reduce((s, sale) => s + sale.items.reduce((x, i) => x + (i.quantity || 0), 0), 0);
+                    const itemQty = (sale: Sale) => sale.items.reduce((x, i) => x + (i.quantity || 0), 0);
+                    const totalQty = filteredSales.reduce((s, sale) => s + itemQty(sale), 0);
+                    // "Sold" on this dashboard means Shipped + Delivered (same
+                    // rule as the Top Selling Products section).
+                    const sdSales = filteredSales.filter(s => s.shipping?.status === 'Shipped' || s.shipping?.status === 'Delivered');
+                    const sdOrders = sdSales.length;
+                    const sdQty = sdSales.reduce((s, sale) => s + itemQty(sale), 0);
                     return (
                         <>
-                            <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+                            <span title="Sold = Shipped + Delivered" style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
                                 {stats.totalSalesCount.toLocaleString()} {t('dashboard.orders')}
+                                <span style={{ color: '#059669', fontWeight: 700 }}> · {sdOrders.toLocaleString()} {t('dashboard.sold')}</span>
                             </span>
-                            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                            <span title="Sold = Shipped + Delivered" style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
                                 {totalQty.toLocaleString()} {t('orders.products')}
+                                <span style={{ color: '#059669' }}> · {sdQty.toLocaleString()} {t('dashboard.sold')}</span>
                             </span>
                         </>
                     );
