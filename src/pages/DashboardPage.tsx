@@ -59,8 +59,10 @@ const SectionHeader: React.FC<{
     icon: React.ComponentType<{ size?: number }>;
     title: string;
     count?: number;
+    /* Extra pill(s) rendered right after the count, next to the title. */
+    extra?: React.ReactNode;
     action?: React.ReactNode;
-}> = ({ icon: Icon, title, count, action }) => (
+}> = ({ icon: Icon, title, count, extra, action }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -70,6 +72,7 @@ const SectionHeader: React.FC<{
             {typeof count === 'number' && (
                 <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>{count}</span>
             )}
+            {extra}
         </div>
         {action}
     </div>
@@ -895,7 +898,19 @@ const Dashboard: React.FC = () => {
 
             {/* Product Report Cards */}
             <div style={{ marginBottom: '32px' }}>
-                <SectionHeader icon={Package} title={t('dashboard.productReport')} count={pivotStats.product.length} />
+                <SectionHeader
+                    icon={Package}
+                    title={t('dashboard.productReport')}
+                    count={pivotStats.product.length}
+                    extra={(() => {
+                        const totalQty = pivotStats.product.reduce((s, p) => s + p.total, 0);
+                        return totalQty > 0 ? (
+                            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                                {totalQty.toLocaleString()} {t('dashboard.orders')}
+                            </span>
+                        ) : null;
+                    })()}
+                />
                 {pivotStats.product.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
