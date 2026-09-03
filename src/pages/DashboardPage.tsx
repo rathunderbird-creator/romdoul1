@@ -551,7 +551,23 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Sales & Orders Overview */}
-            <SectionHeader icon={ShoppingBag} title="Sales & Orders" count={stats.totalSalesCount} />
+            <SectionHeader
+                icon={ShoppingBag}
+                title="Sales & Orders"
+                extra={(() => {
+                    const totalQty = filteredSales.reduce((s, sale) => s + sale.items.reduce((x, i) => x + (i.quantity || 0), 0), 0);
+                    return (
+                        <>
+                            <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+                                {stats.totalSalesCount.toLocaleString()} {t('dashboard.orders')}
+                            </span>
+                            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                                {totalQty.toLocaleString()} {t('orders.products')}
+                            </span>
+                        </>
+                    );
+                })()}
+            />
             <div className="dashboard-flex-container" style={{
                 display: 'flex',
                 flexWrap: 'wrap',
