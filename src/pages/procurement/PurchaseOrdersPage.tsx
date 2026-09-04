@@ -119,6 +119,8 @@ const PurchaseOrdersPage = () => {
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+    // Filter by supplier name ('All' = every supplier).
+    const [supplierFilter, setSupplierFilter] = useState<string>('All');
     // Multi-select: empty = all payments.
     const [paymentFilter, setPaymentFilter] = useState<string[]>([]);
     const togglePaymentFilter = (v: string) =>
@@ -330,6 +332,8 @@ const PurchaseOrdersPage = () => {
         return purchaseOrders.filter(po => {
             // Status filter
             if (statusFilter !== 'All' && po.status !== statusFilter) return false;
+            // Supplier filter (by name — the table shows names too)
+            if (supplierFilter !== 'All' && (po.supplier?.name || '') !== supplierFilter) return false;
             // Payment filter
             if (paymentFilter.length > 0 && !paymentFilter.includes(po.payment_status || 'Unpaid')) return false;
             // Search
@@ -341,7 +345,13 @@ const PurchaseOrdersPage = () => {
             }
             return true;
         });
-    }, [purchaseOrders, searchQuery, statusFilter, paymentFilter]);
+    }, [purchaseOrders, searchQuery, statusFilter, supplierFilter, paymentFilter]);
+
+    // Footer sums cover every FILTERED row (all pages), matching the Orders table.
+    const footerTotals = useMemo(() => ({
+        total: filteredPOs.reduce((s, po) => s + (po.total_amount || 0), 0),
+        balance: filteredPOs.reduce((s, po) => s + ((po.total_amount || 0) - (po.amount_paid || 0)), 0),
+    }), [filteredPOs]);
 
     const thStyle: React.CSSProperties = { padding: '8px 12px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' };
 
@@ -391,7 +401,7 @@ const PurchaseOrdersPage = () => {
     // --- Pagination ---
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(() => Number(localStorage.getItem('po_itemsPerPage')) || 100);
-    useEffect(() => { setCurrentPage(1); }, [searchQuery, statusFilter, paymentFilter, itemsPerPage]);
+    useEffect(() => { setCurrentPage(1); }, [searchQuery, statusFilter, supplierFilter, paymentFilter, itemsPerPage]);
     useEffect(() => { localStorage.setItem('po_itemsPerPage', String(itemsPerPage)); }, [itemsPerPage]);
     const totalPages = Math.max(1, Math.ceil(sortedPOs.length / itemsPerPage));
     const safePage = Math.min(currentPage, totalPages);
@@ -448,7 +458,7 @@ const PurchaseOrdersPage = () => {
         document.addEventListener('mouseup', onUp);
     };
 
-    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0);
+    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (supplierFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0);
 
     return (
         <div className="page-container fade-in">
@@ -515,7 +525,7 @@ const PurchaseOrdersPage = () => {
                     <MobileFilterDrawer
                         isOpen={isFilterDrawerOpen}
                         onClose={() => setIsFilterDrawerOpen(false)}
-                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setPaymentFilter([]); }}
+                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter('All'); setPaymentFilter([]); }}
                         searchValue={searchQuery}
                         onSearchChange={setSearchQuery}
                         searchPlaceholder="Search PO, supplier, invoice..."
@@ -533,6 +543,12 @@ const PurchaseOrdersPage = () => {
                             options={PAYMENT_FILTER_OPTIONS.map(v => ({ value: v }))}
                             selected={paymentFilter}
                             onToggle={togglePaymentFilter}
+                        />
+                        <MobileChipGroup
+                            title="Supplier"
+                            options={[{ value: 'All' }, ...suppliers.map(s => ({ value: s.name }))]}
+                            selected={supplierFilter}
+                            onSelect={setSupplierFilter}
                         />
                     </MobileFilterDrawer>
                 </>
@@ -595,6 +611,23 @@ const PurchaseOrdersPage = () => {
                             );
                         })}
                     </div>
+
+                    {/* Supplier filter */}
+                    <select
+                        value={supplierFilter}
+                        onChange={(e) => setSupplierFilter(e.target.value)}
+                        title="Filter by supplier"
+                        style={{
+                            padding: '8px 12px', borderRadius: '10px',
+                            border: '1px solid var(--color-border)',
+                            background: supplierFilter !== 'All' ? 'var(--color-primary)' : 'var(--color-surface)',
+                            color: supplierFilter !== 'All' ? 'white' : 'var(--color-text-secondary)',
+                            fontWeight: 600, fontSize: '12px', cursor: 'pointer', maxWidth: '190px',
+                        }}
+                    >
+                        <option value="All">All Suppliers</option>
+                        {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    </select>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -639,7 +672,7 @@ const PurchaseOrdersPage = () => {
                     <FileText size={48} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
                     <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '8px' }}>No Purchase Orders Found</h3>
                     <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        {searchQuery || statusFilter !== 'All' || paymentFilter.length > 0 ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
+                        {searchQuery || statusFilter !== 'All' || supplierFilter !== 'All' || paymentFilter.length > 0 ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
                     </p>
                 </div>
             ) : isMobile ? (
@@ -695,7 +728,10 @@ const PurchaseOrdersPage = () => {
                     })}
                 </div>
             ) : (
-                <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
+                <div className="glass-panel" style={{ borderRadius: '16px', padding: '0' }}>
+                    {/* Vertical scroll cap makes the sticky header/footer stick to
+                        THIS container while long lists scroll under them. */}
+                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(var(--vh-full) - 240px)' }}>
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
@@ -712,7 +748,15 @@ const PurchaseOrdersPage = () => {
                                                 textAlign: col.align,
                                                 width: `${width}px`,
                                                 minWidth: `${width}px`,
-                                                position: 'relative',
+                                                // Sticky header: stays visible while the list
+                                                // scrolls. Solid background + inset shadow so
+                                                // rows never show through (borderBottom detaches
+                                                // under border-collapse when stuck).
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 10,
+                                                background: 'var(--color-surface)',
+                                                boxShadow: 'inset 0 -1px 0 var(--color-border)',
                                                 cursor: col.sortable ? 'pointer' : 'default',
                                                 userSelect: 'none',
                                                 color: isSorted ? 'var(--color-primary)' : thStyle.color,
@@ -865,7 +909,38 @@ const PurchaseOrdersPage = () => {
                                 );
                             })}
                         </tbody>
+                        <tfoot>
+                            <tr>
+                                {PO_COLUMNS.map(col => {
+                                    const base: React.CSSProperties = {
+                                        padding: '8px 12px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        textAlign: col.align,
+                                        background: 'var(--color-bg)',
+                                        // Sticky footer mirrors the header; the shadow draws
+                                        // the top border reliably while stuck.
+                                        position: 'sticky',
+                                        bottom: 0,
+                                        zIndex: 10,
+                                        boxShadow: 'inset 0 2px 0 var(--color-border)',
+                                        color: 'var(--color-text)',
+                                    };
+                                    if (col.key === 'po') return <td key={col.key} style={base}>Total: {filteredPOs.length}</td>;
+                                    if (col.key === 'total') return <td key={col.key} style={base}>{formatCurrency(footerTotals.total)}</td>;
+                                    if (col.key === 'balance') {
+                                        return (
+                                            <td key={col.key} style={{ ...base, color: footerTotals.balance > 0.005 ? '#ef4444' : '#10b981' }}>
+                                                {formatCurrency(footerTotals.balance)}
+                                            </td>
+                                        );
+                                    }
+                                    return <td key={col.key} style={base} />;
+                                })}
+                            </tr>
+                        </tfoot>
                     </table>
+                    </div>
                     {/* Pagination */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '10px' }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
