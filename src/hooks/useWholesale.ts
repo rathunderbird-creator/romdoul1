@@ -45,14 +45,15 @@ export const useWholesale = () => {
     }, []);
 
     // Move stock out of a warehouse (delta negative to deduct, positive to restore).
+    // Only touches products TRACKED in the warehouse (row exists): a missing row
+    // means the deduction was skipped at creation, so a later cancel/delete
+    // restore must not insert a phantom row from nothing.
     const adjustWarehouseStock = async (warehouseId: string, productId: string, delta: number) => {
         if (!warehouseId || !productId) return;
         const { data } = await supabase.from('warehouse_stock')
             .select('id, quantity').eq('warehouse_id', warehouseId).eq('product_id', productId).maybeSingle();
         if (data) {
             await supabase.from('warehouse_stock').update({ quantity: Math.max(0, (data.quantity || 0) + delta) }).eq('id', data.id);
-        } else if (delta > 0) {
-            await supabase.from('warehouse_stock').insert([{ warehouse_id: warehouseId, product_id: productId, quantity: delta }]);
         }
     };
 
@@ -91,9 +92,13 @@ export const useWholesale = () => {
                 if (order.warehouse_id) {
                     const { data: ws } = await supabase.from('warehouse_stock')
                         .select('quantity').eq('warehouse_id', order.warehouse_id).eq('product_id', productId).maybeSingle();
-                    const whAvailable = ws?.quantity || 0;
-                    if (need.qty > whAvailable) {
-                        throw new Error(`Insufficient warehouse stock for ${prod?.name || need.name}: have ${whAvailable}, need ${need.qty}`);
+                    // Only products actually TRACKED in this warehouse (row exists)
+                    // are constrained by it — warehouse_stock is sparsely populated
+                    // (rows appear only via past wholesale/transfers), so a missing
+                    // row means "not tracked here", not "zero stock". The
+                    // company-wide check above still guards against overselling.
+                    if (ws && need.qty > (ws.quantity || 0)) {
+                        throw new Error(`Insufficient warehouse stock for ${prod?.name || need.name}: have ${ws.quantity || 0}, need ${need.qty}`);
                     }
                 }
             }
