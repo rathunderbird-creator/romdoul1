@@ -5,8 +5,8 @@
  * and indexes are present or missing on each one.
  * 
  * Usage:
- *   node migrations/sync_databases.cjs                    # Check all instances
- *   node migrations/sync_databases.cjs --instance Romdoul1  # Check one instance
+ *   node migrations/sync_database.cjs                    # Check all instances
+ *   node migrations/sync_database.cjs --instance Romdoul1  # Check one instance
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -76,8 +76,76 @@ const EXPECTED_TABLES = {
     shipping_rules: [
         'id', 'pcode', 'name', 'is_shippable', 'shipping_fee',
         'estimated_days', 'supported_couriers', 'created_at', 'updated_at'
-    ]
+    ],
+    // Tables created by hand on Romdoul1 (no migration file) — layout copied
+    // from the live tables. create_warehouses.sql now covers the first two.
+    warehouses: ['id', 'name', 'address', 'contact', 'capacity', 'created_at', 'updated_at'],
+    warehouse_stock: ['id', 'warehouse_id', 'product_id', 'quantity', 'created_at', 'updated_at'],
+    purchase_order_items: ['id', 'purchase_order_id', 'product_id', 'quantity', 'unit_price', 'created_at'],
+    supplier_payments: ['id', 'purchase_order_id', 'supplier_id', 'amount', 'payment_date', 'payment_method', 'notes', 'created_at'],
+    todos: ['id', 'title', 'description', 'due_date', 'priority', 'status', 'project', 'created_at', 'updated_at', 'user_id', 'repeat_rule', 'remind_at', 'last_reminded_on'],
+    todo_projects: ['id', 'name', 'color', 'created_at', 'user_id'],
+    income_predictions: ['date', 'shipped_delivered', 'order_count', 'cogs', 'shipping', 'boost_page', 'staff', 'profit', 'updated_at', 'updated_by'],
+    // Tables with their own migration file: existence check only (empty list).
+    inventory_items: [],
+    deleted_orders: [],
+    deleted_sale_items: [],
+    telegram_notifications: [],
+    shipment_tracking: [],
+    employees: [],
+    leave_requests: [],
+    payroll_runs: [],
+    leads: [],
+    interactions: [],
+    quotations: [],
+    suppliers: [],
+    purchase_orders: [],
+    chart_of_accounts: [],
+    journal_entries: [],
+    journal_entry_lines: [],
+    wholesale_orders: [],
+    wholesale_order_items: [],
+    customer_payments: [],
+    wholesale_customers: [],
+    warehouse_transfers: [],
+    warehouse_transfer_receipts: [],
 };
+
+// Which file in this folder creates a table (for the summary). Tables not
+// listed here are in full_schema.sql or were created by hand on every instance.
+const MIGRATION_FOR = {
+    warehouses: 'create_warehouses.sql',
+    warehouse_stock: 'create_warehouses.sql',
+    inventory_items: 'create_inventory_items.sql',
+    deleted_orders: 'create_deleted_orders.sql',
+    deleted_sale_items: 'create_deleted_orders.sql',
+    telegram_notifications: 'create_telegram_notifications.sql',
+    shipment_tracking: 'shipment_tracking.sql',
+    employees: 'erp_schema_additions.sql',
+    leave_requests: 'erp_schema_additions.sql',
+    payroll_runs: 'erp_schema_additions.sql',
+    leads: 'erp_schema_additions.sql',
+    interactions: 'erp_schema_additions.sql',
+    quotations: 'erp_schema_additions.sql',
+    suppliers: 'erp_schema_additions.sql',
+    purchase_orders: 'erp_schema_additions.sql',
+    chart_of_accounts: 'erp_schema_additions.sql',
+    journal_entries: 'erp_schema_additions.sql',
+    journal_entry_lines: 'erp_schema_additions.sql',
+    wholesale_orders: 'wholesale_orders.sql',
+    wholesale_order_items: 'wholesale_orders.sql',
+    customer_payments: 'wholesale_orders.sql',
+    wholesale_customers: 'wholesale_orders.sql',
+    warehouse_transfers: 'accounts_receivable_transfers.sql',
+    warehouse_transfer_receipts: 'accounts_receivable_transfers.sql',
+};
+
+// PostgREST answers for a table that isn't in its schema cache.
+const isMissingTableError = (error) =>
+    !!error && (
+        error.code === '42P01' || error.code === 'PGRST204' || error.code === 'PGRST205' ||
+        /schema cache|does not exist|relation/i.test(error.message || '')
+    );
 
 const EXPECTED_INDEXES = [
     'idx_sale_items_sale_id',
@@ -167,11 +235,18 @@ async function runCheck(instance) {
             throw new Error(`Connection failed: ${error.message || 'fetch failed'}`);
         }
 
-        if (error && (error.code === '42P01' || error.message?.includes('relation') || error.code === 'PGRST204' || (error.code === 'PGRST302' && error.message?.includes('does not exist')))) {
+        if (isMissingTableError(error)) {
             // Table doesn't exist
             results.missingTables.push(tableName);
             results.totalIssues++;
-            console.log(`   ${C.red}❌ ${tableName}${C.reset} ${C.dim}← TABLE MISSING${C.reset}`);
+            const fix = MIGRATION_FOR[tableName] || 'full_schema.sql';
+            console.log(`   ${C.red}❌ ${tableName}${C.reset} ${C.dim}← TABLE MISSING (run ${fix})${C.reset}`);
+        } else if (error && error.code === '42501') {
+            // Reads revoked for the anon key (users.pin lockdown from
+            // secure_pin_check.sql) — the table exists, we just can't inspect it.
+            console.log(`   ${C.green}✅ ${tableName}${C.reset} ${C.dim}(read-protected, columns not checked)${C.reset}`);
+        } else if (expectedColumns.length === 0) {
+            console.log(`   ${C.green}✅ ${tableName}${C.reset}`);
         } else {
             // Table exists - check columns
             let actualColumns = [];
@@ -211,7 +286,9 @@ async function runCheck(instance) {
     if (results.totalIssues === 0) {
         console.log(`\n   ${C.bgGreen}${C.white}${C.bold} ✓ ALL GOOD ${C.reset} ${C.green}No issues found${C.reset}`);
     } else {
-        console.log(`\n   ${C.bgRed}${C.white}${C.bold} ${results.totalIssues} ISSUE(S) ${C.reset} ${C.red}Run full_schema.sql in Supabase SQL Editor to fix${C.reset}`);
+        const files = [...new Set(results.missingTables.map(t => MIGRATION_FOR[t] || 'full_schema.sql'))];
+        if (Object.keys(results.missingColumns).length > 0 && !files.includes('full_schema.sql')) files.push('full_schema.sql');
+        console.log(`\n   ${C.bgRed}${C.white}${C.bold} ${results.totalIssues} ISSUE(S) ${C.reset} ${C.red}Run ${files.join(', ')} in this instance's SQL editor${C.reset}`);
     }
 
     return results;
@@ -264,6 +341,8 @@ async function main() {
             console.log(`  ${C.red}✗${C.reset} ${r.name}: ${C.red}${r.totalIssues} issue(s)${C.reset}`);
             if (r.missingTables?.length > 0) {
                 console.log(`    ${C.dim}Missing tables: ${r.missingTables.join(', ')}${C.reset}`);
+                const files = [...new Set(r.missingTables.map(t => MIGRATION_FOR[t] || 'full_schema.sql'))];
+                console.log(`    ${C.dim}Run in its SQL editor: ${files.join(', ')}${C.reset}`);
             }
             if (r.missingColumns && Object.keys(r.missingColumns).length > 0) {
                 for (const [table, cols] of Object.entries(r.missingColumns)) {
@@ -277,8 +356,8 @@ async function main() {
     }
 
     if (hasAnyIssues) {
-        console.log(`\n${C.yellow}To fix issues, run the following file in each affected Supabase SQL Editor:${C.reset}`);
-        console.log(`${C.bold}  ${FIX_SCRIPT_PATH}${C.reset}\n`);
+        console.log(`\n${C.yellow}To fix, run the file(s) listed under each instance in that instance's Supabase SQL editor.${C.reset}`);
+        console.log(`${C.dim}  All files live in ${path.dirname(FIX_SCRIPT_PATH)} and are safe to re-run.${C.reset}\n`);
     } else {
         console.log(`\n${C.green}All databases are in sync! 🎉${C.reset}\n`);
     }
