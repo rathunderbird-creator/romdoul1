@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAttendance } from '../../hooks/useAttendance';
 import type { User as UserType, StaffAttendance } from '../../types';
-import { Calendar, CheckCircle2, AlertCircle, UserCheck, Play, Square, Edit2, User, Check, X } from 'lucide-react';
+import { Calendar, CheckCircle2, AlertCircle, UserCheck, Play, Square, Edit2, User, Check, X, Users } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useMobile } from '../../hooks/useMobile';
 
 // Helper to get initials
 const getInitials = (name: string) => {
@@ -29,10 +30,34 @@ const getCurrentTimeStr = () => {
 
 const AttendancePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const isMobile = useMobile();
     const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const [selectedDate, setSelectedDate] = useState<string>(today);
     const { staff, attendances, isLoading, error, fetchAttendanceData, updateAttendance } = useAttendance();
     const [savingId, setSavingId] = useState<string | null>(null);
+    const [isMarkingAll, setIsMarkingAll] = useState(false);
+    const cell = isMobile ? '10px 12px' : '14px 20px';
+
+    // One click for a normal day: every staff member without a record yet is
+    // marked Present (clocked in now). Existing records are left untouched —
+    // the row controls are frozen while it runs, and after a mid-loop failure
+    // the day is re-read from the DB so the button's count (and a retry) can
+    // never target rows that already have a real status.
+    const unmarkedStaff = staff.filter(u => !attendances.find(a => a.userId === u.id)?.status);
+    const handleMarkAllPresent = async () => {
+        if (unmarkedStaff.length === 0 || isMarkingAll) return;
+        setIsMarkingAll(true);
+        const date = selectedDate;
+        try {
+            for (const u of unmarkedStaff) {
+                await updateAttendance(u.id, date, { status: 'Present', clockIn: getCurrentTimeStr() });
+            }
+        } catch {
+            await fetchAttendanceData(date);
+        } finally {
+            setIsMarkingAll(false);
+        }
+    };
 
     // State to toggle manual edit mode for times
     const [editingTime, setEditingTime] = useState<{ userId: string, field: 'clockIn' | 'clockOut', value: string } | null>(null);
@@ -132,29 +157,42 @@ const AttendancePage: React.FC = () => {
                     <UserCheck size={24} color="var(--color-primary)" />
                     Daily Attendance
                 </h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--color-surface)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                    <Calendar size={22} color="var(--color-primary)" />
-                    <input 
-                        type="date" 
-                        value={selectedDate} 
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        style={{
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--color-text)',
-                            fontSize: '15px',
-                            fontWeight: '700',
-                            outline: 'none',
-                            cursor: 'pointer'
-                        }}
-                    />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--color-surface)', padding: '8px 14px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                        <Calendar size={20} color="var(--color-primary)" />
+                        <input
+                            type="date"
+                            value={selectedDate}
+                            disabled={isMarkingAll}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: 'var(--color-text)',
+                                fontSize: '15px',
+                                fontWeight: '700',
+                                outline: 'none',
+                                cursor: 'pointer'
+                            }}
+                        />
+                    </div>
+                    {unmarkedStaff.length > 0 && !isLoading && (
+                        <button
+                            onClick={handleMarkAllPresent}
+                            disabled={isMarkingAll}
+                            title="Mark every staff member without a record as Present, clocked in now"
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', background: 'var(--color-success)', color: 'white', border: 'none', borderRadius: '12px', cursor: isMarkingAll ? 'wait' : 'pointer', fontSize: '13px', fontWeight: 600, opacity: isMarkingAll ? 0.7 : 1 }}
+                        >
+                            <Users size={16} /> {isMarkingAll ? 'Marking…' : `Mark all present (${unmarkedStaff.length})`}
+                        </button>
+                    )}
                 </div>
             </div>
 
             {error && (
-                <div style={{ padding: '16px 20px', backgroundColor: 'rgba(239, 68, 68, 0.12)', borderLeft: '4px solid var(--color-danger)', color: 'var(--color-text)', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '15px' }}>
+                <div style={{ padding: '16px 20px', backgroundColor: 'rgba(239, 68, 68, 0.12)', borderLeft: '4px solid var(--color-danger)', color: 'var(--color-text)', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px' }}>
                     <AlertCircle size={24} color="var(--color-danger)" />
-                    <div dangerouslySetInnerHTML={{ __html: error }} />
+                    <div>{error}</div>
                 </div>
             )}
 
@@ -205,15 +243,17 @@ const AttendancePage: React.FC = () => {
                         <p style={{ color: 'var(--color-text-muted)', marginTop: '8px' }}>Users added in User Management will appear here.</p>
                     </div>
                 ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    // Frozen while "Mark all present" runs so a row can't be changed
+                    // under the loop and then overwritten by it.
+                    <div style={{ overflowX: 'auto', pointerEvents: isMarkingAll ? 'none' : undefined, opacity: isMarkingAll ? 0.6 : 1, transition: 'opacity 0.2s' }}>
                         <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                             <thead>
                                 <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Staff Member</th>
-                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Status</th>
-                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Clock In</th>
-                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Clock Out</th>
-                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Notes</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Staff Member</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Status</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Clock In</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Clock Out</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -229,7 +269,7 @@ const AttendancePage: React.FC = () => {
                                             className="hover-highlight"
                                             style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: isSaving ? 'rgba(0,0,0,0.02)' : 'transparent', opacity: isSaving ? 0.7 : 1 }}
                                         >
-                                            <td style={{ padding: '16px 24px', verticalAlign: 'middle', borderRight: 'none' }}>
+                                            <td style={{ padding: cell, verticalAlign: 'middle', borderRight: 'none' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                                     <div style={{ 
                                                         width: '40px', height: '40px', 
@@ -253,7 +293,7 @@ const AttendancePage: React.FC = () => {
                                                 </div>
                                             </td>
 
-                                            <td style={{ padding: '16px 24px', verticalAlign: 'middle', borderRight: 'none' }}>
+                                            <td style={{ padding: cell, verticalAlign: 'middle', borderRight: 'none' }}>
                                                 <select
                                                     value={attRecord?.status || ''}
                                                     onChange={(e) => handleStatusChange(user.id, e.target.value as any)}
@@ -278,7 +318,7 @@ const AttendancePage: React.FC = () => {
                                                 </select>
                                             </td>
 
-                                            <td style={{ padding: '16px 24px', verticalAlign: 'middle', borderRight: 'none' }}>
+                                            <td style={{ padding: cell, verticalAlign: 'middle', borderRight: 'none' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {editingTime?.userId === user.id && editingTime.field === 'clockIn' ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -322,7 +362,7 @@ const AttendancePage: React.FC = () => {
                                                 </div>
                                             </td>
 
-                                            <td style={{ padding: '16px 24px', verticalAlign: 'middle', borderRight: 'none' }}>
+                                            <td style={{ padding: cell, verticalAlign: 'middle', borderRight: 'none' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {editingTime?.userId === user.id && editingTime.field === 'clockOut' ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -372,7 +412,7 @@ const AttendancePage: React.FC = () => {
                                                 </div>
                                             </td>
 
-                                            <td style={{ padding: '16px 24px', verticalAlign: 'middle', borderRight: 'none' }}>
+                                            <td style={{ padding: cell, verticalAlign: 'middle', borderRight: 'none' }}>
                                                 <input
                                                     key={`notes-${selectedDate}-${user.id}`}
                                                     type="text"

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Edit, Eye, Printer, Copy, MapPin, Phone, Globe, Package, CreditCard } from 'lucide-react';
+import { Edit, Eye, Printer, Copy, MapPin, Phone, Globe, Package, CreditCard, Truck, ExternalLink } from 'lucide-react';
 import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge from './PaymentStatusBadge';
@@ -21,6 +21,10 @@ interface MobileOrderCardProps {
     canEdit: boolean;
     isAdmin?: boolean;
     canRestock?: boolean;
+    /** Carrier tracking page for this order's tracking ID (opens in a new tab). */
+    trackingUrl?: string | null;
+    /** Last carrier status from the tracking cache. */
+    carrierStatus?: { status: string; ago: string; delivered: boolean } | null;
 }
 
 const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
@@ -37,7 +41,9 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     onUpdatePaymentStatus,
     canEdit,
     isAdmin = false,
-    canRestock = true
+    canRestock = true,
+    trackingUrl = null,
+    carrierStatus = null
 }) => {
     const getInitials = (name: string) => {
         return name
@@ -311,6 +317,29 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             </div>
                         </div>
                     </div>
+
+                    {/* Carrier tracking (from the tracking cache) */}
+                    {(trackingUrl || carrierStatus) && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '6px 12px', fontSize: '12px', borderTop: '1px solid var(--color-border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, color: carrierStatus?.delivered ? '#059669' : 'var(--color-text-secondary)' }}>
+                                <Truck size={14} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {carrierStatus ? `${carrierStatus.status}${carrierStatus.ago ? ' · ' + carrierStatus.ago : ''}` : (order.shipping?.trackingNumber || '')}
+                                </span>
+                            </div>
+                            {trackingUrl && (
+                                <a
+                                    href={trackingUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-primary)', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                >
+                                    <ExternalLink size={13} /> Track
+                                </a>
+                            )}
+                        </div>
+                    )}
 
                     {/* Actions Bar */}
                     <div className="moc-actions">

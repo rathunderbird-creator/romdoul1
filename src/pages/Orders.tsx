@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
+import { useShipmentTracking } from '../hooks/useShipmentTracking';
+import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
 import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
@@ -488,7 +490,12 @@ const lockedOrderMessage = (order: Sale) =>
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
+    // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
+    const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
+    // The fetched page of orders (declared early: the header effect below lists
+    // it as a dependency for the Track Shipped button).
+    const [serverOrders, setServerOrders] = useState<Sale[]>([]);
     const [isDuplicating, setIsDuplicating] = useState(false);
 
     const filterShippingCompanies = useMemo(() => {
@@ -609,13 +616,38 @@ const Orders: React.FC = () => {
                             <Table2 size={18} /> Show Movement
                         </button>
                     )}
+                    {/* Carrier tracking: check the shipped rows on screen with a
+                        supported carrier (J&T), skipping delivered / recently checked. */}
+                    {!isMobile && serverOrders.some(o => o.shipping?.status === 'Shipped' && o.shipping?.trackingNumber && canAutoTrack(o.shipping?.company)) && (
+                        <button
+                            disabled={isTracking}
+                            onClick={async () => {
+                                const result = await trackOrders(serverOrders, { maxAgeMinutes: 15 });
+                                if (result.error) showToast(result.error, 'error');
+                                else if (result.checked === 0) showToast('Nothing to check — all shipped parcels were checked recently or are delivered', 'info');
+                                else showToast(`Checked ${result.checked} parcel(s): ${result.delivered} delivered${result.failed ? `, ${result.failed} could not be checked` : ''}`, result.failed && !result.updated ? 'error' : 'success');
+                            }}
+                            title="Look up the carrier status of the shipped orders on this page"
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center',
+                                background: isTracking ? '#9CA3AF' : 'linear-gradient(135deg, #059669, #047857)',
+                                color: 'white', fontWeight: 600, cursor: isTracking ? 'wait' : 'pointer', border: 'none',
+                                boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)', transition: 'all 0.2s ease',
+                            }}
+                        >
+                            <Truck size={18} /> {isTracking ? 'Checking…' : 'Track Shipped'}
+                        </button>
+                    )}
 
                 </div>
             )
         });
 
         return () => setHeaderContent(null);
-    }, [setHeaderContent, activeTab, hasPermission, isMobile, isAdmin, canManage, navigate]); // Added dependencies
+    // serverOrders/isTracking/trackOrders/showToast feed the Track Shipped
+    // button rendered inside this header — without them the button would act on
+    // a stale page of orders and never show its busy state.
+    }, [setHeaderContent, activeTab, hasPermission, isMobile, isAdmin, canManage, navigate, serverOrders, isTracking, trackOrders, showToast]); // Added dependencies
 
     // Filters with Persistence
     const [statusFilter, setStatusFilter] = useState<string[]>(() => {
@@ -1102,7 +1134,7 @@ const Orders: React.FC = () => {
     // only). null = query failed; the footer then falls back to the loaded rows.
     const [revenueTotal, setRevenueTotal] = useState<number | null>(null);
 
-    const [serverOrders, setServerOrders] = useState<Sale[]>([]);
+    // (serverOrders is declared near the top of the component.)
     const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
     // Reset pagination when filters change
@@ -1456,6 +1488,25 @@ const Orders: React.FC = () => {
     useEffect(() => {
         fetchOrders();
     }, [fetchOrders]);
+
+    // Carrier statuses for the rows on screen: pull the cached rows, then on
+    // desktop quietly refresh the stale ones (checked > 6h ago; never delivered
+    // parcels; at most 40) so statuses stay current without anyone clicking.
+    // Runs once per loaded set of orders. Mobile only reads the cache.
+    const autoTrackedKeyRef = React.useRef('');
+    useEffect(() => {
+        const nos = serverOrders.map(o => o.shipping?.trackingNumber || '').filter(Boolean);
+        if (nos.length === 0) return;
+        let cancelled = false;
+        loadCached(nos).then(() => {
+            if (cancelled || isMobile) return;
+            const key = serverOrders.map(o => o.id).join(',');
+            if (autoTrackedKeyRef.current === key) return;
+            autoTrackedKeyRef.current = key;
+            trackOrders(serverOrders, { maxAgeMinutes: 360 });
+        });
+        return () => { cancelled = true; };
+    }, [serverOrders, isMobile, loadCached, trackOrders]);
 
     // Mobile infinite scroll: widen the window when the bottom sentinel nears the viewport.
     const loadMoreSentinelRef = React.useRef<HTMLDivElement | null>(null);
@@ -2996,6 +3047,14 @@ const Orders: React.FC = () => {
                                         onView={(o) => { setSelectedOrder(o); setIsViewModalOpen(true); }}
                                         onPrint={(o) => setReceiptSale(o)}
                                         onCopy={(o) => handleCopyOrder(o)}
+                                        trackingUrl={buildTrackingUrl(order.shipping?.company, order.shipping?.trackingNumber, trackingUrlTemplates)}
+                                        carrierStatus={(() => {
+                                            const row = trackingMap[order.shipping?.trackingNumber || ''];
+                                            if (!row) return null;
+                                            return row.error
+                                                ? { status: 'Check failed', ago: timeAgo(row.checked_at), delivered: false }
+                                                : { status: `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`, ago: timeAgo(row.checked_at), delivered: !!row.is_delivered };
+                                        })()}
                                         onUpdateStatus={(id, status) => {
                                             // Checked before any modal opens — the store rejects these
                                             // transitions anyway, and it's needless to make someone fill
@@ -3591,6 +3650,33 @@ const Orders: React.FC = () => {
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                             onPointerDown={(e) => e.stopPropagation()}
                                                                         />
+                                                                        {/* Carrier link + cached carrier status (Phase 1 + 2 tracking) */}
+                                                                        {(() => {
+                                                                            const no = order.shipping?.trackingNumber || '';
+                                                                            if (!no) return null;
+                                                                            const url = buildTrackingUrl(order.shipping?.company, no, trackingUrlTemplates);
+                                                                            const row = trackingMap[no];
+                                                                            const eventsTip = row?.events?.slice(0, 4).map(ev => `${ev.time}  ${ev.status}${ev.desc ? ' — ' + ev.desc : ''}`).join('\n');
+                                                                            if (!url && !row) return null;
+                                                                            return (
+                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px 2px', fontSize: '10px', lineHeight: 1.3, minWidth: 0 }} onClick={(e) => e.stopPropagation()}>
+                                                                                    {row && (
+                                                                                        <span
+                                                                                            title={row.error ? `Last check failed: ${row.error}` : (eventsTip || row.last_status || '')}
+                                                                                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: row.error ? '#B45309' : (row.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
+                                                                                        >
+                                                                                            {row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`}
+                                                                                            <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {url && (
+                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', fontWeight: 700, whiteSpace: 'nowrap', textDecoration: 'none' }}>
+                                                                                            Track ↗
+                                                                                        </a>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })()}
                                                                     </td>
                                                                 );
                                                             case 'shippingCo': return <td key={colId} style={{ ...cellStyle, color: getShippingCoColor(order.shipping?.company || '') }}>
@@ -4062,7 +4148,27 @@ const Orders: React.FC = () => {
                             </div>
 
                             <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', display: 'grid', gap: '8px' }}>
-                                <div style={{ color: getShippingCoColor(selectedOrder.shipping?.company || '') }}><strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}</div>
+                                <div style={{ color: getShippingCoColor(selectedOrder.shipping?.company || '') }}>
+                                    <strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}
+                                    {(() => {
+                                        const url = buildTrackingUrl(selectedOrder.shipping?.company, selectedOrder.shipping?.trackingNumber, trackingUrlTemplates);
+                                        const row = trackingMap[selectedOrder.shipping?.trackingNumber || ''];
+                                        return (
+                                            <>
+                                                {url && (
+                                                    <a href={url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: 'var(--color-primary)', fontWeight: 600, textDecoration: 'none' }}>
+                                                        Track ↗
+                                                    </a>
+                                                )}
+                                                {row && !row.error && (
+                                                    <div style={{ marginTop: '4px', fontSize: '12px', color: row.is_delivered ? '#059669' : 'var(--color-text-secondary)' }}>
+                                                        Carrier: {row.is_delivered ? '✓ ' : ''}{row.last_status || '—'}{row.last_event_at ? ` (${row.last_event_at})` : ''} · checked {timeAgo(row.checked_at)}
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </div>
                                 <div><strong>Salesman:</strong> {selectedOrder.salesman}</div>
                                 <div><strong>Remark:</strong> {selectedOrder.remark || '-'}</div>
                             </div>

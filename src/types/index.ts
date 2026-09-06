@@ -193,6 +193,9 @@ export interface StoreContextType {
     shippingCompanies: string[];
     shippingRates: Record<string, number>;
     updateShippingRate: (company: string, rate: number) => void;
+    // Per-company tracking page URL templates ({tracking} = waybill number).
+    trackingUrlTemplates: Record<string, string>;
+    updateTrackingUrlTemplate: (company: string, template: string) => void;
     salesmen: string[];
     categories: string[];
     pages: string[];

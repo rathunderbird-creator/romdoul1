@@ -33,6 +33,7 @@ interface ConfigState {
     salesOrder?: string[]; // Added sales custom order
     productOrder?: string[]; // Custom order for the All Stock inventory table
     shippingRates?: Record<string, number>; // Cost per item for each shipping company
+    trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
     storeAddress?: string;
@@ -781,6 +782,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const updateShippingRate = (company: string, rate: number) => {
         updateConfig({ ...config, shippingRates: { ...(config.shippingRates || {}), [company]: rate } });
+    };
+
+    // Tracking page URL per shipping company ({tracking} = waybill number).
+    // An empty template removes the override (a recognised carrier such as
+    // J&T then falls back to its built-in template).
+    const updateTrackingUrlTemplate = (company: string, template: string) => {
+        const next = { ...(config.trackingUrlTemplates || {}) };
+        const t = template.trim();
+        if (t) next[company] = t; else delete next[company];
+        updateConfig({ ...config, trackingUrlTemplates: next });
     };
 
     const addSalesman = (name: string) => {
@@ -3547,6 +3558,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             shippingCompanies: config.shippingCompanies,
             shippingRates: config.shippingRates || {},
             updateShippingRate,
+            trackingUrlTemplates: config.trackingUrlTemplates || {},
+            updateTrackingUrlTemplate,
             salesmen: config.salesmen,
             categories: config.categories,
             addShippingCompany,

@@ -6,6 +6,7 @@ import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, 
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker, Modal } from '../components';
 import { getShippingCoColor } from '../utils/orderUtils';
+import { buildTrackingUrl } from '../utils/tracking';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
 import { supabase } from '../lib/supabase';
@@ -168,7 +169,7 @@ const EditableRemark = ({ order, updateOrder }: { order: Sale, updateOrder: (id:
 };
 
 const DeliveryTracking: React.FC = () => {
-    const { sales, salesUpdatedAt, updateOrderStatus, updateOrder, users, currentUser, shippingCompanies, customerCare, refreshData, telegramBotToken, telegramChatId, updateStoreProfile } = useStore();
+    const { sales, salesUpdatedAt, updateOrderStatus, updateOrder, users, currentUser, shippingCompanies, customerCare, refreshData, telegramBotToken, telegramChatId, updateStoreProfile, trackingUrlTemplates } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
 
@@ -1426,9 +1427,16 @@ const DeliveryTracking: React.FC = () => {
                                         </div>
                                     </td>}
                                     {visibleColumns.includes('tracking') && <td style={{ fontFamily: 'monospace', width: `var(--col-delivery-tracking-width, ${columnWidths.tracking}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.trackingNumber || ''}>
-                                        {order.shipping?.trackingNumber ? (
-                                            <span style={{ background: '#F3F4F6', padding: '2px 6px', borderRadius: '4px' }}>{order.shipping.trackingNumber}</span>
-                                        ) : '-'}
+                                        {order.shipping?.trackingNumber ? (() => {
+                                            const url = buildTrackingUrl(order.shipping?.company, order.shipping.trackingNumber, trackingUrlTemplates);
+                                            return url ? (
+                                                <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ background: '#EFF6FF', color: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600 }}>
+                                                    {order.shipping.trackingNumber} ↗
+                                                </a>
+                                            ) : (
+                                                <span style={{ background: '#F3F4F6', padding: '2px 6px', borderRadius: '4px' }}>{order.shipping.trackingNumber}</span>
+                                            );
+                                        })() : '-'}
                                     </td>}
                                     {visibleColumns.includes('deliveryMan') && <td style={{ width: `var(--col-delivery-deliveryMan-width, ${columnWidths.deliveryMan}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.staffName || ''}>{order.shipping?.staffName || '-'}</td>}
                                     {visibleColumns.includes('status') && <td style={{ width: `var(--col-delivery-status-width, ${columnWidths.status}px)` }}>

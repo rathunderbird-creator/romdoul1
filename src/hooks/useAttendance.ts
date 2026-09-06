@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User, StaffAttendance } from '../types';
 
@@ -7,6 +7,12 @@ export const useAttendance = () => {
     const [staff, setStaff] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Live mirror of `attendances` for the rollback/existence check in
+    // updateAttendance. Capturing it via a setState updater side effect only
+    // worked when React chose to evaluate the updater eagerly — with a pending
+    // render it stayed [], so a failed save wiped the whole day's local list.
+    const attendancesRef = useRef<StaffAttendance[]>([]);
+    useEffect(() => { attendancesRef.current = attendances; }, [attendances]);
 
     const fetchAttendanceData = useCallback(async (date: string) => {
         setIsLoading(true);
@@ -65,12 +71,8 @@ export const useAttendance = () => {
         date: string,
         updates: Partial<Omit<StaffAttendance, 'id' | 'userId' | 'date'>>
     ) => {
-        // Capture previous state for rollback
-        let previousState: StaffAttendance[] = [];
-        setAttendances(prev => {
-            previousState = prev;
-            return prev;
-        });
+        // Previous state for rollback + the existence check, from the live ref.
+        const previousState: StaffAttendance[] = attendancesRef.current;
 
         // Optimistic UI Update
         setAttendances(prev => {

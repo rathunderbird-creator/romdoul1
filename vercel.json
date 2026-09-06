@@ -1,8 +1,13 @@
 {
     "rewrites": [
         {
-            "source": "/(.*)",
+            "source": "/((?!api/).*)",
             "destination": "/index.html"
         }
-    ]
+    ],
+    "functions": {
+        "api/track-shipments.ts": {
+            "maxDuration": 30
+        }
+    }
 }
