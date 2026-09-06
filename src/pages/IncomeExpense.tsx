@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, Search, Filter, FilterX, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Wallet, Truck, Download, PieChart, X, ArrowUp, ArrowDown, ChevronsUpDown, ArrowRightLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../context/StoreContext';
@@ -107,6 +107,35 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         localStorage.setItem('ie_pageSize', String(pageSize));
         setCurrentPage(1);
     }, [pageSize]);
+
+    // Desktop table: the header row sticks to the page scroll, tucked under the
+    // sticky command bar, so it needs the bar's rendered height as its `top`.
+    // Sticky only reaches the nearest scroll container, so the table wrapper
+    // must not be one: it clips (rounded corners) while the table fits and only
+    // becomes a horizontal scroller when the viewport is too narrow for it.
+    const TABLE_MIN_WIDTH = 700;
+    const commandBarRef = useRef<HTMLDivElement>(null);
+    const tableWrapRef = useRef<HTMLDivElement>(null);
+    const [headerTop, setHeaderTop] = useState(0);
+    const [tableFits, setTableFits] = useState(true);
+    useLayoutEffect(() => {
+        if (isMobile) return;
+        const bar = commandBarRef.current;
+        const wrap = tableWrapRef.current;
+        const measure = () => {
+            // offsetHeight/clientWidth are in the element's own CSS px (the
+            // units `top` and min-width use) even inside the zoomed body,
+            // unlike getBoundingClientRect which is scaled by the zoom.
+            setHeaderTop(bar ? bar.offsetHeight : 0);
+            setTableFits(!wrap || wrap.clientWidth >= TABLE_MIN_WIDTH);
+        };
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(measure);
+        if (bar) ro.observe(bar);
+        if (wrap) ro.observe(wrap);
+        return () => ro.disconnect();
+    }, [isMobile]);
 
     // Phone / tracking-ID search: transactions only store the customer name, so when
     // the search term looks up nothing directly, also match orders by phone or tracking
@@ -771,7 +800,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
             {/* Unified Command Bar (desktop) — sticky so filters stay reachable while scrolling */}
             {!isMobile && (
-            <div className="glass-panel" style={{
+            <div ref={commandBarRef} className="glass-panel" style={{
                 padding: isMobile ? '12px' : '16px',
                 marginBottom: '16px',
                 display: 'flex',
@@ -1110,11 +1139,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     )}
                 </div>
             ) : (
-                <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
+                <div ref={tableWrapRef} className="glass-panel" style={{ overflow: tableFits ? 'clip' : 'auto', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${TABLE_MIN_WIDTH}px` }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left', backgroundColor: 'var(--color-surface)' }}>
-                                <th style={{ padding: '10px 12px', width: '40px', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>
+                                <th style={{ padding: '10px 12px', width: '40px', position: 'sticky', top: headerTop, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)' }}>
                                     <input 
                                         type="checkbox" 
                                         checked={selectedIds.size === paginatedTransactions.length && paginatedTransactions.length > 0}
@@ -1138,7 +1167,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             key={col.label}
                                             onClick={col.key ? () => handleSort(col.key!) : undefined}
                                             title={col.key ? 'Click to sort' : undefined}
-                                            style={{ padding: '10px 12px', color: isSorted ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: col.align, position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)', cursor: col.key ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}
+                                            style={{ padding: '10px 12px', color: isSorted ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: col.align, position: 'sticky', top: headerTop, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)', cursor: col.key ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}
                                         >
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle' }}>
                                                 {col.label}
