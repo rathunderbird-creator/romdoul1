@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
+import type { OrderListFilters } from '../utils/orderListFilters';
+import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
@@ -462,22 +464,11 @@ const postDispatchMessage = (current: string, target: string) =>
         ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
         : `Mark the order Shipped before ${target} — set it back to Drafted and follow Confirmed → Shipped.`;
 
-// Statuses that count as (expected) revenue in the mobile footer's Total.
-const REVENUE_TOTAL_STATUSES = ['Confirmed', 'Shipped', 'Delivered'];
-
-// Balance still owed on an order. Zero when payment is cancelled / restocked,
-// and for orders that are Drafted, Pending, or Cancelled — nothing is
-// collectible before dispatch or after a void.
-const orderBalance = (order: Sale): number => {
-    // Special case: a Deposit order always shows what's still owed —
-    // total minus the deposit received — regardless of shipping status.
-    if (order.paymentStatus === 'Deposit') {
-        return Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0));
-    }
-    const s = order.shipping?.status;
-    if (order.paymentStatus === 'Cancel' || s === 'ReStock' || s === 'Drafted' || s === 'Pending' || s === 'Cancelled') return 0;
-    return order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0));
-};
+// orderBalance / REVENUE_STATUSES / isRevenueOrder / orderRevenue /
+// orderCollected / orderRevenuePieces now live in ../utils/orderMoney — the
+// one shared definition used here, on mobile, and by Dashboard 2 (see that
+// module's header comment for why the desktop and mobile footers used to
+// disagree).
 
 // ReStock orders stay editable (fixing details after a restock is a real
 // need); only Cancelled and Returned remain locked.
@@ -1098,6 +1089,24 @@ const Orders: React.FC = () => {
     const [isPageOpen, setIsPageOpen] = useState(false);
     useEffect(() => { localStorage.setItem('orders_pageFilter', JSON.stringify(pageFilter)); }, [pageFilter]);
 
+    // Click-throughs from other pages (Dashboard 2's KPIs, pipeline, alerts,
+    // table rows) arrive as `location.state.filters`. Apply them wholesale —
+    // anything not given is reset — so the list shows exactly that subset.
+    useEffect(() => {
+        const filters = (location.state as { filters?: OrderListFilters } | null)?.filters;
+        if (!filters) return;
+        setStatusFilter(filters.statuses ?? []);
+        setPayStatusFilter(filters.payStatuses ?? []);
+        setSalesmanFilter(filters.salesman ?? 'All');
+        setPageFilter(filters.pages ?? []);
+        setShippingCoFilter(filters.shippingCos ?? []);
+        setDateRange(filters.dateRange ?? { start: '', end: '' });
+        setSearchTerm(filters.search ?? '');
+        setColumnFilters({});
+        setActiveTab('list');
+        navigate(location.pathname, { replace: true, state: {} });
+    }, [location.state, location.pathname, navigate]);
+
     // Number of active filter groups — shown as a badge on the mobile filter button.
     const activeFilterCount =
         (statusFilter.length > 0 ? 1 : 0) +
@@ -1462,7 +1471,10 @@ const Orders: React.FC = () => {
                         let sumQuery: any = supabase.from('sales').select('total');
                         sumQuery = (await applyOrderFilters(sumQuery)).query;
                         const { data: rows, error: sumError } = await sumQuery
-                            .in('shipping_status', REVENUE_TOTAL_STATUSES)
+                            .in('shipping_status', REVENUE_STATUSES)
+                            // Matches isRevenueOrder: a Cancel-paid order never counts,
+                            // even if its shipping status is still Confirmed/Shipped/Delivered.
+                            .neq('payment_status', 'Cancel')
                             // Stable order keeps the chunk windows non-overlapping —
                             // without it rows can shift between requests and be
                             // double-counted or skipped.
@@ -1604,21 +1616,15 @@ const Orders: React.FC = () => {
 
     const stats = useMemo(() => {
         const totalOrders = totalCount;
-        const totalRevenue = filteredOrders.reduce((sum, order) => {
-            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
-            return sum + (isCancelled ? 0 : order.total);
-        }, 0);
-        const totalReceived = filteredOrders.reduce((sum, order) => {
-            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
-            return sum + (isCancelled ? 0 : (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)));
-        }, 0);
+        // Booked / collected / pieces: gated by isRevenueOrder (Confirmed,
+        // Shipped or Delivered, not Cancel-paid) — the same rule the mobile
+        // footer and Dashboard 2 use, so all three always agree.
+        const totalRevenue = filteredOrders.reduce((sum, order) => sum + orderRevenue(order), 0);
+        const totalReceived = filteredOrders.reduce((sum, order) => sum + orderCollected(order), 0);
         // Sum of the per-row Balance column (same rule as the cells, so the
         // footer always matches what's shown).
         const totalOutstanding = filteredOrders.reduce((sum, order) => sum + orderBalance(order), 0);
-        const totalProducts = filteredOrders.reduce((sum, order) => {
-            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
-            return sum + (isCancelled ? 0 : order.items.reduce((s, item) => s + item.quantity, 0));
-        }, 0);
+        const totalProducts = filteredOrders.reduce((sum, order) => sum + orderRevenuePieces(order), 0);
         const statusCounts = filteredOrders.reduce((acc, order) => {
             const status = order.shipping?.status || 'Pending';
             acc[status] = (acc[status] || 0) + 1;
@@ -1630,8 +1636,7 @@ const Orders: React.FC = () => {
             return acc;
         }, {} as Record<string, number>);
         const productCounts = filteredOrders.reduce((acc, order) => {
-            const isCancelled = order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock';
-            if (!isCancelled) {
+            if (isRevenueOrder(order)) {
                 order.items.forEach(item => {
                     const name = item.name || 'Unknown Product';
                     acc[name] = (acc[name] || 0) + item.quantity;
@@ -3190,9 +3195,7 @@ const Orders: React.FC = () => {
                                     <div style={{ textAlign: 'right' }}>
                                         <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
                                         <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-primary)' }}>
-                                            ${(revenueTotal ?? filteredOrders
-                                                .filter(o => REVENUE_TOTAL_STATUSES.includes(o.shipping?.status || ''))
-                                                .reduce((sum, order) => sum + order.total, 0)).toFixed(2)}
+                                            ${(revenueTotal ?? filteredOrders.reduce((sum, order) => sum + orderRevenue(order), 0)).toFixed(2)}
                                         </div>
                                     </div>
                                 </div>

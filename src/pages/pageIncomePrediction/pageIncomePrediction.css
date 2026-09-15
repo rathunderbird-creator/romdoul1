@@ -1,0 +1,95 @@
+/* Prediction by Page — visual language mirrors ../IncomePrediction.tsx
+   (CSS variables, glass panels, spreadsheet-table, purple accent). */
+
+@keyframes pip-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes pip-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pip-skeleton {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--color-border) 25%, rgba(255, 255, 255, 0.1) 50%, var(--color-border) 75%);
+  background-size: 200% 100%;
+  animation: pip-shimmer 1.5s infinite;
+}
+
+.pip-spin { animation: pip-spin 1s linear infinite; }
+
+/* Money inputs: no spinner buttons, right-aligned figures. */
+.pip-input::-webkit-inner-spin-button,
+.pip-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.pip-input { -moz-appearance: textfield; appearance: textfield; }
+
+/* Row states. The sibling page highlights hovered rows the same way. */
+.pip-row td { transition: background 0.15s ease; }
+.pip-row:hover td { background: var(--color-background) !important; }
+.pip-row-clickable { cursor: pointer; }
+.pip-row-clickable:focus-visible { outline: 2px solid #8B5CF6; outline-offset: -2px; }
+
+/* First column stays put while the wide tables scroll sideways. The header
+   cell is already sticky-top via .spreadsheet-table th; adding left:0 pins it
+   on both axes, and it needs to outrank the body's sticky cells. */
+.spreadsheet-table td.pip-sticky-first {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--color-surface);
+}
+.spreadsheet-table th.pip-sticky-first {
+  left: 0;
+  z-index: 31;
+}
+
+/* Column resize grip on the right edge of a header cell. The <th> is already
+   a positioned (sticky) element, so no extra `position` is set on it — an
+   inline position would silently demote the sticky header. */
+.pip-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+}
+.pip-resize-handle:hover { background: rgba(139, 92, 246, 0.3); }
+
+/* Compact buttons in the toolbar. */
+.pip-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.pip-icon-button:hover { border-color: #8B5CF6; background: rgba(139, 92, 246, 0.06); }
+.pip-icon-button:disabled { opacity: 0.5; cursor: default; }
+
+.pip-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pip-text-button:hover { border-color: #8B5CF6; background: rgba(139, 92, 246, 0.06); }

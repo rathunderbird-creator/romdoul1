@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
@@ -11,21 +11,56 @@ interface LayoutProps {
     children: ReactNode;
 }
 
+// Desktop sidebar: PINNED = expanded and pushing the content aside (it never
+// overlays the page); UNPINNED = 80px icon rail with tooltips. The choice is
+// remembered per browser. Below 1200px the rail is forced so the content keeps
+// its width on tablets.
+const SIDEBAR_PIN_KEY = 'sidebar_pinned';
+const WIDE_QUERY = '(min-width: 1200px)';
+const readPinned = (): boolean => {
+    try { return localStorage.getItem(SIDEBAR_PIN_KEY) === '1'; } catch { return false; }
+};
+const matchesWide = (): boolean =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(WIDE_QUERY).matches : true;
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const isMobile = useMobile();
     const location = useLocation();
-    const [isCollapsed, setIsCollapsed] = useState(true);
+    // Mobile: the sidebar is a drawer (true = hidden).
+    const [isDrawerHidden, setIsDrawerHidden] = useState(true);
+    const [isPinned, setIsPinned] = useState<boolean>(readPinned);
+    const [isWide, setIsWide] = useState<boolean>(matchesWide);
     const [isHeaderHidden, setIsHeaderHidden] = useState(false);
     const lastScrollY = React.useRef(0);
+
+    useEffect(() => {
+        if (typeof window.matchMedia !== 'function') return;
+        const mq = window.matchMedia(WIDE_QUERY);
+        const onChange = () => setIsWide(mq.matches);
+        onChange();
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+    }, []);
 
     // Reset header visibility when switching routes
     React.useEffect(() => {
         setIsHeaderHidden(false);
     }, [location.pathname]);
 
-    // Auto-collapse on mobile, but let user toggle
-    // Actually, on mobile, "collapsed" might mean hidden vs shown.
-    // Let's interpret isCollapsed as "Sidebar Hidden" on mobile, and "Sidebar Mini" on Desktop.
+    const togglePin = () => {
+        setIsPinned(prev => {
+            const next = !prev;
+            try { localStorage.setItem(SIDEBAR_PIN_KEY, next ? '1' : '0'); } catch { /* private mode */ }
+            return next;
+        });
+    };
+
+    // Desktop shows the expanded sidebar only when pinned on a wide screen.
+    const isCollapsed = isMobile ? isDrawerHidden : !(isPinned && isWide);
+    const toggleSidebar = () => {
+        if (isMobile) setIsDrawerHidden(hidden => !hidden);
+        else togglePin();
+    };
 
     const handleScroll = (e: React.UIEvent<HTMLElement>) => {
         if (!isMobile) return;
@@ -52,7 +87,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         // inside the zoomed body (see index.css) and left a bottom/right gap.
         <div style={{ height: 'var(--vh-full)', display: 'flex', overflow: 'hidden' }}>
             <TopLoadingBar />
-            <Sidebar isCollapsed={isCollapsed} toggleSidebar={() => setIsCollapsed(!isCollapsed)} isMobile={isMobile} />
+            <Sidebar
+                isCollapsed={isCollapsed}
+                toggleSidebar={toggleSidebar}
+                isMobile={isMobile}
+                isPinned={isPinned && isWide}
+                canPin={isWide}
+                onTogglePin={togglePin}
+            />
             <div style={{
                 flex: 1,
                 display: 'flex',
@@ -62,7 +104,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 width: isMobile ? '100%' : `calc(var(--vw-full) - ${isCollapsed ? '80px' : 'var(--sidebar-width)'})`,
                 overflow: 'hidden'
             }}>
-                <Header isCollapsed={isCollapsed} toggleSidebar={() => setIsCollapsed(!isCollapsed)} isHidden={isHeaderHidden} />
+                <Header isCollapsed={isCollapsed} toggleSidebar={toggleSidebar} isHidden={isHeaderHidden} />
                 <main
                     onScroll={handleScroll}
                     style={{

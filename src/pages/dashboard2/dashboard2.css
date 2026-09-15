@@ -1,0 +1,196 @@
+/* Dashboard2 — layout, breakpoints, Khmer text, focus/hover affordances.
+   Everything else is inline (codebase convention); this file holds only what
+   inline styles cannot express (media queries, pseudo-classes, keyframes). */
+
+.d2 {
+    --d2-bg: #f4f6fa;
+    --d2-card: #ffffff;
+    --d2-border: #e5e7eb;
+    --d2-ink: #111827;
+    --d2-muted: #6b7280;
+    --d2-blue: #2563eb;
+    --d2-focus: #2563eb;
+    color: var(--d2-ink);
+    font-variant-numeric: tabular-nums;
+    padding-bottom: 32px;
+}
+
+/* Khmer script is taller than Latin and wraps differently (spec §5). Any
+   element that can hold a customer / salesman / page / courier name gets this. */
+.d2-khmer {
+    line-height: 1.85;
+    font-family: 'Battambang', 'Khmer OS Battambang', 'Noto Sans Khmer', 'Inter', system-ui, sans-serif;
+    overflow-wrap: anywhere;
+}
+
+/* Label blocks keep a fixed minimum height so a wrapping Khmer name never
+   misaligns the value sitting next to it. */
+.d2-label-block {
+    min-height: 2.6em;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Clickable surfaces: 1px lift + shadow on hover, visible focus ring (§6). */
+.d2-clickable {
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+    text-align: inherit;
+    font: inherit;
+    color: inherit;
+}
+.d2-clickable:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.08);
+}
+.d2-clickable:active {
+    transform: translateY(0);
+}
+.d2-clickable:focus-visible,
+.d2 button:focus-visible,
+.d2 a:focus-visible,
+.d2 [tabindex]:focus-visible {
+    outline: 2px solid var(--d2-focus);
+    outline-offset: 2px;
+}
+
+/* Rows in tables lift less (they are dense). */
+.d2-row-clickable {
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+.d2-row-clickable:hover {
+    background-color: #f8fafc;
+}
+.d2-row-clickable:focus-visible {
+    outline: 2px solid var(--d2-focus);
+    outline-offset: -2px;
+}
+
+/* Grids ------------------------------------------------------------------ */
+.d2-hero {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr 1fr 1fr;
+    gap: 14px;
+}
+.d2-alerts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+.d2-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+.d2-inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+/* Pipeline strip scrolls sideways rather than wrapping into orphans. */
+.d2-pipeline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+/* Tabs scroll horizontally on narrow screens (§9). Padding + a matching
+   negative margin (like .d2-pipeline above) keeps the focus ring's 2px
+   offset inside the scroll container instead of being clipped by it. */
+.d2-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 4px;
+    margin: -4px;
+}
+.d2-tabs::-webkit-scrollbar { display: none; }
+
+/* Tables scroll inside their container, never the page (§9). */
+.d2-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.d2-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+.d2-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f9fafb;
+    color: var(--d2-muted);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--d2-border);
+    white-space: nowrap;
+    user-select: none;
+}
+.d2-table th button {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+.d2-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f3f6;
+    vertical-align: middle;
+}
+.d2-table tr:last-child td { border-bottom: none; }
+
+/* Skeleton shimmer (§8 loading — no spinners, no layout shift). */
+@keyframes d2-shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+.d2-skeleton {
+    background: linear-gradient(90deg, #eef0f4 25%, #f6f7f9 50%, #eef0f4 75%);
+    background-size: 800px 100%;
+    animation: d2-shimmer 1.4s linear infinite;
+    border-radius: 6px;
+}
+
+@keyframes d2-spin { to { transform: rotate(360deg); } }
+.d2-spin { animation: d2-spin 1s linear infinite; }
+
+/* Breakpoints (§9) --------------------------------------------------------
+   The body is zoomed to 0.88 on desktop (index.css), so CSS px widths here
+   are compared against the unzoomed viewport: 1200 → ~1364 real px. */
+@media (max-width: 1199px) {
+    .d2-hero { grid-template-columns: 1fr 1fr; }
+    .d2-alerts { grid-template-columns: 1fr; }
+    .d2-two-col { grid-template-columns: 1fr; }
+    .d2-inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+    .d2-hero { grid-template-columns: 1fr; }
+    .d2-inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .d2-toolbar { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .d2-clickable, .d2-row-clickable { transition: none; }
+    .d2-clickable:hover { transform: none; }
+    .d2-skeleton { animation: none; }
+}

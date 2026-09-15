@@ -123,7 +123,10 @@ const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: stri
     `never taken.\n\n` +
     `Set the order back to Drafted, then move it through Confirmed → Shipped.`;
 
-const StoreContext = createContext<StoreContextType | undefined>(undefined);
+// Exported (not just the hook) so a dev-only preview harness can supply a
+// mock value directly via <StoreContext.Provider> without pulling in the
+// real provider's Supabase wiring — see src/dev/*-preview.tsx.
+export const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 // Initial Dummy Data
 
@@ -1700,7 +1703,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // ------------------------------
 
         const updates: any = { shipping_status: status };
-        if (trackingNumber) updates.tracking_number = trackingNumber;
+        // A defined check, not truthy: '' is a legitimate value now that
+        // Orders Management 2's drawer lets staff deliberately clear a
+        // tracking number — a truthy check silently dropped that write
+        // while still showing "Saved" in the UI. Every existing caller only
+        // ever omits this argument (undefined) or passes a real value, so
+        // this doesn't change behavior for them.
+        if (trackingNumber !== undefined) updates.tracking_number = trackingNumber;
         if (shippingCompany) updates.shipping_company = shippingCompany;
 
         if (currentUser) {
@@ -1797,7 +1806,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
-        if (salesOrder && trackingNumber && trackingNumber !== salesOrder.shipping?.trackingNumber) {
+        if (salesOrder && trackingNumber !== undefined && trackingNumber !== salesOrder.shipping?.trackingNumber) {
             dispatchActivity({ 
                 action: 'order_updated', 
                 description: `Tracking ID updated for Order #${id.slice(0, 8)}`, 

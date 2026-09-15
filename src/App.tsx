@@ -6,6 +6,8 @@ import Login from './pages/Login';
 
 // Lazy Load Pages
 const Dashboard = lazy(() => import('./pages/DashboardPage'));
+const Dashboard2 = lazy(() => import('./pages/dashboard2/Dashboard2Page'));
+const OrdersManagement2 = lazy(() => import('./pages/ordersManagement2/OrdersManagement2Page'));
 const TodoPage = lazy(() => import('./pages/TodoPage'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const IncomeExpense = lazy(() => import('./pages/IncomeExpense'));
@@ -30,6 +32,8 @@ const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
 const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
 const Revenue = lazy(() => import('./pages/Revenue'));
 const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
+const PageIncomePrediction = lazy(() => import('./pages/pageIncomePrediction/PageIncomePredictionPage'));
+const ProductIncomePrediction = lazy(() => import('./pages/productIncomePrediction/ProductIncomePredictionPage'));
 const ActivityLogPage = lazy(() => import('./pages/ActivityLogPage'));
 const PriceListPage = lazy(() => import('./pages/PriceListPage'));
 
@@ -112,6 +116,7 @@ const ProtectedApp = () => {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
+          <Route path="/dashboard2" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard2 /></ProtectedRoute>} />
           <Route path="/price-list" element={<ProtectedRoute requiredPermission="view_dashboard"><PriceListPage /></ProtectedRoute>} />
           <Route path="/todo" element={<ProtectedRoute requiredPermission="view_dashboard"><TodoPage /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
@@ -119,12 +124,24 @@ const ProtectedApp = () => {
           <Route path="/inventory/categories" element={<ProtectedRoute requiredPermission="manage_inventory"><CategoriesPage /></ProtectedRoute>} />
           <Route path="/inventory/warehouses" element={<ProtectedRoute requiredPermission="manage_inventory"><WarehousesPage /></ProtectedRoute>} />
           <Route path="/inventory/stock-movements" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockMovementsPage /></ProtectedRoute>} />
-          <Route path="/income-expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
-          <Route path="/income-expense/income" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
-          <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomeExpense /></ProtectedRoute>} />
-          <Route path="/income-expense/revenue" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><Revenue /></ProtectedRoute>} />
-          <Route path="/income-expense/prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock']}><IncomePrediction /></ProtectedRoute>} />
+          {/* Every income-expense route (this whole block) includes manage_income_expense
+              alongside the legacy view permissions — an OR list, same as everywhere else in
+              this router — because Sidebar.tsx shows this entire nav section on
+              manage_income_expense alone; a role with just that permission must be able to
+              open every link it can see, not get redirected to '/'. The three view
+              permissions stay in the list too (existing, intentional read access for
+              inventory/reporting roles) — this route guard has never been exclusive to
+              manage_income_expense, and narrowing it would be a real access-policy change,
+              not a bug fix. */}
+          <Route path="/income-expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomeExpense /></ProtectedRoute>} />
+          <Route path="/income-expense/income" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomeExpense /></ProtectedRoute>} />
+          <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomeExpense /></ProtectedRoute>} />
+          <Route path="/income-expense/revenue" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><Revenue /></ProtectedRoute>} />
+          <Route path="/income-expense/prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomePrediction /></ProtectedRoute>} />
+          <Route path="/income-expense/page-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><PageIncomePrediction /></ProtectedRoute>} />
+          <Route path="/income-expense/product-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><ProductIncomePrediction /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
+          <Route path="/orders-management-2" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrdersManagement2 /></ProtectedRoute>} />
           <Route path="/orders/shipping" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
           <Route path="/orders/deleted" element={<ProtectedRoute requiredPermission="manage_orders"><DeletedOrders /></ProtectedRoute>} />
           <Route path="/orders/scammers" element={<ProtectedRoute requiredPermission="manage_orders"><Scammers /></ProtectedRoute>} />

@@ -21,7 +21,14 @@ const instances = require('./db_instances.json').instances;
 const EXPECTED_TABLES = {
     products: [
         'id', 'name', 'model', 'price', 'stock', 'low_stock_threshold',
-        'image', 'category', 'low_stock_alert', 'created_at'
+        'image', 'category', 'low_stock_alert', 'created_at',
+        // purchase_cost/is_active back every COGS figure in all three Income
+        // Prediction screens (and is_active gates which products count as
+        // "still active" there); sku/invoice_number/supplier are the rest of
+        // StoreContext.tsx's own products select (line ~353) — without these
+        // here, a column missing on some instance would report "products ✅"
+        // even though it breaks the exact features that depend on it.
+        'purchase_cost', 'is_active', 'sku', 'invoice_number', 'supplier'
     ],
     customers: [
         'id', 'name', 'phone', 'email', 'address', 'city',
@@ -86,6 +93,8 @@ const EXPECTED_TABLES = {
     todos: ['id', 'title', 'description', 'due_date', 'priority', 'status', 'project', 'created_at', 'updated_at', 'user_id', 'repeat_rule', 'remind_at', 'last_reminded_on'],
     todo_projects: ['id', 'name', 'color', 'created_at', 'user_id'],
     income_predictions: ['date', 'shipped_delivered', 'order_count', 'cogs', 'shipping', 'boost_page', 'staff', 'profit', 'updated_at', 'updated_by'],
+    // Prediction by Page manual inputs (create_page_income_predictions.sql).
+    page_income_predictions: ['date', 'page', 'boost_page', 'shipping', 'updated_at', 'updated_by'],
     // Tables with their own migration file: existence check only (empty list).
     inventory_items: [],
     deleted_orders: [],
@@ -116,6 +125,8 @@ const EXPECTED_TABLES = {
 const MIGRATION_FOR = {
     warehouses: 'create_warehouses.sql',
     warehouse_stock: 'create_warehouses.sql',
+    income_predictions: 'create_income_predictions.sql',
+    page_income_predictions: 'create_page_income_predictions.sql',
     inventory_items: 'create_inventory_items.sql',
     deleted_orders: 'create_deleted_orders.sql',
     deleted_sale_items: 'create_deleted_orders.sql',

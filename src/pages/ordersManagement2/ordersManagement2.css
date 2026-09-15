@@ -1,0 +1,97 @@
+/* Orders Management 2 — layout, frozen columns, breakpoints, Khmer text.
+   Shares tokens/behaviour with Dashboard 2 (dashboard2.css) rather than
+   redefining them; this file holds only what's specific to this screen. */
+
+.om2 {
+    color: #111827;
+    font-variant-numeric: tabular-nums;
+}
+
+.om2-khmer {
+    line-height: 1.85;
+    font-family: 'Battambang', 'Khmer OS Battambang', 'Noto Sans Khmer', 'Inter', system-ui, sans-serif;
+    overflow-wrap: anywhere;
+}
+
+/* Frozen column (checkbox only — Customer is intentionally not pinned): sticky
+   left with a right shadow that only shows once the table has actually
+   scrolled (data-scrolled on the wrapper), so it doesn't look like a stray
+   border at rest. */
+.om2-table-wrap {
+    overflow: auto;
+    position: relative;
+}
+.om2-table {
+    /* min-width, not width: with table-layout:fixed, a hard width:100% caps
+       the table exactly at the container's width, so once the resizable
+       columns' widths sum to more than that, the browser proportionally
+       SHRINKS every column to force-fit — which is what made resizing feel
+       like it fought back and clipped the two widest headers (Customer,
+       Product) down to no visible text. min-width lets the table grow past
+       100% instead, so .om2-table-wrap's overflow:auto scrolls horizontally
+       the same way the classic Orders table (.spreadsheet-table) already
+       does with its own resizable columns. */
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+.om2-table th,
+.om2-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f3f7;
+    vertical-align: middle;
+    background: #fff;
+}
+/* position:sticky here (top:0) also doubles as the positioned ancestor every
+   sortable header's absolutely-positioned resize handle needs — sticky is a
+   valid containing block for absolute descendants, same as relative would be.
+   Don't re-declare position inline on a <th> in OrdersTable.tsx's SortTh: an
+   inline style always beats a class regardless of specificity, so it would
+   silently demote a frozen column's own position:sticky (e.g.
+   .om2-col-frozen-1's left:0) down to plain relative — that's exactly what
+   once pushed a frozen Customer column on top of the column after it. */
+.om2-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f9fafb;
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    border-bottom: 1px solid #e5e7eb;
+}
+.om2-col-frozen-1 { position: sticky; left: 0; z-index: 2; }
+.om2-table thead .om2-col-frozen-1 { z-index: 4; }
+.om2-table-wrap[data-scrolled="true"] .om2-col-frozen-1 {
+    box-shadow: 4px 0 6px -4px rgba(17, 24, 39, 0.18);
+}
+
+.om2-row:hover td { background: #f8fafc; }
+.om2-row:hover .om2-col-frozen-1 { background: #f8fafc; }
+.om2-row.om2-row-selected td { background: #eff4ff; }
+.om2-row.om2-row-selected .om2-col-frozen-1 { background: #eff4ff; }
+
+/* Row actions: opacity .25 -> 1 on hover/focus-within (spec §4.3). */
+.om2-row-actions { opacity: 0.25; transition: opacity 0.15s ease; }
+.om2-row:hover .om2-row-actions,
+.om2-row:focus-within .om2-row-actions { opacity: 1; }
+
+.om2-row-clickable { cursor: pointer; }
+.om2-row-clickable:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+
+/* Tap targets >= 44px on mobile (spec §9). */
+@media (max-width: 767px) {
+    .om2-tap-target { min-width: 44px; min-height: 44px; }
+}
+
+@media (max-width: 1199px) {
+    .om2-hide-tablet { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .om2-row-actions { transition: none; }
+}

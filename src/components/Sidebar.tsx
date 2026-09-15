@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Pin, PinOff, Gauge, Megaphone } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -8,9 +8,13 @@ interface SidebarProps {
     isCollapsed: boolean;
     toggleSidebar: () => void;
     isMobile: boolean;
+    // Desktop pin: expanded + pushing content (never an overlay). See Layout.
+    isPinned?: boolean;
+    canPin?: boolean;       // false below 1200px, where the rail is forced
+    onTogglePin?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile, isPinned = false, canPin = true, onTogglePin }) => {
     const { hasPermission, logo } = useStore();
     const { t, language, setLanguage } = useLanguage();
 
@@ -27,6 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
+        navItems.push({ icon: Gauge, label: t('nav.dashboard2'), path: '/dashboard2' });
         navItems.push({ icon: Tags, label: t('nav.priceList'), path: '/price-list' });
         navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
     }
@@ -38,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             path: '/orders',
             subItems: [
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
+                { label: t('nav.ordersManagement2'), path: '/orders-management-2', icon: Gauge },
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
                 { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
                 { label: t('nav.scammers'), path: '/orders/scammers', icon: AlertTriangle },
@@ -56,7 +62,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                 { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
                 { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
                 { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign },
-                { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar }
+                { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
+                { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
+                { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 }
             ]
         });
     }
@@ -199,10 +207,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
     // Mobile Logic:
     // isCollapsed = true -> Hidden
     // isCollapsed = false -> Overlay Open
-
-    const [isHovered, setIsHovered] = useState(false);
-    const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-    const visualCollapsed = isCollapsed && !isHovered;
+    //
+    // Desktop: pinned = always expanded, pushing the content aside (Layout's
+    // margin-left tracks `isCollapsed`, which is already `!isPinned` there).
+    // Unpinned = the icon rail, but hovering it temporarily expands the
+    // sidebar to show labels — an overlay on top of the page (Layout's
+    // margin never moves for this, only `isPinned` does), not a reflow.
+    const [isHovering, setIsHovering] = useState(false);
+    const visualCollapsed = isMobile ? isCollapsed : (isPinned ? false : !isHovering);
 
     const sidebarWidth = isMobile ? '280px' : (visualCollapsed ? '80px' : 'var(--sidebar-width)');
     const transform = isMobile ? (isCollapsed ? 'translateX(-100%)' : 'translateX(0)') : 'none';
@@ -224,20 +236,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
             )}
 
             <aside
-                onMouseEnter={() => {
-                    if (!isMobile) {
-                        hoverTimerRef.current = setTimeout(() => setIsHovered(true), 500);
-                    }
-                }}
-                onMouseLeave={() => {
-                    if (!isMobile) {
-                        if (hoverTimerRef.current) {
-                            clearTimeout(hoverTimerRef.current);
-                            hoverTimerRef.current = null;
-                        }
-                        setIsHovered(false);
-                    }
-                }}
+                aria-label="Main navigation"
+                onMouseEnter={() => setIsHovering(true)}
+                onMouseLeave={() => setIsHovering(false)}
                 style={{
                     width: sidebarWidth,
                     // Not 100vh: raw viewport units render short inside the
@@ -255,7 +256,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     zIndex: 100,
                     transition: 'width 0.3s ease, transform 0.3s ease',
                     transform: transform,
-                    boxShadow: isMobile && !isCollapsed ? '4px 0 24px rgba(0,0,0,0.15)' : (isHovered && isCollapsed ? '4px 0 24px rgba(0,0,0,0.1)' : 'none')
+                    boxShadow: isMobile && !isCollapsed ? '4px 0 24px rgba(0,0,0,0.15)' : 'none'
                 }}>
                 <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', justifyContent: visualCollapsed ? 'center' : 'flex-start' }}>
                     <div style={{
@@ -280,6 +281,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     </div>
                     {!visualCollapsed && <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, background: 'none', WebkitTextFillColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>POS</h1>}
 
+                    {/* Desktop, expanded (pinned, or just hover-revealed): toggle
+                        pin state. Hover-revealed-but-unpinned still needs this —
+                        otherwise there'd be no way to lock the sidebar open
+                        without first letting it collapse back to the rail. */}
+                    {!isMobile && !visualCollapsed && onTogglePin && (
+                        <button
+                            type="button"
+                            onClick={onTogglePin}
+                            disabled={!isPinned && !canPin}
+                            title={isPinned ? 'Unpin sidebar (collapse to icons)' : (canPin ? 'Pin sidebar (keep it open)' : 'Pin sidebar (needs a wider window)')}
+                            aria-label="Pin sidebar"
+                            aria-pressed={isPinned}
+                            className="sidebar-item"
+                            style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid #333', color: '#9CA3AF', padding: '5px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer' }}
+                        >
+                            {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+                        </button>
+                    )}
+
                     {isMobile && !isCollapsed && (
                         <button
                             onClick={toggleSidebar}
@@ -300,7 +320,28 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     )}
                 </div>
 
-                <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', overflowX: 'hidden' }}>
+                {/* Desktop, rail: pin → expanded sidebar that pushes the content */}
+                {!isMobile && visualCollapsed && onTogglePin && (
+                    <button
+                        type="button"
+                        onClick={onTogglePin}
+                        disabled={!canPin}
+                        title={canPin ? 'Pin sidebar (keep it open)' : 'Pin sidebar (needs a wider window)'}
+                        aria-label="Pin sidebar"
+                        aria-pressed={isPinned}
+                        // Same accessible name as the expanded-state button
+                        // above — a toggle's aria-pressed should carry the
+                        // state, not a name that also flips ("Pin" vs "Unpin"
+                        // both announcing "pressed"/"not pressed" reads as
+                        // self-contradictory to a screen reader).
+                        className="sidebar-item"
+                        style={{ background: 'transparent', border: '1px solid #333', color: '#9CA3AF', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', opacity: canPin ? 1 : 0.5, cursor: canPin ? 'pointer' : 'not-allowed' }}
+                    >
+                        <Pin size={14} />
+                    </button>
+                )}
+
+                <nav aria-label="Pages" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', overflowX: 'hidden' }}>
                     {navItems.map((item) => {
                         const hasSubItems = item.subItems && item.subItems.length > 0;
                         const isExpanded = expandedMenus[item.label] || false;
@@ -311,29 +352,48 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                         return (
                             <div key={item.label}>
                                 {hasSubItems ? (
-                                    <div
-                                        className={`sidebar-item ${isParentActive ? 'active-parent' : ''}`}
-                                        title={visualCollapsed ? item.label : ''}
-                                        onClick={() => {
-                                            setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] }));
-                                        }}
-                                        style={{
-                                            justifyContent: visualCollapsed ? 'center' : 'space-between',
-                                            padding: visualCollapsed ? '10px' : '9px 14px',
-                                        }}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    visualCollapsed ? (
+                                        // Rail: a toggle here would disclose a sub-item list that
+                                        // never renders while collapsed (dead click, dead Enter/Space,
+                                        // misleading aria-expanded for screen readers) — link straight
+                                        // to the group's first page instead, like every other icon.
+                                        <NavLink
+                                            to={item.subItems[0].path}
+                                            title={item.label}
+                                            aria-label={item.label}
+                                            className={() => `sidebar-item ${isParentActive ? 'active-parent' : ''}`}
+                                            style={{ justifyContent: 'center', padding: '10px' }}
+                                        >
                                             <item.icon size={17} />
-                                            {!visualCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
-                                        </div>
-                                        {!visualCollapsed && (
+                                        </NavLink>
+                                    ) : (
+                                        <div
+                                            className={`sidebar-item ${isParentActive ? 'active-parent' : ''}`}
+                                            aria-label={item.label}
+                                            aria-expanded={isExpanded}
+                                            role="button"
+                                            tabIndex={0}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] })); } }}
+                                            onClick={() => {
+                                                setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] }));
+                                            }}
+                                            style={{
+                                                justifyContent: 'space-between',
+                                                padding: '9px 14px',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <item.icon size={17} />
+                                                <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>
+                                            </div>
                                             <ChevronDown size={14} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-                                        )}
-                                    </div>
+                                        </div>
+                                    )
                                 ) : (
                                     <NavLink
                                         to={item.path}
                                         title={visualCollapsed ? item.label : ''}
+                                        aria-label={item.label}
                                         className={({ isActive }) => `sidebar-item ${isActive ? 'active-link' : ''}`}
                                         onClick={() => {
                                             if (isMobile && !isCollapsed) {
@@ -384,7 +444,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     {canManageUsers && (
                         <NavLink
                             to="/users"
-                            title={visualCollapsed ? 'User Management' : ''}
+                            title={visualCollapsed ? t('nav.userManagement') : ''}
+                            aria-label={t('nav.userManagement')}
                             onClick={() => {
                                 if (isMobile && !isCollapsed) {
                                     toggleSidebar();
@@ -405,7 +466,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile 
                     {canManageSettings && (
                         <NavLink
                             to="/settings"
-                            title={visualCollapsed ? 'Settings' : ''}
+                            title={visualCollapsed ? t('nav.settings') : ''}
+                            aria-label={t('nav.settings')}
                             onClick={() => {
                                 if (isMobile && !isCollapsed) {
                                     toggleSidebar();
