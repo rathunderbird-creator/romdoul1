@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye, RefreshCw, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye, RefreshCw, ChevronLeft, ChevronRight, Copy, FilterX } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -459,6 +459,9 @@ const PurchaseOrdersPage = () => {
     };
 
     const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (supplierFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0);
+    // Clear resets the search too (the badge count above only covers the drawer's filters).
+    const hasActiveFilters = !!searchQuery || activeFilterCount > 0;
+    const clearFilters = () => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter('All'); setPaymentFilter([]); };
 
     return (
         <div className="page-container fade-in">
@@ -525,7 +528,7 @@ const PurchaseOrdersPage = () => {
                     <MobileFilterDrawer
                         isOpen={isFilterDrawerOpen}
                         onClose={() => setIsFilterDrawerOpen(false)}
-                        onClear={() => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter('All'); setPaymentFilter([]); }}
+                        onClear={clearFilters}
                         searchValue={searchQuery}
                         onSearchChange={setSearchQuery}
                         searchPlaceholder="Search PO, supplier, invoice..."
@@ -628,6 +631,25 @@ const PurchaseOrdersPage = () => {
                         <option value="All">All Suppliers</option>
                         {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                     </select>
+
+                    {/* Clear every filter (status, payment, supplier, search) */}
+                    <button
+                        onClick={clearFilters}
+                        disabled={!hasActiveFilters}
+                        title={hasActiveFilters ? 'Clear all filters' : 'No filters applied'}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            padding: '8px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+                            cursor: hasActiveFilters ? 'pointer' : 'default',
+                            color: hasActiveFilters ? '#EF4444' : 'var(--color-text-muted)',
+                            background: hasActiveFilters ? 'rgba(239, 68, 68, 0.08)' : 'var(--color-surface)',
+                            border: `1px solid ${hasActiveFilters ? 'rgba(239, 68, 68, 0.3)' : 'var(--color-border)'}`,
+                            opacity: hasActiveFilters ? 1 : 0.6,
+                            transition: 'all 0.2s ease', whiteSpace: 'nowrap',
+                        }}
+                    >
+                        <FilterX size={15} /> Clear
+                    </button>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
