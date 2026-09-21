@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { fetchAll } from '../utils/fetchAll';
+import { orderListState, type OrderListFilters } from '../utils/orderListFilters';
 import type { Sale } from '../types';
 
 // Canonical status ordering used by every performance section.
@@ -27,6 +28,15 @@ const getStatusStyle = (status: string): { color: string; bgColor: string } => {
         case 'Pending': return { color: '#D97706', bgColor: '#FEF3C7' };
         default: return { color: '#1D4ED8', bgColor: '#EFF6FF' };
     }
+};
+
+// Translated order-status label. Drafted is stored under `status.ordered`, and
+// `t` returns the key itself when a translation is missing (so a `|| status`
+// fallback never fires) — compare against the key instead.
+const statusLabel = (status: string, t: (k: string) => string): string => {
+    const key = `status.${status === 'Drafted' ? 'ordered' : status.toLowerCase()}`;
+    const label = t(key);
+    return label === key ? status : label;
 };
 
 // Sorted, translated status pills shared by the salesman/page/shipping/product cards.
@@ -47,7 +57,7 @@ const StatusBadges: React.FC<{ statuses: Record<string, number>; t: (k: string) 
                         backgroundColor: bgColor, color, fontWeight: 600,
                         display: 'inline-flex', alignItems: 'center'
                     }}>
-                        {t(`status.${status.toLowerCase()}`) || status}: {count}
+                        {statusLabel(status, t)}: {count}
                     </span>
                 );
             })}
@@ -102,7 +112,7 @@ const Dashboard: React.FC = () => {
         if (stored) {
             try {
                 return JSON.parse(stored);
-            } catch (e) {}
+            } catch { /* corrupt saved range — fall back to today */ }
         }
         const now = new Date();
         const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -122,13 +132,20 @@ const Dashboard: React.FC = () => {
     const [isLoadingSales, setIsLoadingSales] = React.useState(false);
     const [salesmanStatusFilter, setSalesmanStatusFilter] = React.useState<string>('All');
     const [pageStatusFilter, setPageStatusFilter] = React.useState<string>('All');
+    const [loadError, setLoadError] = React.useState<string | null>(null);
+    // Ignore responses from superseded requests (fast range switching), so a
+    // slow wide-range fetch can't land last and overwrite a newer range.
+    const fetchReqRef = React.useRef(0);
 
     const fetchDashboardSales = React.useCallback(async () => {
+        const reqId = ++fetchReqRef.current;
         setIsLoadingSales(true);
-        try {
-            // All three queries are chunk-fetched (fetchAll) so wide ranges are
-            // never silently truncated at the API's ~1000-row cap.
-            const invData = await fetchAll((from, to) => {
+        setLoadError(null);
+        // The three queries are independent: run them in parallel, and don't
+        // let one failure stop the others. All are chunk-fetched (fetchAll) so
+        // wide ranges are never silently truncated at the API's ~1000-row cap.
+        const [invRes, salesRes, gfRes] = await Promise.allSettled([
+            fetchAll<{ type: string; quantity: number | null }>((from, to) => {
                 let invQuery = supabase.from('stock_movements').select('id, type, quantity');
                 if (dateRange.start) {
                     invQuery = invQuery.gte('movement_date', dateRange.start.split('T')[0]);
@@ -137,13 +154,8 @@ const Dashboard: React.FC = () => {
                     invQuery = invQuery.lte('movement_date', dateRange.end.split('T')[0]);
                 }
                 return invQuery.order('id', { ascending: true }).range(from, to);
-            });
-            const inTotal = invData.filter((d: any) => d.type === 'in').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
-            const outTotal = invData.filter((d: any) => d.type === 'out').reduce((sum: number, d: any) => sum + (d.quantity || 0), 0);
-            setStockInCount(inTotal);
-            setStockOutCount(outTotal);
-
-            const data = await fetchAll((from, to) => {
+            }),
+            fetchAll((from, to) => {
                 let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
                 if (dateRange.start) {
                     const start = new Date(dateRange.start);
@@ -156,27 +168,42 @@ const Dashboard: React.FC = () => {
                     query = query.lte('date', end.toISOString());
                 }
                 return query.order('id', { ascending: true }).range(from, to);
-            });
-
+            }),
             // Global Get File pipeline, ignoring the date range.
-            const gfRows = await fetchAll((from, to) =>
+            fetchAll<{ total: number | string | null }>((from, to) =>
                 supabase.from('sales').select('id, total').eq('payment_status', 'Get File')
                     .order('id', { ascending: true }).range(from, to)
-            );
-            setGetFileGlobal({
-                count: gfRows.length,
-                total: gfRows.reduce((s: number, r: any) => s + (Number(r.total) || 0), 0)
-            });
+            ),
+        ]);
+        if (reqId !== fetchReqRef.current) return;
 
-            const mapped = data.map(mapSaleEntity);
-            setFilteredSales(mapped);
-
-        } catch (error) {
-            console.error("Failed to fetch dashboard sales:", error);
-        } finally {
-            setIsLoadingSales(false);
+        if (invRes.status === 'fulfilled') {
+            const invData = invRes.value;
+            setStockInCount(invData.filter(d => d.type === 'in').reduce((sum, d) => sum + (d.quantity || 0), 0));
+            setStockOutCount(invData.filter(d => d.type === 'out').reduce((sum, d) => sum + (d.quantity || 0), 0));
         }
+        if (salesRes.status === 'fulfilled') {
+            setFilteredSales(salesRes.value.map(mapSaleEntity));
+        }
+        if (gfRes.status === 'fulfilled') {
+            setGetFileGlobal({
+                count: gfRes.value.length,
+                total: gfRes.value.reduce((s, r) => s + (Number(r.total) || 0), 0)
+            });
+        }
+
+        const failure = [invRes, salesRes, gfRes].find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (failure) {
+            console.error("Failed to fetch dashboard data:", failure.reason);
+            setLoadError((failure.reason as { message?: string })?.message || String(failure.reason));
+        }
+        setIsLoadingSales(false);
     }, [dateRange]);
+
+    // Opens the Orders list showing exactly this subset. Orders.tsx resets every
+    // filter not given here (including search and column filters), so leftovers
+    // from an earlier visit can't hide orders the card counted.
+    const openOrders = (filters: OrderListFilters) => navigate('/orders', { state: orderListState(filters) });
 
     React.useEffect(() => {
         fetchDashboardSales();
@@ -550,6 +577,23 @@ const Dashboard: React.FC = () => {
                 )}
             </div>
 
+            {loadError && (
+                <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontSize: '13px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                        {t('dashboard.loadError').replace('{message}', loadError)}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={fetchDashboardSales}
+                        disabled={isLoadingSales}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: '#fff', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                    >
+                        <RefreshCw size={13} /> {t('dashboard.retry')}
+                    </button>
+                </div>
+            )}
+
             {/* Sales & Orders Overview */}
             <SectionHeader
                 icon={ShoppingBag}
@@ -588,15 +632,7 @@ const Dashboard: React.FC = () => {
                     icon={ShoppingBag}
                     trend={t('dashboard.allOrders')}
                     color="var(--color-blue)"
-                    onClick={() => {
-                        localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                        localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                        localStorage.setItem('orders_salesmanFilter', 'All');
-                        localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                        localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                        navigate('/orders');
-                    }}
+                    onClick={() => openOrders({ dateRange })}
                 />
                 {orderStatusStats.map((stat, idx) => {
                     let color = '#1D4ED8', bgColor = '#EFF6FF'; // default blue (Shipped, etc)
@@ -614,15 +650,7 @@ const Dashboard: React.FC = () => {
                             icon={Package}
                             color={color}
                             bgColor={bgColor}
-                            onClick={() => {
-                                localStorage.setItem('orders_statusFilter', JSON.stringify([stat.status]));
-                                localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                localStorage.setItem('orders_salesmanFilter', 'All');
-                                localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                                navigate('/orders');
-                            }}
+                            onClick={() => openOrders({ statuses: [stat.status], dateRange })}
                         />
                     );
                 })}
@@ -650,17 +678,12 @@ const Dashboard: React.FC = () => {
                             icon={CreditCard}
                             color={color}
                             bgColor={bgColor}
-                            onClick={() => {
-                                localStorage.setItem('orders_payStatusFilter', JSON.stringify([stat.status]));
-                                localStorage.setItem('orders_statusFilter', JSON.stringify([]));
+                            onClick={() => openOrders({
+                                payStatuses: [stat.status],
                                 // Get File is counted globally, so open Orders without a
                                 // date filter — otherwise the table would show fewer.
-                                localStorage.setItem('orders_dateRange', JSON.stringify(stat.status === 'Get File' ? { start: '', end: '' } : dateRange));
-                                localStorage.setItem('orders_salesmanFilter', 'All');
-                                localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                                navigate('/orders');
-                            }}
+                                dateRange: stat.status === 'Get File' ? undefined : dateRange
+                            })}
                         />
                     );
                 })}
@@ -727,16 +750,7 @@ const Dashboard: React.FC = () => {
                                 value={`${product.quantity} ${t('dashboard.sold')}`}
                                 icon={ShoppingBag}
                                 color="var(--color-primary)"
-                                onClick={() => {
-                                    localStorage.setItem('orders_searchTerm', `"${product.name}"`);
-                                    localStorage.setItem('orders_statusFilter', JSON.stringify(['Shipped', 'Delivered']));
-                                    localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_salesmanFilter', 'All');
-                                    localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                    navigate('/orders');
-                                }}
+                                onClick={() => openOrders({ search: `"${product.name}"`, statuses: ['Shipped', 'Delivered'], dateRange })}
                             />
                         ))}
                     </div>
@@ -793,16 +807,7 @@ const Dashboard: React.FC = () => {
                                         }
                                         icon={User}
                                         color="var(--color-primary)"
-                                        onClick={() => {
-                                            localStorage.setItem('orders_salesmanFilter', s.name);
-                                            localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_searchTerm', '');
-                                            localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                            navigate('/orders');
-                                        }}
+                                        onClick={() => openOrders({ salesman: s.name, dateRange })}
                                     />
                                 );
                             })}
@@ -860,16 +865,7 @@ const Dashboard: React.FC = () => {
                                         }
                                         icon={Globe}
                                         color="var(--color-primary)"
-                                        onClick={() => {
-                                            localStorage.setItem('orders_pageFilter', JSON.stringify([s.name]));
-                                            localStorage.setItem('orders_searchTerm', '');
-                                            localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_salesmanFilter', 'All');
-                                            localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                            navigate('/orders');
-                                        }}
+                                        onClick={() => openOrders({ pages: [s.name], dateRange })}
                                     />
                                 );
                             })}
@@ -904,15 +900,7 @@ const Dashboard: React.FC = () => {
                                         }
                                         icon={Truck}
                                         color="var(--color-primary)"
-                                        onClick={() => {
-                                            localStorage.setItem('orders_shippingCoFilter', JSON.stringify([carrier.name]));
-                                            localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_searchTerm', '');
-                                            localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                                            localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                            navigate('/orders');
-                                        }}
+                                        onClick={() => openOrders({ shippingCos: [carrier.name], dateRange })}
                                     />
                                 );
                             })}
@@ -971,16 +959,7 @@ const Dashboard: React.FC = () => {
                                 }
                                 icon={Package}
                                 color="var(--color-purple)"
-                                onClick={() => {
-                                    localStorage.setItem('orders_searchTerm', `"${p.name}"`);
-                                    localStorage.setItem('orders_statusFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_payStatusFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_salesmanFilter', 'All');
-                                    localStorage.setItem('orders_shippingCoFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_pageFilter', JSON.stringify([]));
-                                    localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
-                                    navigate('/orders');
-                                }}
+                                onClick={() => openOrders({ search: `"${p.name}"`, dateRange })}
                             />
                         ))}
                     </div>
