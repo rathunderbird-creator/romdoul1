@@ -34,6 +34,7 @@ interface DailyPrediction {
     staff: number;
     profit: number;
     isSaved: boolean;
+    boostFromPages: boolean;   // Boost was auto-filled from Prediction by Page
     isToday: boolean;
     isFuture: boolean;
     isWeekend: boolean;
@@ -166,7 +167,7 @@ const IncomePrediction: React.FC = () => {
 
             // Sales are chunk-fetched (fetchAll) so a >1000-order month is never
             // silently truncated at the API's max-rows cap.
-            const [salesRows, predictionsRes] = await Promise.all([
+            const [salesRows, predictionsRes, pageBoostRows] = await Promise.all([
                 fetchAll((from, to) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
@@ -175,10 +176,32 @@ const IncomePrediction: React.FC = () => {
                 ),
                 supabase.from('income_predictions')
                     .select('*')
-                    .gte('date', firstDayStr).lte('date', lastDayStr)
+                    .gte('date', firstDayStr).lte('date', lastDayStr),
+                // Boost typed per Facebook page in Prediction by Page. Optional input:
+                // that screen's table may not exist on this Supabase instance yet, in
+                // which case Boost simply stays manual here instead of breaking the
+                // whole screen. Ordered by its primary key so chunking is deterministic.
+                fetchAll<{ date: string; boost_page: number | string | null }>((from, to) =>
+                    supabase.from('page_income_predictions')
+                        .select('date, boost_page')
+                        .gte('date', firstDayStr).lte('date', lastDayStr)
+                        .order('date', { ascending: true }).order('page', { ascending: true }).range(from, to)
+                ).catch(error => {
+                    console.warn('Prediction by Page Boost unavailable — Boost stays manual:', error);
+                    return [] as { date: string; boost_page: number | string | null }[];
+                })
             ]);
 
             if (predictionsRes.error) throw predictionsRes.error;
+
+            // Σ Boost over every page (incl. the "no page" bucket) per calendar day,
+            // snapped to cents — the per-page amounts are cents, but their float sum
+            // isn't (e.g. 259.82000000000005) and would surface in the Boost input.
+            const pageBoostByDate = new Map<string, number>();
+            pageBoostRows.forEach(r => {
+                pageBoostByDate.set(r.date, (pageBoostByDate.get(r.date) || 0) + (Number(r.boost_page) || 0));
+            });
+            pageBoostByDate.forEach((v, k) => pageBoostByDate.set(k, roundCents(v)));
 
             const todayStr = getLocalYYYYMMDD(new Date());
             const daysInMonth = endDate.getDate();
@@ -200,6 +223,7 @@ const IncomePrediction: React.FC = () => {
                     staff: 0,
                     profit: 0,
                     isSaved: false,
+                    boostFromPages: false,
                     isToday: dateStr === todayStr,
                     isFuture: dateStr > todayStr,
                     isWeekend: dow === 0 || dow === 6
@@ -240,6 +264,20 @@ const IncomePrediction: React.FC = () => {
                 const coName = sale.shipping_company || 'Unassigned';
                 const shippingFee = shippingRates[coName] || 0;
                 day.shipping += shippingFee;
+            });
+
+            // 3. Boost for UNSAVED days comes from Prediction by Page (Σ of its BOOST
+            // column for that date), the same way shipping/COGS auto-fill from live
+            // sales. Saved days keep their frozen Boost — they're a deliberate
+            // snapshot (e.g. hand-entered before Page existed) and must not be
+            // overwritten. Still editable until saved, like shipping.
+            dailyMap.forEach(day => {
+                if (day.isSaved) return;
+                const fromPages = pageBoostByDate.get(day.date) || 0;
+                if (fromPages > 0) {
+                    day.boostPage = fromPages;
+                    day.boostFromPages = true;
+                }
             });
 
             const results = Array.from(dailyMap.values()).map(day => {
@@ -295,6 +333,8 @@ const IncomePrediction: React.FC = () => {
         newData[dayIndex] = {
             ...day,
             [field]: numValue,
+            // A hand-typed Boost is no longer "from Prediction by Page".
+            ...(field === 'boostPage' ? { boostFromPages: false } : {}),
             profit: day.shippedDelivered - day.cogs -
                 (field === 'shipping' ? numValue : day.shipping) -
                 (field === 'boostPage' ? numValue : day.boostPage) -
@@ -401,7 +441,7 @@ const IncomePrediction: React.FC = () => {
         );
     }, [dailyData]);
 
-    const renderEditableCell = (day: DailyPrediction, field: 'boostPage' | 'staff' | 'shipping', color: string) => {
+    const renderEditableCell = (day: DailyPrediction, field: 'boostPage' | 'staff' | 'shipping', color: string, title?: string) => {
         const cellKey = `${day.date}-${field}`;
         const isSaving = savingCells.has(cellKey);
         const isSaved = savedCells.has(cellKey);
@@ -420,6 +460,7 @@ const IncomePrediction: React.FC = () => {
                             onBlur={() => handleInputBlur(day.date, field)}
                             onKeyDown={e => handleKeyDown(e, day.date, field)}
                             placeholder="0"
+                            title={title}
                             style={{
                                 width: '100%',
                                 boxSizing: 'border-box',
@@ -729,7 +770,7 @@ const IncomePrediction: React.FC = () => {
                                         </td>
 
                                         {/* Boost Page (editable) */}
-                                        {renderEditableCell(day, 'boostPage', '#F59E0B')}
+                                        {renderEditableCell(day, 'boostPage', '#F59E0B', day.boostFromPages ? 'From Prediction by Page (sum of all pages). Edit to override; Save freezes it.' : undefined)}
 
                                         {/* COGS */}
                                         <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 500, fontSize: '12px', color: day.cogs > 0 ? '#EF4444' : 'var(--color-text-secondary)' }}>
