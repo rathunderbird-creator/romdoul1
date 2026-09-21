@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
+import { roundCents } from '../metrics';
 
 export interface EditableMoneyCellProps {
     value: number | null;          // stored value; null = nothing entered
@@ -20,7 +21,10 @@ export interface EditableMoneyCellProps {
 // emptied cell commits null (= "nothing entered"); an unparseable draft
 // reverts. Nothing is sent when the value didn't change.
 const EditableMoneyCell: React.FC<EditableMoneyCellProps> = ({ value, placeholder, placeholderTitle, disabled, saving, saved, color, ariaLabel, warnAbove, warnTitle, onCommit }) => {
-    const toText = (v: number | null): string => (v === null ? '' : String(v));
+    // Whole cents only — a computed total like 0.1 + 0.2 must not surface as
+    // "0.30000000000000004" in the box (callers round too; this is the guard
+    // for anything they miss).
+    const toText = (v: number | null): string => (v === null ? '' : String(roundCents(v)));
     const [draft, setDraft] = useState(() => toText(value));
     // Follow external changes (refresh, a failed save reverting the row).
     useEffect(() => { setDraft(toText(value)); }, [value]);
@@ -45,7 +49,10 @@ const EditableMoneyCell: React.FC<EditableMoneyCellProps> = ({ value, placeholde
         }
         const n = Number(trimmed);
         if (!Number.isFinite(n) || n < 0) { revert(); return; }
-        if (n === value) return;
+        // Compared in cents: the box shows `value` rounded to cents, so a
+        // focus-then-blur with no edit must not count as a change (and write
+        // the rounded figure over a stored sub-cent one).
+        if (value !== null && roundCents(n) === roundCents(value)) return;
         onCommit(n).catch(revert);
     };
 

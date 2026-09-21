@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BarChart3, Calendar, ChevronLeft, ChevronRight, RefreshCw, TrendingUp, TrendingDown, DollarSign, Megaphone, AlertTriangle, AlertCircle, Lock, ShoppingBag } from 'lucide-react';
 import './pageIncomePrediction.css';
-import { buildOverview, buildLedger, addMonths, isMonthKey, monthBounds, monthStateOf, type InputField } from './metrics';
+import { buildOverview, buildLedger, addMonths, isMonthKey, monthBounds, monthStateOf, roundCents, type InputField } from './metrics';
 import type { PageIncomeViewProps } from './types';
 import { fmtMoney, fmtPct, fmtRatio, monthLabel, fill } from './format';
 import OverviewTable, { projectionText } from './components/OverviewTable';
@@ -120,7 +120,9 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
         const others = data.inputs
             .filter(r => r.page === targetPage && r.date !== day1)
             .reduce((sum, r) => sum + r.boostPage, 0);
-        const day1Value = Math.max(0, (total ?? 0) - others);
+        // Snapped to cents: total − (a float sum) would otherwise store noise
+        // like 1333.7499999999999 in the day-1 row.
+        const day1Value = roundCents(Math.max(0, (total ?? 0) - others));
 
         setBoostSavingKeys(prev => new Set(prev).add(targetPage));
         try {

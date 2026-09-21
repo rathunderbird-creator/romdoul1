@@ -359,6 +359,9 @@ const ledgerFor = (page: string, p: Prepared): LedgerResult => {
         acc.pendingAmount += d.pendingAmount; acc.cancelled += d.cancelled;
         return acc;
     }, { orders: 0, revenue: 0, cogs: 0, shipping: 0, boost: 0, contribution: 0, expenses: 0, pending: 0, pendingAmount: 0, cancelled: 0 });
+    // Boost is typed in cents, so its month total is exact to the cent — it's
+    // also the value the Overview's editable Boost cell shows.
+    totals.boost = roundCents(totals.boost);
     totals.expenses = totals.cogs + totals.shipping + totals.boost;
     const projection = projectFlows(days, totals.boost, p.month, p.now);
     return {
@@ -420,6 +423,13 @@ export interface OverviewResult {
 // Exported for reuse by ../productIncomePrediction/metrics.ts — avoid a second copy.
 export const ratio = (num: number, den: number): number | null => (den > 0 ? num / den : null);
 
+// Snap a dollar amount to whole cents. Summing cent-precision inputs in
+// binary floating point leaves noise (0.1 + 0.2 → 0.30000000000000004), which
+// is invisible through fmtMoney but shows up verbatim wherever the raw number
+// is put in an <input> — and would be persisted if written back. The EPSILON
+// nudge makes exact half-cents round up (1.005 → 1.01) despite float error.
+export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+
 const rowFromLedger = (key: string, inConfig: boolean, l: LedgerResult): PageRow => ({
     key,
     inConfig,
@@ -469,7 +479,7 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
         revenue: sum('revenue'),
         cogs: sum('cogs'),
         shipping: sum('shipping'),
-        boost: sum('boost'),
+        boost: roundCents(sum('boost')),
         contribution: sum('contribution'),
         margin: ratio(sum('contribution'), sum('revenue')),
         roas: ratio(sum('revenue'), sum('boost')),
@@ -485,8 +495,8 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
 
     const siblingRows = p.siblingByDate ? Array.from(p.siblingByDate.values()) : [];
     const staff = siblingRows.reduce((s, r) => s + r.staff, 0);
-    const siblingBoost = siblingRows.reduce((s, r) => s + r.boostPage, 0);
-    const siblingShipping = siblingRows.reduce((s, r) => s + r.shipping, 0);
+    const siblingBoost = roundCents(siblingRows.reduce((s, r) => s + r.boostPage, 0));
+    const siblingShipping = roundCents(siblingRows.reduce((s, r) => s + r.shipping, 0));
     const shared: SharedFooter = {
         available: p.siblingByDate !== null,
         staff,
