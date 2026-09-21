@@ -51,9 +51,9 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
     const { month, page } = state;
 
     const metricsInput = useMemo(() => ({
-        sales: data.sales, inputs: data.inputs, sibling: data.sibling, products: data.products,
+        sales: data.sales, inputs: data.inputs, sibling: data.sibling, staffInputs: data.staffInputs, products: data.products,
         shippingRates: data.shippingRates, configPages: data.configPages, month, now: data.now,
-    }), [data.sales, data.inputs, data.sibling, data.products, data.shippingRates, data.configPages, month, data.now]);
+    }), [data.sales, data.inputs, data.sibling, data.staffInputs, data.products, data.shippingRates, data.configPages, month, data.now]);
 
     const overview = useMemo(() => buildOverview(metricsInput), [metricsInput]);
     const ledger = useMemo(() => (page === null ? null : buildLedger({ ...metricsInput, page })), [metricsInput, page]);

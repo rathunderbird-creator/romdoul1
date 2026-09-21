@@ -1,11 +1,23 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Calendar, DollarSign, TrendingUp, TrendingDown, Package, Truck, Megaphone, Users, RefreshCw, ChevronLeft, ChevronRight, Check, Loader2, Save, RotateCcw, BarChart3 } from 'lucide-react';
+import { Calendar, DollarSign, TrendingUp, TrendingDown, Package, Truck, Megaphone, Users, RefreshCw, ChevronLeft, ChevronRight, Check, Loader2, Save, RotateCcw, BarChart3, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { roundCents } from '../utils/money';
+import { isMissingTableError, errMessage } from '../utils/supabaseErrors';
 import { useStore } from '../context/StoreContext';
+
+// Staff is auto-saved to its own table, NOT into income_predictions: a row
+// there means "this day is frozen", so writing Staff into it would freeze
+// today's live sales (or a future day at $0). See
+// migrations/create_income_prediction_staff.sql.
+const STAFF_TABLE = 'income_prediction_staff';
+// Save this long after the last keystroke, so a value typed right before a
+// reload or tab close isn't lost. Leaving the box (or Enter) saves at once.
+const STAFF_AUTOSAVE_MS = 800;
+
+type EditableField = 'boostPage' | 'staff' | 'shipping';
 
 // Formats YYYY-MM
 const getLocalYYYYMM = (date: Date = new Date()) => {
@@ -42,6 +54,11 @@ interface DailyPrediction {
 
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+const withProfit = (day: DailyPrediction): DailyPrediction => ({
+    ...day,
+    profit: day.shippedDelivered - day.cogs - day.shipping - day.boostPage - day.staff
+});
+
 // Skeleton loader row
 const SkeletonRow = () => (
     <tr>
@@ -75,6 +92,19 @@ const IncomePrediction: React.FC = () => {
     const [savingCells, setSavingCells] = useState<Set<string>>(new Set());
     const [savedCells, setSavedCells] = useState<Set<string>>(new Set());
     const todayRef = useRef<HTMLTableRowElement>(null);
+
+    // Staff auto-save. `staffStoreError` is set when the Staff table can't be
+    // read (e.g. not migrated on this instance): Staff then falls back to the
+    // old behaviour — stored only by the row's Save button.
+    const [staffStoreError, setStaffStoreError] = useState<{ missing: boolean; message: string } | null>(null);
+    const [staffErrors, setStaffErrors] = useState<Record<string, string>>({});   // cellKey → why the last save failed
+    const dailyDataRef = useRef<DailyPrediction[]>([]);
+    // Writes for one day are chained so two quick edits land in order.
+    const staffWrites = useRef<Map<string, Promise<void>>>(new Map());
+    // Debounced commits still waiting for the typing pause, per day.
+    const staffTimers = useRef<Map<string, { timer: ReturnType<typeof setTimeout>; run: () => void }>>(new Map());
+
+    useEffect(() => { dailyDataRef.current = dailyData; }, [dailyData]);
 
     // Column resize state
     const [colWidths, setColWidths] = useState<number[]>(() => {
@@ -152,6 +182,11 @@ const IncomePrediction: React.FC = () => {
     const fetchData = useCallback(async () => {
         if (!selectedMonth) return;
         setIsLoading(true);
+        // Commit Staff still waiting on its typing pause and let in-flight Staff
+        // writes land first, so this read (month switch / refresh) sees them.
+        staffTimers.current.forEach(({ timer, run }) => { clearTimeout(timer); run(); });
+        staffTimers.current.clear();
+        await Promise.all(staffWrites.current.values());
         try {
             const endDate = new Date(year, monthIdx + 1, 0);
             // Query the month as a half-open range of real instants derived from LOCAL
@@ -167,7 +202,7 @@ const IncomePrediction: React.FC = () => {
 
             // Sales are chunk-fetched (fetchAll) so a >1000-order month is never
             // silently truncated at the API's max-rows cap.
-            const [salesRows, predictionsRes, pageBoostRows] = await Promise.all([
+            const [salesRows, predictionsRes, pageBoostRows, staffRes] = await Promise.all([
                 fetchAll((from, to) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
@@ -189,10 +224,29 @@ const IncomePrediction: React.FC = () => {
                 ).catch(error => {
                     console.warn('Prediction by Page Boost unavailable — Boost stays manual:', error);
                     return [] as { date: string; boost_page: number | string | null }[];
-                })
+                }),
+                // Auto-saved Staff. A failure here only switches Staff back to
+                // Save-button mode instead of breaking the whole screen.
+                fetchAll<{ date: string; staff: number | string | null }>((from, to) =>
+                    supabase.from(STAFF_TABLE)
+                        .select('date, staff')
+                        .gte('date', firstDayStr).lte('date', lastDayStr)
+                        .order('date', { ascending: true }).range(from, to)
+                ).then(
+                    rows => ({ rows, error: null as unknown }),
+                    (error: unknown) => ({ rows: [] as { date: string; staff: number | string | null }[], error })
+                )
             ]);
 
             if (predictionsRes.error) throw predictionsRes.error;
+
+            if (staffRes.error) {
+                const missing = isMissingTableError(staffRes.error);
+                if (!missing) console.error('Failed to load saved Staff:', staffRes.error);
+                setStaffStoreError({ missing, message: errMessage(staffRes.error) });
+            } else {
+                setStaffStoreError(null);
+            }
 
             // Σ Boost over every page (incl. the "no page" bucket) per calendar day,
             // snapped to cents — the per-page amounts are cents, but their float sum
@@ -242,6 +296,13 @@ const IncomePrediction: React.FC = () => {
                 day.shipping = Number(row.shipping) || 0;
                 day.boostPage = Number(row.boost_page) || 0;
                 day.staff = Number(row.staff) || 0;
+            });
+
+            // 1b. Auto-saved Staff wins over a frozen row's copy, and applies to
+            // unsaved days too — it's an input, not part of the frozen snapshot.
+            staffRes.rows.forEach(row => {
+                const day = dailyMap.get(String(row.date));
+                if (day) day.staff = Number(row.staff) || 0;
             });
 
             // 2. Auto-calculate from live sales ONLY for unsaved days
@@ -297,6 +358,7 @@ const IncomePrediction: React.FC = () => {
                 newDrafts[`${day.date}-shipping`] = day.shipping > 0 ? day.shipping.toString() : '';
             });
             setDraftValues(newDrafts);
+            setStaffErrors({});
 
         } catch (error) {
             console.error('Failed to fetch prediction data:', error);
@@ -314,33 +376,96 @@ const IncomePrediction: React.FC = () => {
         }
     }, [isLoading, dailyData]);
 
-    const handleInputChange = (date: string, field: 'boostPage' | 'staff' | 'shipping', value: string) => {
-        setDraftValues(prev => ({ ...prev, [`${date}-${field}`]: value }));
+    const staffAutoSave = staffStoreError === null;
+
+    // Persists one day's Staff. On failure the last saved amount goes back into
+    // the totals while the typed text stays in the box, marked, so committing
+    // it again retries.
+    const saveStaff = (day: DailyPrediction, previousStaff: number) => {
+        const { date, staff } = day;
+        const cellKey = `${date}-staff`;
+        setSavingCells(prev => new Set(prev).add(cellKey));
+        setStaffErrors(prev => {
+            if (!(cellKey in prev)) return prev;
+            const next = { ...prev };
+            delete next[cellKey];
+            return next;
+        });
+
+        const write = async () => {
+            const stamp = { updated_at: new Date().toISOString(), updated_by: currentUser?.name || 'System' };
+            const { error } = await supabase.from(STAFF_TABLE).upsert({ date, staff, ...stamp });
+            if (error) throw error;
+            // A frozen day keeps its own Staff copy (and the profit built on it),
+            // read by older app builds. The Staff table above wins everywhere in
+            // this build, so a failure here is only worth a warning.
+            if (day.isSaved) {
+                const { error: frozenError } = await supabase.from('income_predictions')
+                    .update({ staff, profit: roundCents(day.profit), ...stamp }).eq('date', date);
+                if (frozenError) console.warn('Staff saved, but the frozen day copy was not updated:', frozenError);
+            }
+        };
+
+        const chained = (staffWrites.current.get(date) || Promise.resolve())
+            .then(write)
+            .then(() => {
+                setSavedCells(prev => new Set(prev).add(cellKey));
+                setTimeout(() => setSavedCells(prev => { const n = new Set(prev); n.delete(cellKey); return n; }), 2000);
+            }, (error: unknown) => {
+                console.error('Failed to save staff:', error);
+                setStaffErrors(prev => ({ ...prev, [cellKey]: errMessage(error) }));
+                setDailyData(prev => prev.map(d => d.date === date && d.staff === staff ? withProfit({ ...d, staff: previousStaff }) : d));
+            })
+            .finally(() => setSavingCells(prev => { const n = new Set(prev); n.delete(cellKey); return n; }));
+        staffWrites.current.set(date, chained);
     };
 
-    const handleInputBlur = (date: string, field: 'boostPage' | 'staff' | 'shipping') => {
-        const dayIndex = dailyData.findIndex(d => d.date === date);
-        if (dayIndex === -1) return;
-
-        const day = dailyData[dayIndex];
-        const draftValue = draftValues[`${date}-${field}`];
+    // Applies a typed value to its day and recomputes profit. Staff is then
+    // auto-saved; Boost and Shipping stay on screen until the row's Save.
+    const commitInput = (date: string, field: EditableField, draftValue: string | undefined) => {
+        const day = dailyDataRef.current.find(d => d.date === date);
+        if (!day || draftValue === undefined) return;
         const numValue = draftValue === '' ? 0 : parseFloat(draftValue);
-        if (isNaN(numValue)) return;
-        const currentValue = day[field];
-        if (numValue === currentValue) return;
+        if (isNaN(numValue) || numValue === day[field]) return;
 
-        const newData = [...dailyData];
-        newData[dayIndex] = {
+        const updated = withProfit({
             ...day,
             [field]: numValue,
             // A hand-typed Boost is no longer "from Prediction by Page".
-            ...(field === 'boostPage' ? { boostFromPages: false } : {}),
-            profit: day.shippedDelivered - day.cogs -
-                (field === 'shipping' ? numValue : day.shipping) -
-                (field === 'boostPage' ? numValue : day.boostPage) -
-                (field === 'staff' ? numValue : day.staff)
+            ...(field === 'boostPage' ? { boostFromPages: false } : {})
+        });
+        dailyDataRef.current = dailyDataRef.current.map(d => d.date === date ? updated : d);
+        setDailyData(prev => prev.map(d => d.date === date ? updated : d));
+        if (field === 'staff' && staffAutoSave) saveStaff(updated, day.staff);
+    };
+
+    const cancelStaffTimer = (date: string) => {
+        const pending = staffTimers.current.get(date);
+        if (pending) clearTimeout(pending.timer);
+        staffTimers.current.delete(date);
+    };
+
+    // Leaving the page commits Staff still waiting on its typing pause.
+    useEffect(() => {
+        const timers = staffTimers.current;
+        return () => {
+            timers.forEach(({ timer, run }) => { clearTimeout(timer); run(); });
+            timers.clear();
         };
-        setDailyData(newData);
+    }, []);
+
+    const handleInputChange = (date: string, field: EditableField, value: string) => {
+        setDraftValues(prev => ({ ...prev, [`${date}-${field}`]: value }));
+        if (field === 'staff' && staffAutoSave) {
+            cancelStaffTimer(date);
+            const run = () => { staffTimers.current.delete(date); commitInput(date, 'staff', value); };
+            staffTimers.current.set(date, { timer: setTimeout(run, STAFF_AUTOSAVE_MS), run });
+        }
+    };
+
+    const handleInputBlur = (date: string, field: EditableField) => {
+        if (field === 'staff') cancelStaffTimer(date);
+        commitInput(date, field, draftValues[`${date}-${field}`]);
     };
 
     const handleSave = async (day: DailyPrediction) => {
@@ -382,6 +507,17 @@ const IncomePrediction: React.FC = () => {
         
         setSavingCells(prev => new Set(prev).add(day.date));
         try {
+            // Unsaving drops the frozen snapshot, not the Staff input: a day frozen
+            // before Staff auto-saved only has it in the snapshot, so copy it out first.
+            if (staffAutoSave && day.staff !== 0) {
+                const { error: staffError } = await supabase.from(STAFF_TABLE).upsert({
+                    date: day.date,
+                    staff: day.staff,
+                    updated_at: new Date().toISOString(),
+                    updated_by: currentUser?.name || 'System'
+                });
+                if (staffError) throw staffError;
+            }
             const { error } = await supabase.from('income_predictions').delete().eq('date', day.date);
             if (error) throw error;
             // Fetch data again to re-calculate this day from live sales
@@ -441,16 +577,25 @@ const IncomePrediction: React.FC = () => {
         );
     }, [dailyData]);
 
-    const renderEditableCell = (day: DailyPrediction, field: 'boostPage' | 'staff' | 'shipping', color: string, title?: string) => {
+    const renderEditableCell = (day: DailyPrediction, field: EditableField, color: string, title?: string) => {
         const cellKey = `${day.date}-${field}`;
         const isSaving = savingCells.has(cellKey);
         const isSaved = savedCells.has(cellKey);
+        const saveError = staffErrors[cellKey];
+        // Auto-saved Staff stays editable on a frozen day; everything else is
+        // part of the frozen snapshot.
+        const autoSaved = field === 'staff' && staffAutoSave;
 
         return (
             <td style={{ padding: '2px 6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                     {isSaving && <Loader2 size={12} style={{ color, animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
                     {isSaved && <Check size={12} style={{ color: '#10B981', flexShrink: 0 }} />}
+                    {saveError && !isSaving && (
+                        <span title={`Not saved: ${saveError}. Click the box and press Enter to retry.`} style={{ display: 'inline-flex', flexShrink: 0 }}>
+                            <AlertTriangle size={12} color="#EF4444" />
+                        </span>
+                    )}
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: '60px' }}>
                         <span style={{ position: 'absolute', left: '6px', color: 'var(--color-text-secondary)', fontSize: '11px', pointerEvents: 'none', opacity: 0.6 }}>$</span>
                         <input
@@ -460,14 +605,14 @@ const IncomePrediction: React.FC = () => {
                             onBlur={() => handleInputBlur(day.date, field)}
                             onKeyDown={e => handleKeyDown(e, day.date, field)}
                             placeholder="0"
-                            title={title}
+                            title={autoSaved ? 'Saved automatically when you stop typing' : title}
                             style={{
                                 width: '100%',
                                 boxSizing: 'border-box',
                                 textAlign: 'right',
                                 padding: '5px 8px 5px 18px',
                                 borderRadius: '6px',
-                                border: `1px solid ${draftValues[cellKey] ? color + '40' : 'var(--color-border)'}`,
+                                border: `1px solid ${saveError ? '#EF4444' : draftValues[cellKey] ? color + '40' : 'var(--color-border)'}`,
                                 background: draftValues[cellKey] ? color + '08' : 'var(--color-background)',
                                 color: 'var(--color-text-main)',
                                 fontSize: '13px',
@@ -476,7 +621,7 @@ const IncomePrediction: React.FC = () => {
                                 transition: 'all 0.2s'
                             }}
                             onFocus={e => { e.target.style.borderColor = color; e.target.style.boxShadow = `0 0 0 2px ${color}20`; }}
-                            disabled={day.isSaved}
+                            disabled={day.isSaved && !autoSaved}
                         />
                     </div>
                 </div>
@@ -660,6 +805,17 @@ const IncomePrediction: React.FC = () => {
                             ${fmt(dailyData.length > 0 ? totals.profit / (dailyData.filter(d => !d.isFuture).length || 1) : 0)}/day
                         </strong>
                     </div>
+                </div>
+            )}
+
+            {staffStoreError && !isLoading && (
+                <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 14px', borderRadius: '10px', border: '1px solid #FDE68A', background: '#FFFBEB', color: '#92400E', fontSize: '12px', flexShrink: 0 }}>
+                    <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
+                    <span>
+                        {staffStoreError.missing
+                            ? <>Staff isn't auto-saved on this database yet: run <code>migrations/create_income_prediction_staff.sql</code> in the Supabase SQL editor. Until then, Staff is only stored when you press Save on the row.</>
+                            : <>Couldn't load saved Staff amounts ({staffStoreError.message}), so Staff is only stored when you press Save on the row. Refresh to try again.</>}
+                    </span>
                 </div>
             )}
 
