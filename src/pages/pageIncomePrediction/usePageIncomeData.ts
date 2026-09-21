@@ -15,8 +15,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
 import { fetchAllProducts } from '../../utils/fetchAllProducts';
+import { isMissingTableError, errMessage } from '../../utils/supabaseErrors';
 import { mapSaleEntity } from '../../utils/mapper';
-import { monthBounds, inputKey, type Order, type PageInputRow, type SiblingRow, type InputField } from './metrics';
+import { monthBounds, inputKey, type Order, type PageInputRow, type SiblingRow, type StaffInputRow, type InputField } from './metrics';
 import type { Product } from '../../types';
 
 export interface PageIncomeDataState {
@@ -24,6 +25,7 @@ export interface PageIncomeDataState {
     products: Product[];   // active AND inactive — see file header
     inputs: PageInputRow[];
     sibling: SiblingRow[] | null;
+    staffInputs: StaffInputRow[];
     now: Date;
     loading: boolean;
     refreshing: boolean;
@@ -35,17 +37,8 @@ export interface PageIncomeDataState {
 
 const INPUT_TABLE = 'page_income_predictions';
 const SIBLING_TABLE = 'income_predictions';
-
-// PostgREST's answers for a table that isn't in its schema cache.
-const isMissingTableError = (e: unknown): boolean => {
-    const err = e as { code?: string; message?: string } | null;
-    return !!err && (
-        err.code === '42P01' || err.code === 'PGRST204' || err.code === 'PGRST205' ||
-        /schema cache|does not exist/i.test(err.message || '')
-    );
-};
-
-const errMessage = (e: unknown): string => (e as { message?: string })?.message || String(e);
+// Income Prediction's auto-saved Staff input (create_income_prediction_staff.sql).
+const STAFF_TABLE = 'income_prediction_staff';
 
 const mapInput = (r: any): PageInputRow => ({
     date: String(r.date),
@@ -67,6 +60,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
     const [products, setProducts] = useState<Product[]>([]);
     const [inputs, setInputs] = useState<PageInputRow[]>([]);
     const [sibling, setSibling] = useState<SiblingRow[] | null>(null);
+    const [staffInputs, setStaffInputs] = useState<StaffInputRow[]>([]);
     const [now, setNow] = useState<Date>(() => new Date());
     const [loading, setLoading] = useState(true);
     // Which month's data `sales`/`inputs`/`sibling` currently hold — not just
@@ -133,11 +127,27 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
                 console.warn('Prediction by Page: income_predictions unreadable', e);
             }
 
+            // Auto-saved Staff from Income Prediction — overrides the frozen rows'
+            // copy in the footer. Where the table isn't migrated yet the footer
+            // just uses the frozen rows, as before.
+            let staffRows: StaffInputRow[] = [];
+            try {
+                const rows = await fetchAll<{ date: string; staff: number | string | null }>((from, to) =>
+                    supabase.from(STAFF_TABLE).select('date, staff')
+                        .gte('date', b.firstDay).lte('date', b.lastDay)
+                        .order('date', { ascending: true }).range(from, to)
+                );
+                staffRows = rows.map(r => ({ date: String(r.date), staff: Number(r.staff) || 0 }));
+            } catch (e) {
+                if (!isMissingTableError(e)) console.warn('Prediction by Page: income_prediction_staff unreadable', e);
+            }
+
             if (id !== reqRef.current) return;
             setSales(salesRows.map(mapSaleEntity));
             setProducts(productsRows);
             setInputs(inputRows);
             setSibling(siblingRows);
+            setStaffInputs(staffRows);
             setMissingTable(missing);
             setNow(new Date());
             setLoadedMonth(month);
@@ -224,6 +234,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
         products: hasData ? products : [],
         inputs: hasData ? inputs : [],
         sibling: hasData ? sibling : null,
+        staffInputs: hasData ? staffInputs : [],
         now,
         loading: loading && !hasData,
         refreshing: loading && hasData,

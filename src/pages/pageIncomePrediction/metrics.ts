@@ -132,10 +132,19 @@ export interface SiblingRow {
     staff: number;
 }
 
+// Income Prediction's auto-saved Staff for one day (income_prediction_staff).
+// Unlike a SiblingRow it says nothing about freezing — it's just the input —
+// and for its day it wins over the frozen row's staff copy.
+export interface StaffInputRow {
+    date: string;
+    staff: number;
+}
+
 export interface MetricsInput {
     sales: Order[];
     inputs: PageInputRow[];
     sibling: SiblingRow[] | null;   // null = the sibling table couldn't be read
+    staffInputs?: StaffInputRow[];  // omitted/empty where that table doesn't exist yet
     products: Product[];
     shippingRates: Record<string, number>;
     configPages: string[];          // Settings → Pages
@@ -286,6 +295,7 @@ interface Prepared {
     byPage: Map<string, Map<string, DayFlow>>;
     inputsByKey: Map<string, PageInputRow>;
     siblingByDate: Map<string, SiblingRow> | null;
+    staffInputByDate: Map<string, number>;
     liveRevenueByDay: Map<string, number>;   // all pages
     dayKeys: string[];
     todayKey: string;
@@ -305,6 +315,8 @@ const prepare = (input: MetricsInput): Prepared => {
         siblingByDate = new Map();
         for (const r of input.sibling) if (r.date.startsWith(`${input.month}-`)) siblingByDate.set(r.date, r);
     }
+    const staffInputByDate = new Map<string, number>();
+    for (const r of input.staffInputs ?? []) if (r.date.startsWith(`${input.month}-`)) staffInputByDate.set(r.date, r.staff);
     const liveRevenueByDay = new Map<string, number>();
     for (const days of byPage.values()) {
         for (const [day, flow] of days) liveRevenueByDay.set(day, (liveRevenueByDay.get(day) || 0) + flow.revenue);
@@ -313,6 +325,7 @@ const prepare = (input: MetricsInput): Prepared => {
         byPage,
         inputsByKey,
         siblingByDate,
+        staffInputByDate,
         liveRevenueByDay,
         dayKeys: dayKeysOfMonth(input.month),
         todayKey: dayKeyOf(input.now),
@@ -492,7 +505,12 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
     };
 
     const siblingRows = p.siblingByDate ? Array.from(p.siblingByDate.values()) : [];
-    const staff = siblingRows.reduce((s, r) => s + r.staff, 0);
+    // Staff per day: the auto-saved input where there is one, else the frozen
+    // row's copy (days frozen before Staff was auto-saved).
+    const staffByDate = new Map<string, number>();
+    for (const r of siblingRows) staffByDate.set(r.date, r.staff);
+    for (const [date, amount] of p.staffInputByDate) staffByDate.set(date, amount);
+    const staff = roundCents(Array.from(staffByDate.values()).reduce((s, v) => s + v, 0));
     const siblingBoost = roundCents(siblingRows.reduce((s, r) => s + r.boostPage, 0));
     const siblingShipping = roundCents(siblingRows.reduce((s, r) => s + r.shipping, 0));
     const shared: SharedFooter = {

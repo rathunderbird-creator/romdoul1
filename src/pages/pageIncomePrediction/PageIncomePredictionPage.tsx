@@ -65,11 +65,12 @@ const PageIncomePredictionPage: React.FC = () => {
         sales: data.sales,
         inputs: data.inputs,
         sibling: data.sibling,
+        staffInputs: data.staffInputs,
         products: data.products,
         shippingRates: shippingRates || {},
         configPages: pages,
         now: data.now,
-    }), [data.sales, data.inputs, data.sibling, data.products, data.now, shippingRates, pages]);
+    }), [data.sales, data.inputs, data.sibling, data.staffInputs, data.products, data.now, shippingRates, pages]);
 
     return (
         <PageIncomePredictionView

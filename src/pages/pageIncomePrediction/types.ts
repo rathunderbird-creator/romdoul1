@@ -3,7 +3,7 @@
 // fixtures; the container (PageIncomePredictionPage.tsx) resolves store,
 // header, toast and URL state and hands plain data + callbacks down.
 import type { Product } from '../../types';
-import type { Order, PageInputRow, SiblingRow, InputField } from './metrics';
+import type { Order, PageInputRow, SiblingRow, StaffInputRow, InputField } from './metrics';
 
 export type Translate = (key: string) => string;
 export type Language = 'en' | 'km';
@@ -21,6 +21,7 @@ export interface PageIncomeData {
     sales: Order[];                       // the month's orders (mapped Sale objects)
     inputs: PageInputRow[];               // page_income_predictions rows for the month
     sibling: SiblingRow[] | null;         // income_predictions rows; null = unreadable
+    staffInputs?: StaffInputRow[];        // income_prediction_staff rows (auto-saved Staff)
     products: Product[];                  // catalogue, for purchase costs
     shippingRates: Record<string, number>;
     configPages: string[];                // Settings → Pages

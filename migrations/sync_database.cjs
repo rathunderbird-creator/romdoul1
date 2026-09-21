@@ -95,6 +95,8 @@ const EXPECTED_TABLES = {
     income_predictions: ['date', 'shipped_delivered', 'order_count', 'cogs', 'shipping', 'boost_page', 'staff', 'profit', 'updated_at', 'updated_by'],
     // Prediction by Page manual inputs (create_page_income_predictions.sql).
     page_income_predictions: ['date', 'page', 'boost_page', 'shipping', 'updated_at', 'updated_by'],
+    // Income Prediction's auto-saved Staff input (create_income_prediction_staff.sql).
+    income_prediction_staff: ['date', 'staff', 'updated_at', 'updated_by'],
     // Tables with their own migration file: existence check only (empty list).
     inventory_items: [],
     deleted_orders: [],
@@ -127,6 +129,7 @@ const MIGRATION_FOR = {
     warehouse_stock: 'create_warehouses.sql',
     income_predictions: 'create_income_predictions.sql',
     page_income_predictions: 'create_page_income_predictions.sql',
+    income_prediction_staff: 'create_income_prediction_staff.sql',
     inventory_items: 'create_inventory_items.sql',
     deleted_orders: 'create_deleted_orders.sql',
     deleted_sale_items: 'create_deleted_orders.sql',
