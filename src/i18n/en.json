@@ -106,7 +106,9 @@
     "stock": "Stock",
     "delivered": "Delivered",
     "paidOrders": "Paid Orders",
-    "unpaidOrders": "Unpaid Orders"
+    "unpaidOrders": "Unpaid Orders",
+    "loadError": "Couldn't load dashboard data, so the figures below may be out of date. {message}",
+    "retry": "Retry"
   },
   "pagePrediction": {
     "title": "Prediction by Page",
