@@ -216,8 +216,9 @@ const Dashboard: React.FC = () => {
         return { totalSalesCount, lowStockCount, totalProducts };
     }, [filteredSales, products]);
 
-    const topProducts = useMemo(() => {
+    const { topProducts, soldUnits } = useMemo(() => {
         const productStats: Record<string, { name: string; quantity: number; revenue: number }> = {};
+        let soldUnits = 0;
 
         filteredSales.forEach(sale => {
             if (sale.shipping?.status === 'Shipped' || sale.shipping?.status === 'Delivered') {
@@ -228,13 +229,18 @@ const Dashboard: React.FC = () => {
                     }
                     productStats[id].quantity += item.quantity;
                     productStats[id].revenue += item.price * item.quantity;
+                    soldUnits += item.quantity;
                 });
             }
         });
 
-        return Object.values(productStats)
-            .sort((a, b) => b.quantity - a.quantity)
-            .slice(0, 10); // Top 10
+        return {
+            topProducts: Object.values(productStats)
+                .sort((a, b) => b.quantity - a.quantity)
+                .slice(0, 10), // Top 10
+            // Every product, not just the top 10 — matches the Sales & Orders "Sold" units.
+            soldUnits
+        };
     }, [filteredSales]);
 
     const paymentStatusStats = useMemo(() => {
@@ -741,7 +747,16 @@ const Dashboard: React.FC = () => {
 
             {/* Top Selling Products */}
             <div style={{ marginBottom: '32px' }}>
-                <SectionHeader icon={TrendingUp} title={t('dashboard.topSellingProducts')} count={topProducts.length} />
+                <SectionHeader
+                    icon={TrendingUp}
+                    title={t('dashboard.topSellingProducts')}
+                    count={topProducts.length}
+                    extra={soldUnits > 0 ? (
+                        <span title="Units sold (Shipped + Delivered), all products in this range" style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                            {soldUnits.toLocaleString()} {t('dashboard.sold')}
+                        </span>
+                    ) : null}
+                />
                 {topProducts.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
