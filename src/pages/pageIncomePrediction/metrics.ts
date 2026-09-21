@@ -20,6 +20,7 @@
 // TODO: derive from config.timezone when both pages switch together.
 import type { Sale, Product } from '../../types';
 import { groupKeyOf } from '../dashboard2/metrics';
+import { roundCents } from '../../utils/money';
 
 export type Order = Sale;
 
@@ -423,12 +424,9 @@ export interface OverviewResult {
 // Exported for reuse by ../productIncomePrediction/metrics.ts — avoid a second copy.
 export const ratio = (num: number, den: number): number | null => (den > 0 ? num / den : null);
 
-// Snap a dollar amount to whole cents. Summing cent-precision inputs in
-// binary floating point leaves noise (0.1 + 0.2 → 0.30000000000000004), which
-// is invisible through fmtMoney but shows up verbatim wherever the raw number
-// is put in an <input> — and would be persisted if written back. The EPSILON
-// nudge makes exact half-cents round up (1.005 → 1.01) despite float error.
-export const roundCents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+// Defined in src/utils/money.ts (shared with the classic IncomePrediction
+// screen); re-exported so this folder's existing imports keep working.
+export { roundCents };
 
 const rowFromLedger = (key: string, inConfig: boolean, l: LedgerResult): PageRow => ({
     key,

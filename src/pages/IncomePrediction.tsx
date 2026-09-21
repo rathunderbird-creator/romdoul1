@@ -4,6 +4,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
+import { roundCents } from '../utils/money';
 import { useStore } from '../context/StoreContext';
 
 // Formats YYYY-MM
@@ -242,6 +243,10 @@ const IncomePrediction: React.FC = () => {
             });
 
             const results = Array.from(dailyMap.values()).map(day => {
+                // An unsaved day's shipping is a float sum of per-order carrier fees
+                // (line above), e.g. 3.3000000000000003. That raw value is what the
+                // Shipping input shows and what Save would upsert — snap it to cents.
+                day.shipping = roundCents(day.shipping);
                 day.profit = day.shippedDelivered - day.cogs - day.shipping - day.boostPage - day.staff;
                 return day;
             });
