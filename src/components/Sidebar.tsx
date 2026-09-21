@@ -64,7 +64,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                 { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign },
                 { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
                 { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
-                { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 }
+                { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
+                { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users }
             ]
         });
     }
