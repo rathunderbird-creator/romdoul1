@@ -389,7 +389,8 @@ const Dashboard: React.FC = () => {
             cancelled: 0,
             returned: 0,
             restock: 0,
-            total: 0
+            total: 0,   // units, across every status
+            orders: 0   // orders containing the product
         });
         const productMap: Record<string, ReturnType<typeof createPivot>> = {};
 
@@ -408,6 +409,8 @@ const Dashboard: React.FC = () => {
 
             if (!field) return;
 
+            // A product can appear on several lines of one order — count the order once.
+            const seen = new Set<string>();
             sale.items.forEach(item => {
                 const qty = item.quantity;
 
@@ -416,6 +419,10 @@ const Dashboard: React.FC = () => {
                 if (!productMap[product]) productMap[product] = createPivot();
                 productMap[product][field!] += qty;
                 productMap[product].total += qty;
+                if (!seen.has(product)) {
+                    seen.add(product);
+                    productMap[product].orders += 1;
+                }
             });
         });
 
@@ -918,7 +925,7 @@ const Dashboard: React.FC = () => {
                         const totalQty = pivotStats.product.reduce((s, p) => s + p.total, 0);
                         return totalQty > 0 ? (
                             <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
-                                {totalQty.toLocaleString()} {t('dashboard.orders')}
+                                {totalQty.toLocaleString()} {t('dashboard.units')}
                             </span>
                         ) : null;
                     })()}
@@ -935,13 +942,13 @@ const Dashboard: React.FC = () => {
                             <StatsCard
                                 key={idx}
                                 title={p.name}
-                                value={<span>{p.total} <span style={{ color: '#E65F2B', fontSize: '14px', fontWeight: 500 }}>{t('dashboard.orders')}</span></span>}
+                                value={<span>{p.total} <span style={{ color: '#E65F2B', fontSize: '14px', fontWeight: 500 }}>{t('dashboard.units')}</span></span>}
                                 trend={
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                                             <span style={{ color: '#1B3B6F', fontWeight: 600 }}>{p.confirmed + p.shipped + p.delivered} {t('dashboard.sold')}</span>
                                             {' | '}
-                                            <span style={{ color: '#E65F2B', fontWeight: 600 }}>{p.total} {t('dashboard.orders')}</span>
+                                            <span style={{ color: '#E65F2B', fontWeight: 600 }}>{p.orders} {t('dashboard.orders')}</span>
                                             {' | '}
                                             <span style={{ color: '#059669', fontWeight: 600 }}>{p.stock} {t('dashboard.stock')}</span>
                                         </div>
