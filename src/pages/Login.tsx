@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Lock, LogIn, RefreshCw } from 'lucide-react';
+import { LogIn, RefreshCw, Store } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
 
 const Login: React.FC = () => {
-    const { users, login, refreshData } = useStore();
+    // Store name + logo come from Settings → Store Profile (app_config), which
+    // App loads before rendering this screen.
+    const { users, login, refreshData, storeName, logo } = useStore();
     const navigate = useNavigate();
     const { showToast } = useToast();
     const { t, language, setLanguage } = useLanguage();
+    // The logo URL that failed to load (so a new URL gets a fresh try).
+    const [failedLogo, setFailedLogo] = useState<string | null>(null);
 
     const [selectedUserId, setSelectedUserId] = useState<string>('');
     const [pin, setPin] = useState('');
@@ -90,20 +94,29 @@ const Login: React.FC = () => {
                 gap: '20px' // Reduced gap from 32px
             }}>
                 <div style={{ textAlign: 'center' }}>
-                    <div style={{
-                        width: '48px', // Reduced size
-                        height: '48px', // Reduced size
-                        borderRadius: '50%',
-                        background: 'var(--color-primary)',
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        margin: '0 auto 12px' // Reduced margin
-                    }}>
-                        <Lock size={24} /> {/* Reduced icon size */}
-                    </div>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px' }}>{t('login.title')}</h1>
+                    {logo && failedLogo !== logo ? (
+                        <img
+                            src={logo}
+                            alt={storeName || t('login.title')}
+                            onError={() => setFailedLogo(logo)}
+                            style={{ width: '72px', height: '72px', objectFit: 'contain', borderRadius: '12px', display: 'block', margin: '0 auto 12px' }}
+                        />
+                    ) : (
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '50%',
+                            background: 'var(--color-primary)',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 12px'
+                        }}>
+                            <Store size={24} />
+                        </div>
+                    )}
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', overflowWrap: 'anywhere' }}>{storeName || t('login.title')}</h1>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('login.subtitle')}</p>
                 </div>
 
