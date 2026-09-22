@@ -270,12 +270,15 @@ export function SortableTable<T>({ columns, rows, rowKey, sort, onSort, onRowCli
 }
 
 // Status chips row ("Shipped 18 · Delivered 3"), always its own line (spec §5).
-export const StatusChips: React.FC<{ counts: Record<string, number>; colors: Record<string, string>; order?: string[] }> = ({ counts, colors, order }) => {
+// `label` localises a status name; without it the raw key is shown.
+export const StatusChips: React.FC<{ counts: Record<string, number>; colors: Record<string, string>; order?: string[]; label?: (key: string) => string }> = ({ counts, colors, order, label }) => {
     const keys = order ? order.filter(k => counts[k]) .concat(Object.keys(counts).filter(k => !order.includes(k))) : Object.keys(counts);
     return (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {keys.filter(k => counts[k] > 0).map(k => (
-                <Chip key={k} dot={colors[k] || D2.muted} title={k}>{k} {counts[k]}</Chip>
+                <Chip key={k} dot={colors[k] || D2.muted} title={label ? label(k) : k}>
+                    <span className="d2-khmer">{label ? label(k) : k}</span> {counts[k]}
+                </Chip>
             ))}
         </div>
     );

@@ -308,10 +308,14 @@ export const stockLevel = (p: Pick<Product, 'stock' | 'lowStockThreshold'>): Sto
     return 'ok';
 };
 
-// Products at or below their threshold (spec §4.4), most critical first.
+// Products needing attention (spec §4.4), most critical first. Same gate as
+// stockLevel — at/below their threshold OR inside the universal red band
+// (≤ CRITICAL_UNITS, which applies even when the owner set a lower
+// threshold) — so this list always contains every product the Products tab
+// marks low/critical, and the attention card never disagrees with a chip.
 export const lowStockProducts = (products: Product[]): Product[] =>
     products
-        .filter(p => p.isActive !== false && (Number(p.stock) || 0) <= thresholdOf(p))
+        .filter(p => p.isActive !== false && stockLevel(p) !== 'ok')
         .sort((a, b) => (Number(a.stock) || 0) - (Number(b.stock) || 0) || a.name.localeCompare(b.name));
 
 export interface ProductRow {
