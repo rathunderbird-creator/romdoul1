@@ -32,3 +32,4 @@ vite.config.ts.timestamp-*.mjs
 
 # Local cleanup archive
 _archive/
+migrations/image_backups/

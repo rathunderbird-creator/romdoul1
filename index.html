@@ -7,9 +7,12 @@
   <!-- maximum-scale=1 stops iOS from auto-zooming when an input is focused;
        pinch-to-zoom still works on iOS 10+ which ignores it for user gestures. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Fonts are self-hosted (src/index.css @font-face) — no request to Google
+       Fonts, whose render-blocking CSS left the app blank on slow or filtered
+       connections. Warm up the API origin instead: DNS + TLS to Supabase start
+       while the JS bundle is still downloading. %VITE_SUPABASE_URL% is filled
+       in by Vite from the build environment. -->
+  <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin>
   <title>JBL POS System</title>
 </head>
 

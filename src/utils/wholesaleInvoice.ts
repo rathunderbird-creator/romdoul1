@@ -1,4 +1,9 @@
 import type { WholesaleOrder } from '../types';
+// Bundled font URLs (hashed, same-origin) — the popup inherits the opener's
+// base URL, so these resolve on web and in Electron alike. Khmer subsets only:
+// the invoice's font stack reaches Battambang just for Khmer glyphs.
+import battambangKhmer400 from '../assets/fonts/battambang-khmer-400.woff2?url';
+import battambangKhmer700 from '../assets/fonts/battambang-khmer-700.woff2?url';
 
 export interface InvoiceStoreInfo {
     storeName: string;
@@ -43,8 +48,11 @@ export const printWholesaleInvoice = (order: WholesaleOrder, store: InvoiceStore
 <head>
 <meta charset="utf-8">
 <title>Invoice ${esc(inv)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&display=swap" rel="stylesheet">
 <style>
+    /* Self-hosted Battambang (see src/index.css) — the Google Fonts link this
+       replaces stalled the print dialog on slow or filtered connections. */
+    @font-face { font-family: 'Battambang'; font-style: normal; font-weight: 400; font-display: swap; src: url('${battambangKhmer400}') format('woff2'); unicode-range: U+1780-17FF, U+19E0-19FF, U+200C-200D, U+25CC; }
+    @font-face { font-family: 'Battambang'; font-style: normal; font-weight: 700; font-display: swap; src: url('${battambangKhmer700}') format('woff2'); unicode-range: U+1780-17FF, U+19E0-19FF, U+200C-200D, U+25CC; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', 'Battambang', Arial, sans-serif; color: #111827; padding: 40px; font-size: 13px; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }

@@ -1,3 +1,42 @@
+/* Battambang, self-hosted (was Google Fonts). On a slow or blocked connection
+   the third-party CSS render-blocked the whole app — a white page until the
+   CDN timed out. Served from our own origin the files are bundled, hashed,
+   cached immutably, and available offline in Electron. Same subsets and
+   unicode-ranges Google serves; font-display: swap keeps text visible in the
+   fallback font while a face downloads. */
+@font-face {
+  font-family: 'Battambang';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/battambang-khmer-400.woff2') format('woff2');
+  unicode-range: U+1780-17FF, U+19E0-19FF, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Battambang';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/battambang-latin-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Battambang';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/battambang-khmer-700.woff2') format('woff2');
+  unicode-range: U+1780-17FF, U+19E0-19FF, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Battambang';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/battambang-latin-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /* Brand Colors */
   --color-primary: #3B82F6;

@@ -131,22 +131,61 @@ export const StoreContext = createContext<StoreContextType | undefined>(undefine
 // Initial Dummy Data
 
 
+// ─── Boot snapshot (stale-while-revalidate) ────────────────────────────────
+// The last successful load's slow-changing tables, kept in localStorage so a
+// reopen on a slow connection paints a working UI (login user list, sidebar,
+// config, catalogue) immediately instead of a full-screen "Loading..." while
+// ~10 queries crawl. refreshData still runs on boot and overwrites all of it;
+// fast-changing tables (sales, transactions, restocks, customers) are NOT
+// snapshotted — pages fetch those themselves and show their own loaders.
+const BOOT_SNAPSHOT_KEY = 'pos_boot_snapshot_v1';
+
+interface BootSnapshot {
+    url: string;               // Supabase instance the data came from
+    savedAt: string;
+    products: Product[];
+    users: User[];
+    warehouses: Warehouse[];
+    warehouseStock: WarehouseStock[];
+    config: ConfigState;
+}
+
+const loadBootSnapshot = (): BootSnapshot | null => {
+    try {
+        const raw = localStorage.getItem(BOOT_SNAPSHOT_KEY);
+        if (!raw) return null;
+        const snap = JSON.parse(raw) as BootSnapshot;
+        // A snapshot from another instance (dev .env switch) must not leak in.
+        if (!snap || snap.url !== import.meta.env.VITE_SUPABASE_URL) return null;
+        if (!Array.isArray(snap.products) || !Array.isArray(snap.users) || typeof snap.config !== 'object' || !snap.config) return null;
+        return snap;
+    } catch {
+        try { localStorage.removeItem(BOOT_SNAPSHOT_KEY); } catch { /* ignore */ }
+        return null;
+    }
+};
+
+const bootSnapshot = loadBootSnapshot();
+
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [products, setProducts] = useState<Product[]>([]);
+    const [products, setProducts] = useState<Product[]>(bootSnapshot?.products ?? []);
     const [sales, setSales] = useState<Sale[]>([]);
     const [restocks, setRestocks] = useState<Restock[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
-    const [users, setUsers] = useState<User[]>([]); // Added users state
-    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-    const [warehouseStock, setWarehouseStock] = useState<WarehouseStock[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [users, setUsers] = useState<User[]>(bootSnapshot?.users ?? []); // Added users state
+    const [warehouses, setWarehouses] = useState<Warehouse[]>(bootSnapshot?.warehouses ?? []);
+    const [warehouseStock, setWarehouseStock] = useState<WarehouseStock[]>(bootSnapshot?.warehouseStock ?? []);
+    // With a snapshot the app renders immediately (stale data, refreshing in
+    // the background); without one the original full-screen gate applies.
+    const [isLoading, setIsLoading] = useState(!bootSnapshot);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [hasMoreOrders, setHasMoreOrders] = useState(true);
     const [productsUpdatedAt, setProductsUpdatedAt] = useState<number>(Date.now());
     const [salesUpdatedAt, setSalesUpdatedAt] = useState<number>(Date.now());
     const [pinnedOrderColumns, setPinnedOrderColumns] = useState<string[]>([]);
-    const [config, setConfig] = useState<ConfigState>({
+    const [config, setConfig] = useState<ConfigState>(() => {
+        const defaults: ConfigState = {
         shippingCompanies: ['J&T', 'VET', 'JS Express', 'D2D'],
         salesmen: ['Sokheng', 'Thida'],
         categories: ['Portable', 'PartyBox'],
@@ -196,6 +235,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         telegramBotToken: '',
         telegramChatId: '',
         telegramConfigs: []
+        };
+        // Snapshot spread over the defaults, so fields added to ConfigState
+        // after a snapshot was saved still get their default values.
+        return bootSnapshot?.config ? { ...defaults, ...bootSnapshot.config } : defaults;
     });
 
 
@@ -727,8 +770,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     useEffect(() => {
-        refreshData();
+        // Hydrated from a snapshot → refresh silently in the background
+        // (a non-silent refresh would re-raise the full-screen loading gate).
+        refreshData(!!bootSnapshot);
     }, []);
+
+    // Persist the boot snapshot whenever its slow-changing pieces settle, so
+    // the NEXT launch paints instantly (see loadBootSnapshot above). Debounced
+    // — these states all change together right after refreshData. Guarded by
+    // users.length so a failed boot's empty state never overwrites a good
+    // snapshot (a store always has at least one user).
+    useEffect(() => {
+        if (users.length === 0) return;
+        const id = setTimeout(() => {
+            try {
+                const snap: BootSnapshot = {
+                    url: import.meta.env.VITE_SUPABASE_URL,
+                    savedAt: new Date().toISOString(),
+                    // Legacy products can carry multi-MB base64 images; snapshot
+                    // them without the blob (the grid shows its placeholder until
+                    // the background refresh restores the real image) so the
+                    // snapshot stays small. Storage URLs pass through untouched.
+                    products: products.map(p => (p.image && p.image.startsWith('data:') ? { ...p, image: '' } : p)),
+                    users,
+                    warehouses,
+                    warehouseStock,
+                    config,
+                };
+                const json = JSON.stringify(snap);
+                // localStorage quota is ~5 MB for the whole origin; a snapshot
+                // that somehow still ends up huge is not worth evicting other
+                // keys for. Normal size is well under 300 KB.
+                if (json.length <= 2_000_000) localStorage.setItem(BOOT_SNAPSHOT_KEY, json);
+            } catch { /* quota/private mode — the snapshot is only an optimisation */ }
+        }, 800);
+        return () => clearTimeout(id);
+    }, [products, users, warehouses, warehouseStock, config]);
 
     const customerCare = useMemo(() => {
         const userNames = users
