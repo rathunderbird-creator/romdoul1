@@ -50,8 +50,11 @@ const applyFilters = (query: any, f: OM2Filters): any => {
     if (f.pages.length) query = query.in('page_source', f.pages);
     if (f.salesman) query = query.eq('salesman', f.salesman);
     if (f.search.trim()) {
-        const esc = f.search.trim().replace(/[%_]/g, m => `\\${m}`);
-        const like = `%${esc}%`;
+        // Quoted PostgREST literal (classic Orders.tsx's proven pattern): a
+        // comma or parenthesis in the search would otherwise be parsed as
+        // .or() syntax and fail the whole request.
+        const esc = f.search.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const like = `"%${esc}%"`;
         query = query.or([
             `customer_snapshot->>name.ilike.${like}`,
             `customer_snapshot->>phone.ilike.${like}`,
@@ -128,10 +131,15 @@ export const useOrdersM2Data = (filters: OM2Filters): OM2DataState => {
 
             // Full matching set (ignoring pagination) for the summary strip —
             // and, when "All" is selected, for the table itself. Sorted the
-            // same way the table would be so the two stay identical.
-            let rangeQuery: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)');
-            rangeQuery = applyFilters(rangeQuery, filters);
-            const rangeRows = await fetchAll((from2, to2) => rangeQuery.order(dbSortCol, { ascending }).order('id', { ascending: true }).range(from2, to2));
+            // same way the table would be so the two stay identical. The query
+            // is built FRESH for every chunk — fetchAll's contract; reusing one
+            // builder appends duplicate order params on each later chunk.
+            const rangeRows = await fetchAll((from2, to2) =>
+                applyFilters(
+                    supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)'),
+                    filters
+                ).order(dbSortCol, { ascending }).order('id', { ascending: true }).range(from2, to2)
+            );
 
             if (id !== reqRef.current) return;
 

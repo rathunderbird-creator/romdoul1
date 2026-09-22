@@ -11,6 +11,7 @@ import { useToast } from '../../context/ToastContext';
 import { useActivityLog } from '../../context/ActivityLogContext';
 import { useUrlFilters, UndoToast, type UndoToastHandle } from './ui2';
 import { useOrdersM2Data } from './useOrdersM2Data';
+import { exportOrdersXlsx } from './exportOrders';
 import { useLocalStorageState } from '../dashboard2/ui';
 import OM2View from './OrdersManagement2View';
 import type { OM2Actions, OrderEdit } from './types';
@@ -81,7 +82,18 @@ const OrdersManagement2Page: React.FC = () => {
         onFiltersChange: setFilters,
         onRefresh: data.refresh,
         onNewOrder: () => navigate('/orders', { state: { createNew: true } }),
-        onExport: () => showToast('Export runs from the classic Orders page for now.', 'info'),
+        // Everything the filters match (the summary strip's set), not just
+        // the visible page — that is what "export this view" means.
+        onExport: async () => {
+            if (data.rangeOrders.length === 0) { showToast('Nothing to export for these filters.', 'error'); return; }
+            try {
+                await exportOrdersXlsx(data.rangeOrders, 'Filtered');
+                showToast(`Exported ${data.rangeOrders.length} order(s).`, 'success');
+            } catch (e) {
+                console.error('Export failed', e);
+                showToast('Export failed. Check console for details.', 'error');
+            }
+        },
         onSaveEdit: async (edit) => {
             const previous = data.orders.find(o => o.id === edit.orderId) || data.rangeOrders.find(o => o.id === edit.orderId);
             const previousEdit: OrderEdit = {
@@ -122,7 +134,17 @@ const OrdersManagement2Page: React.FC = () => {
             showToast(`${orderIds.length} order(s) marked Shipped.`, 'success');
         },
         onBulkPrint: () => showToast('Printing runs from the classic Orders page for now.', 'info'),
-        onBulkExport: () => showToast('Export runs from the classic Orders page for now.', 'info'),
+        onBulkExport: async (orderIds) => {
+            const selected = data.orders.filter(o => orderIds.includes(o.id));
+            if (selected.length === 0) { showToast('No orders selected to export.', 'error'); return; }
+            try {
+                await exportOrdersXlsx(selected, 'Selected');
+                showToast(`Exported ${selected.length} order(s).`, 'success');
+            } catch (e) {
+                console.error('Export failed', e);
+                showToast('Export failed. Check console for details.', 'error');
+            }
+        },
         // Mirrors classic Orders.tsx's handleBulkEdit (../Orders.tsx ~L1768)
         // verbatim — same fields, same per-branch update shape — since
         // BulkEditModal (../../components) is reused as-is here too.
