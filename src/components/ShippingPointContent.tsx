@@ -4,6 +4,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
 import { getShippingCoColor } from '../utils/orderUtils';
 
 
@@ -162,10 +163,13 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     // on first mount.
     const loadCustomLocations = useCallback(async () => {
         try {
-            const { data, error } = await supabase.from(tableName).select('*');
-            if (!error && data) {
-                setCustomLocations(data);
-            }
+            // Chunk-fetched: a bare select('*') is silently capped by PostgREST
+            // around 1000 rows, and the pin list is already past 500 — without
+            // this, pins beyond the cap would one day just vanish from the map.
+            const rows = await fetchAll<CustomLocation>((from, to) =>
+                supabase.from(tableName).select('*').order('id', { ascending: true }).range(from, to)
+            );
+            setCustomLocations(rows);
         } catch (e) {
             console.error("Failed to fetch custom locations", e);
         }
@@ -654,7 +658,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setEditingLocationId(null);
             setIsSaveModalOpen(false);
             await loadCustomLocations();
-            alert(`Location specifically mapped to ${modalData.name}!`);
+            showToast(`Location saved: ${modalData.name}`, 'success');
         } catch (e: unknown) {
             console.error('Catch Block Error in submitSaveLocation API:', e);
             setSavingError(errorMessage(e));
@@ -693,10 +697,10 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setIsConfirmingDelete(false);
             setEditMarkerLatLng(null);
             await loadCustomLocations();
-            alert(`Location pin removed for ${name}!`);
+            showToast(`Location pin removed: ${name}`, 'success');
         } catch (e: unknown) {
             console.error('Exception during delete', e);
-            alert('Error removing location pin: ' + errorMessage(e));
+            showToast('Error removing location pin: ' + errorMessage(e), 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -733,7 +737,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         console.log('Target to remove:', targetPcode, targetName);
 
         if (!targetPcode) {
-            alert('Please select a custom pin or a geographic location first.');
+            showToast('Please select a custom pin or a geographic location first.', 'error');
             return;
         }
 
@@ -749,16 +753,16 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             }
             if (!data || data.length === 0) {
                 console.warn('No rows deleted - RLS issue?');
-                alert('Warning: No map pin was deleted. This might be a database permission issue.');
+                showToast('No map pin was deleted — that location has no pin, or the database refused it.', 'error');
             } else {
                 setEditMarkerLatLng(null);
                 await loadCustomLocations();
                 setIsConfirmingDelete(false);
-                alert(`Location pin removed for ${targetName}!`);
+                showToast(`Location pin removed: ${targetName}`, 'success');
             }
         } catch (e: unknown) {
             console.error('Exception during delete', e);
-            alert('Error removing location pin: ' + errorMessage(e));
+            showToast('Error removing location pin: ' + errorMessage(e), 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -766,6 +770,13 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
 
     const handleConfirmSelection = () => {
         if (!onSelect) return;
+
+        // A checkpoint marked "temporarily shutdown" must not be dispatched
+        // to — that is exactly what the flag is for.
+        if (activeCustomLocation?.is_shutdown) {
+            showToast(`"${activeCustomLocation.name}" ត្រូវបានផ្អាកបណ្តោះអាសន្ន (temporarily shutdown) — pick another checkpoint.`, 'error');
+            return;
+        }
 
         if (activeCustomLocation) {
             let resolvedProvince = activeCustomLocation.province || '';
@@ -804,7 +815,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         else if (selectedProvinceCode) targetPcode = selectedProvinceCode;
 
         if (!targetPcode && !focusedPinLatLng) {
-            alert("សូមជ្រើសរើសទីតាំងជាមុនសិន (Please select a location first)");
+            showToast('សូមជ្រើសរើសទីតាំងជាមុនសិន (Please select a location first)', 'error');
             return;
         }
 
