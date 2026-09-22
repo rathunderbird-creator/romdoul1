@@ -172,6 +172,35 @@ export const delta = (current: number, previous: number | null | undefined): num
     return (current - previous) / previous;
 };
 
+// ─── Payment breakdown (ported from the classic dashboard) ────────────────
+
+export const PAY_ORDER = ['Unpaid', 'Deposit', 'Paid', 'Cancel'];
+
+export interface PayRow { status: string; count: number; total: number }
+
+// Count + order-total per payment status in the range. 'Get File' is left
+// out: it is a settlement pipeline (files waiting for payout), shown as an
+// ALL-TIME figure fetched separately — same rule the classic dashboard uses.
+export const payRows = (orders: Order[]): PayRow[] => {
+    const map = new Map<string, PayRow>();
+    for (const o of orders) {
+        const status = payStatusOf(o);
+        if (status === 'Get File') continue;
+        let row = map.get(status);
+        if (!row) { row = { status, count: 0, total: 0 }; map.set(status, row); }
+        row.count += 1;
+        row.total += Number(o.total) || 0;
+    }
+    return Array.from(map.values()).sort((a, b) => {
+        const ia = PAY_ORDER.indexOf(a.status), ib = PAY_ORDER.indexOf(b.status);
+        if (ia !== -1 || ib !== -1) return (ia === -1 ? PAY_ORDER.length : ia) - (ib === -1 ? PAY_ORDER.length : ib);
+        return a.status.localeCompare(b.status);
+    });
+};
+
+// The global Get File pipeline (all orders awaiting settlement, any date).
+export interface GetFilePipeline { count: number; total: number }
+
 export const pipelineCounts = (orders: Order[]): Record<PipelineStage, number> => {
     const out = { Pending: 0, Confirmed: 0, Shipped: 0, Delivered: 0, Cancelled: 0 } as Record<PipelineStage, number>;
     for (const o of orders) {
@@ -328,6 +357,10 @@ export interface ProductRow {
     threshold: number;
     capacity: number;
     level: StockLevel | null;
+    // Units per order status across ALL scoped orders (cancelled included) —
+    // the classic dashboard's Product Report chips. Unlike sold/revenue this
+    // is not revenue-gated, so nothing in the range is silently hidden.
+    statusUnits: Record<string, number>;
 }
 
 export const productRows = (orders: Order[], products: Product[], statusFilter = 'All'): ProductRow[] => {
@@ -335,7 +368,11 @@ export const productRows = (orders: Order[], products: Product[], statusFilter =
     const scoped = statusFilter === 'All' ? orders : orders.filter(o => orderStatusOf(o) === statusFilter);
     const map = new Map<string, ProductRow>();
     for (const o of scoped) {
-        if (!isRevenueOrder(o)) continue;
+        // Every order contributes to the per-status unit chips; only revenue
+        // orders (Confirmed/Shipped/Delivered, not Cancel-paid) contribute to
+        // sold / revenue / order counts — the shared money rule.
+        const revenue = isRevenueOrder(o);
+        const st = orderStatusOf(o);
         const seen = new Set<string>();
         for (const it of o.items || []) {
             const id = String(it.id);
@@ -350,13 +387,17 @@ export const productRows = (orders: Order[], products: Product[], statusFilter =
                     threshold: p ? thresholdOf(p) : DEFAULT_LOW_STOCK_THRESHOLD,
                     capacity: p ? stockCapacity(p) : 1,
                     level: p ? stockLevel(p) : null,
+                    statusUnits: {},
                 };
                 map.set(id, row);
             }
             const qty = Number(it.quantity) || 0;
-            row.sold += qty;
-            row.revenue += (Number(it.price) || 0) * qty;
-            if (!seen.has(id)) { seen.add(id); row.orders += 1; }
+            row.statusUnits[st] = (row.statusUnits[st] || 0) + qty;
+            if (revenue) {
+                row.sold += qty;
+                row.revenue += (Number(it.price) || 0) * qty;
+                if (!seen.has(id)) { seen.add(id); row.orders += 1; }
+            }
         }
     }
     return Array.from(map.values()).sort((a, b) => b.sold - a.sold || b.revenue - a.revenue || a.name.localeCompare(b.name));

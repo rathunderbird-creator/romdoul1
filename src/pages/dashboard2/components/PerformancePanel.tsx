@@ -266,6 +266,14 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
             render: row => <span style={tabular}>{fmtInt(row.orders)}</span>,
         },
         {
+            // Units per order status (classic Product Report's chips) — covers
+            // every status, cancelled included, unlike the revenue-gated Sold.
+            key: 'statusUnits',
+            header: t('dashboard2.unitsByStatus'),
+            minWidth: 180,
+            render: row => <StatusChips counts={row.statusUnits} colors={STATUS_COLORS} order={STAGE_ORDER} label={s => statusLabel(t, s)} />,
+        },
+        {
             key: 'stock',
             header: t('dashboard2.stock'),
             minWidth: 170,

@@ -46,6 +46,13 @@ const ALL_ORDERS: Order[] = Array.from(
     new Map([...fixtureOrders, ...fixturePreviousOrders].map(o => [o.id, o])).values(),
 );
 
+// The all-time Get File pipeline, exactly as the app computes it: every
+// fixture order awaiting settlement, whatever range is on screen.
+const FIXTURE_GET_FILE = (() => {
+    const rows = ALL_ORDERS.filter(o => o.paymentStatus === 'Get File');
+    return { count: rows.length, total: rows.reduce((s, o) => s + (Number(o.total) || 0), 0) };
+})();
+
 // ─── Preview ──────────────────────────────────────────────────────────────
 
 const devBarStyle = {
@@ -76,7 +83,7 @@ const Preview = () => {
     };
 
     const data = useMemo<Dashboard2Data>(() => {
-        const base = { range, products: fixtureProducts, stockIn: 40, stockOut: 61, now: fixtureNow };
+        const base = { range, products: fixtureProducts, getFile: FIXTURE_GET_FILE, stockIn: 40, stockOut: 61, now: fixtureNow };
         if (scenario === 'empty') return { ...base, previous: null, orders: [], previousOrders: [] };
         // The untouched fixture range uses the hand-built previous period; any
         // range picked in the view recomputes it from the full fixture pool.

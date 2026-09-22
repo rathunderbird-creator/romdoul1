@@ -3,7 +3,7 @@
 // data in src/dev/dashboard2-preview.tsx.
 import type { Product } from '../../types';
 import type { OrderListFilters } from '../../utils/orderListFilters';
-import type { Order, DateRange, KpiSummary, PipelineStage, DayPoint, GroupRow, ProductRow, PendingItem } from './metrics';
+import type { Order, DateRange, KpiSummary, PipelineStage, DayPoint, GroupRow, ProductRow, PendingItem, PayRow, GetFilePipeline } from './metrics';
 
 export type Translate = (key: string) => string;
 
@@ -16,6 +16,7 @@ export interface Dashboard2Data {
     orders: Order[];                 // orders in `range`
     previousOrders: Order[];         // orders in `previous`
     products: Product[];             // catalogue (all-time)
+    getFile: GetFilePipeline | null; // all-time settlement pipeline; null = unavailable
     stockIn: number;                 // stock_movements 'in' pieces in range
     stockOut: number;                // stock_movements 'out' pieces in range
     now: Date;                       // clock for "pending since" ages
@@ -26,6 +27,7 @@ export interface Dashboard2Derived {
     previousKpis: KpiSummary | null;
     pipeline: Record<PipelineStage, number>;
     otherStatuses: Record<string, number>;
+    pay: PayRow[];
     series: DayPoint[];
     lowStock: Product[];
     pending: PendingItem[];

@@ -7,20 +7,21 @@ import { DateRangePicker } from '../../components';
 import './dashboard2.css';
 import { D2, fmtDay } from './theme';
 import {
-    summarize, pipelineCounts, otherStatusCounts, dailySeries, lowStockProducts,
+    summarize, pipelineCounts, otherStatusCounts, payRows, dailySeries, lowStockProducts,
     pendingOrders, missingTrackingOrders, couriersOf, rangeLength, groupOrders, productRows,
 } from './metrics';
 import type { Dashboard2ViewProps, Dashboard2Derived } from './types';
 import { ErrorInline, EmptyState, Skeleton } from './ui';
 import HeroKpis from './components/HeroKpis';
 import Pipeline from './components/Pipeline';
+import PaymentsStrip from './components/PaymentsStrip';
 import AttentionSection from './components/AttentionSection';
 import CollectionChart from './components/CollectionChart';
 import PerformancePanel from './components/PerformancePanel';
 import InventoryDetail from './components/InventoryDetail';
 
 const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshing, salesError, inventoryError, actions, t, isMobile }) => {
-    const { range, previous, orders, previousOrders, products, stockIn, stockOut, now } = data;
+    const { range, previous, orders, previousOrders, products, getFile, stockIn, stockOut, now } = data;
 
     const derived = useMemo<Dashboard2Derived>(() => {
         const missingTracking = missingTrackingOrders(orders);
@@ -29,6 +30,7 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
             previousKpis: previous ? summarize(previousOrders) : null,
             pipeline: pipelineCounts(orders),
             otherStatuses: otherStatusCounts(orders),
+            pay: payRows(orders),
             series: dailySeries(orders, range),
             lowStock: lowStockProducts(products),
             pending: pendingOrders(orders, now),
@@ -135,6 +137,15 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                         <Pipeline counts={derived.pipeline} other={derived.otherStatuses} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
                     </div>
                 </>
+            )}
+
+            {/* Payments (classic dashboard's Payment Status cards). Rendered even
+                on an empty day when files still await settlement — Get File is an
+                all-time pipeline, not a range statistic. */}
+            {!salesError && (
+                <div style={{ marginBottom: 14 }}>
+                    <PaymentsStrip rows={isEmpty ? [] : derived.pay} getFile={getFile} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
+                </div>
             )}
 
             {/* Attention: hides itself entirely when nothing is wrong. Critical
