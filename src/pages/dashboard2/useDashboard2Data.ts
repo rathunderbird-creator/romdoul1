@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
 import { mapSaleEntity } from '../../utils/mapper';
 import type { Sale } from '../../types';
-import { previousRange, todayKey, type DateRange } from './metrics';
+import { previousRange, todayKey, type DateRange, type GetFilePipeline } from './metrics';
 
 const RANGE_KEY = 'dashboard2_dateRange';
 
@@ -44,6 +44,16 @@ const fetchSales = async (range: DateRange): Promise<Sale[]> => {
     return rows.map(mapSaleEntity);
 };
 
+// All orders awaiting settlement, ANY date (spec of the classic dashboard's
+// Get File card: a payout pipeline, not a range statistic).
+const fetchGetFile = async (): Promise<GetFilePipeline> => {
+    const rows = await fetchAll<{ id: string; total: number | string | null }>((from, to) =>
+        supabase.from('sales').select('id, total').eq('payment_status', 'Get File')
+            .order('id', { ascending: true }).range(from, to)
+    );
+    return { count: rows.length, total: rows.reduce((s, r) => s + (Number(r.total) || 0), 0) };
+};
+
 const fetchStockTotals = async (range: DateRange): Promise<{ stockIn: number; stockOut: number }> => {
     const rows = await fetchAll<{ id: string; type: string; quantity: number }>((from, to) => {
         let q = supabase.from('stock_movements').select('id, type, quantity');
@@ -66,6 +76,7 @@ export interface Dashboard2DataState {
     orders: Sale[];
     previousOrders: Sale[];
     previousAvailable: boolean;   // false when the comparison fetch failed
+    getFile: GetFilePipeline | null;  // all-time settlement pipeline; null = unavailable
     stockIn: number;
     stockOut: number;
     loading: boolean;             // no data yet for this range → skeletons
@@ -85,6 +96,7 @@ export const useDashboard2Data = (): Dashboard2DataState => {
     const [orders, setOrders] = useState<Sale[]>([]);
     const [previousOrders, setPreviousOrders] = useState<Sale[]>([]);
     const [previousAvailable, setPreviousAvailable] = useState(true);
+    const [getFile, setGetFile] = useState<GetFilePipeline | null>(null);
     const [stock, setStock] = useState({ stockIn: 0, stockOut: 0 });
     const [salesError, setSalesError] = useState<string | null>(null);
     const [inventoryError, setInventoryError] = useState<string | null>(null);
@@ -108,9 +120,10 @@ export const useDashboard2Data = (): Dashboard2DataState => {
         setSalesLoading(true);
         setSalesError(null);
         const prev = previousRange(range);
-        const [cur, prevRes] = await Promise.allSettled([
+        const [cur, prevRes, gfRes] = await Promise.allSettled([
             fetchSales(range),
             prev ? fetchSales(prev) : Promise.resolve([] as Sale[]),
+            fetchGetFile(),
         ]);
         if (id !== salesReqRef.current) return;
         setNow(new Date());
@@ -128,6 +141,13 @@ export const useDashboard2Data = (): Dashboard2DataState => {
             console.warn('Dashboard2: previous-period fetch failed', prevRes.reason);
             setPreviousOrders([]);
             setPreviousAvailable(false);
+        }
+        if (gfRes.status === 'fulfilled') {
+            setGetFile(gfRes.value);
+        } else {
+            // The payments strip simply omits the all-time chip.
+            console.warn('Dashboard2: Get File pipeline fetch failed', gfRes.reason);
+            setGetFile(null);
         }
         setSalesLoading(false);
     }, [range]);
@@ -159,6 +179,7 @@ export const useDashboard2Data = (): Dashboard2DataState => {
         orders: hasDataForRange ? orders : [],
         previousOrders: hasDataForRange ? previousOrders : [],
         previousAvailable,
+        getFile,
         stockIn: stock.stockIn,
         stockOut: stock.stockOut,
         loading: salesLoading && !hasDataForRange,

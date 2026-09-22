@@ -53,6 +53,7 @@ const Dashboard2Page: React.FC = () => {
                 orders: data.orders,
                 previousOrders: data.previousOrders,
                 products,
+                getFile: data.getFile,
                 stockIn: data.stockIn,
                 stockOut: data.stockOut,
                 now: data.now,
