@@ -186,7 +186,7 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
             key: 'status',
             header: t('orders.orderStatus'),
             minWidth: 180,
-            render: row => <StatusChips counts={row.statusCounts} colors={STATUS_COLORS} order={STAGE_ORDER} />,
+            render: row => <StatusChips counts={row.statusCounts} colors={STATUS_COLORS} order={STAGE_ORDER} label={s => statusLabel(t, s)} />,
         },
         {
             key: 'revenue',
@@ -454,8 +454,10 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
                             rowKey={row => row.id}
                             sort={productsSort}
                             onSort={setProductsSort}
-                            // The order list's search matches item names.
-                            onRowClick={row => openWith({ search: row.name })}
+                            // Quoted = the order list's exact-phrase item search. Unquoted,
+                            // a multi-word name splits into terms ("BoomBest" OR "LN-716")
+                            // and the list would show more orders than the row counted.
+                            onRowClick={row => openWith({ search: `"${row.name}"` })}
                             rowLabel={row => `${openLabel}: ${row.name}`}
                             emptyText={t('dashboard2.noRows')}
                             caption={captionFor('products')}

@@ -191,7 +191,10 @@ const PendingCard: React.FC<Pick<AttentionSectionProps, 'pending' | 'range' | 'o
                         t={t}
                         onClick={() => onOpenOrders({
                             statuses: ['Pending'],
-                            search: item.order.customer?.phone || item.order.customer?.name || '',
+                            // Phone as-is; a name is quoted so the list's exact-phrase
+                            // search matches just this customer (an unquoted Khmer
+                            // name splits on its space into two loose terms).
+                            search: item.order.customer?.phone || (item.order.customer?.name ? `"${item.order.customer.name}"` : ''),
                             dateRange: range,
                         })}
                     />
