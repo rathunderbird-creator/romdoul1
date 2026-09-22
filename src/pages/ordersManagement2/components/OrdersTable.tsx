@@ -442,7 +442,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                                     </td>
                                                 );
                                             case 'page':
-                                                return <td key={key} style={{ ...colCellStyle(key), textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer?.page || <span style={{ color: D2.muted }}>—</span>}</td>;
+                                                return <td key={key} style={{ ...colCellStyle(key), textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.pageSource || order.customer?.page || <span style={{ color: D2.muted }}>—</span>}</td>;
                                             case 'customerCare':
                                                 return <td key={key} style={{ ...colCellStyle(key), textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customerCare || <span style={{ color: D2.muted }}>—</span>}</td>;
                                             case 'payBy': {

@@ -1,6 +1,7 @@
 // Filter state lives in the URL query string (spec §6.4) so a filtered view
 // can be shared and survives a refresh. Pure encode/decode — no router
 // dependency, so it's easy to unit-test and reuse from the page container.
+import { SORT_KEYS } from './metrics';
 import type { SortState, SortKey } from './metrics';
 
 export interface OM2Filters {
@@ -44,8 +45,6 @@ export const DEFAULT_FILTERS: OM2Filters = {
     pageSize: 25,
     page: 1,
 };
-
-const SORT_KEYS: readonly SortKey[] = ['date', 'customer', 'product', 'total', 'owed', 'status', 'payStatus', 'courier', 'time'];
 
 const csv = (v: string[]): string => v.join(',');
 const parseCsv = (v: string | null): string[] => (v ? v.split(',').filter(Boolean) : []);

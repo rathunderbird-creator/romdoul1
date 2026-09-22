@@ -93,6 +93,14 @@ export const noTrackingCount = (orders: Order[]): number => orders.filter(isMiss
 export type SortKey = 'date' | 'customer' | 'product' | 'total' | 'owed' | 'status' | 'payStatus' | 'courier' | 'time'
     | 'address' | 'page' | 'customerCare' | 'payBy' | 'received' | 'settledDate' | 'lastEditBy' | 'remark'
     | 'salesman';
+// Canonical runtime list of every sortable key — urlFilters validates the
+// URL's sort param against THIS, so a new sortable column only needs adding
+// here (previously urlFilters kept its own stale copy and silently dropped
+// sorts on the newer columns when a shared/refreshed URL was decoded).
+export const SORT_KEYS: readonly SortKey[] = [
+    'date', 'customer', 'product', 'total', 'owed', 'status', 'payStatus', 'courier', 'time',
+    'address', 'page', 'customerCare', 'payBy', 'received', 'settledDate', 'lastEditBy', 'remark', 'salesman',
+];
 export interface SortState { key: SortKey; direction: 'asc' | 'desc' }
 
 // What a row's "Received" column actually shows — the cash physically taken
@@ -114,7 +122,10 @@ const sortValue = (o: Order, key: SortKey): number | string => {
         case 'courier': return (o.shipping?.company || '').toLowerCase();
         case 'time': return new Date(o.lastEditedAt || o.date).getTime() || 0;
         case 'address': return (o.customer?.address || '').toLowerCase();
-        case 'page': return (o.customer?.page || '').toLowerCase();
+        // Same precedence as the mapper/dashboards: the page_source column is
+        // canonical (it's what the drawer edits and the server sorts by); the
+        // customer snapshot's page is only the legacy fallback.
+        case 'page': return (o.pageSource || o.customer?.page || '').toLowerCase();
         case 'customerCare': return (o.customerCare || '').toLowerCase();
         case 'payBy': return (o.paymentMethod || '').toLowerCase();
         case 'received': return receivedAmountOf(o);
