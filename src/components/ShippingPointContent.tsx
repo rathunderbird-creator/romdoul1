@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { MapPin, Search, Map, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy, Edit2, Power, AlertTriangle } from 'lucide-react';
+// The lucide icon is aliased: importing it as `Map` would shadow the global
+// Map constructor for this whole module.
+import { MapPin, Search, Map as MapIcon, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy, Edit2, Power, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
 import { CambodiaMap } from '../components/CambodiaMap';
@@ -31,6 +33,16 @@ interface CustomLocation {
 // Supabase/thrown errors arrive as `unknown`; pull a readable message off them.
 const errorMessage = (e: unknown) =>
     e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+
+// ─── Pinned-location search helpers ───────────────────────────────────────
+
+// Khmer text pasted from chats often carries zero-width characters, and
+// Khmer itself has no case — normalise both the query and the haystack the
+// same way so what the user sees is what matches.
+const normalizeSearchText = (s: string): string =>
+    s.toLowerCase().replace(/\u200B|\u200C|\u200D|\uFEFF/g, '').replace(/\s+/g, ' ').trim();
+
+const digitsOf = (s: string): string => s.replace(/\D/g, '');
 
 // Define the data types based on the JSON structure
 interface Village {
@@ -309,6 +321,24 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         return results;
     }, [data, debouncedSearchTerm]);
 
+    // Khmer → Latin across every gazetteer level, so a pin can be found by
+    // typing either script ("siem reap" finds a pin in សៀមរាប). Name
+    // collisions between levels are harmless — this only feeds search text.
+    const latinByKhmer = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const p of data) {
+            m.set(p.khmer, p.latin);
+            for (const d of p.districts || []) {
+                m.set(d.khmer, d.latin);
+                for (const c of d.communes || []) {
+                    m.set(c.khmer, c.latin);
+                    for (const v of c.villages || []) m.set(v.khmer, v.latin);
+                }
+            }
+        }
+        return m;
+    }, [data]);
+
     // Group Pinned Locations by Province
     const pinnedLocationsByProvince = useMemo(() => {
         const groups: Record<string, { provinceName: string, provinceCode: string, locations: typeof customLocations }> = {};
@@ -362,12 +392,30 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             return { provinceCode: pCode, districtCode: dCode, communeCode: cCode };
         };
 
-        let filteredLocations = searchPinnedTerm.trim() === ''
+        // Search across everything a user knows about a pin — its name, the
+        // whole admin chain in BOTH scripts, courier, contact and phone
+        // (digits compared ignoring spacing/dashes). Every space-separated
+        // term must match, so "j&t សៀមរាប" narrows instead of widening.
+        const terms = normalizeSearchText(searchPinnedTerm).split(' ').filter(Boolean);
+        let filteredLocations = terms.length === 0
             ? customLocations
             : customLocations.filter(loc => {
                 const { name: provinceName } = getProvinceInfo(loc);
-                const searchTerm = searchPinnedTerm.toLowerCase();
-                return loc.name.toLowerCase().includes(searchTerm) || provinceName.toLowerCase().includes(searchTerm);
+                const parts = [
+                    loc.name, latinByKhmer.get(loc.name),
+                    provinceName, latinByKhmer.get(provinceName),
+                    loc.province, latinByKhmer.get(loc.province || ''),
+                    loc.district, latinByKhmer.get(loc.district || ''),
+                    loc.commune, latinByKhmer.get(loc.commune || ''),
+                    loc.courier, loc.contact_name, loc.phone,
+                ];
+                const hay = normalizeSearchText(parts.filter(Boolean).join(' '));
+                const hayDigits = digitsOf(loc.phone || '');
+                return terms.every(t => {
+                    if (hay.includes(t)) return true;
+                    const td = digitsOf(t);
+                    return td.length >= 3 && hayDigits.includes(td);
+                });
             });
 
         // Filter by selected area if chosen
@@ -393,7 +441,15 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
 
         // Sort keys alphabetically
         return Object.keys(groups).sort().map(key => groups[key]);
-    }, [customLocations, data, searchPinnedTerm, selectedProvinceCode, selectedDistrictCode, selectedCommuneCode]);
+    }, [customLocations, data, latinByKhmer, searchPinnedTerm, selectedProvinceCode, selectedDistrictCode, selectedCommuneCode]);
+
+    // Shown / total counts for the panel header while a search or an area
+    // selection is narrowing the list.
+    const shownPinnedCount = useMemo(
+        () => pinnedLocationsByProvince.reduce((sum, g) => sum + g.locations.length, 0),
+        [pinnedLocationsByProvince]
+    );
+    const isPinnedListFiltered = searchPinnedTerm.trim() !== '' || !!selectedProvinceCode;
 
 
 
@@ -842,7 +898,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                     <div>
                         <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? 'ជ្រើសរើសទីតាំង (Select Location)' : (pageTitle || 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)')}</h1>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Map size={18} />
+                            <MapIcon size={18} />
                             {mode === 'selector' ? 'Select a location to dispatch the order' : (pageSubtitle || 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)')}
                         </p>
                     </div>
@@ -1178,7 +1234,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <MapPin size={18} color="var(--color-primary)" />
-                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>ទីតាំងដែលបានកំណត់ ({pinnedLocationsByProvince.reduce((sum, g) => sum + g.locations.length, 0)})</h3>
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                        ទីតាំងដែលបានកំណត់ ({isPinnedListFiltered ? `${shownPinnedCount}/${customLocations.length}` : customLocations.length})
+                                    </h3>
                                 </div>
                                 <div style={{ color: 'var(--color-text-secondary)' }}>
                                     {isPinnedListExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -1191,7 +1249,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                         <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                         <input
                                             type="text"
-                                            placeholder="ស្វែងរកទីតាំងដែលបានកំណត់..."
+                                            placeholder="ស្វែងរក៖ ឈ្មោះ, ខេត្ត/ស្រុក/ឃុំ, ក្រុមហ៊ុនដឹក, លេខទូរស័ព្ទ..."
                                             value={searchPinnedTerm}
                                             onChange={e => setSearchPinnedTerm(e.target.value)}
                                             style={{
@@ -1218,7 +1276,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                     <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
                                         {pinnedLocationsByProvince.length === 0 ? (
                                             <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                                មិនទាន់មានទីតាំងបានកំណត់ទេ
+                                                {customLocations.length === 0
+                                                    ? 'មិនទាន់មានទីតាំងបានកំណត់ទេ'
+                                                    : 'គ្មានទីតាំងត្រូវនឹងការស្វែងរកនេះទេ (No matching pins)'}
                                             </div>
                                         ) : (
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1240,6 +1300,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                             onMouseLeave={(e) => { if (group.provinceCode) e.currentTarget.style.background = 'var(--color-bg)' }}
                                                         >
                                                             {group.provinceName}
+                                                            <span style={{ marginLeft: '6px', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>({group.locations.length})</span>
                                                         </div>
                                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                             {group.locations.map((loc, idx) => {
@@ -1297,6 +1358,11 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                             <MapPin size={12} color="var(--color-text-secondary)" />
                                                                             <span style={{ fontSize: '11px', color: loc.is_shutdown ? 'var(--color-text-secondary)' : 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
                                                                                 {[loc.name, loc.commune, loc.district, loc.province?.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim()].filter(Boolean).join(', ')}
+                                                                                {loc.courier && (
+                                                                                    <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 700, color: getShippingCoColor(loc.courier) }}>
+                                                                                        {loc.courier}
+                                                                                    </span>
+                                                                                )}
                                                                                 {loc.is_shutdown && (
                                                                                     <span style={{ 
                                                                                         background: '#fee2e2', 
