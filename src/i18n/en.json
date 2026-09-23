@@ -273,9 +273,10 @@
   "dashboard2": {
     "payments": "Payments",
     "unitsByStatus": "Units by status",
+    "classicCards": "Classic dashboard cards",
     "getFileAllTime": "All time, awaiting settlement — opens the order list with the date filter cleared",
     "pay": { "Unpaid": "Unpaid", "Deposit": "Deposit", "Paid": "Paid", "Cancel": "Cancel", "Get File": "Get File" },
-    "title": "Dashboard 2",
+    "title": "Dashboard",
     "subtitle": "Cash-on-delivery overview",
     "newOrder": "New Order",
     "refresh": "Refresh",

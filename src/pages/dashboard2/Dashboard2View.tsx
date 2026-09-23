@@ -2,16 +2,17 @@
 // KPIs → order pipeline → needs-attention → collected-vs-outstanding chart →
 // tabbed performance panel → collapsed inventory detail.
 import React, { useMemo } from 'react';
-import { Plus, RefreshCw, ShoppingBag } from 'lucide-react';
+import { LayoutGrid, Plus, RefreshCw, ShoppingBag } from 'lucide-react';
 import { DateRangePicker } from '../../components';
+import ClassicDashboardSections from '../../components/ClassicDashboardSections';
 import './dashboard2.css';
-import { D2, fmtDay } from './theme';
+import { D2, cardStyle, fmtDay } from './theme';
 import {
     summarize, pipelineCounts, otherStatusCounts, payRows, dailySeries, lowStockProducts,
     pendingOrders, missingTrackingOrders, couriersOf, rangeLength, groupOrders, productRows,
 } from './metrics';
 import type { Dashboard2ViewProps, Dashboard2Derived } from './types';
-import { ErrorInline, EmptyState, Skeleton } from './ui';
+import { ErrorInline, EmptyState, Skeleton, SectionHeader, useLocalStorageState } from './ui';
 import HeroKpis from './components/HeroKpis';
 import Pipeline from './components/Pipeline';
 import PaymentsStrip from './components/PaymentsStrip';
@@ -20,8 +21,13 @@ import CollectionChart from './components/CollectionChart';
 import PerformancePanel from './components/PerformancePanel';
 import InventoryDetail from './components/InventoryDetail';
 
+const CLASSIC_BODY_ID = 'd2-classic-cards-body';
+
 const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshing, salesError, inventoryError, actions, t, isMobile }) => {
     const { range, previous, orders, previousOrders, products, getFile, stockIn, stockOut, now } = data;
+    // The classic dashboard's card sections, merged below Dashboard 2's own
+    // (kept in full, per request). Collapsible; expanded by default.
+    const [classicCollapsed, setClassicCollapsed] = useLocalStorageState<boolean>('d2_classic_collapsed', false);
 
     const derived = useMemo<Dashboard2Derived>(() => {
         const missingTracking = missingTrackingOrders(orders);
@@ -126,6 +132,40 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                         onAction={actions.onNewOrder}
                     />
                 </div>
+            )}
+
+            {/* Everything from the classic dashboard first (per request), on the
+                same range and the same already-fetched orders (no extra
+                queries); the Dashboard 2 sections follow below. */}
+            {!salesError && !isEmpty && (
+                <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
+                    <div style={{ ...cardStyle, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
+                        <SectionHeader
+                            title={t('dashboard2.classicCards')}
+                            icon={LayoutGrid}
+                            collapsed={classicCollapsed}
+                            onToggle={() => setClassicCollapsed(c => !c)}
+                            id={CLASSIC_BODY_ID}
+                        />
+                        {!classicCollapsed && (
+                            <div id={CLASSIC_BODY_ID}>
+                                <ClassicDashboardSections
+                                    orders={orders}
+                                    products={products}
+                                    getFileGlobal={getFile ?? { count: 0, total: 0 }}
+                                    stockIn={stockIn}
+                                    stockOut={stockOut}
+                                    dateRange={range}
+                                    t={t}
+                                    onOpenOrders={actions.onOpenOrders}
+                                    onOpenInventory={actions.onOpenInventory}
+                                    onOpenStockIn={actions.onOpenStockIn}
+                                    onOpenStockOut={actions.onOpenStockOut}
+                                />
+                            </div>
+                        )}
+                    </div>
+                </section>
             )}
 
             {!salesError && !isEmpty && (

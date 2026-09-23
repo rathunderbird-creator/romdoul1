@@ -116,8 +116,13 @@ const ProtectedApp = () => {
       <TodoReminderService />
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
-          <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
-          <Route path="/dashboard2" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard2 /></ProtectedRoute>} />
+          {/* The merged dashboard: Dashboard 2's sections with every classic
+              card section underneath (ClassicDashboardSections). /dashboard2
+              bookmarks land on / and the classic-only page stays reachable at
+              /dashboard-classic. */}
+          <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard2 /></ProtectedRoute>} />
+          <Route path="/dashboard2" element={<Navigate to="/" replace />} />
+          <Route path="/dashboard-classic" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
           <Route path="/price-list" element={<ProtectedRoute requiredPermission="view_dashboard"><PriceListPage /></ProtectedRoute>} />
           <Route path="/todo" element={<ProtectedRoute requiredPermission="view_dashboard"><TodoPage /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}

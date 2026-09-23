@@ -30,8 +30,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
     const navItems: any[] = [];
 
     if (hasPermission('view_dashboard')) {
+        // One dashboard entry: / is the merged dashboard (Dashboard 2 + every
+        // classic card section); /dashboard-classic stays reachable by URL.
         navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
-        navItems.push({ icon: Gauge, label: t('nav.dashboard2'), path: '/dashboard2' });
         navItems.push({ icon: Tags, label: t('nav.priceList'), path: '/price-list' });
         navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
     }

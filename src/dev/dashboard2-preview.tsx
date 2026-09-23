@@ -106,6 +106,8 @@ const Preview = () => {
             onOpenOrders: filters => log('orders', filters),
             onNewOrder: () => log('newOrder'),
             onOpenInventory: () => log('inventory'),
+            onOpenStockIn: () => log('stockIn'),
+            onOpenStockOut: () => log('stockOut'),
         };
     }, []);
 
