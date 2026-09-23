@@ -42,6 +42,9 @@ export interface Dashboard2Actions {
     onOpenOrders: (filters: OrderListFilters) => void;
     onNewOrder: () => void;
     onOpenInventory: () => void;
+    // Classic sections' Stock-In / Stock-Out cards (merged dashboard).
+    onOpenStockIn: () => void;
+    onOpenStockOut: () => void;
 }
 
 export interface Dashboard2ViewProps {

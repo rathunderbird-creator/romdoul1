@@ -43,6 +43,8 @@ const Dashboard2Page: React.FC = () => {
         onOpenOrders: (filters: OrderListFilters) => navigate('/orders', { state: orderListState(filters) }),
         onNewOrder: () => navigate('/orders', { state: { createNew: true } }),
         onOpenInventory: () => navigate('/inventory'),
+        onOpenStockIn: () => navigate('/stock-in'),
+        onOpenStockOut: () => navigate('/stock-out'),
     }), [setRange, refresh, refreshData, navigate]);
 
     return (
