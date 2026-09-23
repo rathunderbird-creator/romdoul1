@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
-import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle, ChevronDown, ChevronUp, RefreshCw, Phone, MessageCircle } from 'lucide-react';
+import { useMobile } from '../hooks/useMobile';
+import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, Printer, Edit, Eye, ClipboardList, CheckCircle, ChevronDown, ChevronUp, RefreshCw, Phone, MessageCircle, AlertTriangle } from 'lucide-react';
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker, Modal } from '../components';
 import { getShippingCoColor } from '../utils/orderUtils';
@@ -186,6 +187,13 @@ const DeliveryTracking: React.FC = () => {
     }, [setHeaderContent]);
 
     const [searchTerm, setSearchTerm] = useState('');
+    // Debounced copy drives the server fetch: typing used to fire the full
+    // count query (plus the item-match query) on EVERY keystroke.
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    useEffect(() => {
+        const id = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+        return () => clearTimeout(id);
+    }, [searchTerm]);
     const [orderDateRange, setOrderDateRange] = useState({ start: '', end: '' });
     const [statusFilter, setStatusFilter] = useState<string[]>(() => {
         const saved = localStorage.getItem('delivery_statusFilter');
@@ -220,7 +228,9 @@ const DeliveryTracking: React.FC = () => {
     const filterShippingCompanies = useMemo(() => {
         return ['អ្នកដឹក', ...shippingCompanies];
     }, [shippingCompanies]);
-    const isMobile = window.innerWidth <= 768;
+    // Reactive (the old `window.innerWidth <= 768` snapshot never updated on
+    // resize/rotation until something else re-rendered).
+    const isMobile = useMobile();
 
     const hasActiveFilters = searchTerm !== '' ||
         statusFilter.length > 0 ||
@@ -525,15 +535,21 @@ const DeliveryTracking: React.FC = () => {
 
     React.useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, statusFilter, paymentStatusFilter, orderDateRange, salesmanFilter, customerCareFilter, shippingCoFilter, itemsPerPage, sortConfig]);
+    }, [debouncedSearchTerm, statusFilter, paymentStatusFilter, orderDateRange, salesmanFilter, customerCareFilter, shippingCoFilter, itemsPerPage, sortConfig]);
 
     // Server-side fetching
     const [totalCount, setTotalCount] = useState(0);
     const [serverOrders, setServerOrders] = useState<Sale[]>([]);
     const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    // Ignore responses from superseded requests (fast filter/search changes),
+    // so a slow earlier fetch can't land last and overwrite newer results.
+    const fetchReqRef = React.useRef(0);
 
     const fetchOrders = React.useCallback(async () => {
+        const reqId = ++fetchReqRef.current;
         setIsLoadingOrders(true);
+        setLoadError(null);
         try {
             let query = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
 
@@ -579,8 +595,8 @@ const DeliveryTracking: React.FC = () => {
             }
 
             // Search term
-            if (searchTerm.trim()) {
-                const trimmedTerm = searchTerm.trim();
+            if (debouncedSearchTerm.trim()) {
+                const trimmedTerm = debouncedSearchTerm.trim();
                 const isExact = trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"');
                 const phrase = isExact ? trimmedTerm.slice(1, -1) : trimmedTerm;
                 const terms = isExact ? (phrase ? [phrase] : []) : phrase.split(/[\s,]+/).filter(t => t.trim().length > 0);
@@ -677,16 +693,19 @@ const DeliveryTracking: React.FC = () => {
 
             const { data, count, error } = await query;
             if (error) throw error;
+            if (reqId !== fetchReqRef.current) return;
 
             setTotalCount(count || 0);
             const mapped = (data || []).map(mapSaleEntity);
             setServerOrders(mapped);
         } catch (err) {
+            if (reqId !== fetchReqRef.current) return;
             console.error("Fetch delivery tracking failed", err);
+            setLoadError((err as { message?: string })?.message || String(err));
         } finally {
-            setIsLoadingOrders(false);
+            if (reqId === fetchReqRef.current) setIsLoadingOrders(false);
         }
-    }, [statusFilter, paymentStatusFilter, salesmanFilter, shippingCoFilter, customerCareFilter, orderDateRange, searchTerm, currentPage, itemsPerPage, salesUpdatedAt, currentUser, sortConfig]);
+    }, [statusFilter, paymentStatusFilter, salesmanFilter, shippingCoFilter, customerCareFilter, orderDateRange, debouncedSearchTerm, currentPage, itemsPerPage, salesUpdatedAt, currentUser, sortConfig]);
 
     useEffect(() => {
         fetchOrders();
@@ -1273,6 +1292,25 @@ const DeliveryTracking: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Load failures used to vanish into the console, leaving stale rows
+                with no hint anything went wrong. */}
+            {loadError && (
+                <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontSize: '13px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                        Couldn't load orders — the rows below may be out of date. {loadError}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={fetchOrders}
+                        disabled={isLoadingOrders}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: '#fff', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                    >
+                        <RefreshCw size={13} /> Retry
+                    </button>
+                </div>
+            )}
 
             {/* Table */}
             <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(var(--vh-full) - 260px)' }}> {/* changed overflow to visible for dropdowns if needed, or better keep auto but manage dropdown z-index/portal */}
