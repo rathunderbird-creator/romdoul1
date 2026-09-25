@@ -2,6 +2,11 @@
 // No React, no Supabase, no Date.now(): `now` is always passed in, so the
 // dev preview (src/dev/productIncomePrediction-preview.tsx) is deterministic.
 //
+// The period is an arbitrary inclusive DateRange of local calendar days (see
+// ../../utils/dateRange.ts) — the default and most common one is a whole
+// calendar month. A sale belongs to the local calendar day of its `date`, so
+// every figure is additive over any partition of the range.
+//
 // Unlike Prediction by Page, nothing here is a manual input — ad spend
 // ("Boost") is naturally page-scoped (a campaign runs on a Page, not a SKU),
 // so this screen has no writes, no new table, and no permission-gated
@@ -24,24 +29,26 @@
 // graceful fallback to the sale item's own embedded name for a product
 // since deleted from the catalogue (see productLabelOf).
 //
-// Calendar/status helpers are genuinely generic (not page-specific) and are
-// reused as-is from the sibling feature rather than duplicated.
+// Status/cost helpers are genuinely generic (not page-specific) and are
+// reused as-is from the sibling feature rather than duplicated; the calendar
+// arithmetic comes from the shared ../../utils/dateRange.ts.
 import type { Sale, Product } from '../../types';
 import {
-    monthBounds, addMonths, dayKeysOfMonth, monthKeyOf, dayKeyOf, isMonthKey, monthStateOf, saleDayOf,
-    statusOf, REVENUE_STATUSES, PENDING_STATUSES, CANCELLED_STATUSES, productCostMapOf, ratio,
-    type MonthBounds, type MonthState,
+    saleDayOf, statusOf, REVENUE_STATUSES, PENDING_STATUSES, CANCELLED_STATUSES, productCostMapOf, ratio,
 } from '../pageIncomePrediction/metrics';
+import {
+    completedWindow, dayKeyFromDate, dayKeysOfRange, dayNumberOf, inRange, parseDay, rangeLength, rangeStateOf,
+    type DateRange, type RangeState,
+} from '../../utils/dateRange';
 
 export type Order = Sale;
-export { monthBounds, addMonths, dayKeysOfMonth, monthKeyOf, dayKeyOf, isMonthKey, monthStateOf, saleDayOf, productCostMapOf };
-export type { MonthBounds, MonthState };
+export { saleDayOf, productCostMapOf };
 
 // ─── Product catalogue ──────────────────────────────────────────────────────
 // `products` here is expected to include DEACTIVATED products too (see
 // useProductIncomeData.ts) — this map is for cost/name/category LOOKUPS,
 // deliberately not filtered by isActive, so a discontinued SKU's historical
-// COGS this month is still computed correctly. Which ids count as "still
+// COGS in the period is still computed correctly. Which ids count as "still
 // active" (for the zero-sales "nothing moved" rows and the "deleted" badge)
 // is decided separately in buildOverview.
 
@@ -69,15 +76,16 @@ export const UNKNOWN_PRODUCT_KEY = '';
 
 const idOf = (it: { id?: string }): string => String(it.id || '').trim() || UNKNOWN_PRODUCT_KEY;
 
-// product id → day → flow, for sales inside `month` only. `orders`/
-// `pendingOrders` de-dup per order (an order listing the same product twice
-// as separate line items — a rare data quirk — still counts as one order),
-// mirroring dashboard2/metrics.ts's productRows `seen` set.
-const bucketByProductAndDay = (sales: Order[], month: string, costMap: Map<string, number>): Map<string, Map<string, ProductDayFlow>> => {
+// product id → day → flow, for sales inside `range` only (a day is identified
+// by its YYYY-MM-DD string, so a multi-month range never mixes up the 5th of
+// two months). `orders`/`pendingOrders` de-dup per order (an order listing the
+// same product twice as separate line items — a rare data quirk — still counts
+// as one order), mirroring dashboard2/metrics.ts's productRows `seen` set.
+const bucketByProductAndDay = (sales: Order[], range: DateRange, costMap: Map<string, number>): Map<string, Map<string, ProductDayFlow>> => {
     const byProduct = new Map<string, Map<string, ProductDayFlow>>();
     for (const o of sales) {
         const day = saleDayOf(o);
-        if (!day.startsWith(`${month}-`)) continue;
+        if (!inRange(day, range)) continue;
         const st = statusOf(o);
         const isRevenue = REVENUE_STATUSES.has(st);
         const isPending = !isRevenue && PENDING_STATUSES.has(st);
@@ -137,7 +145,7 @@ const bucketByProductAndDay = (sales: Order[], month: string, costMap: Map<strin
                 // 1)`) and pageIncomePrediction/metrics.ts's cogsOf exactly,
                 // so a bad-data zero/missing quantity can't silently zero out
                 // real inventory cost and make this screen's COGS total drift
-                // below the other two screens' for the same month.
+                // below the other two screens' for the same period.
                 flow.cogs += (costMap.get(id) || 0) * (Number(it.quantity) || 1);
                 if (!seenRevenue.has(id)) { flow.orders += 1; seenRevenue.add(id); }
             } else if (isPending) {
@@ -156,40 +164,45 @@ const bucketByProductAndDay = (sales: Order[], month: string, costMap: Map<strin
 export interface Projection {
     basis: 'run-rate' | 'actual' | 'none';
     completedDays: number;
-    // Distinguishes "hasn't started yet" from "the current month, but too
+    // Distinguishes "hasn't started yet" from "the current period, but too
     // early to extrapolate (0-2 completed days)" — both have completedDays
     // near 0, which used to be the ONLY signal the view had, so day 1 of
     // every current month was wrongly labelled "Month not started".
-    isFutureMonth: boolean;
+    isFutureRange: boolean;
     revenue: number | null;
     grossProfit: number | null;
 }
 
-interface FlowDay { dayNum: number; revenue: number; cogs: number }
+interface FlowDay { date: string; revenue: number; cogs: number }
 
-const projectFlows = (days: FlowDay[], month: string, now: Date): Projection => {
-    const state = monthStateOf(month, now);
-    const { daysInMonth } = monthBounds(month);
-    const sum = (rows: FlowDay[], k: keyof Omit<FlowDay, 'dayNum'>): number => rows.reduce((s, d) => s + d[k], 0);
-    if (state === 'future') return { basis: 'none', completedDays: 0, isFutureMonth: true, revenue: null, grossProfit: null };
+// Run-rate to the END of the range: the completed days (every day before
+// today, see completedWindow) scaled by total-days / completed-days. Days are
+// matched by their date string, never by day-of-month, so a range that spans
+// months projects correctly.
+const projectFlows = (days: FlowDay[], range: DateRange, now: Date): Projection => {
+    const state = rangeStateOf(range, now);
+    const cw = completedWindow(range, now);
+    const sum = (rows: FlowDay[], k: keyof Omit<FlowDay, 'date'>): number => rows.reduce((s, d) => s + d[k], 0);
+    if (state === 'future') return { basis: 'none', completedDays: 0, isFutureRange: true, revenue: null, grossProfit: null };
     if (state === 'past') {
         const revenue = sum(days, 'revenue');
-        return { basis: 'actual', completedDays: daysInMonth, isFutureMonth: false, revenue, grossProfit: revenue - sum(days, 'cogs') };
+        return { basis: 'actual', completedDays: cw.total, isFutureRange: false, revenue, grossProfit: revenue - sum(days, 'cogs') };
     }
-    const completed = now.getDate() - 1;
-    if (completed < 3) return { basis: 'none', completedDays: completed, isFutureMonth: false, revenue: null, grossProfit: null };
-    const done = days.filter(d => d.dayNum <= completed);
-    const scale = daysInMonth / completed;
+    const completed = cw.completed;
+    if (completed < 3 || cw.lastCompleted === null) return { basis: 'none', completedDays: completed, isFutureRange: false, revenue: null, grossProfit: null };
+    const lastCompleted = cw.lastCompleted;
+    const done = days.filter(d => d.date >= range.from && d.date <= lastCompleted);
+    const scale = cw.total / completed;
     const revenue = sum(done, 'revenue') * scale;
     const cogs = sum(done, 'cogs') * scale;
-    return { basis: 'run-rate', completedDays: completed, isFutureMonth: false, revenue, grossProfit: revenue - cogs };
+    return { basis: 'run-rate', completedDays: completed, isFutureRange: false, revenue, grossProfit: revenue - cogs };
 };
 
-// ─── Ledger (one product, one month, one row per day) ──────────────────────
+// ─── Ledger (one product, one range, one row per day) ──────────────────────
 
 export interface LedgerDay {
-    date: string;
-    dayNum: number;
+    date: string;          // YYYY-MM-DD — the day's identity
+    dayNum: number;        // day of month (1..31), display only: repeats across months in a long range
     dow: number;
     units: number;
     orders: number;
@@ -222,15 +235,15 @@ export interface LedgerResult {
     days: LedgerDay[];
     totals: LedgerTotals;
     projection: Projection;
-    monthState: MonthState;
-    today: number | null;
-    daysInMonth: number;
+    rangeState: RangeState;
+    today: number | null;      // 1-based position of today inside the range; null unless the range contains today
+    daysInRange: number;
 }
 
 export interface MetricsInput {
     sales: Order[];
     products: Product[];
-    month: string;
+    range: DateRange;
     now: Date;
 }
 
@@ -239,23 +252,21 @@ interface Prepared {
     catalogue: Map<string, Product>;
     dayKeys: string[];
     todayKey: string;
-    monthState: MonthState;
-    bounds: MonthBounds;
-    month: string;
+    rangeState: RangeState;
+    range: DateRange;
     now: Date;
 }
 
 const prepare = (input: MetricsInput): Prepared => {
     const costMap = productCostMapOf(input.products);
-    const byProduct = bucketByProductAndDay(input.sales, input.month, costMap);
+    const byProduct = bucketByProductAndDay(input.sales, input.range, costMap);
     return {
         byProduct,
         catalogue: productCatalogueOf(input.products),
-        dayKeys: dayKeysOfMonth(input.month),
-        todayKey: dayKeyOf(input.now),
-        monthState: monthStateOf(input.month, input.now),
-        bounds: monthBounds(input.month),
-        month: input.month,
+        dayKeys: dayKeysOfRange(input.range),
+        todayKey: dayKeyFromDate(input.now),
+        rangeState: rangeStateOf(input.range, input.now),
+        range: input.range,
         now: input.now,
     };
 };
@@ -268,12 +279,15 @@ const totalsWithAverages = (raw: Omit<LedgerTotals, 'avgPrice' | 'avgCost'>): Le
 
 const ledgerFor = (productId: string, p: Prepared): LedgerResult => {
     const flows = p.byProduct.get(productId) || new Map<string, ProductDayFlow>();
-    const days: LedgerDay[] = p.dayKeys.map((date, i) => {
+    const days: LedgerDay[] = p.dayKeys.map(date => {
         const flow = flows.get(date) || emptyFlow();
-        const dow = new Date(p.bounds.year, p.bounds.monthIdx, i + 1).getDay();
+        // Weekday comes from the date string itself (not from month bounds),
+        // and dayNum is the day of the month — display only, since it repeats
+        // across the months of a long range.
+        const dow = parseDay(date).getDay();
         return {
             date,
-            dayNum: i + 1,
+            dayNum: Number(date.slice(8, 10)),
             dow,
             units: flow.units,
             orders: flow.orders,
@@ -295,15 +309,15 @@ const ledgerFor = (productId: string, p: Prepared): LedgerResult => {
         return acc;
     }, { units: 0, orders: 0, revenue: 0, cogs: 0, grossProfit: 0, pendingUnits: 0, pendingOrders: 0, cancelledUnits: 0 });
     const totals = totalsWithAverages(rawTotals);
-    const projection = projectFlows(days, p.month, p.now);
+    const projection = projectFlows(days, p.range, p.now);
     return {
         productId,
         days,
         totals,
         projection,
-        monthState: p.monthState,
-        today: p.monthState === 'current' ? p.now.getDate() : null,
-        daysInMonth: p.bounds.daysInMonth,
+        rangeState: p.rangeState,
+        today: dayNumberOf(p.range, p.now),
+        daysInRange: rangeLength(p.range),
     };
 };
 
@@ -333,9 +347,10 @@ export interface ProductRow {
 export interface OverviewResult {
     rows: ProductRow[];            // gross profit desc, unknown-product bucket last
     totals: ProductRow;            // id '*'
-    monthState: MonthState;
-    today: number | null;
-    daysInMonth: number;
+    range: DateRange;              // the period these rows cover (summarizeRows needs it for its fallback)
+    rangeState: RangeState;
+    today: number | null;          // 1-based position of today inside the range; null unless the range contains today
+    daysInRange: number;
     completedDays: number;
 }
 
@@ -346,11 +361,11 @@ export interface OverviewResult {
 // is fetched ordered by `id` (a free-form UUID/timestamp-string primary key,
 // not chronological), so scanning the array back-to-front would not
 // actually find the most recently sold name.
-const fallbackNameOf = (sales: Order[], month: string, id: string): string | null => {
+const fallbackNameOf = (sales: Order[], range: DateRange, id: string): string | null => {
     let latestDate = '';
     let latestName: string | null = null;
     for (const o of sales) {
-        if (!saleDayOf(o).startsWith(`${month}-`)) continue;
+        if (!inRange(saleDayOf(o), range)) continue;
         const hit = (o.items || []).find(it => idOf(it) === id);
         if (!hit?.name) continue;
         if (o.date > latestDate) { latestDate = o.date; latestName = hit.name; }
@@ -358,11 +373,11 @@ const fallbackNameOf = (sales: Order[], month: string, id: string): string | nul
     return latestName;
 };
 
-const rowFromLedger = (id: string, catalogue: Map<string, Product>, sales: Order[], month: string, l: LedgerResult): ProductRow => {
+const rowFromLedger = (id: string, catalogue: Map<string, Product>, sales: Order[], range: DateRange, l: LedgerResult): ProductRow => {
     const product = catalogue.get(id);
     const name = id === UNKNOWN_PRODUCT_KEY
         ? '' // labelled in the view via i18n, like the Page feature's unassigned bucket
-        : (product?.name || fallbackNameOf(sales, month, id) || id);
+        : (product?.name || fallbackNameOf(sales, range, id) || id);
     return {
         id,
         name,
@@ -391,7 +406,10 @@ const rowFromLedger = (id: string, catalogue: Map<string, Product>, sales: Order
 // Sums an arbitrary row subset into one ProductRow-shaped totals object —
 // used for the full overview AND (by the view, over whatever search leaves
 // visible) for the footer, so "totals" always means "sum of what's shown".
-export const summarizeRows = (rows: ProductRow[], monthState: MonthState, now: Date): ProductRow => {
+// `range` is only needed for the no-rows fallback projection below (the range's
+// own state and completed-day count); with rows, the projection sums theirs.
+export const summarizeRows = (rows: ProductRow[], range: DateRange, now: Date): ProductRow => {
+    const rangeState = rangeStateOf(range, now);
     const sum = (k: 'units' | 'orders' | 'pendingUnits' | 'pendingOrders' | 'cancelledUnits' | 'revenue' | 'cogs' | 'grossProfit'): number =>
         rows.reduce((s, r) => s + r[k], 0);
     const projSum = (k: 'revenue' | 'grossProfit'): number | null =>
@@ -416,9 +434,9 @@ export const summarizeRows = (rows: ProductRow[], monthState: MonthState, now: D
         avgPrice: ratio(totalRevenue, totalUnits),
         avgCost: ratio(sum('cogs'), totalUnits),
         projection: {
-            basis: anyProjection?.basis ?? (monthState === 'past' ? 'actual' : 'none'),
-            completedDays: anyProjection?.completedDays ?? (monthState === 'current' ? now.getDate() - 1 : 0),
-            isFutureMonth: anyProjection?.isFutureMonth ?? (monthState === 'future'),
+            basis: anyProjection?.basis ?? (rangeState === 'past' ? 'actual' : 'none'),
+            completedDays: anyProjection?.completedDays ?? (rangeState === 'current' ? completedWindow(range, now).completed : 0),
+            isFutureRange: anyProjection?.isFutureRange ?? (rangeState === 'future'),
             revenue: projSum('revenue'),
             grossProfit: projSum('grossProfit'),
         },
@@ -427,18 +445,18 @@ export const summarizeRows = (rows: ProductRow[], monthState: MonthState, now: D
 
 export const buildOverview = (input: MetricsInput): OverviewResult => {
     const p = prepare(input);
-    // Every ACTIVE catalogue product is shown even with zero sales this month
+    // Every ACTIVE catalogue product is shown even with zero sales in the period
     // (a "nothing moved" signal, same philosophy as Prediction by Page
     // showing a configured Page with no orders) — union'd with any product id
     // actually seen in sales, active or not (deactivated products keep
-    // showing their real historical numbers for months they did sell in;
+    // showing their real historical numbers for periods they did sell in;
     // p.catalogue itself includes inactive rows purely for the cost/name
     // lookups in rowFromLedger, see productCatalogueOf's comment above).
     const ids = new Set<string>();
     for (const [id, product] of p.catalogue) if (product.isActive !== false) ids.add(id);
     for (const id of p.byProduct.keys()) ids.add(id);
 
-    const rows = Array.from(ids).map(id => rowFromLedger(id, p.catalogue, input.sales, input.month, ledgerFor(id, p)));
+    const rows = Array.from(ids).map(id => rowFromLedger(id, p.catalogue, input.sales, input.range, ledgerFor(id, p)));
     rows.sort((a, b) => {
         if (a.id === UNKNOWN_PRODUCT_KEY || b.id === UNKNOWN_PRODUCT_KEY) return a.id === UNKNOWN_PRODUCT_KEY ? 1 : -1;
         if (b.grossProfit !== a.grossProfit) return b.grossProfit - a.grossProfit;
@@ -448,10 +466,11 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
 
     return {
         rows,
-        totals: summarizeRows(rows, p.monthState, input.now),
-        monthState: p.monthState,
-        today: p.monthState === 'current' ? input.now.getDate() : null,
-        daysInMonth: p.bounds.daysInMonth,
-        completedDays: p.monthState === 'current' ? input.now.getDate() - 1 : p.monthState === 'past' ? p.bounds.daysInMonth : 0,
+        totals: summarizeRows(rows, input.range, input.now),
+        range: input.range,
+        rangeState: p.rangeState,
+        today: dayNumberOf(input.range, input.now),
+        daysInRange: rangeLength(input.range),
+        completedDays: completedWindow(input.range, input.now).completed,
     };
 };

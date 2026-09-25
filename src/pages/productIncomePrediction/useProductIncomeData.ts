@@ -1,12 +1,13 @@
-// Data layer for Prediction by Product: one month's sales, chunk-fetched
-// with the exact same select as ../IncomePrediction.tsx and
-// ../pageIncomePrediction/usePageIncomeData.ts so all three "Income
-// Prediction" screens see identical rows and reconcile. No writes, no
-// second table.
+// Data layer for Prediction by Product: the selected date range's sales,
+// chunk-fetched (one parallel fetchAll per calendar month the range touches,
+// see ../../utils/fetchInMonthWindows) with the exact same select as
+// ../IncomePrediction.tsx and ../pageIncomePrediction/usePageIncomeData.ts so
+// all the "Income Prediction" screens see identical rows and reconcile. No
+// writes, no second table.
 //
 // Products come from fetchAllProducts (../../utils/fetchAllProducts), not
 // useStore() — deliberately including DEACTIVATED products, so a
-// discontinued SKU's historical COGS this month isn't silently dropped; see
+// discontinued SKU's historical COGS in the period isn't silently dropped; see
 // that util's header comment for the full reasoning (shared with
 // ../pageIncomePrediction/usePageIncomeData.ts, which does the same).
 // metrics.ts's buildOverview still only *lists* active products among the
@@ -14,10 +15,11 @@
 // set purely for cost/name/category lookups.
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { fetchAll } from '../../utils/fetchAll';
+import { fetchInMonthWindows } from '../../utils/fetchInMonthWindows';
 import { fetchAllProducts } from '../../utils/fetchAllProducts';
 import { mapSaleEntity } from '../../utils/mapper';
-import { monthBounds, type Order } from './metrics';
+import type { DateRange } from '../../utils/dateRange';
+import type { Order } from './metrics';
 import type { Product } from '../../types';
 
 export interface ProductIncomeDataState {
@@ -32,17 +34,22 @@ export interface ProductIncomeDataState {
 
 const errMessage = (e: unknown): string => (e as { message?: string })?.message || String(e);
 
-export const useProductIncomeData = (month: string): ProductIncomeDataState => {
+export const useProductIncomeData = (range: DateRange): ProductIncomeDataState => {
     const [sales, setSales] = useState<Order[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [now, setNow] = useState<Date>(() => new Date());
     const [loading, setLoading] = useState(true);
-    // Which month `sales` currently holds — not just "has a load ever
-    // finished" — so switching month doesn't render the PREVIOUS month's
-    // rows (filtered to nothing by metrics.ts's month-prefix check) as a
+    // Key the fetch on the range's two day strings, not on the `range` object:
+    // the container rebuilds that object whenever ANY URL param changes (e.g.
+    // opening a product), and that must not refetch the same period.
+    const { from: rangeFrom, to: rangeTo } = range;
+    const rangeKey = `${rangeFrom}|${rangeTo}`;
+    // Which range `sales` currently holds — not just "has a load ever
+    // finished" — so switching range doesn't render the PREVIOUS range's
+    // rows (filtered to nothing by metrics.ts's inRange check) as a
     // false "no sales" flash while the new fetch is in flight. Same fix as
-    // usePageIncomeData.ts's loadedMonth.
-    const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
+    // usePageIncomeData.ts's loadedRange.
+    const [loadedRange, setLoadedRange] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const reqRef = useRef(0);
 
@@ -51,12 +58,11 @@ export const useProductIncomeData = (month: string): ProductIncomeDataState => {
         setLoading(true);
         setError(null);
         try {
-            const b = monthBounds(month);
             const [salesRows, productsRows] = await Promise.all([
-                fetchAll((from, to) =>
+                fetchInMonthWindows({ from: rangeFrom, to: rangeTo }, (startIso, endIso) => (from, to) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
-                        .gte('date', b.startIso).lt('date', b.endIso)
+                        .gte('date', startIso).lt('date', endIso)
                         .order('id', { ascending: true }).range(from, to)
                 ),
                 fetchAllProducts(),
@@ -65,7 +71,7 @@ export const useProductIncomeData = (month: string): ProductIncomeDataState => {
             setSales(salesRows.map(mapSaleEntity));
             setProducts(productsRows);
             setNow(new Date());
-            setLoadedMonth(month);
+            setLoadedRange(`${rangeFrom}|${rangeTo}`);
         } catch (e) {
             if (id !== reqRef.current) return;
             console.error('Prediction by Product: fetch failed', e);
@@ -73,11 +79,11 @@ export const useProductIncomeData = (month: string): ProductIncomeDataState => {
         } finally {
             if (id === reqRef.current) setLoading(false);
         }
-    }, [month]);
+    }, [rangeFrom, rangeTo]);
 
     useEffect(() => { load(); }, [load]);
 
-    const hasData = loadedMonth === month;
+    const hasData = loadedRange === rangeKey;
     return {
         sales: hasData ? sales : [],
         products: hasData ? products : [],

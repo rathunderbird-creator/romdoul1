@@ -1,20 +1,22 @@
-// Prediction by Product — pure view. Toolbar (month nav, breadcrumb, day-of-
-// month) → banner → KPI cards → either the per-product OVERVIEW table (with
+// Prediction by Product — pure view. Toolbar (date range, breadcrumb, day-of-
+// range chip) → banner → KPI cards → either the per-product OVERVIEW table (with
 // search + sortable columns) or one product's read-only daily LEDGER. No
 // store / router access: the container passes data and callbacks, and
 // src/dev/productIncomePrediction-preview.tsx renders it with fixtures.
 //
 // Reuses ../pageIncomePrediction's genuinely generic pieces (CSS, format
-// helpers, column-resize hook, Sparkline, skeleton rows) rather than forking
-// them — see the imports below.
+// helpers, column-resize hook, Sparkline, skeleton rows, the date-range
+// control) rather than forking them — see the imports below.
 import React, { useMemo } from 'react';
-import { ArrowLeft, BarChart3, Calendar, ChevronLeft, ChevronRight, RefreshCw, TrendingUp, TrendingDown, DollarSign, PackageSearch, AlertCircle, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, BarChart3, RefreshCw, TrendingUp, TrendingDown, DollarSign, PackageSearch, AlertCircle, ShoppingBag } from 'lucide-react';
 import '../pageIncomePrediction/pageIncomePrediction.css';
-import { buildOverview, buildLedger, addMonths, isMonthKey } from './metrics';
+import { buildOverview, buildLedger } from './metrics';
 import type { ProductIncomeViewProps } from './types';
-import { fmtMoney, fmtPct, monthLabel, fill } from '../pageIncomePrediction/format';
+import { fmtMoney, fmtPct, rangeLabel, fill } from '../pageIncomePrediction/format';
+import { MAX_RANGE_DAYS } from '../../utils/dateRange';
 import OverviewTable, { projectionText } from './components/OverviewTable';
 import LedgerTable from './components/LedgerTable';
+import DateRangeControl from '../pageIncomePrediction/components/DateRangeControl';
 import SkeletonRows from '../pageIncomePrediction/components/SkeletonRows';
 import Sparkline from '../pageIncomePrediction/components/Sparkline';
 
@@ -44,19 +46,25 @@ const SIGN = (n: number): string => (n > 0.005 ? '139,92,246' : n < -0.005 ? '23
 // ─── View ─────────────────────────────────────────────────────────────────
 
 const ProductIncomePredictionView: React.FC<ProductIncomeViewProps> = ({ state, data, loading, refreshing, error, isMobile, t, language, actions }) => {
-    const { month, productId } = state;
+    const { range, productId } = state;
 
+    // Memoised on the range's two day strings, not the `range` object: the
+    // container hands over a fresh object whenever any URL param changes
+    // (opening a product), and the overview must not be rebuilt for that.
     const metricsInput = useMemo(() => ({
-        sales: data.sales, products: data.products, month, now: data.now,
-    }), [data.sales, data.products, month, data.now]);
+        sales: data.sales, products: data.products, range: { from: range.from, to: range.to }, now: data.now,
+    }), [data.sales, data.products, range.from, range.to, data.now]);
 
     const overview = useMemo(() => buildOverview(metricsInput), [metricsInput]);
     const ledger = useMemo(() => (productId === null ? null : buildLedger({ ...metricsInput, productId })), [metricsInput, productId]);
 
     const activeRow = productId === null ? null : overview.rows.find(r => r.id === productId) || null;
     const productTitle = productId === null ? t('productPrediction.title') : (productId === '' ? t('productPrediction.unknownProduct') : (activeRow?.name || productId));
+    // "Day X of N": shown while today falls inside the range (X = today's
+    // position in it, N = its length — for a whole current month, the day of
+    // the month and the days in it).
     const dayChip = overview.today !== null
-        ? fill(t('productPrediction.dayOf'), { d: overview.today, n: overview.daysInMonth })
+        ? fill(t('productPrediction.dayOf'), { d: overview.today, n: overview.daysInRange })
         : null;
 
     const isEmpty = !loading && !error && overview.totals.units === 0 && overview.totals.pendingUnits === 0 && overview.totals.cancelledUnits === 0;
@@ -73,7 +81,7 @@ const ProductIncomePredictionView: React.FC<ProductIncomeViewProps> = ({ state, 
                 <KpiCard label={t('productPrediction.kpi.revenue')} value={fmtMoney(src.revenue)} hint={`${src.units} ${t('productPrediction.units')}`} rgb="16,185,129" icon={<TrendingUp size={12} color="#10B981" />} />
                 <KpiCard label={t('productPrediction.kpi.cogs')} value={fmtMoney(src.cogs)} hint={`${t('productPrediction.columns.orders')} ${src.orders}`} rgb="239,68,68" icon={<TrendingDown size={12} color="#EF4444" />} />
                 <KpiCard label={t('productPrediction.kpi.grossProfit')} value={fmtMoney(src.grossProfit)} hint={`${t('productPrediction.columns.margin')} ${fmtPct(margin)}`} rgb={grossProfitRgb} icon={<DollarSign size={12} color={`rgb(${grossProfitRgb})`} />} />
-                <KpiCard label={overview.monthState === 'past' ? t('productPrediction.actual') : t('productPrediction.kpi.projected')} value={proj.text} hint={proj.title} title={proj.title} rgb={proj.muted ? '107,114,128' : SIGN(projection.grossProfit || 0)} icon={<BarChart3 size={12} color={proj.muted ? '#6B7280' : `rgb(${SIGN(projection.grossProfit || 0)})`} />} />
+                <KpiCard label={overview.rangeState === 'past' ? t('productPrediction.actual') : t('productPrediction.kpi.projected')} value={proj.text} hint={proj.title} title={proj.title} rgb={proj.muted ? '107,114,128' : SIGN(projection.grossProfit || 0)} icon={<BarChart3 size={12} color={proj.muted ? '#6B7280' : `rgb(${SIGN(projection.grossProfit || 0)})`} />} />
             </div>
         );
     })();
@@ -116,30 +124,21 @@ const ProductIncomePredictionView: React.FC<ProductIncomeViewProps> = ({ state, 
                             {productTitle}
                         </h2>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '2px 0 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span>{monthLabel(month, language)}</span>
+                            <span>{rangeLabel(range, language)}</span>
                             {dayChip && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 999, background: 'rgba(139,92,246,0.12)', color: '#6D28D9' }}>{dayChip}</span>}
                             {productId === null && <span>· {t('productPrediction.subtitle')}</span>}
                         </p>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="pip-icon-button" onClick={() => actions.onMonthChange(addMonths(month, -1))} title={t('productPrediction.prevMonth')} aria-label={t('productPrediction.prevMonth')}>
-                        <ChevronLeft size={18} />
-                    </button>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <Calendar size={16} style={{ position: 'absolute', left: 10, color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <input
-                            type="month"
-                            value={month}
-                            onChange={e => { if (isMonthKey(e.target.value)) actions.onMonthChange(e.target.value); }}
-                            aria-label={t('productPrediction.month')}
-                            style={{ padding: '8px 12px 8px 32px', borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: 13, fontWeight: 600, outline: 'none', cursor: 'pointer', height: 38, boxSizing: 'border-box' }}
-                        />
-                    </div>
-                    <button type="button" className="pip-icon-button" onClick={() => actions.onMonthChange(addMonths(month, 1))} title={t('productPrediction.nextMonth')} aria-label={t('productPrediction.nextMonth')}>
-                        <ChevronRight size={18} />
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <DateRangeControl
+                        range={range}
+                        now={data.now}
+                        onChange={actions.onRangeChange}
+                        labels={{ prev: t('productPrediction.prevMonth'), next: t('productPrediction.nextMonth'), tooLong: fill(t('incomeRange.tooLong'), { n: MAX_RANGE_DAYS }) }}
+                        compact={isMobile}
+                    />
                     <button type="button" className="pip-icon-button" onClick={actions.onRefresh} disabled={loading || refreshing} title={t('productPrediction.refresh')} aria-label={t('productPrediction.refresh')}>
                         <RefreshCw size={16} className={refreshing ? 'pip-spin' : undefined} />
                     </button>
@@ -162,7 +161,7 @@ const ProductIncomePredictionView: React.FC<ProductIncomeViewProps> = ({ state, 
                 <>
                     {kpis}
                     {trend}
-                    <LedgerTable ledger={ledger} month={month} t={t} language={language} isMobile={isMobile} />
+                    <LedgerTable ledger={ledger} range={range} t={t} language={language} isMobile={isMobile} />
                 </>
             ) : isEmpty ? (
                 <>

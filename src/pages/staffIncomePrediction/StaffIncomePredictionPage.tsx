@@ -27,7 +27,7 @@ const StaffIncomePredictionPage: React.FC = () => {
     const [params, setParams] = useSearchParams();
 
     const state = useMemo(() => paramsToState(params, new Date()), [params]);
-    const data = useStaffIncomeData(state.month);
+    const data = useStaffIncomeData(state.range);
 
     useEffect(() => {
         setHeaderContent({
@@ -43,14 +43,14 @@ const StaffIncomePredictionPage: React.FC = () => {
 
     const { refresh } = data;
     const actions = useMemo<StaffIncomeActions>(() => ({
-        // Month changes replace the history entry; opening a staff member
+        // Range changes replace the history entry; opening a staff member
         // pushes one, so the browser Back button returns to the overview
-        // for that month.
-        onMonthChange: month => setParams(stateToParams({ month, staff: state.staff }), { replace: true }),
-        onOpenStaff: staff => setParams(stateToParams({ month: state.month, staff })),
-        onBack: () => setParams(stateToParams({ month: state.month, staff: null })),
+        // for that range.
+        onRangeChange: range => setParams(stateToParams({ range, staff: state.staff }), { replace: true }),
+        onOpenStaff: staff => setParams(stateToParams({ range: state.range, staff })),
+        onBack: () => setParams(stateToParams({ range: state.range, staff: null })),
         onRefresh: () => refresh(),
-    }), [setParams, state.month, state.staff, refresh]);
+    }), [setParams, state.range, state.staff, refresh]);
 
     const viewData = useMemo<StaffIncomeData>(() => ({
         sales: data.sales,

@@ -2,13 +2,14 @@ import React, { useEffect, useRef } from 'react';
 import type { LedgerResult, LedgerDay, InputField } from '../metrics';
 import { inputKey } from '../metrics';
 import type { Translate, Language } from '../types';
-import { fmtMoney, fill, weekdayShort } from '../format';
+import { fmtMoney, fill, weekdayShort, monthShortLabel } from '../format';
+import { rangeMonths, type DateRange } from '../../../utils/dateRange';
 import { useColumnWidths } from '../useColumnWidths';
 import EditableMoneyCell from './EditableMoneyCell';
 
 export interface LedgerTableProps {
     ledger: LedgerResult;
-    month: string;
+    range: DateRange;
     canEdit: boolean;
     t: Translate;
     language: Language;
@@ -22,6 +23,9 @@ const COLUMNS = ['day', 'orders', 'pending', 'revenue', 'cogs', 'shipping', 'boo
 type ColKey = typeof COLUMNS[number];
 
 const DEFAULT_WIDTHS: Record<ColKey, number> = { day: 130, orders: 70, pending: 100, revenue: 120, cogs: 110, shipping: 125, boost: 125, contribution: 130 };
+// The month tag on a multi-month range's day cells needs a little more room
+// (a width the user has dragged the column to still wins, as always).
+const MULTI_MONTH_WIDTHS: Record<ColKey, number> = { ...DEFAULT_WIDTHS, day: 170 };
 
 const HEADER_COLORS: Partial<Record<ColKey, string>> = { revenue: '#10B981', cogs: '#EF4444', shipping: '#EF4444', boost: '#F59E0B', contribution: '#8B5CF6' };
 
@@ -32,12 +36,15 @@ const thStyle: React.CSSProperties = {
 
 export const cellKeyOf = (date: string, page: string, field: InputField): string => `${inputKey(date, page)}|${field}`;
 
-const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, month, canEdit, t, language, isMobile, savingKeys, savedKeys, onCommit }) => {
-    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('pip_ledger', DEFAULT_WIDTHS);
+const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, canEdit, t, language, isMobile, savingKeys, savedKeys, onCommit }) => {
+    // A range that crosses a month boundary repeats day numbers (…30, 31, 1, 2…),
+    // so each day cell gets a short month tag in front of its number.
+    const multiMonth = rangeMonths(range).length > 1;
+    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('pip_ledger', multiMonth ? MULTI_MONTH_WIDTHS : DEFAULT_WIDTHS);
     const wrapRef = useRef<HTMLDivElement>(null);
     const todayRef = useRef<HTMLTableRowElement>(null);
 
-    // Bring today into view once per page/month — scrolling the wrapper only,
+    // Bring today into view once per page/range — scrolling the wrapper only,
     // so the window itself never jumps (and never on every save).
     useEffect(() => {
         const wrap = wrapRef.current;
@@ -45,7 +52,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, month, canEdit, t, la
         if (!wrap || !row) return;
         const top = row.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
         wrap.scrollTop = Math.max(0, top - wrap.clientHeight / 2);
-    }, [ledger.page, month]);
+    }, [ledger.page, range.from, range.to]);
 
     const header = (key: ColKey, label: string) => (
         <th key={key} className={key === 'day' ? 'pip-sticky-first' : undefined} scope="col" style={{ ...thStyle, ...widthStyle(key), textAlign: key === 'day' ? 'left' : key === 'orders' ? 'center' : 'right', color: HEADER_COLORS[key] || thStyle.color, background: 'var(--color-surface)' }}>
@@ -70,7 +77,14 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, month, canEdit, t, la
             >
                 <td className="pip-sticky-first" style={{ ...widthStyle('day'), padding: '8px 12px', borderRight: '1px solid var(--color-border)', fontSize: 12, background: day.isToday ? 'rgba(139,92,246,0.06)' : 'var(--color-surface)', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 700, fontSize: 16, color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-main)', width: 24 }}>{day.dayNum}</span>
+                        {multiMonth ? (
+                            <span style={{ whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 10, fontWeight: 600, color: day.isWeekend ? '#EF4444' : 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{monthShortLabel(day.date, language)}</span>{' '}
+                                <span style={{ fontWeight: 700, fontSize: 16, color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-main)' }}>{day.dayNum}</span>
+                            </span>
+                        ) : (
+                            <span style={{ fontWeight: 700, fontSize: 16, color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-main)', width: 24 }}>{day.dayNum}</span>
+                        )}
                         <span style={{ fontSize: 10, fontWeight: 600, color: day.isWeekend ? '#EF4444' : 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{weekdayShort(day.dow, language)}</span>
                         {day.isToday && <span style={{ fontSize: 8, fontWeight: 700, background: '#8B5CF6', color: 'white', padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('pagePrediction.today')}</span>}
                         {frozenOff && (

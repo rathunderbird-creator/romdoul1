@@ -7,8 +7,12 @@
 import type { Sale, Product } from '../types';
 import { fixtureOrders, fixtureProducts, fixtureNow } from './dashboard2-fixtures';
 import { saleDayOf, isRevenueOrder, type PageInputRow, type SiblingRow } from '../pages/pageIncomePrediction/metrics';
+import { rangeOfMonth } from '../utils/dateRange';
 
 export const fixtureMonth = '2026-09';
+// The screens are range-based now; a whole calendar month is the default range,
+// so this is what every preview starts on (Sep 1–30, identical to the old month view).
+export const fixtureRange = rangeOfMonth(fixtureMonth);
 export { fixtureNow };                       // 2026-09-07T18:00+07:00 → day 7 of 30
 
 // One extra order with a real discount — added here rather than to

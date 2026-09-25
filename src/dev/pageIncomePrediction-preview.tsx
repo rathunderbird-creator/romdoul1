@@ -17,7 +17,7 @@ import PageIncomePredictionView from '../pages/pageIncomePrediction/PageIncomePr
 import type { PageIncomeActions, PageIncomeData, PageIncomeUrlState } from '../pages/pageIncomePrediction/types';
 import type { PageInputRow } from '../pages/pageIncomePrediction/metrics';
 import {
-    fixtureMonth, fixtureNow, fixtureSales, fixtureProductsWithCost, fixtureShippingRates,
+    fixtureRange, fixtureNow, fixtureSales, fixtureProductsWithCost, fixtureShippingRates,
     fixturePages, fixtureInputs, fixtureSibling,
 } from './pageIncomePrediction-fixtures';
 
@@ -36,7 +36,7 @@ const Preview = () => {
     const [scenario, setScenario] = useState<Scenario>('normal');
     const scenarioRef = useRef(scenario);
     scenarioRef.current = scenario;
-    const [state, setState] = useState<PageIncomeUrlState>({ month: fixtureMonth, page: null });
+    const [state, setState] = useState<PageIncomeUrlState>({ range: fixtureRange, page: null });
     const [inputs, setInputs] = useState<PageInputRow[]>(fixtureInputs);
     const [canEdit, setCanEdit] = useState(true);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
@@ -62,7 +62,7 @@ const Preview = () => {
         const log = (name: string, payload?: unknown) =>
             setLastAction(payload === undefined ? name : `${name} ${JSON.stringify(payload)}`);
         return {
-            onMonthChange: month => { setState(s => ({ ...s, month })); log('monthChange', month); },
+            onRangeChange: range => { setState(s => ({ ...s, range })); log('rangeChange', range); },
             onOpenPage: page => { setState(s => ({ ...s, page })); log('openPage', page); },
             onBack: () => { setState(s => ({ ...s, page: null })); log('back'); },
             onRefresh: () => log('refresh'),

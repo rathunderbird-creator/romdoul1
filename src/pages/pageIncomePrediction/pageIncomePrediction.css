@@ -93,3 +93,7 @@
   cursor: pointer;
 }
 .pip-text-button:hover { border-color: #8B5CF6; background: rgba(139, 92, 246, 0.06); }
+
+/* The shared DateRangePicker's trigger is a fixed 42px tall; line it up with the
+   38px toolbar buttons around it (scoped so other screens' pickers are untouched). */
+.pip-range-picker > div > button { height: 38px !important; border-radius: 10px !important; }

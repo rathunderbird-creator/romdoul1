@@ -1,23 +1,27 @@
-// Data layer for Prediction by Page: one month's sales (chunk-fetched, same
-// select as ../IncomePrediction.tsx so both screens see identical rows), the
-// full product catalogue (active AND inactive — see ../../utils/
-// fetchAllProducts.ts; a discontinued SKU's historical COGS this month must
-// not silently drop to 0 just because useStore().products is active-only),
-// the manual input rows for that month, and the sibling income_predictions
-// rows (for the shared Staff / boost-reconciliation footer).
+// Data layer for Prediction by Page: one date range's sales (chunk-fetched, one
+// parallel fetch per calendar month the range touches — see ../../utils/
+// fetchInMonthWindows.ts — with the same select as ../IncomePrediction.tsx so
+// both screens see identical rows), the full product catalogue (active AND
+// inactive — see ../../utils/fetchAllProducts.ts; a discontinued SKU's
+// historical COGS in this period must not silently drop to 0 just because
+// useStore().products is active-only), the manual input rows for that range,
+// and the sibling income_predictions rows (for the shared Staff /
+// boost-reconciliation footer).
 //
 // The reads are awaited separately where it matters: the app runs against
 // three hand-migrated Supabase instances, so page_income_predictions can be
 // missing on one of them. In that case the screen still shows live numbers
-// with the inputs disabled (`missingTable`), instead of blanking the month
+// with the inputs disabled (`missingTable`), instead of blanking the range
 // the way a single Promise.all across ALL of them would.
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
+import { fetchInMonthWindows } from '../../utils/fetchInMonthWindows';
 import { fetchAllProducts } from '../../utils/fetchAllProducts';
 import { isMissingTableError, errMessage } from '../../utils/supabaseErrors';
 import { mapSaleEntity } from '../../utils/mapper';
-import { monthBounds, inputKey, type Order, type PageInputRow, type SiblingRow, type StaffInputRow, type InputField } from './metrics';
+import type { DateRange } from '../../utils/dateRange';
+import { inputKey, type Order, type PageInputRow, type SiblingRow, type StaffInputRow, type InputField } from './metrics';
 import type { Product } from '../../types';
 
 export interface PageIncomeDataState {
@@ -55,7 +59,12 @@ const mapSibling = (r: any): SiblingRow => ({
     staff: Number(r.staff) || 0,
 });
 
-export const usePageIncomeData = (month: string, userName: string | undefined): PageIncomeDataState => {
+export const usePageIncomeData = (range: DateRange, userName: string | undefined): PageIncomeDataState => {
+    // Keyed by the range's two day strings, not the object, so a re-created but
+    // equal range (the URL state is rebuilt on every params change) never
+    // triggers a refetch.
+    const { from: rangeFrom, to: rangeTo } = range;
+    const rangeKey = `${rangeFrom}|${rangeTo}`;
     const [sales, setSales] = useState<Order[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [inputs, setInputs] = useState<PageInputRow[]>([]);
@@ -63,12 +72,12 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
     const [staffInputs, setStaffInputs] = useState<StaffInputRow[]>([]);
     const [now, setNow] = useState<Date>(() => new Date());
     const [loading, setLoading] = useState(true);
-    // Which month's data `sales`/`inputs`/`sibling` currently hold — not just
-    // "has any load ever finished" — so switching month doesn't render stale
-    // data (previously fetched month, now filtered to nothing by metrics.ts's
-    // month prefix check) as a false "empty month" while the new fetch is in
+    // Which range's data `sales`/`inputs`/`sibling` currently hold — not just
+    // "has any load ever finished" — so switching range doesn't render stale
+    // data (previously fetched range, now filtered to nothing by metrics.ts's
+    // inRange check) as a false "empty period" while the new fetch is in
     // flight. Same pattern as useDashboard2Data.ts's loadedKey/rangeKey.
-    const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
+    const [loadedRange, setLoadedRange] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [missingTable, setMissingTable] = useState(false);
     const reqRef = useRef(0);
@@ -84,28 +93,31 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
         const id = ++reqRef.current;
         setLoading(true);
         setError(null);
-        const b = monthBounds(month);
+        const bounds: DateRange = { from: rangeFrom, to: rangeTo };
         try {
-            // Half-open range of real instants from LOCAL midnight boundaries
-            // (a `${month}-01T00:00:00Z` string would start 7 hours late).
+            // Half-open windows of real instants from LOCAL midnight boundaries
+            // (a `${day}T00:00:00Z` string would start 7 hours late), one per
+            // calendar month the range touches, fetched in parallel.
             const [salesRows, productsRows] = await Promise.all([
-                fetchAll((from, to) =>
+                fetchInMonthWindows(bounds, (startIso, endIso) => (from, to) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
-                        .gte('date', b.startIso).lt('date', b.endIso)
+                        .gte('date', startIso).lt('date', endIso)
                         .order('id', { ascending: true }).range(from, to)
                 ),
                 fetchAllProducts(),
             ]);
             if (id !== reqRef.current) return;
 
-            // DATE-typed columns are bounded by the month's own YYYY-MM-DD strings.
+            // DATE-typed columns are bounded by the range's own YYYY-MM-DD strings.
+            // Every one goes through fetchAll: a year of page_income_predictions
+            // alone is ~1,500 rows, past PostgREST's silent 1,000-row cap.
             let inputRows: PageInputRow[] = [];
             let missing = false;
             try {
                 const rows = await fetchAll((from, to) =>
                     supabase.from(INPUT_TABLE).select('*')
-                        .gte('date', b.firstDay).lte('date', b.lastDay)
+                        .gte('date', bounds.from).lte('date', bounds.to)
                         .order('date', { ascending: true }).order('page', { ascending: true }).range(from, to)
                 );
                 inputRows = rows.map(mapInput);
@@ -118,7 +130,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
             try {
                 const rows = await fetchAll((from, to) =>
                     supabase.from(SIBLING_TABLE).select('date, shipped_delivered, boost_page, shipping, staff')
-                        .gte('date', b.firstDay).lte('date', b.lastDay)
+                        .gte('date', bounds.from).lte('date', bounds.to)
                         .order('date', { ascending: true }).range(from, to)
                 );
                 siblingRows = rows.map(mapSibling);
@@ -134,7 +146,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
             try {
                 const rows = await fetchAll<{ date: string; staff: number | string | null }>((from, to) =>
                     supabase.from(STAFF_TABLE).select('date, staff')
-                        .gte('date', b.firstDay).lte('date', b.lastDay)
+                        .gte('date', bounds.from).lte('date', bounds.to)
                         .order('date', { ascending: true }).range(from, to)
                 );
                 staffRows = rows.map(r => ({ date: String(r.date), staff: Number(r.staff) || 0 }));
@@ -150,7 +162,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
             setStaffInputs(staffRows);
             setMissingTable(missing);
             setNow(new Date());
-            setLoadedMonth(month);
+            setLoadedRange(rangeKey);
         } catch (e) {
             if (id !== reqRef.current) return;
             console.error('Prediction by Page: fetch failed', e);
@@ -158,7 +170,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
         } finally {
             if (id === reqRef.current) setLoading(false);
         }
-    }, [month]);
+    }, [rangeFrom, rangeTo, rangeKey]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -228,7 +240,7 @@ export const usePageIncomeData = (month: string, userName: string | undefined): 
         return run;
     }, [doCommit]);
 
-    const hasData = loadedMonth === month;
+    const hasData = loadedRange === rangeKey;
     return {
         sales: hasData ? sales : [],
         products: hasData ? products : [],

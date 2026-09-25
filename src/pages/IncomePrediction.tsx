@@ -1,12 +1,18 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Calendar, DollarSign, TrendingUp, TrendingDown, Package, Truck, Megaphone, Users, RefreshCw, ChevronLeft, ChevronRight, Check, Loader2, Save, RotateCcw, BarChart3, AlertTriangle } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Package, Truck, Megaphone, Users, RefreshCw, Check, Loader2, Save, RotateCcw, BarChart3, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
+import { fetchInMonthWindows } from '../utils/fetchInMonthWindows';
+import { defaultRange, dayKeysOfRange, parseDay, rangeMonths, wholeMonthOf, MAX_RANGE_DAYS, type DateRange } from '../utils/dateRange';
 import { roundCents } from '../utils/money';
 import { isMissingTableError, errMessage } from '../utils/supabaseErrors';
 import { useStore } from '../context/StoreContext';
+import DateRangeControl from './pageIncomePrediction/components/DateRangeControl';
+import { rangeLabel, monthShortLabel } from './pageIncomePrediction/format';
+// The shared range control's pip-icon-button / pip-range-picker styles.
+import './pageIncomePrediction/pageIncomePrediction.css';
 
 // Staff is auto-saved to its own table, NOT into income_predictions: a row
 // there means "this day is frozen", so writing Staff into it would freeze
@@ -19,11 +25,6 @@ const STAFF_AUTOSAVE_MS = 800;
 
 type EditableField = 'boostPage' | 'staff' | 'shipping';
 
-// Formats YYYY-MM
-const getLocalYYYYMM = (date: Date = new Date()) => {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-};
-
 // `sales.date` is a timestamptz stored in UTC, but the business runs in local time
 // (UTC+7). Reading the date off the raw ISO string would book any sale made between
 // midnight and 07:00 local to the *previous* day, so always convert to local first.
@@ -31,6 +32,15 @@ const getLocalYYYYMMDD = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// The short period name in the KPI card titles and the NET PROFIT footer. A whole
+// calendar month (the default view) keeps its bare month name, "September", so
+// that view reads exactly as it always did; any other range reads
+// "5 Sep – 15 Sep 2026" (see rangeLabel).
+const periodShortLabel = (range: DateRange): string => {
+    const whole = wholeMonthOf(range);
+    return whole ? MONTH_NAMES[parseInt(whole.split('-')[1]) - 1] : rangeLabel(range, 'en');
+};
 
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -79,13 +89,18 @@ const SkeletonRow = () => (
 );
 
 const DEFAULT_COL_WIDTHS = [110, 70, 130, 110, 130, 120, 110, 130, 80];
+// A range that spans months puts a month tag before the day number ("SEP 25 FRI
+// TODAY"), which doesn't fit the default 110px Date column. Same rule as the
+// other three screens' Day column: widen it unless the user has dragged it.
+const MULTI_MONTH_DATE_COL_WIDTH = 170;
 
 const IncomePrediction: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const { products, currentUser, shippingRates } = useStore();
 
-    const [selectedMonth, setSelectedMonth] = useState(getLocalYYYYMM());
+    // Any inclusive span of local days (default: the current calendar month).
+    const [range, setRange] = useState<DateRange>(() => defaultRange(new Date()));
     const [isLoading, setIsLoading] = useState(false);
     const [dailyData, setDailyData] = useState<DailyPrediction[]>([]);
     const [draftValues, setDraftValues] = useState<Record<string, string>>({});
@@ -116,10 +131,21 @@ const IncomePrediction: React.FC = () => {
     });
     const resizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
 
+    // Days of different months share the ledger, so each row is tagged with its
+    // month (see the Date cell) — and the Date column is widened to fit the tag.
+    const spansMonths = rangeMonths(range).length > 1;
+    // The widths actually drawn: the stored ones, except the Date column is
+    // widened for a multi-month range while it is still at its default.
+    const effectiveWidths = useMemo(
+        () => colWidths.map((w, i) => (i === 0 && spansMonths && w === DEFAULT_COL_WIDTHS[0] ? MULTI_MONTH_DATE_COL_WIDTH : w)),
+        [colWidths, spansMonths]
+    );
+
     const handleResizeStart = useCallback((e: React.MouseEvent, colIndex: number) => {
         e.preventDefault();
         e.stopPropagation();
-        resizingRef.current = { colIndex, startX: e.clientX, startWidth: colWidths[colIndex] };
+        // Drag from the width the user actually sees, not the stored default.
+        resizingRef.current = { colIndex, startX: e.clientX, startWidth: effectiveWidths[colIndex] };
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
 
@@ -148,7 +174,7 @@ const IncomePrediction: React.FC = () => {
 
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
-    }, [colWidths]);
+    }, [effectiveWidths]);
 
     useEffect(() => {
         setHeaderContent({
@@ -168,50 +194,50 @@ const IncomePrediction: React.FC = () => {
         return map;
     }, [products]);
 
-    // Parse selected month
-    const { year, monthIdx, monthName } = useMemo(() => {
-        const [y, m] = selectedMonth.split('-');
-        return { year: parseInt(y), monthIdx: parseInt(m) - 1, monthName: MONTH_NAMES[parseInt(m) - 1] };
-    }, [selectedMonth]);
+    // fetchData depends on the range's two ends (primitives), not the object, so an
+    // equal range re-created by the picker doesn't trigger a reload.
+    const { from: rangeFrom, to: rangeTo } = range;
 
-    const navigateMonth = (delta: number) => {
-        const d = new Date(year, monthIdx + delta, 1);
-        setSelectedMonth(getLocalYYYYMM(d));
-    };
+    // Only the newest fetchData may publish its result: a long range takes seconds,
+    // so an older load finishing late must not overwrite the range now on screen.
+    const fetchSeq = useRef(0);
 
     const fetchData = useCallback(async () => {
-        if (!selectedMonth) return;
+        const seq = ++fetchSeq.current;
+        const fetchRange: DateRange = { from: rangeFrom, to: rangeTo };
         setIsLoading(true);
         // Commit Staff still waiting on its typing pause and let in-flight Staff
-        // writes land first, so this read (month switch / refresh) sees them.
+        // writes land first, so this read (range change / refresh) sees them.
         staffTimers.current.forEach(({ timer, run }) => { clearTimeout(timer); run(); });
         staffTimers.current.clear();
         await Promise.all(staffWrites.current.values());
         try {
-            const endDate = new Date(year, monthIdx + 1, 0);
-            // Query the month as a half-open range of real instants derived from LOCAL
-            // midnight boundaries. Using `${month}-01T00:00:00Z` would start the window
-            // 7 hours late and end it 7 hours into the next month.
-            const startStr = new Date(year, monthIdx, 1).toISOString();
-            const endStr = new Date(year, monthIdx + 1, 1).toISOString();
+            // `income_predictions.date` (and the two input tables) are plain calendar
+            // dates, so they're bounded by the range's own YYYY-MM-DD strings rather
+            // than by instants. Sales are bounded per calendar month by
+            // fetchInMonthWindows, as half-open ranges of real instants derived from
+            // LOCAL midnight boundaries (a `${day}T00:00:00Z` bound would start the
+            // window 7 hours late and end it 7 hours into the next day).
+            const firstDayStr = fetchRange.from;
+            const lastDayStr = fetchRange.to;
 
-            // `income_predictions.date` is a plain calendar date, so it's bounded by the
-            // month's own YYYY-MM-DD strings rather than by instants.
-            const firstDayStr = `${selectedMonth}-01`;
-            const lastDayStr = `${selectedMonth}-${String(endDate.getDate()).padStart(2, '0')}`;
-
-            // Sales are chunk-fetched (fetchAll) so a >1000-order month is never
-            // silently truncated at the API's max-rows cap.
-            const [salesRows, predictionsRes, pageBoostRows, staffRes] = await Promise.all([
-                fetchAll((from, to) =>
+            // Every read is chunk-fetched (fetchAll / fetchInMonthWindows) so a long
+            // range is never silently truncated at the API's max-rows cap.
+            const [salesRows, predictionRows, pageBoostRows, staffRes] = await Promise.all([
+                fetchInMonthWindows(fetchRange, (startStr, endStr) => (from, to) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
                         .gte('date', startStr).lt('date', endStr)
                         .order('id', { ascending: true }).range(from, to)
                 ),
-                supabase.from('income_predictions')
-                    .select('*')
-                    .gte('date', firstDayStr).lte('date', lastDayStr),
+                // A failure here aborts the load (thrown out of Promise.all into the
+                // catch below), as it always has. `date` is the primary key.
+                fetchAll((from, to) =>
+                    supabase.from('income_predictions')
+                        .select('*')
+                        .gte('date', firstDayStr).lte('date', lastDayStr)
+                        .order('date', { ascending: true }).range(from, to)
+                ),
                 // Boost typed per Facebook page in Prediction by Page. Optional input:
                 // that screen's table may not exist on this Supabase instance yet, in
                 // which case Boost simply stays manual here instead of breaking the
@@ -238,7 +264,8 @@ const IncomePrediction: React.FC = () => {
                 )
             ]);
 
-            if (predictionsRes.error) throw predictionsRes.error;
+            // A newer load has started meanwhile (range switched / refreshed): drop this one.
+            if (seq !== fetchSeq.current) return;
 
             if (staffRes.error) {
                 const missing = isMissingTableError(staffRes.error);
@@ -258,17 +285,17 @@ const IncomePrediction: React.FC = () => {
             pageBoostByDate.forEach((v, k) => pageBoostByDate.set(k, roundCents(v)));
 
             const todayStr = getLocalYYYYMMDD(new Date());
-            const daysInMonth = endDate.getDate();
             const dailyMap = new Map<string, DailyPrediction>();
 
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dateStr = `${selectedMonth}-${String(i).padStart(2, '0')}`;
-                const dayDate = new Date(year, monthIdx, i);
+            // One row per calendar day of the range. A day is identified by its
+            // YYYY-MM-DD string; `dayNum` (day of the month) is display only.
+            for (const dateStr of dayKeysOfRange(fetchRange)) {
+                const dayDate = parseDay(dateStr);
                 const dow = dayDate.getDay();
                 dailyMap.set(dateStr, {
                     date: dateStr,
                     dayOfWeek: DAY_NAMES_SHORT[dow],
-                    dayNum: i,
+                    dayNum: dayDate.getDate(),
                     shippedDelivered: 0,
                     orderCount: 0,
                     cogs: 0,
@@ -285,7 +312,7 @@ const IncomePrediction: React.FC = () => {
             }
 
             // 1. Apply saved predictions first
-            (predictionsRes.data || []).forEach((row: any) => {
+            predictionRows.forEach((row: any) => {
                 const dateStr = row.date;
                 if (!dailyMap.has(dateStr)) return;
                 const day = dailyMap.get(dateStr)!;
@@ -363,9 +390,9 @@ const IncomePrediction: React.FC = () => {
         } catch (error) {
             console.error('Failed to fetch prediction data:', error);
         } finally {
-            setIsLoading(false);
+            if (seq === fetchSeq.current) setIsLoading(false);
         }
-    }, [selectedMonth, productCostMap, year, monthIdx]);
+    }, [rangeFrom, rangeTo, productCostMap]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -549,6 +576,10 @@ const IncomePrediction: React.FC = () => {
         }, { shippedDelivered: 0, orderCount: 0, cogs: 0, shipping: 0, boostPage: 0, staff: 0, profit: 0 });
     }, [dailyData]);
 
+    const periodShort = periodShortLabel(range);
+    // (`spansMonths` — days of different months share the ledger, so each is tagged
+    // with its month — is declared above, next to the column widths that depend on it.)
+
     const totalExpenses = totals.cogs + totals.shipping + totals.boostPage + totals.staff;
     const margin = totals.shippedDelivered > 0 ? ((totals.profit / totals.shippedDelivered) * 100) : 0;
 
@@ -558,11 +589,11 @@ const IncomePrediction: React.FC = () => {
         const profits = dailyData.map(d => d.profit);
         const max = Math.max(...profits, 1);
         const min = Math.min(...profits, 0);
-        const range = max - min || 1;
+        const spread = max - min || 1;
         const h = 32;
         const w = 120;
         const step = w / (profits.length - 1 || 1);
-        const points = profits.map((p, i) => `${i * step},${h - ((p - min) / range) * h}`).join(' ');
+        const points = profits.map((p, i) => `${i * step},${h - ((p - min) / spread) * h}`).join(' ');
         return (
             <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
                 <defs>
@@ -659,7 +690,7 @@ const IncomePrediction: React.FC = () => {
                 .prediction-th:hover .resize-hint { opacity: 1; }
             `}</style>
 
-            {/* Header with month navigation */}
+            {/* Header with date-range navigation */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{
@@ -676,37 +707,19 @@ const IncomePrediction: React.FC = () => {
                             Income Prediction
                         </h2>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: '2px 0 0 0' }}>
-                            Daily profit forecast · {monthName} {year}
+                            Daily profit forecast · {rangeLabel(range, 'en')}
                         </p>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button onClick={() => navigateMonth(-1)} className="secondary-button" style={{ padding: '8px', borderRadius: '10px', height: '38px', width: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Previous month">
-                        <ChevronLeft size={18} />
-                    </button>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <Calendar size={16} style={{ position: 'absolute', left: '10px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <input
-                            type="month"
-                            value={selectedMonth}
-                            onChange={e => setSelectedMonth(e.target.value)}
-                            style={{
-                                padding: '8px 12px 8px 32px',
-                                borderRadius: '10px',
-                                border: '1px solid var(--color-border)',
-                                background: 'var(--color-surface)',
-                                color: 'var(--color-text-main)',
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                outline: 'none',
-                                cursor: 'pointer'
-                            }}
-                        />
-                    </div>
-                    <button onClick={() => navigateMonth(1)} className="secondary-button" style={{ padding: '8px', borderRadius: '10px', height: '38px', width: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Next month">
-                        <ChevronRight size={18} />
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <DateRangeControl
+                        range={range}
+                        now={new Date()}
+                        onChange={setRange}
+                        labels={{ prev: 'Previous period', next: 'Next period', tooLong: `Limited to the latest ${MAX_RANGE_DAYS} days` }}
+                        compact={isMobile}
+                    />
                     <button
                         onClick={fetchData}
                         disabled={isLoading}
@@ -729,7 +742,7 @@ const IncomePrediction: React.FC = () => {
                     display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Revenue ({monthName})</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Revenue ({periodShort})</span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(16,185,129,0.12)' }}><TrendingUp size={12} color="#10B981" /></div>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#10B981' }}>${fmt(totals.shippedDelivered)}</div>
@@ -744,7 +757,7 @@ const IncomePrediction: React.FC = () => {
                     display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Expenses ({monthName})</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Expenses ({periodShort})</span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(239,68,68,0.12)' }}><TrendingDown size={12} color="#EF4444" /></div>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#EF4444' }}>${fmt(totalExpenses)}</div>
@@ -761,7 +774,7 @@ const IncomePrediction: React.FC = () => {
                     display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Profit ({monthName})</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Profit ({periodShort})</span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: `rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.12)` }}>
                             <DollarSign size={12} color={totals.profit >= 0 ? '#8B5CF6' : '#EF4444'} />
                         </div>
@@ -781,7 +794,7 @@ const IncomePrediction: React.FC = () => {
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
-                            Ad + Staff ({monthName})
+                            Ad + Staff ({periodShort})
                         </span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(59,130,246,0.12)' }}><Megaphone size={12} color="#3B82F6" /></div>
                     </div>
@@ -821,9 +834,9 @@ const IncomePrediction: React.FC = () => {
 
             {/* Spreadsheet Table - Full height */}
             <div className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: '16px', flex: 1, minHeight: 0 }}>
-                <table className="spreadsheet-table" style={{ minWidth: '920px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: colWidths.reduce((a, b) => a + b, 0) }}>
+                <table className="spreadsheet-table" style={{ minWidth: '920px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: effectiveWidths.reduce((a, b) => a + b, 0) }}>
                     <colgroup>
-                        {colWidths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)}
+                        {effectiveWidths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)}
                     </colgroup>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 4 }}>
                         <tr style={{ background: 'var(--color-surface)' }}>
@@ -890,6 +903,15 @@ const IncomePrediction: React.FC = () => {
                                             fontSize: '12px'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {spansMonths && (
+                                                    <span style={{
+                                                        fontSize: '10px', fontWeight: 600,
+                                                        color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-secondary)',
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        {monthShortLabel(day.date, 'en')}
+                                                    </span>
+                                                )}
                                                 <span style={{
                                                     fontWeight: 700, fontSize: '16px',
                                                     color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-main)',
@@ -1021,7 +1043,7 @@ const IncomePrediction: React.FC = () => {
                                         ? 'linear-gradient(90deg, rgba(139,92,246,0.1), rgba(16,185,129,0.1))'
                                         : 'linear-gradient(90deg, rgba(239,68,68,0.1), rgba(239,68,68,0.05))'
                                 }}>
-                                    {totals.profit >= 0 ? '🟢' : '🔴'} NET PROFIT ({monthName.toUpperCase()})
+                                    {totals.profit >= 0 ? '🟢' : '🔴'} NET PROFIT ({periodShort.toUpperCase()})
                                 </td>
                                 <td style={{
                                     bottom: 'auto', textAlign: 'right', fontWeight: 800, fontSize: '18px', padding: '16px',

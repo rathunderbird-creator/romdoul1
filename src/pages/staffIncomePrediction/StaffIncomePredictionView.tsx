@@ -1,22 +1,25 @@
-// Prediction by Staff — pure view. Toolbar (month nav, breadcrumb, day-of-
-// month) → banner → KPI cards → either the per-staff OVERVIEW table (sortable,
-// with a Target-attainment column) or one staff member's read-only daily
-// LEDGER. No store / router access: the container passes data and callbacks,
-// and src/dev/staffIncomePrediction-preview.tsx renders it with fixtures.
+// Prediction by Staff — pure view. Toolbar (date-range control, breadcrumb,
+// day-of-period) → banner → KPI cards → either the per-staff OVERVIEW table
+// (sortable, with a Target-attainment column) or one staff member's read-only
+// daily LEDGER. No store / router access: the container passes data and
+// callbacks, and src/dev/staffIncomePrediction-preview.tsx renders it with
+// fixtures.
 //
 // Reuses ../pageIncomePrediction's genuinely generic pieces (CSS, format
 // helpers, column-resize hook, Sparkline, skeleton rows) rather than forking
 // them — see the imports below.
 import React, { useMemo } from 'react';
-import { ArrowLeft, BarChart3, Calendar, ChevronLeft, ChevronRight, RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, Users, AlertCircle, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, BarChart3, RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, Users, AlertCircle, ShoppingBag } from 'lucide-react';
 import '../pageIncomePrediction/pageIncomePrediction.css';
-import { buildOverview, buildLedger, addMonths, isMonthKey } from './metrics';
+import { buildOverview, buildLedger } from './metrics';
 import type { StaffIncomeViewProps } from './types';
-import { fmtMoney, fmtPct, monthLabel, fill } from '../pageIncomePrediction/format';
+import { fmtMoney, fmtPct, rangeLabel, fill } from '../pageIncomePrediction/format';
 import OverviewTable, { projectionText } from './components/OverviewTable';
 import LedgerTable from './components/LedgerTable';
 import SkeletonRows from '../pageIncomePrediction/components/SkeletonRows';
 import Sparkline from '../pageIncomePrediction/components/Sparkline';
+import DateRangeControl from '../pageIncomePrediction/components/DateRangeControl';
+import { MAX_RANGE_DAYS, type DateRange } from '../../utils/dateRange';
 
 // ─── Small pieces ─────────────────────────────────────────────────────────
 
@@ -45,11 +48,16 @@ const TARGET_RGB = (progress: number | null): string => progress === null ? '107
 // ─── View ─────────────────────────────────────────────────────────────────
 
 const StaffIncomePredictionView: React.FC<StaffIncomeViewProps> = ({ state, data, loading, refreshing, error, isMobile, t, language, actions }) => {
-    const { month, staff } = state;
+    const { staff } = state;
+    // Keyed on the two day strings so a caller that rebuilds `state.range` on
+    // every URL change (opening a staff member) doesn't recompute the overview.
+    const rangeFrom = state.range.from;
+    const rangeTo = state.range.to;
+    const range = useMemo<DateRange>(() => ({ from: rangeFrom, to: rangeTo }), [rangeFrom, rangeTo]);
 
     const metricsInput = useMemo(() => ({
-        sales: data.sales, products: data.products, users: data.users, configSalesmen: data.configSalesmen, month, now: data.now,
-    }), [data.sales, data.products, data.users, data.configSalesmen, month, data.now]);
+        sales: data.sales, products: data.products, users: data.users, configSalesmen: data.configSalesmen, range, now: data.now,
+    }), [data.sales, data.products, data.users, data.configSalesmen, range, data.now]);
 
     const overview = useMemo(() => buildOverview(metricsInput), [metricsInput]);
     const ledger = useMemo(() => (staff === null ? null : buildLedger({ ...metricsInput, staff })), [metricsInput, staff]);
@@ -57,7 +65,7 @@ const StaffIncomePredictionView: React.FC<StaffIncomeViewProps> = ({ state, data
 
     const staffTitle = staff === null ? t('staffPrediction.title') : (staff === '' ? t('staffPrediction.unassigned') : staff);
     const dayChip = overview.today !== null
-        ? fill(t('staffPrediction.dayOf'), { d: overview.today, n: overview.daysInMonth })
+        ? fill(t('staffPrediction.dayOf'), { d: overview.today, n: overview.daysInRange })
         : null;
 
     const isEmpty = !loading && !error && overview.totals.orders === 0 && overview.totals.pending === 0 && overview.totals.cancelled === 0;
@@ -69,12 +77,19 @@ const StaffIncomePredictionView: React.FC<StaffIncomeViewProps> = ({ state, data
         const proj = projectionText(projection, t);
         const grossProfitRgb = SIGN(src.grossProfit);
         const margin = src.revenue > 0 ? src.grossProfit / src.revenue : null;
-        const target = activeRow?.monthlyTarget ?? (staff === null ? overview.totals.monthlyTarget : null);
+        // The pro-rated period target (== the monthly target for a whole month).
+        const target = activeRow?.periodTarget ?? (staff === null ? overview.totals.periodTarget : null);
         const targetProgress = activeRow?.targetProgress ?? (staff === null ? overview.totals.targetProgress : null);
         // Revenue that counts toward `target`: the staff member's own, or on the
         // overview only the staff who have a target (not the whole-team revenue).
         const targetedRevenue = activeRow?.targetedRevenue ?? (staff === null ? overview.totals.targetedRevenue : null);
-        const isPast = overview.monthState === 'past';
+        const isPast = overview.rangeState === 'past';
+        // Tooltip on the Target card: which staff it covers (overview only) and,
+        // when the range isn't a whole month, that the monthly target was pro-rated.
+        const targetTitle = [
+            staff === null ? t('staffPrediction.targetedOnly') : null,
+            overview.targetFactor !== 1 ? t('staffPrediction.targetProrated') : null,
+        ].filter(Boolean).join(' — ') || undefined;
         return (
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 8, flexShrink: 0 }}>
                 <KpiCard label={t('staffPrediction.kpi.revenue')} value={fmtMoney(src.revenue)} hint={`${src.orders} ${t('staffPrediction.columns.orders')}`} rgb="16,185,129" icon={<TrendingUp size={12} color="#10B981" />} />
@@ -85,7 +100,7 @@ const StaffIncomePredictionView: React.FC<StaffIncomeViewProps> = ({ state, data
                         label={t('staffPrediction.kpi.target')}
                         value={`${targetProgress !== null ? Math.round(targetProgress * 100) : 0}%`}
                         hint={`${fmtMoney(targetedRevenue ?? 0)} / ${fmtMoney(target)}`}
-                        title={staff === null ? t('staffPrediction.targetedOnly') : undefined}
+                        title={targetTitle}
                         rgb={TARGET_RGB(targetProgress)}
                         icon={<Target size={12} color={`rgb(${TARGET_RGB(targetProgress)})`} />}
                     />
@@ -134,30 +149,21 @@ const StaffIncomePredictionView: React.FC<StaffIncomeViewProps> = ({ state, data
                             {staffTitle}
                         </h2>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '2px 0 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span>{monthLabel(month, language)}</span>
+                            <span>{rangeLabel(range, language)}</span>
                             {dayChip && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 999, background: 'rgba(139,92,246,0.12)', color: '#6D28D9' }}>{dayChip}</span>}
                             {staff === null && <span>· {t('staffPrediction.subtitle')}</span>}
                         </p>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="pip-icon-button" onClick={() => actions.onMonthChange(addMonths(month, -1))} title={t('staffPrediction.prevMonth')} aria-label={t('staffPrediction.prevMonth')}>
-                        <ChevronLeft size={18} />
-                    </button>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <Calendar size={16} style={{ position: 'absolute', left: 10, color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <input
-                            type="month"
-                            value={month}
-                            onChange={e => { if (isMonthKey(e.target.value)) actions.onMonthChange(e.target.value); }}
-                            aria-label={t('staffPrediction.month')}
-                            style={{ padding: '8px 12px 8px 32px', borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: 13, fontWeight: 600, outline: 'none', cursor: 'pointer', height: 38, boxSizing: 'border-box' }}
-                        />
-                    </div>
-                    <button type="button" className="pip-icon-button" onClick={() => actions.onMonthChange(addMonths(month, 1))} title={t('staffPrediction.nextMonth')} aria-label={t('staffPrediction.nextMonth')}>
-                        <ChevronRight size={18} />
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <DateRangeControl
+                        range={range}
+                        now={data.now}
+                        onChange={actions.onRangeChange}
+                        labels={{ prev: t('staffPrediction.prevMonth'), next: t('staffPrediction.nextMonth'), tooLong: fill(t('incomeRange.tooLong'), { n: MAX_RANGE_DAYS }) }}
+                        compact={isMobile}
+                    />
                     <button type="button" className="pip-icon-button" onClick={actions.onRefresh} disabled={loading || refreshing} title={t('staffPrediction.refresh')} aria-label={t('staffPrediction.refresh')}>
                         <RefreshCw size={16} className={refreshing ? 'pip-spin' : undefined} />
                     </button>
@@ -180,7 +186,7 @@ const StaffIncomePredictionView: React.FC<StaffIncomeViewProps> = ({ state, data
                 <>
                     {kpis}
                     {trend}
-                    <LedgerTable ledger={ledger} month={month} t={t} language={language} isMobile={isMobile} />
+                    <LedgerTable ledger={ledger} range={range} t={t} language={language} isMobile={isMobile} />
                 </>
             ) : isEmpty ? (
                 <>

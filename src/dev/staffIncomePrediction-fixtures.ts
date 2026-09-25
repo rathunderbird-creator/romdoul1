@@ -5,10 +5,14 @@
 // pageIncomePrediction-fixtures.ts's own comment for why) so all three
 // derived "Income Prediction" dev previews stay consistent with each other.
 import type { Product, User } from '../types';
+import { rangeOfMonth } from '../utils/dateRange';
 import { fixtureProducts, fixtureNow } from './dashboard2-fixtures';
 import { fixtureSales } from './pageIncomePrediction-fixtures';
 
 export const fixtureMonth = '2026-09';
+// The screens work on an inclusive date range; the fixture's default is the
+// whole of fixtureMonth (what the month-only screens used to show).
+export const fixtureRange = rangeOfMonth(fixtureMonth);
 export { fixtureNow, fixtureSales };
 
 export const fixtureProductsWithCost: Product[] = fixtureProducts.map(p => ({ ...p, purchaseCost: Math.round(p.price * 55) / 100 }));
@@ -26,7 +30,8 @@ const droppedFromConfig = uniqueSalesmen[uniqueSalesmen.length - 1];
 
 // Targets: two of the three real salesmen have a monthly target set (one
 // comfortably ahead, one behind); the third and the config-only name have
-// none, to exercise the "no target set" cell state.
+// none, to exercise the "no target set" cell state. (monthlyTarget is a
+// MONTHLY figure — the screen pro-rates it to whatever range is selected.)
 export const fixtureUsers: User[] = uniqueSalesmen.map((name, i) => ({
     id: `fixture-user-${i}`,
     name,

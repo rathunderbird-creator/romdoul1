@@ -1,17 +1,19 @@
-// Prediction by Page — pure view. Toolbar (month nav, breadcrumb, day-of-
-// month) → banners → KPI cards → either the per-page OVERVIEW table with the
-// shared Staff/Net footer, or one page's daily LEDGER with editable Boost and
-// Shipping cells. No store / router access: the container passes data and
+// Prediction by Page — pure view. Toolbar (date-range nav, breadcrumb, day-of-
+// range chip) → banners → KPI cards → either the per-page OVERVIEW table with
+// the shared Staff/Net footer, or one page's daily LEDGER with editable Boost
+// and Shipping cells. No store / router access: the container passes data and
 // callbacks, and src/dev/pageIncomePrediction-preview.tsx renders it with
 // fixtures.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, BarChart3, Calendar, ChevronLeft, ChevronRight, RefreshCw, TrendingUp, TrendingDown, DollarSign, Megaphone, AlertTriangle, AlertCircle, Lock, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, BarChart3, RefreshCw, TrendingUp, TrendingDown, DollarSign, Megaphone, AlertTriangle, AlertCircle, Lock, ShoppingBag } from 'lucide-react';
 import './pageIncomePrediction.css';
-import { buildOverview, buildLedger, addMonths, isMonthKey, monthBounds, monthStateOf, roundCents, type InputField } from './metrics';
+import { buildOverview, buildLedger, roundCents, type InputField } from './metrics';
+import { inRange, rangeStateOf, MAX_RANGE_DAYS } from '../../utils/dateRange';
 import type { PageIncomeViewProps } from './types';
-import { fmtMoney, fmtPct, fmtRatio, monthLabel, fill } from './format';
+import { fmtMoney, fmtPct, fmtRatio, rangeLabel, fill } from './format';
 import OverviewTable, { projectionText } from './components/OverviewTable';
 import LedgerTable, { cellKeyOf } from './components/LedgerTable';
+import DateRangeControl from './components/DateRangeControl';
 import SkeletonRows from './components/SkeletonRows';
 import Sparkline from './components/Sparkline';
 
@@ -48,12 +50,12 @@ const SIGN = (n: number): string => (n > 0.005 ? '139,92,246' : n < -0.005 ? '23
 // ─── View ─────────────────────────────────────────────────────────────────
 
 const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, loading, refreshing, error, missingTable, canEdit, isMobile, t, language, actions }) => {
-    const { month, page } = state;
+    const { range, page } = state;
 
     const metricsInput = useMemo(() => ({
         sales: data.sales, inputs: data.inputs, sibling: data.sibling, staffInputs: data.staffInputs, products: data.products,
-        shippingRates: data.shippingRates, configPages: data.configPages, month, now: data.now,
-    }), [data.sales, data.inputs, data.sibling, data.staffInputs, data.products, data.shippingRates, data.configPages, month, data.now]);
+        shippingRates: data.shippingRates, configPages: data.configPages, range, now: data.now,
+    }), [data.sales, data.inputs, data.sibling, data.staffInputs, data.products, data.shippingRates, data.configPages, range, data.now]);
 
     const overview = useMemo(() => buildOverview(metricsInput), [metricsInput]);
     const ledger = useMemo(() => (page === null ? null : buildLedger({ ...metricsInput, page })), [metricsInput, page]);
@@ -90,43 +92,46 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
         }
     };
 
-    // Overview-level Boost editing: there's no single row a "month total" can
+    // Overview-level Boost editing: there's no single row a range total can
     // come from once per-day entries exist, so typing a new total here nets
-    // it against whatever's already on days other than the 1st and stores the
-    // remainder there — day 1 acts as the catch-all lump entry. A page with no
-    // per-day entries at all (the common case: boost is only ever typed here)
-    // then behaves exactly like a plain total: day 1 IS the whole figure. If
-    // per-day entries elsewhere already exceed the typed total, day 1 floors
-    // at 0 (never negative) — the displayed total ends up a little higher than
-    // typed rather than silently deleting money entered in the daily ledger.
+    // it against whatever's already on days of the range other than its first
+    // day and stores the remainder there — the first day acts as the catch-all
+    // lump entry. A page with no per-day entries at all (the common case: boost
+    // is only ever typed here) then behaves exactly like a plain total: the
+    // first day IS the whole figure. If per-day entries elsewhere already
+    // exceed the typed total, the first day floors at 0 (never negative) — the
+    // displayed total ends up a little higher than typed rather than silently
+    // deleting money entered in the daily ledger. For a whole calendar month
+    // the first day is the 1st, exactly as before.
     const [boostSavingKeys, setBoostSavingKeys] = useState<Set<string>>(new Set());
     const [boostSavedKeys, setBoostSavedKeys] = useState<Set<string>>(new Set());
     const boostRequestIdRef = useRef<Map<string, number>>(new Map());
 
     const editOverviewBoost = async (targetPage: string, total: number | null): Promise<void> => {
-        // This always writes to day 1 of `month` — LedgerTable's own per-day
-        // cells already refuse to edit any day that hasn't happened yet
-        // (`disabled = !canEdit || day.isFuture`), day 1 of a future month
-        // included; the Overview cell (disabled via the isFutureMonth check
+        // This always writes to the first day of `range` — LedgerTable's own
+        // per-day cells already refuse to edit any day that hasn't happened yet
+        // (`disabled = !canEdit || day.isFuture`), the first day of a future
+        // range included; the Overview cell (disabled via the 'future' check
         // passed into <OverviewTable> below) shouldn't be a second way to
         // write to that same row bypassing that rule. Defensive no-op here
         // too, in case this is ever called from anywhere else.
-        if (monthStateOf(month, data.now) === 'future') return;
+        if (rangeStateOf(range, data.now) === 'future') return;
         const myId = (boostRequestIdRef.current.get(targetPage) ?? 0) + 1;
         boostRequestIdRef.current.set(targetPage, myId);
         const isLatest = () => boostRequestIdRef.current.get(targetPage) === myId;
 
-        const day1 = monthBounds(month).firstDay;
+        const firstDay = range.from;
+        // Only rows inside the range count towards the total the cell shows.
         const others = data.inputs
-            .filter(r => r.page === targetPage && r.date !== day1)
+            .filter(r => r.page === targetPage && r.date !== firstDay && inRange(r.date, range))
             .reduce((sum, r) => sum + r.boostPage, 0);
         // Snapped to cents: total − (a float sum) would otherwise store noise
-        // like 1333.7499999999999 in the day-1 row.
-        const day1Value = roundCents(Math.max(0, (total ?? 0) - others));
+        // like 1333.7499999999999 in the first-day row.
+        const firstDayValue = roundCents(Math.max(0, (total ?? 0) - others));
 
         setBoostSavingKeys(prev => new Set(prev).add(targetPage));
         try {
-            await actions.onCommitInput(day1, targetPage, 'boostPage', day1Value);
+            await actions.onCommitInput(firstDay, targetPage, 'boostPage', firstDayValue);
             if (!isLatest()) return;
             setBoostSavedKeys(prev => new Set(prev).add(targetPage));
             const id = window.setTimeout(() => { if (isLatest()) setBoostSavedKeys(prev => { const n = new Set(prev); n.delete(targetPage); return n; }); }, 2000);
@@ -138,7 +143,7 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
 
     const pageTitle = page === null ? t('pagePrediction.title') : (page === '' ? t('pagePrediction.unassigned') : page);
     const dayChip = overview.today !== null
-        ? fill(t('pagePrediction.dayOf'), { d: overview.today, n: overview.daysInMonth })
+        ? fill(t('pagePrediction.dayOf'), { d: overview.today, n: overview.daysInRange })
         : null;
 
     const isEmpty = !loading && !error && overview.totals.orders === 0 && overview.totals.pending === 0 && overview.totals.cancelled === 0;
@@ -160,7 +165,7 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
                     <KpiCard label={t('pagePrediction.kpi.boost')} value={fmtMoney(src.boost)} hint={`${t('pagePrediction.columns.roas')} ${fmtRatio(roas)}`} rgb="245,158,11" icon={<Megaphone size={12} color="#F59E0B" />} />
                 )}
                 <KpiCard label={t('pagePrediction.kpi.contribution')} value={fmtMoney(src.contribution)} hint={`${t('pagePrediction.columns.margin')} ${fmtPct(margin)}${ledger ? ` · ${t('pagePrediction.columns.boost')} ${fmtMoney(src.boost)}` : ''}`} rgb={contributionRgb} icon={<DollarSign size={12} color={`rgb(${contributionRgb})`} />} />
-                <KpiCard label={overview.monthState === 'past' ? t('pagePrediction.actual') : t('pagePrediction.kpi.projected')} value={proj.text} hint={proj.title} title={proj.title} rgb={proj.muted ? '107,114,128' : SIGN(projection.contribution || 0)} icon={<BarChart3 size={12} color={proj.muted ? '#6B7280' : `rgb(${SIGN(projection.contribution || 0)})`} />} />
+                <KpiCard label={overview.rangeState === 'past' ? t('pagePrediction.actual') : t('pagePrediction.kpi.projected')} value={proj.text} hint={proj.title} title={proj.title} rgb={proj.muted ? '107,114,128' : SIGN(projection.contribution || 0)} icon={<BarChart3 size={12} color={proj.muted ? '#6B7280' : `rgb(${SIGN(projection.contribution || 0)})`} />} />
             </div>
         );
     })();
@@ -232,30 +237,25 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
                             {pageTitle}
                         </h2>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '2px 0 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span>{monthLabel(month, language)}</span>
+                            <span>{rangeLabel(range, language)}</span>
                             {dayChip && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 999, background: 'rgba(139,92,246,0.12)', color: '#6D28D9' }}>{dayChip}</span>}
                             {page === null && <span>· {t('pagePrediction.subtitle')}</span>}
                         </p>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="pip-icon-button" onClick={() => actions.onMonthChange(addMonths(month, -1))} title={t('pagePrediction.prevMonth')} aria-label={t('pagePrediction.prevMonth')}>
-                        <ChevronLeft size={18} />
-                    </button>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <Calendar size={16} style={{ position: 'absolute', left: 10, color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <input
-                            type="month"
-                            value={month}
-                            onChange={e => { if (isMonthKey(e.target.value)) actions.onMonthChange(e.target.value); }}
-                            aria-label={t('pagePrediction.month')}
-                            style={{ padding: '8px 12px 8px 32px', borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: 13, fontWeight: 600, outline: 'none', cursor: 'pointer', height: 38, boxSizing: 'border-box' }}
-                        />
-                    </div>
-                    <button type="button" className="pip-icon-button" onClick={() => actions.onMonthChange(addMonths(month, 1))} title={t('pagePrediction.nextMonth')} aria-label={t('pagePrediction.nextMonth')}>
-                        <ChevronRight size={18} />
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <DateRangeControl
+                        range={range}
+                        now={data.now}
+                        onChange={actions.onRangeChange}
+                        labels={{
+                            prev: t('pagePrediction.prevMonth'),
+                            next: t('pagePrediction.nextMonth'),
+                            tooLong: fill(t('incomeRange.tooLong'), { n: MAX_RANGE_DAYS }),
+                        }}
+                        compact={isMobile}
+                    />
                     <button type="button" className="pip-icon-button" onClick={actions.onRefresh} disabled={loading || refreshing} title={t('pagePrediction.refresh')} aria-label={t('pagePrediction.refresh')}>
                         <RefreshCw size={16} className={refreshing ? 'pip-spin' : undefined} />
                     </button>
@@ -291,7 +291,7 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
                     {trend}
                     <LedgerTable
                         ledger={ledger}
-                        month={month}
+                        range={range}
                         canEdit={canEdit && !missingTable}
                         t={t}
                         language={language}
@@ -319,7 +319,7 @@ const PageIncomePredictionView: React.FC<PageIncomeViewProps> = ({ state, data, 
                         t={t}
                         isMobile={isMobile}
                         onOpenPage={actions.onOpenPage}
-                        canEdit={canEdit && !missingTable && monthStateOf(month, data.now) !== 'future'}
+                        canEdit={canEdit && !missingTable && rangeStateOf(range, data.now) !== 'future'}
                         boostSavingKeys={boostSavingKeys}
                         boostSavedKeys={boostSavedKeys}
                         onEditBoost={editOverviewBoost}

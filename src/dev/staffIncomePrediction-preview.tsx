@@ -12,7 +12,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import StaffIncomePredictionView from '../pages/staffIncomePrediction/StaffIncomePredictionView';
 import type { StaffIncomeActions, StaffIncomeData, StaffIncomeUrlState } from '../pages/staffIncomePrediction/types';
-import { fixtureMonth, fixtureNow, fixtureSales, fixtureProductsWithCost, fixtureUsers, fixtureConfigSalesmen } from './staffIncomePrediction-fixtures';
+import { fixtureRange, fixtureNow, fixtureSales, fixtureProductsWithCost, fixtureUsers, fixtureConfigSalesmen } from './staffIncomePrediction-fixtures';
 
 type Scenario = 'normal' | 'loading' | 'empty' | 'error';
 const SCENARIOS: Scenario[] = ['normal', 'loading', 'empty', 'error'];
@@ -27,7 +27,7 @@ const controlStyle = { fontSize: 12, padding: '2px 6px', borderRadius: 6, border
 const Preview = () => {
     const { t, language, setLanguage } = useLanguage();
     const [scenario, setScenario] = useState<Scenario>('normal');
-    const [state, setState] = useState<StaffIncomeUrlState>({ month: fixtureMonth, staff: null });
+    const [state, setState] = useState<StaffIncomeUrlState>({ range: fixtureRange, staff: null });
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [lastAction, setLastAction] = useState('—');
 
@@ -49,7 +49,7 @@ const Preview = () => {
         const log = (name: string, payload?: unknown) =>
             setLastAction(payload === undefined ? name : `${name} ${JSON.stringify(payload)}`);
         return {
-            onMonthChange: month => { setState(s => ({ ...s, month })); log('monthChange', month); },
+            onRangeChange: range => { setState(s => ({ ...s, range })); log('rangeChange', range); },
             onOpenStaff: staff => { setState(s => ({ ...s, staff })); log('openStaff', staff); },
             onBack: () => { setState(s => ({ ...s, staff: null })); log('back'); },
             onRefresh: () => log('refresh'),

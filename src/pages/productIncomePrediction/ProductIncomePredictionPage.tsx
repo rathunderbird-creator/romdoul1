@@ -6,7 +6,7 @@
 // Deliberately does NOT take `products` from useStore(): the store's list is
 // active-only (the right choice everywhere else in the app), but this screen
 // needs deactivated products too so a discontinued SKU's cost isn't silently
-// dropped from this month's COGS — see useProductIncomeData.ts's own header
+// dropped from the period's COGS — see useProductIncomeData.ts's own header
 // comment for why.
 import React, { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -25,7 +25,7 @@ const ProductIncomePredictionPage: React.FC = () => {
     const [params, setParams] = useSearchParams();
 
     const state = useMemo(() => paramsToState(params, new Date()), [params]);
-    const data = useProductIncomeData(state.month);
+    const data = useProductIncomeData(state.range);
 
     useEffect(() => {
         setHeaderContent({
@@ -41,13 +41,13 @@ const ProductIncomePredictionPage: React.FC = () => {
 
     const { refresh } = data;
     const actions = useMemo<ProductIncomeActions>(() => ({
-        // Month changes replace the history entry; opening a product pushes
-        // one, so the browser Back button returns to the overview for that month.
-        onMonthChange: month => setParams(stateToParams({ month, productId: state.productId }), { replace: true }),
-        onOpenProduct: productId => setParams(stateToParams({ month: state.month, productId })),
-        onBack: () => setParams(stateToParams({ month: state.month, productId: null })),
+        // Range changes replace the history entry; opening a product pushes
+        // one, so the browser Back button returns to the overview for that range.
+        onRangeChange: range => setParams(stateToParams({ range, productId: state.productId }), { replace: true }),
+        onOpenProduct: productId => setParams(stateToParams({ range: state.range, productId })),
+        onBack: () => setParams(stateToParams({ range: state.range, productId: null })),
         onRefresh: () => refresh(),
-    }), [setParams, state.month, state.productId, refresh]);
+    }), [setParams, state.range, state.productId, refresh]);
 
     const viewData = useMemo<ProductIncomeData>(() => ({
         sales: data.sales,

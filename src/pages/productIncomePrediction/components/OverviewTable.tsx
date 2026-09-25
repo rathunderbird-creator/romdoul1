@@ -42,11 +42,11 @@ export const projectionText = (p: Projection, t: Translate): { text: string; tit
     if (p.basis === 'actual' && p.grossProfit !== null) {
         return { text: fmtMoney(p.grossProfit), title: t('productPrediction.actual'), muted: false };
     }
-    // A genuinely future month vs. the CURRENT month with 0-2 completed days
-    // both land here with completedDays near 0 — isFutureMonth is what tells
+    // A genuinely future range vs. the CURRENT range with 0-2 completed days
+    // both land here with completedDays near 0 — isFutureRange is what tells
     // them apart, so day 1 of the current month reads "too early", not the
     // wrong (and stranger) "hasn't started yet".
-    if (!p.isFutureMonth) return { text: '—', title: fill(t('productPrediction.tooEarly'), { n: p.completedDays }), muted: true };
+    if (!p.isFutureRange) return { text: '—', title: fill(t('productPrediction.tooEarly'), { n: p.completedDays }), muted: true };
     return { text: '—', title: t('productPrediction.futureMonth'), muted: true };
 };
 
@@ -118,12 +118,12 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, now, t, isMobile,
     // pinned to the whole catalogue's grand total. A search that matches
     // nothing gets an explicit zero/no-data footer rather than piping an
     // empty row set through summarizeRows: with no rows there's no real
-    // projection basis to report, and synthesizing one from monthState alone
-    // produces a misleading tooltip (e.g. "Month not started" for a month
-    // that's already over) — see the noData branch below.
+    // projection basis to report, and synthesizing one from the range's state
+    // alone produces a misleading tooltip (e.g. "Period not started" for a
+    // period that's already over) — see the noData branch below.
     const isFiltered = search.trim() !== '';
     const noData = isFiltered && filteredRows.length === 0;
-    const totals = !isFiltered ? result.totals : (noData ? summarizeRows([], result.monthState, now) : summarizeRows(filteredRows, result.monthState, now));
+    const totals = !isFiltered ? result.totals : (noData ? summarizeRows([], result.range, now) : summarizeRows(filteredRows, result.range, now));
 
     const searchBox = (
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>

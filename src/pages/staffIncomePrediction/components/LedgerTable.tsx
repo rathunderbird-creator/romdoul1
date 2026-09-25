@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import type { LedgerResult, LedgerDay } from '../metrics';
 import type { Translate, Language } from '../types';
-import { fmtMoney, weekdayShort } from '../../pageIncomePrediction/format';
+import { fmtMoney, weekdayShort, monthShortLabel } from '../../pageIncomePrediction/format';
 import { useColumnWidths } from '../../pageIncomePrediction/useColumnWidths';
+import { rangeMonths, type DateRange } from '../../../utils/dateRange';
 
 export interface LedgerTableProps {
     ledger: LedgerResult;
-    month: string;
+    range: DateRange;
     t: Translate;
     language: Language;
     isMobile: boolean;
@@ -16,6 +17,8 @@ const COLUMNS = ['day', 'orders', 'pending', 'revenue', 'cogs', 'grossProfit'] a
 type ColKey = typeof COLUMNS[number];
 
 const DEFAULT_WIDTHS: Record<ColKey, number> = { day: 130, orders: 80, pending: 120, revenue: 120, cogs: 110, grossProfit: 130 };
+// A range spanning months tags each day with its month ("Sep 15"), which needs a wider Day column.
+const MULTI_MONTH_WIDTHS: Record<ColKey, number> = { ...DEFAULT_WIDTHS, day: 170 };
 
 const HEADER_COLORS: Partial<Record<ColKey, string>> = { revenue: '#10B981', cogs: '#EF4444', grossProfit: '#8B5CF6' };
 
@@ -26,8 +29,11 @@ const thStyle: React.CSSProperties = {
 
 // Read-only — Prediction by Staff has no manual inputs (no commission
 // concept anywhere in this codebase — see metrics.ts's header comment).
-const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, month, t, language, isMobile }) => {
-    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('pip_staff_ledger', DEFAULT_WIDTHS);
+const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, t, language, isMobile }) => {
+    // Day numbers repeat across months, so when the range touches more than one
+    // the Day cell gets a short month tag before the number.
+    const multiMonth = rangeMonths(range).length > 1;
+    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('pip_staff_ledger', multiMonth ? MULTI_MONTH_WIDTHS : DEFAULT_WIDTHS);
     const wrapRef = useRef<HTMLDivElement>(null);
     const todayRef = useRef<HTMLTableRowElement>(null);
 
@@ -37,7 +43,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, month, t, language, i
         if (!wrap || !row) return;
         const top = row.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
         wrap.scrollTop = Math.max(0, top - wrap.clientHeight / 2);
-    }, [ledger.staff, month]);
+    }, [ledger.staff, range.from, range.to]);
 
     const header = (key: ColKey, label: string) => (
         <th key={key} className={key === 'day' ? 'pip-sticky-first' : undefined} scope="col" style={{ ...thStyle, ...widthStyle(key), textAlign: key === 'day' ? 'left' : 'right', color: HEADER_COLORS[key] || thStyle.color, background: 'var(--color-surface)' }}>
@@ -60,7 +66,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, month, t, language, i
             >
                 <td className="pip-sticky-first" style={{ ...widthStyle('day'), padding: '8px 12px', borderRight: '1px solid var(--color-border)', fontSize: 12, background: day.isToday ? 'rgba(139,92,246,0.06)' : 'var(--color-surface)', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 700, fontSize: 16, color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-main)', width: 24 }}>{day.dayNum}</span>
+                        <span style={{ fontWeight: 700, fontSize: 16, color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-main)', ...(multiMonth ? { whiteSpace: 'nowrap' } : { width: 24 }) }}>{multiMonth ? `${monthShortLabel(day.date, language)} ${day.dayNum}` : day.dayNum}</span>
                         <span style={{ fontSize: 10, fontWeight: 600, color: day.isWeekend ? '#EF4444' : 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{weekdayShort(day.dow, language)}</span>
                         {day.isToday && <span style={{ fontSize: 8, fontWeight: 700, background: '#8B5CF6', color: 'white', padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('staffPrediction.today')}</span>}
                     </div>

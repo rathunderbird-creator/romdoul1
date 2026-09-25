@@ -1,17 +1,19 @@
-// Data layer for Prediction by Staff: one month's sales, chunk-fetched with
+// Data layer for Prediction by Staff: the selected date range's sales,
+// chunk-fetched (one parallel fetch per calendar month the range touches) with
 // the exact same select as ../IncomePrediction.tsx and the other Income
 // Prediction screens so all four reconcile. No writes, no second table.
 //
 // Products come from fetchAllProducts (../../utils/fetchAllProducts) rather
 // than useStore() — same reasoning as the other two prediction screens: a
-// discontinued product's historical COGS this month must not silently drop
+// discontinued product's historical COGS in this period must not silently drop
 // to 0 just because useStore().products is active-only.
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { fetchAll } from '../../utils/fetchAll';
+import { fetchInMonthWindows } from '../../utils/fetchInMonthWindows';
 import { fetchAllProducts } from '../../utils/fetchAllProducts';
 import { mapSaleEntity } from '../../utils/mapper';
-import { monthBounds, type Order } from './metrics';
+import type { DateRange } from '../../utils/dateRange';
+import type { Order } from './metrics';
 import type { Product } from '../../types';
 
 export interface StaffIncomeDataState {
@@ -26,14 +28,19 @@ export interface StaffIncomeDataState {
 
 const errMessage = (e: unknown): string => (e as { message?: string })?.message || String(e);
 
-export const useStaffIncomeData = (month: string): StaffIncomeDataState => {
+export const useStaffIncomeData = (range: DateRange): StaffIncomeDataState => {
+    // Depend on the two day strings, not the `range` object: the caller rebuilds
+    // it whenever the URL changes (e.g. opening a staff member), and that must
+    // not trigger a refetch.
+    const { from, to } = range;
+    const rangeKey = `${from}|${to}`;
     const [sales, setSales] = useState<Order[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [now, setNow] = useState<Date>(() => new Date());
     const [loading, setLoading] = useState(true);
-    // Which month `sales` currently holds — see the other Income Prediction
-    // hooks' identical loadedMonth comment for why this isn't just a boolean.
-    const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
+    // Which range `sales` currently holds — see the other Income Prediction
+    // hooks' identical loadedRange comment for why this isn't just a boolean.
+    const [loadedRange, setLoadedRange] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const reqRef = useRef(0);
 
@@ -42,13 +49,12 @@ export const useStaffIncomeData = (month: string): StaffIncomeDataState => {
         setLoading(true);
         setError(null);
         try {
-            const b = monthBounds(month);
             const [salesRows, productsRows] = await Promise.all([
-                fetchAll((from, to) =>
+                fetchInMonthWindows({ from, to }, (startIso, endIso) => (a, b) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
-                        .gte('date', b.startIso).lt('date', b.endIso)
-                        .order('id', { ascending: true }).range(from, to)
+                        .gte('date', startIso).lt('date', endIso)
+                        .order('id', { ascending: true }).range(a, b)
                 ),
                 fetchAllProducts(),
             ]);
@@ -56,7 +62,7 @@ export const useStaffIncomeData = (month: string): StaffIncomeDataState => {
             setSales(salesRows.map(mapSaleEntity));
             setProducts(productsRows);
             setNow(new Date());
-            setLoadedMonth(month);
+            setLoadedRange(`${from}|${to}`);
         } catch (e) {
             if (id !== reqRef.current) return;
             console.error('Prediction by Staff: fetch failed', e);
@@ -64,11 +70,11 @@ export const useStaffIncomeData = (month: string): StaffIncomeDataState => {
         } finally {
             if (id === reqRef.current) setLoading(false);
         }
-    }, [month]);
+    }, [from, to]);
 
     useEffect(() => { load(); }, [load]);
 
-    const hasData = loadedMonth === month;
+    const hasData = loadedRange === rangeKey;
     return {
         sales: hasData ? sales : [],
         products: hasData ? products : [],

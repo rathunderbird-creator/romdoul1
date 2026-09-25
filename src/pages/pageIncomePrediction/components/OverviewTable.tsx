@@ -11,8 +11,9 @@ export interface OverviewTableProps {
     t: Translate;
     isMobile: boolean;
     onOpenPage: (page: string) => void;
-    // Typing a page's month-total Boost here (rather than opening its daily
-    // ledger) — see onEditBoost below for what "editing a sum" resolves to.
+    // Typing a page's Boost total for the selected period here (rather than
+    // opening its daily ledger) — see onEditBoost below for what "editing a
+    // sum" resolves to.
     canEdit: boolean;
     boostSavingKeys: Set<string>;
     boostSavedKeys: Set<string>;
@@ -33,10 +34,10 @@ const HEADER_COLORS: Partial<Record<ColKey, string>> = {
 
 const NUMERIC = new Set<ColKey>(['orders', 'pending', 'cancelled', 'revenue', 'cogs', 'shipping', 'boost', 'roas', 'boostPerOrder', 'contribution', 'margin', 'projected']);
 
-// The Overview Boost cell edits a whole MONTH's total, unlike the daily
-// Ledger's Boost cell (LedgerTable.tsx, warnAbove={2000} for one day) — a
-// flat, distinctly larger threshold here, not that same per-day value,
-// otherwise any page with a perfectly normal >$5k/month ad budget (well
+// The Overview Boost cell edits a whole PERIOD's total (a month by default),
+// unlike the daily Ledger's Boost cell (LedgerTable.tsx, warnAbove={2000} for
+// one day) — a flat, distinctly larger threshold here, not that same per-day
+// value, otherwise any page with a perfectly normal >$5k/month ad budget (well
 // under $2k on any single day) would trip the "is this in dollars?" warning
 // on every visit.
 const OVERVIEW_BOOST_WARN_ABOVE = 20000;
@@ -96,11 +97,11 @@ export const projectionText = (p: Projection, t: Translate): { text: string; tit
     if (p.basis === 'actual' && p.contribution !== null) {
         return { text: fmtMoney(p.contribution), title: t('pagePrediction.actual'), muted: false };
     }
-    // A genuinely future month vs. the CURRENT month with 0-2 completed days
-    // both land here with completedDays near 0 — isFutureMonth is what tells
+    // A genuinely future range vs. the CURRENT range with 0-2 completed days
+    // both land here with completedDays near 0 — isFutureRange is what tells
     // them apart, so day 1 of the current month reads "too early", not the
     // wrong (and stranger) "hasn't started yet".
-    if (!p.isFutureMonth) return { text: '—', title: fill(t('pagePrediction.tooEarly'), { n: p.completedDays }), muted: true };
+    if (!p.isFutureRange) return { text: '—', title: fill(t('pagePrediction.tooEarly'), { n: p.completedDays }), muted: true };
     return { text: '—', title: t('pagePrediction.futureMonth'), muted: true };
 };
 
@@ -110,7 +111,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
     const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('pip_overview', DEFAULT_WIDTHS);
     const { rows, totals, unassignedShare } = result;
     const pageLabel = (row: PageRow): string => (row.key === '' ? t('pagePrediction.unassigned') : row.key);
-    const projectedHeader = result.monthState === 'past' ? t('pagePrediction.columns.actual') : t('pagePrediction.columns.projected');
+    const projectedHeader = result.rangeState === 'past' ? t('pagePrediction.columns.actual') : t('pagePrediction.columns.projected');
 
     const [sort, setSort] = useState<OverviewSort | null>(null);
     const toggleSort = (key: ColKey) => setSort(prev => {

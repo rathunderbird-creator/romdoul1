@@ -12,7 +12,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import ProductIncomePredictionView from '../pages/productIncomePrediction/ProductIncomePredictionView';
 import type { ProductIncomeActions, ProductIncomeData, ProductIncomeUrlState } from '../pages/productIncomePrediction/types';
-import { fixtureMonth, fixtureNow, fixtureSales, fixtureProductsWithCost } from './productIncomePrediction-fixtures';
+import { fixtureRange, fixtureNow, fixtureSales, fixtureProductsWithCost } from './productIncomePrediction-fixtures';
 
 type Scenario = 'normal' | 'loading' | 'empty' | 'error';
 const SCENARIOS: Scenario[] = ['normal', 'loading', 'empty', 'error'];
@@ -27,7 +27,7 @@ const controlStyle = { fontSize: 12, padding: '2px 6px', borderRadius: 6, border
 const Preview = () => {
     const { t, language, setLanguage } = useLanguage();
     const [scenario, setScenario] = useState<Scenario>('normal');
-    const [state, setState] = useState<ProductIncomeUrlState>({ month: fixtureMonth, productId: null });
+    const [state, setState] = useState<ProductIncomeUrlState>({ range: fixtureRange, productId: null });
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [lastAction, setLastAction] = useState('—');
 
@@ -47,7 +47,7 @@ const Preview = () => {
         const log = (name: string, payload?: unknown) =>
             setLastAction(payload === undefined ? name : `${name} ${JSON.stringify(payload)}`);
         return {
-            onMonthChange: month => { setState(s => ({ ...s, month })); log('monthChange', month); },
+            onRangeChange: range => { setState(s => ({ ...s, range })); log('rangeChange', range); },
             onOpenProduct: productId => { setState(s => ({ ...s, productId })); log('openProduct', productId); },
             onBack: () => { setState(s => ({ ...s, productId: null })); log('back'); },
             onRefresh: () => log('refresh'),

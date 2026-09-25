@@ -15,17 +15,29 @@
 // called "contribution", never "profit".
 //
 // Dates are browser-local (the business and its staff run in UTC+7), exactly
-// as the sibling page: month bounds are local-midnight instants and a sale
-// belongs to the local calendar day of its `date`.
+// as the sibling page: the range's bounds are local-midnight instants and a
+// sale belongs to the local calendar day of its `date`. The screen shows an
+// inclusive DateRange of days (default: the current calendar month; up to
+// MAX_RANGE_DAYS, possibly spanning months) — every figure here is a sum over
+// the days of that range, so it is additive over any split of the range.
 // TODO: derive from config.timezone when both pages switch together.
 import type { Sale, Product } from '../../types';
 import { groupKeyOf } from '../dashboard2/metrics';
 import { roundCents } from '../../utils/money';
+import {
+    inRange, dayKeysOfRange, rangeLength, rangeStateOf, completedWindow, dayNumberOf, parseDay,
+    type DateRange, type RangeState,
+} from '../../utils/dateRange';
 
 export type Order = Sale;
 
 // ─── Calendar helpers ─────────────────────────────────────────────────────
 
+// Month-based helpers: this screen itself now works in DateRanges (see
+// ../../utils/dateRange) and no longer uses monthBounds / addMonths /
+// dayKeysOfMonth / monthStateOf. They are still exported because
+// ../productIncomePrediction/metrics.ts and ../staffIncomePrediction/metrics.ts
+// import them from here.
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 export const monthKeyOf = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
@@ -148,7 +160,7 @@ export interface MetricsInput {
     products: Product[];
     shippingRates: Record<string, number>;
     configPages: string[];          // Settings → Pages
-    month: string;                  // YYYY-MM
+    range: DateRange;               // inclusive local days, YYYY-MM-DD both ends
     now: Date;
 }
 
@@ -181,13 +193,15 @@ const addToFlow = (f: DayFlow, o: Order, costMap: Map<string, number>, rates: Re
     }
 };
 
-// page → day → flow, for sales inside `month` only (the query is already
-// month-bounded; the filter protects the fixture-driven preview).
-const bucketByPageAndDay = (sales: Order[], month: string, costMap: Map<string, number>, rates: Record<string, number>): Map<string, Map<string, DayFlow>> => {
+// page → day → flow, for sales inside `range` only (the query is already
+// range-bounded; the filter protects the fixture-driven preview). A day is
+// identified by its YYYY-MM-DD string, so the lexical inRange compare is exact
+// ('' — an unparseable sale date — sorts before every real day and is skipped).
+const bucketByPageAndDay = (sales: Order[], range: DateRange, costMap: Map<string, number>, rates: Record<string, number>): Map<string, Map<string, DayFlow>> => {
     const byPage = new Map<string, Map<string, DayFlow>>();
     for (const o of sales) {
         const day = saleDayOf(o);
-        if (!day.startsWith(`${month}-`)) continue;
+        if (!inRange(day, range)) continue;
         const page = pageKeyOf(o);
         let days = byPage.get(page);
         if (!days) { days = new Map(); byPage.set(page, days); }
@@ -202,51 +216,56 @@ const bucketByPageAndDay = (sales: Order[], month: string, costMap: Map<string, 
 
 export interface Projection {
     basis: 'run-rate' | 'actual' | 'none';
-    completedDays: number;           // days 1..today-1 (current month only)
-    // Distinguishes "hasn't started yet" from "the current month, but too
+    completedDays: number;           // full days already behind us (current range only)
+    // Distinguishes "hasn't started yet" from "the current range, but too
     // early to extrapolate (0-2 completed days)" — both have completedDays
     // near 0, which used to be the ONLY signal the view had, so day 1 of
     // every current month was wrongly labelled "Month not started".
-    isFutureMonth: boolean;
+    isFutureRange: boolean;
     revenue: number | null;
     contribution: number | null;
 }
 
-interface FlowDay { dayNum: number; revenue: number; cogs: number; shipping: number }
+// `date` (YYYY-MM-DD) is the identity of a day; the day-of-month alone repeats
+// across the months of a range.
+interface FlowDay { date: string; revenue: number; cogs: number; shipping: number }
 
-// Current month: run-rate over COMPLETED days only (today is partial and the
-// newest days are still mostly Pending), scaled to the month, with boost
-// carried exactly as entered — never extrapolated, it is paid in lumps.
-// Fewer than 3 completed days is too thin to extrapolate ('none').
-const projectFlows = (days: FlowDay[], boostMonth: number, month: string, now: Date): Projection => {
-    const state = monthStateOf(month, now);
-    const { daysInMonth } = monthBounds(month);
-    const sum = (rows: FlowDay[], k: keyof Omit<FlowDay, 'dayNum'>): number => rows.reduce((s, d) => s + d[k], 0);
-    if (state === 'future') return { basis: 'none', completedDays: 0, isFutureMonth: true, revenue: null, contribution: null };
+// Current range (it contains today): run-rate over COMPLETED days only (today
+// is partial and the newest days are still mostly Pending), scaled up to the
+// whole range, with boost carried exactly as entered — never extrapolated, it is
+// paid in lumps. Fewer than 3 completed days is too thin to extrapolate
+// ('none'). A whole current month behaves exactly as the month-only model did:
+// completed = today − 1, scale = days in month / completed.
+const projectFlows = (days: FlowDay[], boostTotal: number, range: DateRange, now: Date): Projection => {
+    const state = rangeStateOf(range, now);
+    const cw = completedWindow(range, now);
+    const sum = (rows: FlowDay[], k: keyof Omit<FlowDay, 'date'>): number => rows.reduce((s, d) => s + d[k], 0);
+    if (state === 'future') return { basis: 'none', completedDays: 0, isFutureRange: true, revenue: null, contribution: null };
     if (state === 'past') {
         return {
             basis: 'actual',
-            completedDays: daysInMonth,
-            isFutureMonth: false,
+            completedDays: cw.total,
+            isFutureRange: false,
             revenue: sum(days, 'revenue'),
-            contribution: sum(days, 'revenue') - sum(days, 'cogs') - sum(days, 'shipping') - boostMonth,
+            contribution: sum(days, 'revenue') - sum(days, 'cogs') - sum(days, 'shipping') - boostTotal,
         };
     }
-    const completed = now.getDate() - 1;
-    if (completed < 3) return { basis: 'none', completedDays: completed, isFutureMonth: false, revenue: null, contribution: null };
-    const done = days.filter(d => d.dayNum <= completed);
-    const scale = daysInMonth / completed;
+    const completed = cw.completed;
+    if (completed < 3 || cw.lastCompleted === null) return { basis: 'none', completedDays: completed, isFutureRange: false, revenue: null, contribution: null };
+    const lastCompleted = cw.lastCompleted;
+    const done = days.filter(d => d.date >= range.from && d.date <= lastCompleted);
+    const scale = cw.total / completed;
     const revenue = sum(done, 'revenue') * scale;
     const cogs = sum(done, 'cogs') * scale;
     const shipping = sum(done, 'shipping') * scale;
-    return { basis: 'run-rate', completedDays: completed, isFutureMonth: false, revenue, contribution: revenue - cogs - shipping - boostMonth };
+    return { basis: 'run-rate', completedDays: completed, isFutureRange: false, revenue, contribution: revenue - cogs - shipping - boostTotal };
 };
 
-// ─── Ledger (one page, one month, one row per day) ────────────────────────
+// ─── Ledger (one page, one range, one row per day) ────────────────────────
 
 export interface LedgerDay {
-    date: string;
-    dayNum: number;
+    date: string;                  // YYYY-MM-DD — the day's identity
+    dayNum: number;                // day of the month (1..31), for display only
     dow: number;                   // 0 = Sunday
     orders: number;
     revenue: number;
@@ -286,9 +305,9 @@ export interface LedgerResult {
     days: LedgerDay[];
     totals: LedgerTotals;
     projection: Projection;
-    monthState: MonthState;
-    today: number | null;          // day-of-month when the month is current
-    daysInMonth: number;
+    rangeState: RangeState;
+    today: number | null;          // 1-based position of today in the range; null unless the range contains today
+    daysInRange: number;
 }
 
 interface Prepared {
@@ -299,24 +318,26 @@ interface Prepared {
     liveRevenueByDay: Map<string, number>;   // all pages
     dayKeys: string[];
     todayKey: string;
-    monthState: MonthState;
-    bounds: MonthBounds;
-    month: string;
+    rangeState: RangeState;
+    range: DateRange;
     now: Date;
 }
 
 const prepare = (input: MetricsInput): Prepared => {
     const costMap = productCostMapOf(input.products);
-    const byPage = bucketByPageAndDay(input.sales, input.month, costMap, input.shippingRates);
+    const byPage = bucketByPageAndDay(input.sales, input.range, costMap, input.shippingRates);
+    // The sibling / staff / input rows are DATE-typed and range-bounded by the
+    // query, but only rows inside the range may ever be summed here (the
+    // Staff/Net footer, boost + shipping reconciliation, ledger cells).
     const inputsByKey = new Map<string, PageInputRow>();
-    for (const r of input.inputs) if (r.date.startsWith(`${input.month}-`)) inputsByKey.set(inputKey(r.date, r.page), r);
+    for (const r of input.inputs) if (inRange(r.date, input.range)) inputsByKey.set(inputKey(r.date, r.page), r);
     let siblingByDate: Map<string, SiblingRow> | null = null;
     if (input.sibling) {
         siblingByDate = new Map();
-        for (const r of input.sibling) if (r.date.startsWith(`${input.month}-`)) siblingByDate.set(r.date, r);
+        for (const r of input.sibling) if (inRange(r.date, input.range)) siblingByDate.set(r.date, r);
     }
     const staffInputByDate = new Map<string, number>();
-    for (const r of input.staffInputs ?? []) if (r.date.startsWith(`${input.month}-`)) staffInputByDate.set(r.date, r.staff);
+    for (const r of input.staffInputs ?? []) if (inRange(r.date, input.range)) staffInputByDate.set(r.date, r.staff);
     const liveRevenueByDay = new Map<string, number>();
     for (const days of byPage.values()) {
         for (const [day, flow] of days) liveRevenueByDay.set(day, (liveRevenueByDay.get(day) || 0) + flow.revenue);
@@ -327,28 +348,31 @@ const prepare = (input: MetricsInput): Prepared => {
         siblingByDate,
         staffInputByDate,
         liveRevenueByDay,
-        dayKeys: dayKeysOfMonth(input.month),
+        dayKeys: dayKeysOfRange(input.range),
         todayKey: dayKeyOf(input.now),
-        monthState: monthStateOf(input.month, input.now),
-        bounds: monthBounds(input.month),
-        month: input.month,
+        rangeState: rangeStateOf(input.range, input.now),
+        range: input.range,
         now: input.now,
     };
 };
 
 const ledgerFor = (page: string, p: Prepared): LedgerResult => {
     const flows = p.byPage.get(page) || new Map<string, DayFlow>();
-    const days: LedgerDay[] = p.dayKeys.map((date, i) => {
+    const days: LedgerDay[] = p.dayKeys.map(date => {
         const flow = flows.get(date) || emptyFlow();
         const row = p.inputsByKey.get(inputKey(date, page));
         const shippingOverride = row?.shipping ?? null;
         const shipping = shippingOverride ?? flow.shipping;
         const boost = row?.boostPage || 0;
-        const dow = new Date(p.bounds.year, p.bounds.monthIdx, i + 1).getDay();
+        // Weekday and day-of-month both come from the date string itself (the
+        // row's position in the range says nothing about either once the range
+        // doesn't start on the 1st).
+        const local = parseDay(date);
+        const dow = local.getDay();
         const frozen = p.siblingByDate?.get(date);
         return {
             date,
-            dayNum: i + 1,
+            dayNum: local.getDate(),
             dow,
             orders: flow.orders,
             revenue: flow.revenue,
@@ -373,19 +397,19 @@ const ledgerFor = (page: string, p: Prepared): LedgerResult => {
         acc.pendingAmount += d.pendingAmount; acc.cancelled += d.cancelled;
         return acc;
     }, { orders: 0, revenue: 0, cogs: 0, shipping: 0, boost: 0, contribution: 0, expenses: 0, pending: 0, pendingAmount: 0, cancelled: 0 });
-    // Boost is typed in cents, so its month total is exact to the cent — it's
+    // Boost is typed in cents, so its range total is exact to the cent — it's
     // also the value the Overview's editable Boost cell shows.
     totals.boost = roundCents(totals.boost);
     totals.expenses = totals.cogs + totals.shipping + totals.boost;
-    const projection = projectFlows(days, totals.boost, p.month, p.now);
+    const projection = projectFlows(days, totals.boost, p.range, p.now);
     return {
         page,
         days,
         totals,
         projection,
-        monthState: p.monthState,
-        today: p.monthState === 'current' ? p.now.getDate() : null,
-        daysInMonth: p.bounds.daysInMonth,
+        rangeState: p.rangeState,
+        today: dayNumberOf(p.range, p.now),
+        daysInRange: rangeLength(p.range),
     };
 };
 
@@ -413,8 +437,8 @@ export interface PageRow {
 
 export interface SharedFooter {
     available: boolean;            // sibling table readable
-    staff: number;                 // Σ income_predictions.staff for the month
-    siblingBoost: number;          // Σ income_predictions.boost_page
+    staff: number;                 // Σ income_predictions.staff over the days of the range
+    siblingBoost: number;          // Σ income_predictions.boost_page (range days only)
     allocatedBoost: number;        // Σ page inputs' boost (all pages)
     siblingShipping: number;       // Σ income_predictions.shipping — a day frozen on the
                                     // classic page can carry its own manually-typed shipping
@@ -428,9 +452,9 @@ export interface OverviewResult {
     totals: PageRow;               // key '*'
     shared: SharedFooter;
     unassignedShare: number;       // unassigned revenue / total revenue (0..1)
-    monthState: MonthState;
-    today: number | null;
-    daysInMonth: number;
+    rangeState: RangeState;
+    today: number | null;          // 1-based position of today in the range; null unless the range contains today
+    daysInRange: number;
     completedDays: number;
 }
 
@@ -496,9 +520,9 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
         roas: ratio(sum('revenue'), sum('boost')),
         boostPerOrder: ratio(sum('boost'), sum('orders')),
         projection: {
-            basis: anyProjection?.basis ?? (p.monthState === 'past' ? 'actual' : 'none'),
-            completedDays: anyProjection?.completedDays ?? (p.monthState === 'current' ? input.now.getDate() - 1 : 0),
-            isFutureMonth: anyProjection?.isFutureMonth ?? (p.monthState === 'future'),
+            basis: anyProjection?.basis ?? (p.rangeState === 'past' ? 'actual' : 'none'),
+            completedDays: anyProjection?.completedDays ?? (p.rangeState === 'current' ? completedWindow(p.range, input.now).completed : 0),
+            isFutureRange: anyProjection?.isFutureRange ?? (p.rangeState === 'future'),
             revenue: projSum('revenue'),
             contribution: projSum('contribution'),
         },
@@ -529,9 +553,9 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
         totals,
         shared,
         unassignedShare: unassigned && totals.revenue > 0 ? unassigned.revenue / totals.revenue : 0,
-        monthState: p.monthState,
-        today: p.monthState === 'current' ? input.now.getDate() : null,
-        daysInMonth: p.bounds.daysInMonth,
-        completedDays: p.monthState === 'current' ? input.now.getDate() - 1 : p.monthState === 'past' ? p.bounds.daysInMonth : 0,
+        rangeState: p.rangeState,
+        today: dayNumberOf(p.range, input.now),
+        daysInRange: rangeLength(p.range),
+        completedDays: completedWindow(p.range, input.now).completed,
     };
 };

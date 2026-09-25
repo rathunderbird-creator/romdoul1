@@ -6,6 +6,7 @@
 // meaningful monthly ledger and run-rate projection, which the
 // single-day/no-cost ordersManagement2 fixtures can't provide.
 import type { Product } from '../types';
+import { rangeOfMonth } from '../utils/dateRange';
 import { fixtureProducts, fixtureNow } from './dashboard2-fixtures';
 // The one extra discounted order lives in pageIncomePrediction-fixtures.ts
 // (see its own comment) rather than being duplicated here — it's what makes
@@ -14,6 +15,9 @@ import { fixtureProducts, fixtureNow } from './dashboard2-fixtures';
 import { fixtureSales } from './pageIncomePrediction-fixtures';
 
 export const fixtureMonth = '2026-09';
+// The screen's period is a date range now; the fixture orders sit in the whole
+// month of fixtureMonth, so that month is the preview's default range.
+export const fixtureRange = rangeOfMonth(fixtureMonth);
 export { fixtureNow, fixtureSales };
 
 // Purchase cost ≈ 55% of the sale price, matching pageIncomePrediction's fixtures.

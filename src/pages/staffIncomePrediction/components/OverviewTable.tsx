@@ -45,7 +45,7 @@ export const projectionText = (p: Projection, t: Translate): { text: string; tit
     if (p.basis === 'actual' && p.grossProfit !== null) {
         return { text: fmtMoney(p.grossProfit), title: t('staffPrediction.actual'), muted: false };
     }
-    if (!p.isFutureMonth) return { text: '—', title: fill(t('staffPrediction.tooEarly'), { n: p.completedDays }), muted: true };
+    if (!p.isFutureRange) return { text: '—', title: fill(t('staffPrediction.tooEarly'), { n: p.completedDays }), muted: true };
     return { text: '—', title: t('staffPrediction.futureMonth'), muted: true };
 };
 
@@ -83,10 +83,11 @@ const sortRows = (rows: StaffRow[], sort: OverviewSort, t: Translate): StaffRow[
 
 // "$revenue / $target (pct%)" — revenue is the TARGETED revenue (see
 // StaffRow.targetedRevenue): a staff row's own, or on the Totals row only the
-// staff who have a target.
+// staff who have a target. The target amount is the PERIOD target (the monthly
+// target pro-rated to the selected dates; equal to it for a whole month).
 const targetText = (row: StaffRow): string => {
     const pct = row.targetProgress !== null ? Math.round(row.targetProgress * 100) : 0;
-    return `${fmtMoney(row.targetedRevenue ?? 0)} / ${fmtMoney(row.monthlyTarget ?? 0)} (${pct}%)`;
+    return `${fmtMoney(row.targetedRevenue ?? 0)} / ${fmtMoney(row.periodTarget ?? 0)} (${pct}%)`;
 };
 
 const targetCellContent = (row: StaffRow, t: Translate): React.ReactNode => {
@@ -162,7 +163,11 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
         );
     }
 
-    const header = (key: ColKey, label: string) => {
+    // Set when the monthly target is pro-rated (range isn't a whole month), so
+    // the Target column says why its amounts differ from the configured target.
+    const targetHeaderTitle = result.targetFactor !== 1 ? t('staffPrediction.targetProrated') : undefined;
+
+    const header = (key: ColKey, label: string, title?: string) => {
         const active = sort?.key === key;
         const ariaSort: 'ascending' | 'descending' | 'none' = active ? (sort!.direction === 'asc' ? 'ascending' : 'descending') : 'none';
         return (
@@ -171,6 +176,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                 className={key === 'staff' ? 'pip-sticky-first' : undefined}
                 scope="col"
                 aria-sort={ariaSort}
+                title={title}
                 style={{ ...thStyle, ...widthStyle(key), textAlign: NUMERIC.has(key) ? 'right' : 'left', color: HEADER_COLORS[key] || thStyle.color, ...(key === 'staff' ? { background: 'var(--color-surface)' } : {}) }}
             >
                 <button
@@ -251,7 +257,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                         {header('cogs', t('staffPrediction.columns.cogs'))}
                         {header('grossProfit', t('staffPrediction.columns.grossProfit'))}
                         {header('margin', t('staffPrediction.columns.margin'))}
-                        {header('target', t('staffPrediction.columns.target'))}
+                        {header('target', t('staffPrediction.columns.target'), targetHeaderTitle)}
                         {header('projected', t('staffPrediction.columns.projected'))}
                     </tr>
                 </thead>

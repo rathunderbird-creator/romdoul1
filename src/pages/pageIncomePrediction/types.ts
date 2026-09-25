@@ -3,6 +3,7 @@
 // fixtures; the container (PageIncomePredictionPage.tsx) resolves store,
 // header, toast and URL state and hands plain data + callbacks down.
 import type { Product } from '../../types';
+import type { DateRange } from '../../utils/dateRange';
 import type { Order, PageInputRow, SiblingRow, StaffInputRow, InputField } from './metrics';
 
 export type Translate = (key: string) => string;
@@ -10,16 +11,16 @@ export type Language = 'en' | 'km';
 
 export interface SectionError { message: string; retry: () => void }
 
-// Month + drill-down, both held in the URL (see urlState.ts).
+// Date range + drill-down, both held in the URL (see urlState.ts).
 export interface PageIncomeUrlState {
-    month: string;          // YYYY-MM
+    range: DateRange;       // inclusive local days; defaults to the current calendar month
     page: string | null;    // null = overview; '' = the unassigned bucket's detail
 }
 
-// Everything the container resolves for one month.
+// Everything the container resolves for one range.
 export interface PageIncomeData {
-    sales: Order[];                       // the month's orders (mapped Sale objects)
-    inputs: PageInputRow[];               // page_income_predictions rows for the month
+    sales: Order[];                       // the range's orders (mapped Sale objects)
+    inputs: PageInputRow[];               // page_income_predictions rows for the range
     sibling: SiblingRow[] | null;         // income_predictions rows; null = unreadable
     staffInputs?: StaffInputRow[];        // income_prediction_staff rows (auto-saved Staff)
     products: Product[];                  // catalogue, for purchase costs
@@ -29,7 +30,7 @@ export interface PageIncomeData {
 }
 
 export interface PageIncomeActions {
-    onMonthChange: (month: string) => void;
+    onRangeChange: (range: DateRange) => void;
     onOpenPage: (page: string) => void;
     onBack: () => void;
     onRefresh: () => void;

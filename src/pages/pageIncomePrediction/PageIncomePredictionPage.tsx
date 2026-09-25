@@ -6,7 +6,7 @@
 // `products` deliberately comes from usePageIncomeData (which fetches the
 // full active+inactive catalogue), NOT useStore() — see
 // usePageIncomeData.ts's file header for why a discontinued SKU's cost must
-// not be silently dropped from this month's COGS.
+// not be silently dropped from this period's COGS.
 import React, { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../../context/StoreContext';
@@ -28,7 +28,7 @@ const PageIncomePredictionPage: React.FC = () => {
     const [params, setParams] = useSearchParams();
 
     const state = useMemo(() => paramsToState(params, new Date()), [params]);
-    const data = usePageIncomeData(state.month, currentUser?.name);
+    const data = usePageIncomeData(state.range, currentUser?.name);
 
     useEffect(() => {
         setHeaderContent({
@@ -44,11 +44,11 @@ const PageIncomePredictionPage: React.FC = () => {
 
     const { refresh, commitInput } = data;
     const actions = useMemo<PageIncomeActions>(() => ({
-        // Month changes replace the history entry; opening a page pushes one,
-        // so the browser Back button returns to the overview for that month.
-        onMonthChange: month => setParams(stateToParams({ month, page: state.page }), { replace: true }),
-        onOpenPage: page => setParams(stateToParams({ month: state.month, page })),
-        onBack: () => setParams(stateToParams({ month: state.month, page: null })),
+        // Range changes replace the history entry; opening a page pushes one,
+        // so the browser Back button returns to the overview for that range.
+        onRangeChange: range => setParams(stateToParams({ range, page: state.page }), { replace: true }),
+        onOpenPage: page => setParams(stateToParams({ range: state.range, page })),
+        onBack: () => setParams(stateToParams({ range: state.range, page: null })),
         onRefresh: () => refresh(),
         onCommitInput: async (date, page, field, value) => {
             try {
@@ -59,7 +59,7 @@ const PageIncomePredictionPage: React.FC = () => {
                 throw e;
             }
         },
-    }), [setParams, state.month, state.page, refresh, commitInput, showToast, t]);
+    }), [setParams, state.range, state.page, refresh, commitInput, showToast, t]);
 
     const viewData = useMemo<PageIncomeData>(() => ({
         sales: data.sales,

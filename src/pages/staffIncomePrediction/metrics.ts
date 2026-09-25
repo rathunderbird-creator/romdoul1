@@ -18,21 +18,24 @@
 // exactly as Prediction by Page and Prediction by Product both already
 // treat it — never split or re-derived here.
 //
-// The one thing genuinely new to this screen: `User.monthlyTarget`, the
-// same field src/pages/reports/StaffPerformance.tsx already tracks
-// (daily/weekly/monthly target-attainment bars) — a month-level "how close
-// to target" column fits this screen's monthly cadence better than
-// duplicating that page's daily/weekly view.
+// The period is an arbitrary inclusive DateRange (a whole calendar month is
+// just the default range). The one thing genuinely new to this screen:
+// `User.monthlyTarget`, the same field src/pages/reports/StaffPerformance.tsx
+// already tracks (daily/weekly/monthly target-attainment bars). It is a
+// MONTHLY figure, so for a range it is pro-rated by monthEquivalents(range)
+// (a whole month = exactly 1, Sep 1–15 = 0.5) — see StaffRow.periodTarget.
 import type { Sale, Product, User } from '../../types';
 import {
-    monthBounds, addMonths, dayKeysOfMonth, monthKeyOf, dayKeyOf, isMonthKey, monthStateOf, saleDayOf,
-    statusOf, REVENUE_STATUSES, PENDING_STATUSES, CANCELLED_STATUSES, productCostMapOf, cogsOf, ratio,
-    type MonthBounds, type MonthState,
+    saleDayOf, statusOf, REVENUE_STATUSES, PENDING_STATUSES, CANCELLED_STATUSES, productCostMapOf, cogsOf, ratio,
 } from '../pageIncomePrediction/metrics';
+import { roundCents } from '../../utils/money';
+import {
+    completedWindow, dayKeyFromDate, dayKeysOfRange, dayNumberOf, inRange, monthEquivalents, parseDay, rangeLength, rangeStateOf,
+    type DateRange, type RangeState,
+} from '../../utils/dateRange';
 
 export type Order = Sale;
-export { monthBounds, addMonths, dayKeysOfMonth, monthKeyOf, dayKeyOf, isMonthKey, monthStateOf, saleDayOf };
-export type { MonthBounds, MonthState };
+export type { RangeState };
 
 // Salesman names are a plain string on Sale, populated from a User's name at
 // checkout time (no foreign key — see StaffPerformance.tsx's own precedent
@@ -58,6 +61,13 @@ export const targetMapOf = (users: User[]): Map<string, number> => {
     return map;
 };
 
+// A monthly target pro-rated to the range. A whole calendar month has a factor
+// of exactly 1 and passes through untouched (no rounding), so the default view
+// is byte-identical to the month-only screen; any other range is snapped to
+// whole cents.
+const periodTargetOf = (monthlyTarget: number, factor: number): number =>
+    factor === 1 ? monthlyTarget : roundCents(monthlyTarget * factor);
+
 // ─── Per-day flow, one bucket per (staff, day) ─────────────────────────────
 
 export interface StaffDayFlow {
@@ -71,11 +81,14 @@ export interface StaffDayFlow {
 
 const emptyFlow = (): StaffDayFlow => ({ orders: 0, revenue: 0, cogs: 0, pending: 0, pendingAmount: 0, cancelled: 0 });
 
-const bucketByStaffAndDay = (sales: Order[], month: string, costMap: Map<string, number>): Map<string, Map<string, StaffDayFlow>> => {
+// Sales are bucketed by their LOCAL calendar day; a day is identified by its
+// YYYY-MM-DD string, so the range filter is a lexical compare. (The query is
+// already range-bounded; the filter protects the fixture-driven preview.)
+const bucketByStaffAndDay = (sales: Order[], range: DateRange, costMap: Map<string, number>): Map<string, Map<string, StaffDayFlow>> => {
     const byStaff = new Map<string, Map<string, StaffDayFlow>>();
     for (const o of sales) {
         const day = saleDayOf(o);
-        if (!day.startsWith(`${month}-`)) continue;
+        if (!inRange(day, range)) continue;
         const name = nameOf(o);
         let days = byStaff.get(name);
         if (!days) { days = new Map(); byStaff.set(name, days); }
@@ -101,36 +114,38 @@ const bucketByStaffAndDay = (sales: Order[], month: string, costMap: Map<string,
 export interface Projection {
     basis: 'run-rate' | 'actual' | 'none';
     completedDays: number;
-    isFutureMonth: boolean;
+    isFutureRange: boolean;
     revenue: number | null;
     grossProfit: number | null;
 }
 
-interface FlowDay { dayNum: number; revenue: number; cogs: number }
+interface FlowDay { date: string; revenue: number; cogs: number }
 
-const projectFlows = (days: FlowDay[], month: string, now: Date): Projection => {
-    const state = monthStateOf(month, now);
-    const { daysInMonth } = monthBounds(month);
-    const sum = (rows: FlowDay[], k: keyof Omit<FlowDay, 'dayNum'>): number => rows.reduce((s, d) => s + d[k], 0);
-    if (state === 'future') return { basis: 'none', completedDays: 0, isFutureMonth: true, revenue: null, grossProfit: null };
+// Run-rate to the END of the range: the completed days (every day of the range
+// strictly before today) are scaled by total/completed.
+const projectFlows = (days: FlowDay[], range: DateRange, now: Date): Projection => {
+    const state = rangeStateOf(range, now);
+    const daysInRange = rangeLength(range);
+    const sum = (rows: FlowDay[], k: 'revenue' | 'cogs'): number => rows.reduce((s, d) => s + d[k], 0);
+    if (state === 'future') return { basis: 'none', completedDays: 0, isFutureRange: true, revenue: null, grossProfit: null };
     if (state === 'past') {
         const revenue = sum(days, 'revenue');
-        return { basis: 'actual', completedDays: daysInMonth, isFutureMonth: false, revenue, grossProfit: revenue - sum(days, 'cogs') };
+        return { basis: 'actual', completedDays: daysInRange, isFutureRange: false, revenue, grossProfit: revenue - sum(days, 'cogs') };
     }
-    const completed = now.getDate() - 1;
-    if (completed < 3) return { basis: 'none', completedDays: completed, isFutureMonth: false, revenue: null, grossProfit: null };
-    const done = days.filter(d => d.dayNum <= completed);
-    const scale = daysInMonth / completed;
+    const { completed, lastCompleted } = completedWindow(range, now);
+    if (completed < 3 || lastCompleted === null) return { basis: 'none', completedDays: completed, isFutureRange: false, revenue: null, grossProfit: null };
+    const done = days.filter(d => d.date >= range.from && d.date <= lastCompleted);
+    const scale = daysInRange / completed;
     const revenue = sum(done, 'revenue') * scale;
     const cogs = sum(done, 'cogs') * scale;
-    return { basis: 'run-rate', completedDays: completed, isFutureMonth: false, revenue, grossProfit: revenue - cogs };
+    return { basis: 'run-rate', completedDays: completed, isFutureRange: false, revenue, grossProfit: revenue - cogs };
 };
 
-// ─── Ledger (one staff member, one month, one row per day) ─────────────────
+// ─── Ledger (one staff member, one range, one row per day) ─────────────────
 
 export interface LedgerDay {
     date: string;
-    dayNum: number;
+    dayNum: number;     // day of month — display only, unique only within one month
     dow: number;
     orders: number;
     revenue: number;
@@ -159,9 +174,9 @@ export interface LedgerResult {
     days: LedgerDay[];
     totals: LedgerTotals;
     projection: Projection;
-    monthState: MonthState;
-    today: number | null;
-    daysInMonth: number;
+    rangeState: RangeState;
+    today: number | null;   // 1-based position of today inside the range; null when today is outside it
+    daysInRange: number;
 }
 
 export interface MetricsInput {
@@ -169,43 +184,52 @@ export interface MetricsInput {
     products: Product[];
     users: User[];
     configSalesmen: string[];       // Settings → Salesmen
-    month: string;
+    range: DateRange;
     now: Date;
 }
+
+interface DayMeta { date: string; dayNum: number; dow: number }
 
 interface Prepared {
     byStaff: Map<string, Map<string, StaffDayFlow>>;
     targets: Map<string, number>;
-    dayKeys: string[];
+    dayMeta: DayMeta[];
     todayKey: string;
-    monthState: MonthState;
-    bounds: MonthBounds;
-    month: string;
+    rangeState: RangeState;
+    daysInRange: number;
+    today: number | null;
+    completedDays: number;
+    targetFactor: number;           // monthEquivalents(range) — what a monthly target is scaled by
+    range: DateRange;
     now: Date;
 }
 
 const prepare = (input: MetricsInput): Prepared => {
     const costMap = productCostMapOf(input.products);
+    const { range, now } = input;
     return {
-        byStaff: bucketByStaffAndDay(input.sales, input.month, costMap),
+        byStaff: bucketByStaffAndDay(input.sales, range, costMap),
         targets: targetMapOf(input.users),
-        dayKeys: dayKeysOfMonth(input.month),
-        todayKey: dayKeyOf(input.now),
-        monthState: monthStateOf(input.month, input.now),
-        bounds: monthBounds(input.month),
-        month: input.month,
-        now: input.now,
+        // Day of week comes from the date string itself, never from month bounds.
+        dayMeta: dayKeysOfRange(range).map(date => ({ date, dayNum: Number(date.slice(8, 10)), dow: parseDay(date).getDay() })),
+        todayKey: dayKeyFromDate(now),
+        rangeState: rangeStateOf(range, now),
+        daysInRange: rangeLength(range),
+        today: dayNumberOf(range, now),
+        completedDays: completedWindow(range, now).completed,
+        targetFactor: monthEquivalents(range),
+        range,
+        now,
     };
 };
 
 const ledgerFor = (staff: string, p: Prepared): LedgerResult => {
     const flows = p.byStaff.get(staff) || new Map<string, StaffDayFlow>();
-    const days: LedgerDay[] = p.dayKeys.map((date, i) => {
+    const days: LedgerDay[] = p.dayMeta.map(({ date, dayNum, dow }) => {
         const flow = flows.get(date) || emptyFlow();
-        const dow = new Date(p.bounds.year, p.bounds.monthIdx, i + 1).getDay();
         return {
             date,
-            dayNum: i + 1,
+            dayNum,
             dow,
             orders: flow.orders,
             revenue: flow.revenue,
@@ -224,15 +248,15 @@ const ledgerFor = (staff: string, p: Prepared): LedgerResult => {
         acc.pending += d.pending; acc.pendingAmount += d.pendingAmount; acc.cancelled += d.cancelled;
         return acc;
     }, { orders: 0, revenue: 0, cogs: 0, grossProfit: 0, pending: 0, pendingAmount: 0, cancelled: 0 });
-    const projection = projectFlows(days, p.month, p.now);
+    const projection = projectFlows(days, p.range, p.now);
     return {
         staff,
         days,
         totals,
         projection,
-        monthState: p.monthState,
-        today: p.monthState === 'current' ? p.now.getDate() : null,
-        daysInMonth: p.bounds.daysInMonth,
+        rangeState: p.rangeState,
+        today: p.today,
+        daysInRange: p.daysInRange,
     };
 };
 
@@ -251,46 +275,58 @@ export interface StaffRow {
     cogs: number;
     grossProfit: number;
     margin: number | null;          // grossProfit / revenue
-    monthlyTarget: number | null;   // User.monthlyTarget, matched by name — null = no target set
-    // Revenue of the staff that monthlyTarget covers — the only numerator that
+    monthlyTarget: number | null;   // User.monthlyTarget, matched by name — the raw MONTHLY figure; null = no target set
+    // monthlyTarget pro-rated to the selected range (× monthEquivalents(range),
+    // whole cents). Exactly monthlyTarget for a whole calendar month. This is
+    // the comparable target: every progress ratio and every printed target
+    // amount uses it. On the Totals row, Σ over staff WITH a target.
+    periodTarget: number | null;
+    // Revenue of the staff that periodTarget covers — the only numerator that
     // is comparable to it. A staff row's own revenue when it has a target; on
     // the Totals row, the sum over staff WITH a target only (revenue from
     // staff with no target, or unassigned orders, must not count toward a
     // target they don't have). null = nobody here has a target.
     targetedRevenue: number | null;
-    targetProgress: number | null;  // targetedRevenue / monthlyTarget
-    projectedTargetProgress: number | null; // projected targeted revenue / monthlyTarget
+    targetProgress: number | null;  // targetedRevenue / periodTarget
+    projectedTargetProgress: number | null; // projected targeted revenue / periodTarget
     projection: Projection;
 }
 
 export interface OverviewResult {
     rows: StaffRow[];               // gross profit desc, unassigned last
     totals: StaffRow;               // name '*'
-    monthState: MonthState;
-    today: number | null;
-    daysInMonth: number;
+    rangeState: RangeState;
+    today: number | null;           // 1-based position of today inside the range; null when outside it
+    daysInRange: number;
     completedDays: number;
+    targetFactor: number;           // monthEquivalents(range); !== 1 means targets are pro-rated
 }
 
-const rowFromLedger = (name: string, inConfig: boolean, target: number | undefined, l: LedgerResult): StaffRow => ({
-    name,
-    inConfig,
-    orders: l.totals.orders,
-    pending: l.totals.pending,
-    pendingAmount: l.totals.pendingAmount,
-    cancelled: l.totals.cancelled,
-    revenue: l.totals.revenue,
-    cogs: l.totals.cogs,
-    grossProfit: l.totals.grossProfit,
-    margin: ratio(l.totals.grossProfit, l.totals.revenue),
-    monthlyTarget: target ?? null,
-    targetedRevenue: target ? l.totals.revenue : null,
-    targetProgress: target ? ratio(l.totals.revenue, target) : null,
-    projectedTargetProgress: target && l.projection.revenue !== null ? ratio(l.projection.revenue, target) : null,
-    projection: l.projection,
-});
+const rowFromLedger = (name: string, inConfig: boolean, target: number | undefined, factor: number, l: LedgerResult): StaffRow => {
+    const periodTarget = target ? periodTargetOf(target, factor) : null;
+    return {
+        name,
+        inConfig,
+        orders: l.totals.orders,
+        pending: l.totals.pending,
+        pendingAmount: l.totals.pendingAmount,
+        cancelled: l.totals.cancelled,
+        revenue: l.totals.revenue,
+        cogs: l.totals.cogs,
+        grossProfit: l.totals.grossProfit,
+        margin: ratio(l.totals.grossProfit, l.totals.revenue),
+        monthlyTarget: target ?? null,
+        periodTarget,
+        targetedRevenue: target ? l.totals.revenue : null,
+        targetProgress: periodTarget !== null ? ratio(l.totals.revenue, periodTarget) : null,
+        projectedTargetProgress: periodTarget !== null && l.projection.revenue !== null ? ratio(l.projection.revenue, periodTarget) : null,
+        projection: l.projection,
+    };
+};
 
-export const summarizeRows = (rows: StaffRow[], monthState: MonthState, now: Date): StaffRow => {
+export const summarizeRows = (rows: StaffRow[], range: DateRange, now: Date): StaffRow => {
+    const rangeState = rangeStateOf(range, now);
+    const factor = monthEquivalents(range);
     const sum = (k: 'orders' | 'pending' | 'pendingAmount' | 'cancelled' | 'revenue' | 'cogs' | 'grossProfit'): number =>
         rows.reduce((s, r) => s + r[k], 0);
     const projSum = (k: 'revenue' | 'grossProfit'): number | null =>
@@ -303,7 +339,11 @@ export const summarizeRows = (rows: StaffRow[], monthState: MonthState, now: Dat
     // overstate it (e.g. one person at 50% of a $1,000 target next to $5,000
     // of untargeted sales would read 565%).
     const targeted = rows.filter(r => r.monthlyTarget);
-    const totalTarget = targeted.reduce((s, r) => s + (r.monthlyTarget || 0), 0) || null;
+    const totalMonthlyTarget = targeted.reduce((s, r) => s + (r.monthlyTarget || 0), 0) || null;
+    // Σ of the already-pro-rated per-staff targets; snapped to whole cents only
+    // when pro-rating is in play (a factor-1 sum must stay untouched).
+    const periodSum = targeted.reduce((s, r) => s + (r.periodTarget || 0), 0);
+    const totalPeriodTarget = (factor === 1 ? periodSum : roundCents(periodSum)) || null;
     const targetedRevenue = targeted.length > 0 ? targeted.reduce((s, r) => s + r.revenue, 0) : null;
     const targetedProjRevenue = targeted.length > 0 && targeted.every(r => r.projection.revenue !== null)
         ? targeted.reduce((s, r) => s + (r.projection.revenue as number), 0)
@@ -320,14 +360,15 @@ export const summarizeRows = (rows: StaffRow[], monthState: MonthState, now: Dat
         cogs: sum('cogs'),
         grossProfit: sum('grossProfit'),
         margin: ratio(sum('grossProfit'), totalRevenue),
-        monthlyTarget: totalTarget,
+        monthlyTarget: totalMonthlyTarget,
+        periodTarget: totalPeriodTarget,
         targetedRevenue,
-        targetProgress: totalTarget && targetedRevenue !== null ? ratio(targetedRevenue, totalTarget) : null,
-        projectedTargetProgress: totalTarget && targetedProjRevenue !== null ? ratio(targetedProjRevenue, totalTarget) : null,
+        targetProgress: totalPeriodTarget && targetedRevenue !== null ? ratio(targetedRevenue, totalPeriodTarget) : null,
+        projectedTargetProgress: totalPeriodTarget && targetedProjRevenue !== null ? ratio(targetedProjRevenue, totalPeriodTarget) : null,
         projection: {
-            basis: anyProjection?.basis ?? (monthState === 'past' ? 'actual' : 'none'),
-            completedDays: anyProjection?.completedDays ?? (monthState === 'current' ? now.getDate() - 1 : 0),
-            isFutureMonth: anyProjection?.isFutureMonth ?? (monthState === 'future'),
+            basis: anyProjection?.basis ?? (rangeState === 'past' ? 'actual' : 'none'),
+            completedDays: anyProjection?.completedDays ?? (rangeState === 'current' ? completedWindow(range, now).completed : 0),
+            isFutureRange: anyProjection?.isFutureRange ?? (rangeState === 'future'),
             revenue: projRevenue,
             grossProfit: projSum('grossProfit'),
         },
@@ -338,14 +379,14 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
     const p = prepare(input);
     const config = input.configSalesmen.map(s => String(s || '').trim()).filter(Boolean);
     const configSet = new Set(config);
-    // Every configured salesman is shown even with zero sales this month (a
+    // Every configured salesman is shown even with zero sales in this period (a
     // "nothing sold" signal, same philosophy as Prediction by Page showing a
     // configured Page with no orders) — union'd with any name seen in sales
     // but not in Settings (renamed/removed staff, or a typo at checkout).
     const names = new Set<string>(config);
     for (const n of p.byStaff.keys()) names.add(n);
 
-    const rows = Array.from(names).map(name => rowFromLedger(name, configSet.has(name), p.targets.get(name), ledgerFor(name, p)));
+    const rows = Array.from(names).map(name => rowFromLedger(name, configSet.has(name), p.targets.get(name), p.targetFactor, ledgerFor(name, p)));
     rows.sort((a, b) => {
         if (a.name === UNASSIGNED_STAFF_KEY || b.name === UNASSIGNED_STAFF_KEY) return a.name === UNASSIGNED_STAFF_KEY ? 1 : -1;
         if (b.grossProfit !== a.grossProfit) return b.grossProfit - a.grossProfit;
@@ -355,10 +396,11 @@ export const buildOverview = (input: MetricsInput): OverviewResult => {
 
     return {
         rows,
-        totals: summarizeRows(rows, p.monthState, input.now),
-        monthState: p.monthState,
-        today: p.monthState === 'current' ? input.now.getDate() : null,
-        daysInMonth: p.bounds.daysInMonth,
-        completedDays: p.monthState === 'current' ? input.now.getDate() - 1 : p.monthState === 'past' ? p.bounds.daysInMonth : 0,
+        totals: summarizeRows(rows, input.range, input.now),
+        rangeState: p.rangeState,
+        today: p.today,
+        daysInRange: p.daysInRange,
+        completedDays: p.completedDays,
+        targetFactor: p.targetFactor,
     };
 };
