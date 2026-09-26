@@ -1,7 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Download, RefreshCw, Table2, X } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronRight, Download, RefreshCw, Table2, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
+import { SPECIAL_HINTS, SPECIAL_ORDER, movedOf, netOf, summarizeByProduct, summarizeBySalesman, type MovementRow, type SalesmanSummaryRow } from '../utils/stockMovementSummary';
+import { fetchSalesmanLookups } from '../utils/stockMovementSalesmen';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
@@ -18,6 +21,8 @@ interface MovementSummaryRow {
     buy: number;
     newStock: number;
 }
+
+type SalesmanSortKey = 'label' | 'sold' | 'wholesale' | 'ret' | 'buy' | 'net' | 'movements';
 
 interface StockMovementSummaryModalProps {
     isOpen: boolean;
@@ -43,6 +48,17 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
 
     const [isLoading, setIsLoading] = useState(false);
     const [rows, setRows] = useState<MovementSummaryRow[]>([]);
+    // "By Salesman": the same movements grouped by the salesman on the ORDER each
+    // one belongs to (sales.salesman). Finding those orders takes extra queries, so
+    // it only runs when this tab is opened, for the movements currently loaded.
+    const [view, setView] = useState<'product' | 'salesman'>('product');
+    const [movementsData, setMovementsData] = useState<MovementRow[] | null>(null);
+    const [productNames, setProductNames] = useState<Map<string, string>>(new Map());
+    const [salesmanRows, setSalesmanRows] = useState<SalesmanSummaryRow[]>([]);
+    const [salesmanStatus, setSalesmanStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+    const [salesmanError, setSalesmanError] = useState<string | null>(null);
+    const [expandedSalesman, setExpandedSalesman] = useState<Set<string>>(new Set());
+    const [salesmanSort, setSalesmanSort] = useState<{ key: SalesmanSortKey; direction: 'asc' | 'desc' } | null>(null);
     // The popup has its own date range (seeded from initialRange on open),
     // so the period can be changed without leaving the popup.
     const [range, setRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
@@ -50,17 +66,32 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
     const [onlyMovement, setOnlyMovement] = useState(false);
     const [sort, setSort] = useState<{ key: keyof MovementSummaryRow; direction: 'asc' | 'desc' } | null>(null);
 
+    // Request guard: a wide range is many sequential pages, so an older, slower load
+    // can finish AFTER a newer one (change the range, or press "All time", while one
+    // is running). Only the latest call may publish rows or clear the spinner; closing
+    // the popup also invalidates whatever is in flight.
+    const fetchSeq = useRef(0);
+    // Same idea for the By Salesman order lookups.
+    const salesmanSeq = useRef(0);
+
     const fetchSummary = async (r: { start: string; end: string }) => {
+        const seq = ++fetchSeq.current;
+        const isStale = () => seq !== fetchSeq.current;
         setIsLoading(true);
         try {
             // Only the date range and warehouse restriction apply here — callers'
             // other filters (e.g. the movements page In/Out toggle) can't skew it.
-            let query = supabase.from('stock_movements').select('product_id, product_name, type, quantity, source, reason');
-            if (r.start) query = query.gte('movement_date', r.start);
-            if (r.end) query = query.lte('movement_date', r.end);
-            if (warehouseId) query = query.eq('warehouse_id', warehouseId);
-            const { data, error } = await query;
-            if (error) throw error;
+            // Paginated (fetchAll, ordered by the unique id): a busy period can hold
+            // thousands of movements, and one unbounded select is silently cut at
+            // the API row cap on projects that set one.
+            const data = await fetchAll<any>((from, to) => {
+                let query = supabase.from('stock_movements').select('id, product_id, product_name, type, quantity, source, reason, reference_id, note, customer_phone');
+                if (r.start) query = query.gte('movement_date', r.start);
+                if (r.end) query = query.lte('movement_date', r.end);
+                if (warehouseId) query = query.eq('warehouse_id', warehouseId);
+                return query.order('id', { ascending: true }).range(from, to);
+            });
+            if (isStale()) return;
 
             // Each day keeps its own record: when the period ends in the past,
             // roll TODAY's stock back through every movement made AFTER the
@@ -68,30 +99,30 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             // those days (yesterday's summary stays yesterday's forever).
             const netAfter = new Map<string, number>();
             if (r.end) {
-                let afterQuery = supabase.from('stock_movements').select('product_id, type, quantity').gt('movement_date', r.end);
-                if (warehouseId) afterQuery = afterQuery.eq('warehouse_id', warehouseId);
-                const { data: afterData, error: afterErr } = await afterQuery;
-                if (afterErr) throw afterErr;
-                for (const m of (afterData || []) as any[]) {
+                const afterData = await fetchAll<any>((from, to) => {
+                    let afterQuery = supabase.from('stock_movements').select('id, product_id, type, quantity').gt('movement_date', r.end);
+                    if (warehouseId) afterQuery = afterQuery.eq('warehouse_id', warehouseId);
+                    return afterQuery.order('id', { ascending: true }).range(from, to);
+                });
+                if (isStale()) return;
+                for (const m of afterData) {
                     const key = m.product_id || '?';
                     const delta = (m.type === 'in' ? 1 : -1) * (m.quantity || 0);
                     netAfter.set(key, (netAfter.get(key) || 0) + delta);
                 }
             }
 
-            const byProduct = new Map<string, { sold: number; wholesale: number; ret: number; buy: number; name: string }>();
-            for (const m of (data || []) as any[]) {
-                const key = m.product_id || m.product_name || '?';
-                const agg = byProduct.get(key) || { sold: 0, wholesale: 0, ret: 0, buy: 0, name: m.product_name || 'Unknown' };
-                if (m.type === 'out') {
-                    // Wholesale-order outs are split from retail sales.
-                    if (m.source === 'Wholesale Order' || m.reason === 'Wholesale Sale') agg.wholesale += m.quantity || 0;
-                    else agg.sold += m.quantity || 0;
-                }
-                else if (m.source === 'Customer Return') agg.ret += m.quantity || 0;
-                else agg.buy += m.quantity || 0; // PO receipts + other stock-ins
-                byProduct.set(key, agg);
-            }
+            // Wholesale-order outs are split from retail sales; PO receipts + other
+            // stock-ins are "Buy". The bucketing lives in one shared classifier
+            // (utils/stockMovementSummary.ts) so By Salesman can never disagree with it.
+            const byProduct = summarizeByProduct(data);
+            // One display name per product, shared by both views: the live catalogue
+            // name for products that still exist (as the By Product rows below use),
+            // else the name By Product falls back to. Otherwise a renamed product
+            // shows the write-time name of whichever movement is seen first.
+            const names = new Map<string, string>();
+            for (const [key, agg] of byProduct) names.set(key, agg.name);
+            for (const p of products) names.set(p.id, p.name);
 
             // When restricted to one warehouse, base the stock columns on THAT
             // warehouse's stock — using company-wide products.stock here labeled a
@@ -107,6 +138,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                     .eq('warehouse_id', warehouseId);
                 if (whErr) throw whErr;
                 whQty = new Map((whRows || []).map((ws: any) => [ws.product_id, ws.quantity || 0]));
+                if (isStale()) return;
             }
 
             const built: MovementSummaryRow[] = products.map(p => {
@@ -130,12 +162,23 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             for (const [key, agg] of byProduct) {
                 built.push({ id: key, name: agg.name, oldStock: agg.sold + agg.wholesale - agg.buy - agg.ret, sold: agg.sold, wholesale: agg.wholesale, ret: agg.ret, buy: agg.buy, newStock: 0 });
             }
+            if (isStale()) return;
             setRows(built);
+            // A new period: hand the movements to By Salesman and clear its old result
+            // (it looks the orders up when that tab is shown).
+            salesmanSeq.current++;   // a lookup still running for the OLD period must not publish into this one
+            setMovementsData(data);
+            setProductNames(names);
+            setSalesmanRows([]);
+            setSalesmanError(null);
+            setSalesmanStatus('idle');
+            setExpandedSalesman(new Set());
         } catch (e: any) {
+            if (isStale()) return;         // a superseded load's failure isn't news
             console.error('Failed to build movement summary:', e);
             showToast('Failed to build summary: ' + e.message, 'error');
         } finally {
-            setIsLoading(false);
+            if (!isStale()) setIsLoading(false);
         }
     };
 
@@ -145,9 +188,37 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             const seed = initialRange || { start: '', end: '' };
             setRange(seed);
             fetchSummary(seed);
+        } else {
+            fetchSeq.current++;            // drop any load still in flight
+            salesmanSeq.current++;
+            setIsLoading(false);
+            setSalesmanStatus(s => (s === 'loading' ? 'idle' : s));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
+
+    // By Salesman: find each movement's order (and its salesman) the first time the tab
+    // is shown for the loaded period. A failure only affects this tab — the By Product
+    // recap above is already on screen and stays usable.
+    useEffect(() => {
+        if (!isOpen || view !== 'salesman' || !movementsData || salesmanStatus !== 'idle') return;
+        const seq = ++salesmanSeq.current;
+        const isStale = () => seq !== salesmanSeq.current;
+        setSalesmanStatus('loading');
+        (async () => {
+            try {
+                const lookups = await fetchSalesmanLookups(supabase, movementsData);
+                if (isStale()) return;
+                setSalesmanRows(summarizeBySalesman(movementsData, lookups, productNames));
+                setSalesmanStatus('ready');
+            } catch (e: any) {
+                if (isStale()) return;
+                console.error('Failed to attribute movements to salesmen:', e);
+                setSalesmanError(e?.message || String(e));
+                setSalesmanStatus('error');
+            }
+        })();
+    }, [isOpen, view, movementsData, salesmanStatus, productNames]);
 
     const hasMovement = (r: MovementSummaryRow) => r.sold > 0 || r.wholesale > 0 || r.ret > 0 || r.buy > 0;
     const movementCount = useMemo(() => rows.filter(hasMovement).length, [rows]);
@@ -180,7 +251,59 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         { oldStock: 0, sold: 0, wholesale: 0, ret: 0, buy: 0, newStock: 0 }
     ), [displayedRows]);
 
+    // ── By Salesman ────────────────────────────────────────────────────────
+    // Named salesmen sort like any table. The rows that are not a real salesman —
+    // (No salesman), (Order unknown), (Not from a retail order) — stay pinned below
+    // them whatever the sort, so the totals still cover every movement.
+    const displayedSalesman = useMemo(() => {
+        const named = salesmanRows.filter(r => !r.special);
+        const pinned = SPECIAL_ORDER
+            .map(s => salesmanRows.find(r => r.special === s))
+            .filter((r): r is SalesmanSummaryRow => !!r);
+        if (!salesmanSort) {
+            // Default: whoever moved the most stock first.
+            named.sort((a, b) => movedOf(b) - movedOf(a) || a.label.localeCompare(b.label));
+        } else {
+            const { key, direction } = salesmanSort;
+            const valueOf = (r: SalesmanSummaryRow): string | number => key === 'label' ? r.label : key === 'net' ? netOf(r) : r[key];
+            named.sort((a, b) => {
+                const av = valueOf(a), bv = valueOf(b);
+                const cmp = typeof av === 'string' || typeof bv === 'string' ? String(av).localeCompare(String(bv)) : (av as number) - (bv as number);
+                return direction === 'asc' ? cmp : -cmp;
+            });
+        }
+        return [...named, ...pinned];
+    }, [salesmanRows, salesmanSort]);
+
+    // Footer totals always match what's on screen (and what exports).
+    const salesmanTotals = useMemo(() => displayedSalesman.reduce(
+        (acc, r) => ({ sold: acc.sold + r.sold, wholesale: acc.wholesale + r.wholesale, ret: acc.ret + r.ret, buy: acc.buy + r.buy, movements: acc.movements + r.movements }),
+        { sold: 0, wholesale: 0, ret: 0, buy: 0, movements: 0 }
+    ), [displayedSalesman]);
+    const namedSalesmanCount = displayedSalesman.filter(r => !r.special).length;
+
+    const toggleSalesmanSort = (key: SalesmanSortKey) => setSalesmanSort(prev => prev?.key === key ? (prev.direction === 'asc' ? { key, direction: 'desc' } : null) : { key, direction: 'asc' });
+    const toggleExpanded = (key: string) => setExpandedSalesman(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+
+    const exportSalesmanSummary = () => {
+        if (displayedSalesman.length === 0) return;
+        const summary: Record<string, string | number>[] = displayedSalesman.map(r => ({
+            'Salesman': r.label, 'Sold': r.sold, 'Wholesale': r.wholesale, 'ReStock': r.ret, 'Buy': r.buy, 'Net': netOf(r), 'Movements': r.movements
+        }));
+        summary.push({ 'Salesman': 'Total', 'Sold': salesmanTotals.sold, 'Wholesale': salesmanTotals.wholesale, 'ReStock': salesmanTotals.ret, 'Buy': salesmanTotals.buy, 'Net': netOf(salesmanTotals), 'Movements': salesmanTotals.movements });
+        // Second sheet: what each salesman's orders moved, product by product.
+        const detail: Record<string, string | number>[] = [];
+        for (const r of displayedSalesman) for (const p of r.products) {
+            detail.push({ 'Salesman': r.label, 'Model': p.name, 'Sold': p.sold, 'Wholesale': p.wholesale, 'ReStock': p.ret, 'Buy': p.buy, 'Net': netOf(p) });
+        }
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'By Salesman');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), 'By Salesman & Model');
+        XLSX.writeFile(wb, `Movement_Summary_By_Salesman_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    };
+
     const exportSummary = () => {
+        if (view === 'salesman') { exportSalesmanSummary(); return; }
         if (displayedRows.length === 0) return;
         const exportData = displayedRows.map(r => ({
             'Model': r.name, 'Old Stock': r.oldStock, 'Sold': r.sold, 'Wholesale': r.wholesale,
@@ -210,6 +333,9 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
     // sortability is visible, and a solid ↑ / ↓ on the active one.
     const arrow = (key: keyof MovementSummaryRow) => sort?.key === key
         ? <span style={{ marginLeft: '4px' }}>{sort.direction === 'asc' ? '↑' : '↓'}</span>
+        : <span style={{ marginLeft: '4px', opacity: 0.35 }}>↕</span>;
+    const salesmanArrow = (key: SalesmanSortKey) => salesmanSort?.key === key
+        ? <span style={{ marginLeft: '4px' }}>{salesmanSort.direction === 'asc' ? '↑' : '↓'}</span>
         : <span style={{ marginLeft: '4px', opacity: 0.35 }}>↕</span>;
     const toggleSort = (key: keyof MovementSummaryRow) => setSort(prev => prev?.key === key ? (prev.direction === 'asc' ? { key, direction: 'desc' } : null) : { key, direction: 'asc' });
 
@@ -254,6 +380,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             <h2 style={{ fontSize: '17px', fontWeight: 700, margin: 0, color: '#111827' }}>Stock Movement Summary</h2>
                             <p style={{ fontSize: '12px', color: '#6B7280', margin: '2px 0 0 0' }}>
                                 {rangeLabel}
+                                {view === 'salesman' && ' · by Salesman'}
                                 {warehouseId && ` · ${warehouses.find(w => w.id === warehouseId)?.name || ''}`}
                             </p>
                         </div>
@@ -296,13 +423,22 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                 </div>
 
                 {/* View toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: isMobile ? '10px 12px' : '12px 22px', borderBottom: '1px solid var(--color-border)', background: '#FFFFFF', flexShrink: 0 }}>
-                    <button onClick={() => setOnlyMovement(false)} style={chip(!onlyMovement)}>
-                        All Products ({rows.length})
-                    </button>
-                    <button onClick={() => setOnlyMovement(true)} style={chip(onlyMovement)}>
-                        With Movement ({movementCount})
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', padding: isMobile ? '10px 12px' : '12px 22px', borderBottom: '1px solid var(--color-border)', background: '#FFFFFF', flexShrink: 0 }}>
+                    <div role="tablist" aria-label="Group movements by" style={{ display: 'inline-flex', gap: '2px', padding: '2px', borderRadius: '18px', border: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
+                        <button role="tab" aria-selected={view === 'product'} onClick={() => setView('product')} style={{ ...chip(view === 'product'), border: 'none' }}>By Product</button>
+                        <button role="tab" aria-selected={view === 'salesman'} onClick={() => setView('salesman')} style={{ ...chip(view === 'salesman'), border: 'none' }}>By Salesman</button>
+                    </div>
+                    {view === 'product' && (
+                        <>
+                            <span aria-hidden style={{ width: '1px', height: '20px', background: 'var(--color-border)', margin: '0 4px' }} />
+                            <button onClick={() => setOnlyMovement(false)} style={chip(!onlyMovement)}>
+                                All Products ({rows.length})
+                            </button>
+                            <button onClick={() => setOnlyMovement(true)} style={chip(onlyMovement)}>
+                                With Movement ({movementCount})
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {/* Body */}
@@ -312,6 +448,103 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
                             Building summary…
                         </div>
+                    ) : view === 'salesman' ? (
+                        !movementsData ? (
+                            // The first load failed (toast already shown): there is nothing to match yet.
+                            <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280', fontSize: '13px' }}>
+                                No stock movements loaded — change the period or reopen to retry.
+                            </div>
+                        ) : salesmanStatus === 'idle' || salesmanStatus === 'loading' ? (
+                            <div style={{ padding: '60px', textAlign: 'center', color: '#6B7280' }}>
+                                <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
+                                Matching orders to salesmen…
+                            </div>
+                        ) : salesmanStatus === 'error' ? (
+                            <div style={{ padding: '48px', textAlign: 'center', color: '#B91C1C', fontSize: '13px' }}>
+                                Couldn't match movements to salesmen{salesmanError ? `: ${salesmanError}` : '.'}
+                                <div style={{ marginTop: '12px' }}>
+                                    <button onClick={() => setSalesmanStatus('idle')} style={chip(false)}>Try again</button>
+                                </div>
+                            </div>
+                        ) : displayedSalesman.length === 0 ? (
+                            <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280', fontSize: '13px' }}>
+                                No stock movements in this period.
+                            </div>
+                        ) : (
+                            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: '#FFFFFF' }}>
+                                <thead>
+                                    <tr>
+                                        <th onClick={() => toggleSalesmanSort('label')} style={{ ...thBase, textAlign: 'left' }}>Salesman{salesmanArrow('label')}</th>
+                                        <th onClick={() => toggleSalesmanSort('sold')} style={{ ...thBase, color: '#DC2626' }}>Sold{salesmanArrow('sold')}</th>
+                                        <th onClick={() => toggleSalesmanSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>Wholesale{salesmanArrow('wholesale')}</th>
+                                        <th onClick={() => toggleSalesmanSort('ret')} style={{ ...thBase, color: '#B45309' }}>ReStock{salesmanArrow('ret')}</th>
+                                        <th onClick={() => toggleSalesmanSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>Buy{salesmanArrow('buy')}</th>
+                                        <th onClick={() => toggleSalesmanSort('net')} style={{ ...thBase, color: '#2563EB' }} title="Stock added (ReStock + Buy) minus stock removed (Sold + Wholesale)">Net{salesmanArrow('net')}</th>
+                                        <th onClick={() => toggleSalesmanSort('movements')} style={thBase} title="Number of stock movement lines">Movements{salesmanArrow('movements')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {displayedSalesman.map((r, idx) => {
+                                        const moved = movedOf(r) > 0;
+                                        const open = moved && expandedSalesman.has(r.key);
+                                        const net = netOf(r);
+                                        const toggle = () => { if (moved) toggleExpanded(r.key); };
+                                        return (
+                                            <React.Fragment key={r.key}>
+                                                <tr
+                                                    onClick={toggle}
+                                                    onKeyDown={e => { if (moved && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } }}
+                                                    tabIndex={moved ? 0 : undefined}
+                                                    aria-expanded={moved ? open : undefined}
+                                                    style={{ background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : '#FFFFFF', cursor: moved ? 'pointer' : 'default' }}
+                                                >
+                                                    <td title={r.special ? `${r.label} — ${SPECIAL_HINTS[r.special]}` : r.label} style={{ padding: isMobile ? '7px 10px' : '9px 14px', fontSize: isMobile ? '12px' : '13px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', color: moved ? 'var(--color-text-main)' : 'var(--color-text-secondary)', borderLeft: `3px solid ${r.special ? '#F59E0B' : '#3B82F6'}`, whiteSpace: 'nowrap', maxWidth: isMobile ? '160px' : '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%' }}>
+                                                            {moved ? (open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />) : <span style={{ width: '14px', flexShrink: 0 }} />}
+                                                            <span style={{ fontStyle: r.special ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.label}</span>
+                                                        </span>
+                                                    </td>
+                                                    <td style={numTd}>{r.sold > 0 ? <span style={pill('rgba(239,68,68,0.1)', '#DC2626')}>-{r.sold}</span> : zero}</td>
+                                                    <td style={numTd}>{r.wholesale > 0 ? <span style={pill('rgba(99,102,241,0.1)', '#4F46E5')}>-{r.wholesale}</span> : zero}</td>
+                                                    <td style={numTd}>{r.ret > 0 ? <span style={pill('rgba(245,158,11,0.12)', '#B45309')}>+{r.ret}</span> : zero}</td>
+                                                    <td style={numTd}>{r.buy > 0 ? <span style={pill('rgba(147,51,234,0.1)', '#7E22CE')}>+{r.buy}</span> : zero}</td>
+                                                    <td style={{ ...numTd, fontWeight: 800, color: net > 0 ? '#059669' : net < 0 ? '#DC2626' : 'var(--color-text-muted)' }}>{net > 0 ? `+${net}` : net}</td>
+                                                    <td style={{ ...numTd, color: 'var(--color-text-secondary)' }}>{r.movements}</td>
+                                                </tr>
+                                                {open && r.products.map(p => {
+                                                    const pn = netOf(p);
+                                                    const subTd: React.CSSProperties = { ...numTd, fontSize: isMobile ? '11px' : '12px', fontWeight: 500, background: 'rgba(59,130,246,0.04)' };
+                                                    return (
+                                                        <tr key={`${r.key}|${p.id}`}>
+                                                            <td title={p.name} style={{ padding: isMobile ? '5px 10px 5px 34px' : '6px 14px 6px 40px', fontSize: isMobile ? '11px' : '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', background: 'rgba(59,130,246,0.04)', whiteSpace: 'nowrap', maxWidth: isMobile ? '160px' : '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</td>
+                                                            <td style={subTd}>{p.sold > 0 ? `-${p.sold}` : zero}</td>
+                                                            <td style={subTd}>{p.wholesale > 0 ? `-${p.wholesale}` : zero}</td>
+                                                            <td style={subTd}>{p.ret > 0 ? `+${p.ret}` : zero}</td>
+                                                            <td style={subTd}>{p.buy > 0 ? `+${p.buy}` : zero}</td>
+                                                            <td style={{ ...subTd, color: pn > 0 ? '#059669' : pn < 0 ? '#DC2626' : 'var(--color-text-muted)' }}>{pn > 0 ? `+${pn}` : pn}</td>
+                                                            <td style={subTd} />
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td style={{ ...footTd, textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
+                                            Total · {namedSalesmanCount} {namedSalesmanCount === 1 ? 'salesman' : 'salesmen'}
+                                        </td>
+                                        <td style={{ ...footTd, color: '#DC2626' }}>{salesmanTotals.sold > 0 ? `-${salesmanTotals.sold}` : 0}</td>
+                                        <td style={{ ...footTd, color: '#4F46E5' }}>{salesmanTotals.wholesale > 0 ? `-${salesmanTotals.wholesale}` : 0}</td>
+                                        <td style={{ ...footTd, color: '#B45309' }}>{salesmanTotals.ret > 0 ? `+${salesmanTotals.ret}` : 0}</td>
+                                        <td style={{ ...footTd, color: '#7E22CE' }}>{salesmanTotals.buy > 0 ? `+${salesmanTotals.buy}` : 0}</td>
+                                        <td style={{ ...footTd, color: '#2563EB' }}>{netOf(salesmanTotals) > 0 ? `+${netOf(salesmanTotals)}` : netOf(salesmanTotals)}</td>
+                                        <td style={{ ...footTd, color: 'var(--color-text-secondary)' }}>{salesmanTotals.movements}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        )
                     ) : displayedRows.length === 0 ? (
                         <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280', fontSize: '13px' }}>
                             No products with movement in this period.
