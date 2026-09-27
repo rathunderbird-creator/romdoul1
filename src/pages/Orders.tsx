@@ -682,7 +682,15 @@ const Orders: React.FC = () => {
     // Anchors for the column-filter popover (one button per header cell).
     const filterBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-    useEffect(() => { localStorage.setItem('orders_columnFilters', JSON.stringify(columnFilters)); }, [columnFilters]);
+    // True while a dashboard click-through (location.state.filters) is being
+    // applied: those values are a TRANSIENT view of one subset, so the persist
+    // effect below skips them — otherwise a single card click permanently
+    // overwrites the filters the user set up themselves. Cleared by the
+    // click-through effect's follow-up run (after the state is consumed),
+    // which is declared after the persist effect and so runs last.
+    const skipFilterPersistRef = useRef(false);
+    // (All filters persist together in one effect further down, after every
+    // filter state is declared.)
 
     const [showFilters, setShowFilters] = useState(false);
 
@@ -718,13 +726,7 @@ const Orders: React.FC = () => {
         }
     }, [location.state, sales, navigate, location.pathname]);
 
-    // Persist Filters
-    useEffect(() => { localStorage.setItem('orders_statusFilter', JSON.stringify(statusFilter)); }, [statusFilter]);
-    useEffect(() => { localStorage.setItem('orders_salesmanFilter', salesmanFilter); }, [salesmanFilter]);
-    useEffect(() => { localStorage.setItem('orders_payStatusFilter', JSON.stringify(payStatusFilter)); }, [payStatusFilter]);
-    useEffect(() => { localStorage.setItem('orders_shippingCoFilter', JSON.stringify(shippingCoFilter)); }, [shippingCoFilter]);
-    useEffect(() => { localStorage.setItem('orders_dateRange', JSON.stringify(dateRange)); }, [dateRange]);
-    useEffect(() => { localStorage.setItem('orders_searchTerm', searchTerm); }, [searchTerm]);
+    // (Filters persist in the single effect below the pageFilter declaration.)
 
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' });
 
@@ -1087,14 +1089,32 @@ const Orders: React.FC = () => {
         JSON.parse(localStorage.getItem('orders_pageFilter') || '[]')
     );
     const [isPageOpen, setIsPageOpen] = useState(false);
-    useEffect(() => { localStorage.setItem('orders_pageFilter', JSON.stringify(pageFilter)); }, [pageFilter]);
+    // Persist Filters — ALL keys in one effect, so storage always mirrors the
+    // screen: after a click-through (which skips persistence), the user's
+    // first manual edit adopts the whole on-screen combination instead of
+    // writing just one key next to stale saved values.
+    useEffect(() => {
+        if (skipFilterPersistRef.current) return;
+        localStorage.setItem('orders_statusFilter', JSON.stringify(statusFilter));
+        localStorage.setItem('orders_salesmanFilter', salesmanFilter);
+        localStorage.setItem('orders_payStatusFilter', JSON.stringify(payStatusFilter));
+        localStorage.setItem('orders_shippingCoFilter', JSON.stringify(shippingCoFilter));
+        localStorage.setItem('orders_dateRange', JSON.stringify(dateRange));
+        localStorage.setItem('orders_searchTerm', searchTerm);
+        localStorage.setItem('orders_columnFilters', JSON.stringify(columnFilters));
+        localStorage.setItem('orders_pageFilter', JSON.stringify(pageFilter));
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, dateRange, searchTerm, columnFilters, pageFilter]);
 
     // Click-throughs from other pages (Dashboard 2's KPIs, pipeline, alerts,
     // table rows) arrive as `location.state.filters`. Apply them wholesale —
     // anything not given is reset — so the list shows exactly that subset.
+    // The subset is a transient view: skipFilterPersistRef keeps it out of
+    // localStorage, so the user's own saved filters return on the next
+    // ordinary visit.
     useEffect(() => {
         const filters = (location.state as { filters?: OrderListFilters } | null)?.filters;
-        if (!filters) return;
+        if (!filters) { skipFilterPersistRef.current = false; return; }
+        skipFilterPersistRef.current = true;
         setStatusFilter(filters.statuses ?? []);
         setPayStatusFilter(filters.payStatuses ?? []);
         setSalesmanFilter(filters.salesman ?? 'All');
@@ -1151,43 +1171,61 @@ const Orders: React.FC = () => {
         setCurrentPage(1);
     }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, columnFilters, itemsPerPage, isMobile]);
 
+    // The toolbar filters (status, salesman incl. the salesman-role lock, pay
+    // status, shipping co, page, date range) applied to any sales query
+    // builder. Shared by applyOrderFilters and the balance column-filter scan,
+    // so the scan matches inside the same subset the page shows.
+    const applyScopeFilters = React.useCallback((query: any) => {
+        if (statusFilter.length > 0) {
+            query = query.in('shipping_status', statusFilter);
+        }
+
+        const isSalesman = currentUser?.roleId === 'salesman';
+        const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
+
+        if (effectiveSalesmanFilter !== 'All') {
+            query = query.eq('salesman', effectiveSalesmanFilter);
+        }
+
+        if (payStatusFilter.length > 0) {
+            query = query.in('payment_status', payStatusFilter);
+        }
+
+        if (shippingCoFilter.length > 0) {
+            query = query.in('shipping_company', shippingCoFilter);
+        }
+
+        if (pageFilter.length > 0) {
+            query = query.in('page_source', pageFilter);
+        }
+
+        if (dateRange.start) {
+            const start = new Date(dateRange.start);
+            start.setHours(0, 0, 0, 0);
+            query = query.gte('date', start.toISOString());
+        }
+        if (dateRange.end) {
+            const end = new Date(dateRange.end);
+            end.setHours(23, 59, 59, 999);
+            query = query.lte('date', end.toISOString());
+        }
+        return query;
+    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, currentUser]);
+
+    // The balance column filter's scanned id sets, reused across the calls of
+    // one fetch cycle (mobile runs applyOrderFilters per chunk) and across
+    // quick refetches, so the scan doesn't repeat per keystroke. Holds the
+    // in-flight PROMISE, not the result: concurrent fetches (isMobile flips
+    // false->true right after mount, restarting fetchOrders) share one scan.
+    const balanceScanRef = useRef<{ key: string; at: number; result: Promise<{ match: string[]; rest: string[] }> } | null>(null);
+
     // Applies every active filter (status, salesman, pay status, shipping co,
     // page, date range, search, column filters) to a sales query builder.
     // Shared by the page fetch and the revenue-total query so both always agree.
     const applyOrderFilters = React.useCallback(async (query: any) => {
-            if (statusFilter.length > 0) {
-                query = query.in('shipping_status', statusFilter);
-            }
-
+            query = applyScopeFilters(query);
             const isSalesman = currentUser?.roleId === 'salesman';
             const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
-
-            if (effectiveSalesmanFilter !== 'All') {
-                query = query.eq('salesman', effectiveSalesmanFilter);
-            }
-
-            if (payStatusFilter.length > 0) {
-                query = query.in('payment_status', payStatusFilter);
-            }
-
-            if (shippingCoFilter.length > 0) {
-                query = query.in('shipping_company', shippingCoFilter);
-            }
-
-            if (pageFilter.length > 0) {
-                query = query.in('page_source', pageFilter);
-            }
-
-            if (dateRange.start) {
-                const start = new Date(dateRange.start);
-                start.setHours(0, 0, 0, 0);
-                query = query.gte('date', start.toISOString());
-            }
-            if (dateRange.end) {
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                query = query.lte('date', end.toISOString());
-            }
 
             if (searchTerm.trim()) {
                 const trimmedTerm = searchTerm.trim();
@@ -1365,9 +1403,74 @@ const Orders: React.FC = () => {
                     case 'received':
                         if (!isNaN(Number(v))) query = query.eq('amount_received', Number(v));
                         break;
-                    case 'balance':
-                        if (!isNaN(Number(v))) query = query.eq('total', Number(v));
+                    case 'balance': {
+                        // Balance is computed (orderBalance), not a DB column — the old
+                        // eq('total', v) matched the wrong orders. Scan the money columns
+                        // (within the SAME toolbar scope as the page, so the intersection
+                        // is exact), compute each order's balance, and constrain by ids.
+                        const target = Number(v);
+                        if (isNaN(target)) break;
+                        const cents = (n: number) => Math.round(n * 100);
+                        const IN_CAP = 200; // ~200 uuids per in()/not.in() keeps the URL under the gateway limit
+                        // salesUpdatedAt in the key invalidates the scan the moment any
+                        // order mutates; the TTL only backstops missed invalidations.
+                        const cacheKey = JSON.stringify([target, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, currentUser?.roleId, currentUser?.name, salesUpdatedAt]);
+                        let scan = balanceScanRef.current;
+                        if (!scan || scan.key !== cacheKey || Date.now() - scan.at > 60000) {
+                            const runScan = async () => {
+                                const rows: any[] = [];
+                                for (let fromRow = 0; fromRow < 20000; fromRow += 1000) {
+                                    const { data: chunk, error } = await applyScopeFilters(
+                                        supabase.from('sales').select('id, total, amount_received, deposit_amount, payment_status, shipping_status')
+                                    )
+                                        // date desc so a capped id list keeps the newest orders
+                                        .order('date', { ascending: false })
+                                        .order('id', { ascending: true })
+                                        .range(fromRow, fromRow + 999);
+                                    // A failed chunk must NOT read as "no matches": throw so
+                                    // fetchOrders' catch keeps the previous list instead of
+                                    // showing a false "No orders match your filters".
+                                    if (error) throw error;
+                                    rows.push(...(chunk || []));
+                                    if (!chunk || chunk.length < 1000) break;
+                                }
+                                const match: string[] = [];
+                                const rest: string[] = [];
+                                for (const r of rows) {
+                                    const bal = orderBalance({
+                                        paymentStatus: r.payment_status,
+                                        total: Number(r.total) || 0,
+                                        amountReceived: Number(r.amount_received) || 0,
+                                        depositAmount: Number(r.deposit_amount) || 0,
+                                        shipping: { status: r.shipping_status },
+                                    } as unknown as Sale);
+                                    (cents(bal) === cents(target) ? match : rest).push(String(r.id));
+                                }
+                                return { match, rest };
+                            };
+                            scan = { key: cacheKey, at: Date.now(), result: runScan() };
+                            balanceScanRef.current = scan;
+                            // A failed scan must not poison the cache for the retry.
+                            scan.result.catch(() => { if (balanceScanRef.current === scan) balanceScanRef.current = null; });
+                        }
+                        const { match, rest } = await scan.result;
+                        if (match.length === 0) {
+                            query = query.eq('id', 'NO_MATCH');
+                        } else if (match.length <= IN_CAP) {
+                            query = query.in('id', match);
+                        } else if (rest.length === 0) {
+                            // every scanned order matches — no constraint needed
+                        } else if (rest.length <= IN_CAP) {
+                            // The complement is small (typical for balance = 0, which most
+                            // settled orders match): exclude the non-matches instead, which
+                            // stays EXACT where a capped in() would silently truncate.
+                            query = query.not('id', 'in', `(${rest.join(',')})`);
+                        } else {
+                            showToast(`Balance filter matches ${match.length} orders — showing only the newest ${IN_CAP}.`, 'info');
+                            query = query.in('id', match.slice(0, IN_CAP));
+                        }
                         break;
+                    }
                     case 'lastEdit':
                         query = query.ilike('last_edited_by', `%${esc}%`);
                         break;
@@ -1378,7 +1481,7 @@ const Orders: React.FC = () => {
         // async function makes `await` EXECUTE the query and hand back its result
         // instead of the builder. Wrap it so the caller gets the builder intact.
         return { query };
-    }, [statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters]);
+    }, [applyScopeFilters, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters, showToast, salesUpdatedAt]);
 
     const fetchOrders = React.useCallback(async () => {
         setIsLoadingOrders(true);
