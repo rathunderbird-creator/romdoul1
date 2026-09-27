@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
 
+// Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
+// (not 24h) so a daylight-saving change can't land on the wrong date.
+const localYMD = (daysAgo = 0): string => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 interface SettlePaymentModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -26,16 +34,12 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     const [settleDate, setSettleDate] = useState<string>('');
 
     useEffect(() => {
-        const getLocalYYYYMMDD = () => {
-            const d = new Date();
-            return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-        };
         if (isOpen) {
             // Bank is the default Pay By — settlements normally arrive by bank
             // transfer from the shipping company (still changeable in the dropdown).
             const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
-            setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : getLocalYYYYMMDD());
+            setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : localYMD());
         }
     }, [isOpen, initialMethod, initialDate, paymentMethods]);
 
@@ -57,6 +61,27 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                             outline: 'none', boxSizing: 'border-box'
                         }}
                     />
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                        {[{ label: 'Today', daysAgo: 0 }, { label: 'Yesterday', daysAgo: 1 }].map(({ label, daysAgo }) => {
+                            const value = localYMD(daysAgo);
+                            const active = settleDate === value;
+                            return (
+                                <button
+                                    key={label}
+                                    type="button"
+                                    onClick={() => setSettleDate(value)}
+                                    style={{
+                                        padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                                        border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                        background: active ? 'var(--color-primary)' : 'var(--color-surface)',
+                                        color: active ? 'white' : 'var(--color-text-secondary)'
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Pay By <span style={{ color: 'red' }}>*</span></label>
