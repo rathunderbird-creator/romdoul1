@@ -340,15 +340,40 @@ ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS amount_paid NUMERIC DEFAULT
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_due_date DATE;
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT;
 
--- The PO line items the app actually uses.
+-- The PO line items the app actually uses. The product FK is REQUIRED:
+-- Procurement embeds product:products(...) through it, and PostgREST
+-- refuses the whole query without the relationship ("Could not find a
+-- relationship between 'purchase_order_items' and 'products'").
 CREATE TABLE IF NOT EXISTS purchase_order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     purchase_order_id UUID REFERENCES purchase_orders(id) ON DELETE CASCADE,
-    product_id TEXT,
+    product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
     quantity NUMERIC DEFAULT 1,
     unit_price NUMERIC DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+-- Add the FK where the table pre-exists without one (any constraint
+-- name counts, so instances that already have it are left untouched —
+-- a SECOND FK to products would make the embed ambiguous).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON kcu.constraint_name = tc.constraint_name
+         AND kcu.table_schema = tc.table_schema
+         AND kcu.table_name = tc.table_name
+        WHERE tc.table_schema = 'public'
+          AND tc.table_name = 'purchase_order_items'
+          AND tc.constraint_type = 'FOREIGN KEY'
+          AND kcu.column_name = 'product_id'
+    ) THEN
+        ALTER TABLE purchase_order_items
+            ADD CONSTRAINT purchase_order_items_product_id_fkey
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS supplier_payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -843,10 +868,31 @@ GRANT SELECT (id, name, email, role_id, created_at, base_salary, daily_target, w
     ON users TO anon, authenticated;
 
 -- ============================================================
--- 14. STORAGE BUCKET
+-- 14. STORAGE BUCKET + POLICIES (product images)
 -- ============================================================
+-- storage.objects always has RLS enabled and a new project has no
+-- policies, so without these EVERY image upload fails with
+-- "new row violates row-level security policy".
 
 INSERT INTO storage.buckets (id, name, public) VALUES ('products', 'products', true) ON CONFLICT (id) DO NOTHING;
+
+-- Wrapped so the rest of this file still completes on a project where
+-- the SQL role may not manage storage policies; in that case create
+-- the same four policies in Dashboard -> Storage -> products -> Policies
+-- (allow SELECT / INSERT / UPDATE / DELETE for bucket_id = 'products').
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Allow public read access for products bucket" ON storage.objects;
+    DROP POLICY IF EXISTS "Allow public uploads to products bucket" ON storage.objects;
+    DROP POLICY IF EXISTS "Allow public updates to products bucket" ON storage.objects;
+    DROP POLICY IF EXISTS "Allow public deletes from products bucket" ON storage.objects;
+    CREATE POLICY "Allow public read access for products bucket" ON storage.objects FOR SELECT TO public USING (bucket_id = 'products');
+    CREATE POLICY "Allow public uploads to products bucket" ON storage.objects FOR INSERT TO public WITH CHECK (bucket_id = 'products');
+    CREATE POLICY "Allow public updates to products bucket" ON storage.objects FOR UPDATE TO public USING (bucket_id = 'products') WITH CHECK (bucket_id = 'products');
+    CREATE POLICY "Allow public deletes from products bucket" ON storage.objects FOR DELETE TO public USING (bucket_id = 'products');
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'This role cannot manage storage.objects policies — create the four products-bucket policies in Dashboard -> Storage -> Policies instead.';
+END $$;
 
 -- ============================================================
 -- 15. INITIAL DATA (new instances only; no-op where rows exist)
