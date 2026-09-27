@@ -194,13 +194,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
     const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
     const [allGlobalCategories, setAllGlobalCategories] = useState<string[]>([]);
+    const [globalCategoryCounts, setGlobalCategoryCounts] = useState<Record<string, { income: number; expense: number }>>({});
 
     const fetchAllCategories = async () => {
         try {
             // Fetch distinct categories, limit to 200 to prevent huge payloads
             // Supabase RPC or distinct is better, but this simple approach works for small-medium tables
             const { data, error } = await supabase.from('transactions')
-                .select('category')
+                .select('category, type')
                 .not('category', 'is', null)
                 .not('category', 'eq', '')
                 .limit(500);
@@ -208,10 +209,17 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             if (error) throw error;
 
             const cats = new Set<string>();
+            const counts: Record<string, { income: number; expense: number }> = {};
             data?.forEach(t => {
-                if (t.category) cats.add(t.category.trim());
+                if (!t.category) return;
+                const c = t.category.trim();
+                cats.add(c);
+                const k = counts[c] || (counts[c] = { income: 0, expense: 0 });
+                if (t.type === 'Income') k.income++;
+                else if (t.type === 'Expense') k.expense++;
             });
             setAllGlobalCategories(Array.from(cats).sort());
+            setGlobalCategoryCounts(counts);
         } catch (e) {
             console.error('Failed to fetch global categories', e);
         }
@@ -237,6 +245,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 query = query.lte('date', end.toISOString());
             }
 
+            // Apply the exact-match filters in the query too. With no date range only
+            // the newest 1000 rows are loaded, so a category that only exists further
+            // back (e.g. the old "J&T"/"VET" shipping categories) would otherwise
+            // filter down to an empty list even though matching rows exist.
+            if (filterType !== 'All') query = query.eq('type', filterType);
+            if (filterCategory !== 'All') query = query.eq('category', filterCategory);
+            if (filterShippingCo !== 'All') query = query.eq('shipping_co', filterShippingCo);
+
             if (!dateRange.start && !dateRange.end) {
                 query = query.limit(1000); // Limit to prevent freezing on "All" dates
             }
@@ -250,7 +266,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         } finally {
             setIsLoadingTransactions(false);
         }
-    }, [dateRange]);
+    }, [dateRange, filterType, filterCategory, filterShippingCo]);
 
     useEffect(() => {
         fetchTransactions();
@@ -476,6 +492,25 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         });
         return Array.from(cats).sort();
     }, [localTransactions, allGlobalCategories]);
+
+    // Blue for income categories, red for expense ones — decided by which type uses
+    // the category most (global sample + currently loaded rows). Unknown -> default.
+    const categoryColorOf = useMemo(() => {
+        const counts: Record<string, { income: number; expense: number }> = {};
+        for (const [c, k] of Object.entries(globalCategoryCounts)) counts[c] = { ...k };
+        localTransactions.forEach(t => {
+            if (!t.category) return;
+            const c = t.category.trim();
+            const k = counts[c] || (counts[c] = { income: 0, expense: 0 });
+            if (t.type === 'Income') k.income++;
+            else if (t.type === 'Expense') k.expense++;
+        });
+        return (cat: string): string | undefined => {
+            const k = counts[cat.trim()];
+            if (!k || (k.income === 0 && k.expense === 0)) return undefined;
+            return k.income >= k.expense ? 'var(--color-blue)' : 'var(--color-red)';
+        };
+    }, [globalCategoryCounts, localTransactions]);
 
     const filteredCategories = useMemo(() => {
         if (!formData.category) return uniqueCategories;
@@ -756,7 +791,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
                         {/* Expanded filter groups */}
                         <IeChipGroup title="Type" options={['All', 'Income', 'Expense']} selected={filterType} onSelect={(v) => setFilterType(v as any)} />
-                        <IeChipGroup title="Category" options={['All', ...uniqueCategories]} selected={filterCategory} onSelect={setFilterCategory} />
+                        <IeChipGroup title="Category" options={['All', ...uniqueCategories]} selected={filterCategory} onSelect={setFilterCategory} optionColor={cat => cat === 'All' ? undefined : categoryColorOf(cat)} />
                         <IeChipGroup title="Shipping Co" options={['All', ...allShippingCo]} selected={filterShippingCo} onSelect={setFilterShippingCo} />
 
                         {/* Tools */}
@@ -943,7 +978,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 borderRadius: '10px',
                                 border: '1px solid var(--color-border)',
                                 background: 'var(--color-background)',
-                                color: 'var(--color-text-main)',
+                                color: (filterCategory !== 'All' && categoryColorOf(filterCategory)) || 'var(--color-text-main)',
                                 fontSize: '13px',
                                 appearance: 'none',
                                 cursor: 'pointer',
@@ -953,9 +988,9 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
                             onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         >
-                            <option value="All">All Categories</option>
+                            <option value="All" style={{ color: 'var(--color-text-main)' }}>All Categories</option>
                             {uniqueCategories.map(cat => (
-                                <option key={cat} value={cat} style={{ color: getShippingCoColor(cat) }}>{cat}</option>
+                                <option key={cat} value={cat} style={{ color: categoryColorOf(cat) }}>{cat}</option>
                             ))}
                         </select>
                         <ChevronDown size={18} style={{ position: 'absolute', right: '16px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
@@ -1909,7 +1944,8 @@ const IeStatCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; gradi
 );
 
 // Single-select chip group for the mobile filter drawer (always expanded).
-const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string; onSelect: (v: string) => void }> = ({ title, options, selected, onSelect }) => (
+// optionColor tints an inactive chip's text (e.g. blue/red income/expense categories).
+const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string; onSelect: (v: string) => void; optionColor?: (opt: string) => string | undefined }> = ({ title, options, selected, onSelect, optionColor }) => (
     <div>
         <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{title}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -1919,7 +1955,7 @@ const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string
                     <button
                         key={opt}
                         onClick={() => onSelect(opt)}
-                        style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                        style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : (optionColor?.(opt) || 'var(--color-text-main)'), cursor: 'pointer', transition: 'all 0.15s' }}
                     >
                         {opt}
                     </button>
