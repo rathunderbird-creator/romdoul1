@@ -41,7 +41,8 @@ const EXPECTED_TABLES = {
         'shipping_company', 'tracking_number', 'shipping_status',
         'shipping_cost', 'customer_snapshot', 'page_source',
         'last_edited_at', 'last_edited_by', 'created_at',
-        'daily_number'  // Added by add_daily_number.sql
+        'daily_number',
+        'deposit_amount', 'deposit_date', 'deposit_method'
     ],
     sale_items: [
         'id', 'sale_id', 'product_id', 'name', 'price',
@@ -60,12 +61,13 @@ const EXPECTED_TABLES = {
     ],
     transactions: [
         'id', 'type', 'amount', 'category', 'description',
-        'date', 'added_by', 'created_at', 'shipping_co'
+        'date', 'added_by', 'created_at', 'shipping_co', 'pay_by'
     ],
     stock_movements: [
         'id', 'product_id', 'product_name', 'type', 'quantity',
         'unit_price', 'source', 'reason', 'reference_id',
-        'shipping_co', 'note', 'movement_date', 'created_by', 'created_at'
+        'shipping_co', 'note', 'movement_date', 'created_by', 'created_at',
+        'customer_name', 'customer_phone', 'order_id', 'warehouse_id', 'supplier'
     ],
     staff_attendance: [
         'id', 'user_id', 'date', 'status', 'clock_in', 'clock_out',
@@ -84,8 +86,7 @@ const EXPECTED_TABLES = {
         'id', 'pcode', 'name', 'is_shippable', 'shipping_fee',
         'estimated_days', 'supported_couriers', 'created_at', 'updated_at'
     ],
-    // Tables created by hand on Romdoul1 (no migration file) — layout copied
-    // from the live tables. create_warehouses.sql now covers the first two.
+    // Layouts copied from the live tables (all covered by full_schema.sql).
     warehouses: ['id', 'name', 'address', 'contact', 'capacity', 'created_at', 'updated_at'],
     warehouse_stock: ['id', 'warehouse_id', 'product_id', 'quantity', 'created_at', 'updated_at'],
     purchase_order_items: ['id', 'purchase_order_id', 'product_id', 'quantity', 'unit_price', 'created_at'],
@@ -109,8 +110,10 @@ const EXPECTED_TABLES = {
     leads: [],
     interactions: [],
     quotations: [],
-    suppliers: [],
-    purchase_orders: [],
+    // Column layouts match the live instances (tax_id/is_active on suppliers;
+    // the hand-added payment columns on purchase_orders) — see full_schema.sql.
+    suppliers: ['id', 'name', 'contact_name', 'email', 'phone', 'address', 'tax_id', 'is_active', 'created_at'],
+    purchase_orders: ['id', 'supplier_id', 'order_date', 'expected_delivery_date', 'total_amount', 'status', 'notes', 'created_at', 'payment_status', 'amount_paid', 'payment_due_date', 'invoice_number'],
     chart_of_accounts: [],
     journal_entries: [],
     journal_entry_lines: [],
@@ -122,37 +125,11 @@ const EXPECTED_TABLES = {
     warehouse_transfer_receipts: [],
 };
 
-// Which file in this folder creates a table (for the summary). Tables not
-// listed here are in full_schema.sql or were created by hand on every instance.
-const MIGRATION_FOR = {
-    warehouses: 'create_warehouses.sql',
-    warehouse_stock: 'create_warehouses.sql',
-    income_predictions: 'create_income_predictions.sql',
-    page_income_predictions: 'create_page_income_predictions.sql',
-    income_prediction_staff: 'create_income_prediction_staff.sql',
-    inventory_items: 'create_inventory_items.sql',
-    deleted_orders: 'create_deleted_orders.sql',
-    deleted_sale_items: 'create_deleted_orders.sql',
-    telegram_notifications: 'create_telegram_notifications.sql',
-    shipment_tracking: 'shipment_tracking.sql',
-    employees: 'erp_schema_additions.sql',
-    leave_requests: 'erp_schema_additions.sql',
-    payroll_runs: 'erp_schema_additions.sql',
-    leads: 'erp_schema_additions.sql',
-    interactions: 'erp_schema_additions.sql',
-    quotations: 'erp_schema_additions.sql',
-    suppliers: 'erp_schema_additions.sql',
-    purchase_orders: 'erp_schema_additions.sql',
-    chart_of_accounts: 'erp_schema_additions.sql',
-    journal_entries: 'erp_schema_additions.sql',
-    journal_entry_lines: 'erp_schema_additions.sql',
-    wholesale_orders: 'wholesale_orders.sql',
-    wholesale_order_items: 'wholesale_orders.sql',
-    customer_payments: 'wholesale_orders.sql',
-    wholesale_customers: 'wholesale_orders.sql',
-    warehouse_transfers: 'accounts_receivable_transfers.sql',
-    warehouse_transfer_receipts: 'accounts_receivable_transfers.sql',
-};
+// Every table now lives in the single consolidated full_schema.sql
+// (2026-09-27); the per-feature files were archived in migrations/applied/.
+// Anything missing anywhere is fixed by running full_schema.sql — it is
+// idempotent, so re-running it never hurts.
+const MIGRATION_FOR = {};
 
 // PostgREST answers for a table that isn't in its schema cache.
 const isMissingTableError = (error) =>

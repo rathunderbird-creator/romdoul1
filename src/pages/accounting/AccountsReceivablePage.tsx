@@ -246,7 +246,7 @@ const AccountsReceivablePage: React.FC = () => {
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
                     <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
                     <p style={{ fontSize: '13px' }}>
-                        Run <code>migrations/wholesale_orders.sql</code> and <code>migrations/accounts_receivable_transfers.sql</code> in your Supabase SQL editor, then Refresh.
+                        Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.
                     </p>
                 </div>
             ) : receivables.length === 0 ? (

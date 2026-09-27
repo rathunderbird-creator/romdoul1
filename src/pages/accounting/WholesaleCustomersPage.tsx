@@ -222,7 +222,7 @@ const WholesaleCustomersPage: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
                     <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                    <p style={{ fontSize: '13px' }}>Run <code>migrations/wholesale_orders.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                    <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
                 </div>
             ) : isMobile ? (
                 // Mobile: inbox-style customer rows — tap to open the ledger.

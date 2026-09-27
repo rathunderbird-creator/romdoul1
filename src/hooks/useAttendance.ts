@@ -173,7 +173,7 @@ export const useAttendance = () => {
             console.error('Error saving attendance:', err);
             // Revert optimistic update
             setAttendances(previousState);
-            setError(`Database Error: ${err.message || 'Failed to save attendance'}. Please ensure 'staff_attendance.sql' was run in your Supabase SQL Editor.`);
+            setError(`Database Error: ${err.message || 'Failed to save attendance'}. Please ensure 'migrations/full_schema.sql' was run in your Supabase SQL Editor.`);
             throw err;
         }
     };

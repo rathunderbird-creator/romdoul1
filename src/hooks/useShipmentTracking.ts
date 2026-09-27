@@ -127,7 +127,7 @@ export const useShipmentTracking = () => {
             if (rows.length > 0) {
                 const { error } = await supabase.from('shipment_tracking').upsert(rows, { onConflict: 'tracking_no' });
                 if (error) {
-                    console.warn('shipment_tracking upsert failed (run migrations/shipment_tracking.sql?):', error.message);
+                    console.warn('shipment_tracking upsert failed (run migrations/full_schema.sql?):', error.message);
                     summary.error = 'Statuses fetched but not saved: ' + error.message;
                 }
             }

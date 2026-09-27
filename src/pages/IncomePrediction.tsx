@@ -17,7 +17,7 @@ import './pageIncomePrediction/pageIncomePrediction.css';
 // Staff is auto-saved to its own table, NOT into income_predictions: a row
 // there means "this day is frozen", so writing Staff into it would freeze
 // today's live sales (or a future day at $0). See
-// migrations/create_income_prediction_staff.sql.
+// migrations/full_schema.sql.
 const STAFF_TABLE = 'income_prediction_staff';
 // Save this long after the last keystroke, so a value typed right before a
 // reload or tab close isn't lost. Leaving the box (or Enter) saves at once.
@@ -826,7 +826,7 @@ const IncomePrediction: React.FC = () => {
                     <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
                     <span>
                         {staffStoreError.missing
-                            ? <>Staff isn't auto-saved on this database yet: run <code>migrations/create_income_prediction_staff.sql</code> in the Supabase SQL editor. Until then, Staff is only stored when you press Save on the row.</>
+                            ? <>Staff isn't auto-saved on this database yet: run <code>migrations/full_schema.sql</code> in the Supabase SQL editor. Until then, Staff is only stored when you press Save on the row.</>
                             : <>Couldn't load saved Staff amounts ({staffStoreError.message}), so Staff is only stored when you press Save on the row. Refresh to try again.</>}
                     </span>
                 </div>

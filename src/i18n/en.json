@@ -167,7 +167,7 @@
     "highBoostWarning": "Unusually high — is this in dollars?",
     "frozenDiff": "Differs from the frozen Income Prediction total by {x}",
     "readOnly": "Read-only — editing needs the Income & Expense permission",
-    "missingTable": "Boost / shipping inputs are disabled: table page_income_predictions is missing on this database. Run migrations/create_page_income_predictions.sql in its SQL editor.",
+    "missingTable": "Boost / shipping inputs are disabled: table page_income_predictions is missing on this database. Run migrations/full_schema.sql in its SQL editor.",
     "unassignedWarning": "{p}% of this period's revenue has no page — check page attribution on those orders",
     "loadError": "Couldn't load orders. {message}",
     "retry": "Retry",

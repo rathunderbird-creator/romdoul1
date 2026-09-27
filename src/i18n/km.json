@@ -167,7 +167,7 @@
     "highBoostWarning": "ខ្ពស់ខុសធម្មតា — តើជាដុល្លារមែនទេ?",
     "frozenDiff": "ខុសពីចំនួនសរុបដែលបានរក្សាទុកនៅការព្យាករណ៍ចំណូល {x}",
     "readOnly": "អានបានតែប៉ុណ្ណោះ — ការកែប្រែត្រូវការសិទ្ធិចំណូល និងចំណាយ",
-    "missingTable": "ការបញ្ចូល Boost / ថ្លៃដឹក ត្រូវបានបិទ៖ តារាង page_income_predictions មិនមាននៅលើមូលដ្ឋានទិន្នន័យនេះទេ។ សូមដំណើរការ migrations/create_page_income_predictions.sql នៅក្នុង SQL editor របស់វា។",
+    "missingTable": "ការបញ្ចូល Boost / ថ្លៃដឹក ត្រូវបានបិទ៖ តារាង page_income_predictions មិនមាននៅលើមូលដ្ឋានទិន្នន័យនេះទេ។ សូមដំណើរការ migrations/full_schema.sql នៅក្នុង SQL editor របស់វា។",
     "unassignedWarning": "{p}% នៃចំណូលក្នុងរយៈពេលនេះគ្មានផេក — សូមពិនិត្យការកំណត់ផេកនៅលើការបញ្ជាទិញទាំងនោះ",
     "loadError": "មិនអាចផ្ទុកការបញ្ជាទិញបានទេ។ {message}",
     "retry": "ព្យាយាមម្តងទៀត",
