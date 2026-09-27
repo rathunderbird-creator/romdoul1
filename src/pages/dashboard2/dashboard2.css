@@ -55,6 +55,14 @@
     outline-offset: 2px;
 }
 
+/* The classic dashboard cards keep the app's .glass-panel look, whose border
+   (rgba(255,255,255,.3)) is invisible here — give them a real border and a
+   slightly stronger shadow so each card reads clearly inside the section. */
+.d2-classic-cards .glass-panel {
+    border: 1px solid var(--d2-border);
+    box-shadow: 0 1px 3px rgba(17, 24, 39, 0.07);
+}
+
 /* Rows in tables lift less (they are dense). */
 .d2-row-clickable {
     cursor: pointer;

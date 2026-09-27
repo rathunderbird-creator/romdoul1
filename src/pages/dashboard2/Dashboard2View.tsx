@@ -139,7 +139,9 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                 queries); the Dashboard 2 sections follow below. */}
             {!salesError && !isEmpty && (
                 <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
-                    <div style={{ ...cardStyle, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
+                    {/* Tinted well, not a white card: the classic cards are white
+                        .glass-panels and disappear on a white background. */}
+                    <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
                         <SectionHeader
                             title={t('dashboard2.classicCards')}
                             icon={LayoutGrid}
