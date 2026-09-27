@@ -38,7 +38,7 @@ const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
     const { products, addStock, currentUser } = useStore();
     const { showToast } = useToast();
-    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment } = useProcurement();
+    const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
     const [receivingId, setReceivingId] = useState<string | null>(null);
     const receivingRef = useRef<Set<string>>(new Set());
 
@@ -114,6 +114,23 @@ const PurchaseOrdersPage = () => {
     };
 
     const [isModalOpen, setIsModalOpen] = useState(false);
+    // Inline "Add Supplier" sub-modal inside the PO form: create a supplier
+    // without leaving the order, then select it automatically.
+    const EMPTY_NEW_SUPPLIER = { name: '', contact_name: '', phone: '', email: '', address: '', tax_id: '' };
+    const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+    const [newSupplier, setNewSupplier] = useState(EMPTY_NEW_SUPPLIER);
+    const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+    const handleCreateSupplier = async () => {
+        if (!newSupplier.name.trim()) { showToast('Supplier name is required', 'error'); return; }
+        setIsSavingSupplier(true);
+        try {
+            const created = await saveSupplier({ ...newSupplier, name: newSupplier.name.trim(), is_active: true });
+            if (created?.id) setSupplierId(created.id);
+            setIsAddSupplierOpen(false);
+            setNewSupplier(EMPTY_NEW_SUPPLIER);
+        } catch { /* the hook already showed the error toast */ }
+        finally { setIsSavingSupplier(false); }
+    };
     const [searchQuery, setSearchQuery] = useState('');
     const isMobile = useMobile();
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
@@ -1038,9 +1055,18 @@ const PurchaseOrdersPage = () => {
                                 </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier *</label>
-                                        <select 
-                                            className="input-field" 
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                            <label style={{ fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier *</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddSupplierOpen(true)}
+                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: '#6366f1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                                            >
+                                                <Plus size={13} /> Add Supplier
+                                            </button>
+                                        </div>
+                                        <select
+                                            className="input-field"
                                             style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
                                             value={supplierId}
                                             onChange={(e) => setSupplierId(e.target.value)}
@@ -1319,6 +1345,72 @@ const PurchaseOrdersPage = () => {
                     </div>
                 );
             })()}
+
+            {/* Add Supplier sub-modal (opened from inside the PO form) */}
+            {isAddSupplierOpen && (
+                <div
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 10000,
+                        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '10px' : '24px'
+                    }}
+                    onClick={() => { if (!isSavingSupplier) setIsAddSupplierOpen(false); }}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            background: '#ffffff', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '520px',
+                            maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                            boxShadow: '0 24px 48px rgba(0,0,0,0.2)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                    >
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                    <Plus size={18} />
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Add Supplier</h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Create a supplier without leaving the order</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsAddSupplierOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div style={{ padding: isMobile ? '14px' : '20px 24px', overflowY: 'auto', display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: '12px 16px' }}>
+                            {([
+                                { key: 'name', label: 'Supplier Name *', placeholder: 'e.g. ABC Trading', autoFocus: true },
+                                { key: 'contact_name', label: 'Contact Person', placeholder: 'Optional' },
+                                { key: 'phone', label: 'Phone', placeholder: 'Optional' },
+                                { key: 'tax_id', label: 'Tax ID', placeholder: 'Optional' },
+                                { key: 'email', label: 'Email', placeholder: 'Optional' },
+                                { key: 'address', label: 'Address', placeholder: 'Optional' },
+                            ] as const).map(f => (
+                                <div key={f.key}>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{f.label}</label>
+                                    <input
+                                        type="text"
+                                        className="input-field"
+                                        autoFocus={'autoFocus' in f && f.autoFocus}
+                                        placeholder={f.placeholder}
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', boxSizing: 'border-box' }}
+                                        value={newSupplier[f.key]}
+                                        onChange={(e) => setNewSupplier(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleCreateSupplier(); }}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button className="secondary-button" disabled={isSavingSupplier} onClick={() => setIsAddSupplierOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                            <button className="primary-button" disabled={isSavingSupplier || !newSupplier.name.trim()} onClick={handleCreateSupplier} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <CheckCircle2 size={16} /> {isSavingSupplier ? 'Saving…' : 'Create Supplier'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Payment Modal */}
             {isPaymentModalOpen && (

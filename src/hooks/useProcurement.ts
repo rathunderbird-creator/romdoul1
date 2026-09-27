@@ -37,8 +37,11 @@ export const useProcurement = () => {
         }
     }, [showToast]);
 
-    const saveSupplier = useCallback(async (supplier: Partial<Supplier>) => {
+    // Returns the saved supplier row, so a caller (e.g. the PO form's inline
+    // "Add Supplier") can select the new supplier right away.
+    const saveSupplier = useCallback(async (supplier: Partial<Supplier>): Promise<Supplier | null> => {
         try {
+            let saved: Supplier | null = null;
             if (supplier.id) {
                 const { error } = await supabase
                     .from('suppliers')
@@ -53,9 +56,10 @@ export const useProcurement = () => {
                     })
                     .eq('id', supplier.id);
                 if (error) throw error;
+                saved = supplier as Supplier;
                 showToast('Supplier updated successfully', 'success');
             } else {
-                const { error } = await supabase
+                const { data, error } = await supabase
                     .from('suppliers')
                     .insert([{
                         name: supplier.name,
@@ -65,11 +69,15 @@ export const useProcurement = () => {
                         address: supplier.address,
                         tax_id: supplier.tax_id,
                         is_active: supplier.is_active ?? true
-                    }]);
+                    }])
+                    .select()
+                    .single();
                 if (error) throw error;
+                saved = data as Supplier;
                 showToast('Supplier created successfully', 'success');
             }
             await fetchSuppliers();
+            return saved;
         } catch (error: any) {
             console.error('Failed to save supplier:', error);
             showToast('Failed to save supplier: ' + error.message, 'error');
