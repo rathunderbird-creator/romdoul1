@@ -1359,8 +1359,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // `supplier` feeds the "Supplier / Customer" column in Stock Movements. Without it
     // every stock-in row rendered as "-", since that column falls back to customer_name
     // which is only set for sales-side movements.
+    // NOTE: like adjustStock below, this deliberately does NOT toggle the
+    // global isLoading — App swaps the whole page for a full-screen loader on
+    // that flag, so the PO-receive loop (one addStock per line item) was
+    // remounting the page once per item: the screen "loaded" repeatedly and
+    // the freshly mounted list fetched BEFORE the status update landed,
+    // leaving the Receive button visible. Callers show their own feedback.
     const addStock = async (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => {
-        setIsLoading(true);
         try {
             const id = generateUUID();
             const date = new Date().toISOString();
@@ -1422,8 +1427,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // PO 'Received' (and toast success) when the stock was never added.
             console.error("Error adding stock:", error);
             throw error;
-        } finally {
-            setIsLoading(false);
         }
     };
 

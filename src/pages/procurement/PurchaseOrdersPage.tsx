@@ -948,9 +948,11 @@ const PurchaseOrdersPage = () => {
                                                         onClick={() => handleReceivePO(po)}
                                                         disabled={receivingId === po.id}
                                                         style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: receivingId === po.id ? 'not-allowed' : 'pointer', color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s', opacity: receivingId === po.id ? 0.6 : 1 }}
-                                                        title="Receive into stock"
+                                                        title={receivingId === po.id ? 'Receiving…' : 'Receive into stock'}
                                                     >
-                                                        <PackageCheck size={15} />
+                                                        {receivingId === po.id
+                                                            ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} />
+                                                            : <PackageCheck size={15} />}
                                                     </button>
                                                 )}
                                                 {po.payment_status !== 'Paid' && (
