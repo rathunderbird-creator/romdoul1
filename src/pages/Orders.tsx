@@ -472,6 +472,23 @@ const postDispatchMessage = (current: string, target: string) =>
 
 // ReStock orders stay editable (fixing details after a restock is a real
 // need); only Cancelled and Returned remain locked.
+// A sale's page is page_source, FALLING BACK to the customer snapshot's page
+// — the same rule the dashboards group by (and mapper.ts maps by). Filtering
+// on page_source alone hid every order whose page only lives in the snapshot
+// (old orders predating the column), so a dashboard page card could open a
+// list missing rows or empty. 'Unknown Page' is the dashboards' bucket for
+// orders with neither.
+const PAGE_UNKNOWN = 'Unknown Page';
+const pageOrFilter = (pages: string[]): string => {
+    const noSource = 'page_source.is.null,page_source.eq.""';
+    const noSnapshot = 'customer_snapshot->>page.is.null,customer_snapshot->>page.eq.""';
+    return pages.flatMap(p => {
+        if (p === PAGE_UNKNOWN) return [`and(or(${noSource}),or(${noSnapshot}))`];
+        const v = `"${p.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+        return [`page_source.eq.${v}`, `and(or(${noSource}),customer_snapshot->>page.eq.${v})`];
+    }).join(',');
+};
+
 const LOCKED_ORDER_STATUSES = ['Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
@@ -1196,7 +1213,7 @@ const Orders: React.FC = () => {
         }
 
         if (pageFilter.length > 0) {
-            query = query.in('page_source', pageFilter);
+            query = query.or(pageOrFilter(pageFilter));
         }
 
         if (dateRange.start) {
@@ -1267,7 +1284,8 @@ const Orders: React.FC = () => {
                             itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
                         }
                         if (pageFilter.length > 0) {
-                            itemQuery = itemQuery.in('sales.page_source', pageFilter);
+                            // Same page_source-with-snapshot-fallback rule as the main query.
+                            itemQuery = itemQuery.or(pageOrFilter(pageFilter), { foreignTable: 'sales' });
                         }
                         
                         if (dateRange.start) {
@@ -1483,7 +1501,14 @@ const Orders: React.FC = () => {
         return { query };
     }, [applyScopeFilters, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters, showToast, salesUpdatedAt]);
 
+    // Stale-response guard: a click-through's filtered refetch races the
+    // unfiltered mount fetch (and any other superseded fetch); without this,
+    // whichever response lands LAST wins — e.g. a dashboard page card opened
+    // an unfiltered list whenever the heavier first response resolved late.
+    const fetchOrdersSeqRef = React.useRef(0);
     const fetchOrders = React.useCallback(async () => {
+        const reqId = ++fetchOrdersSeqRef.current;
+        const isStale = () => reqId !== fetchOrdersSeqRef.current;
         setIsLoadingOrders(true);
         try {
             let dbSortCol = 'date';
@@ -1539,6 +1564,7 @@ const Orders: React.FC = () => {
                     if (!chunk || chunk.length < (toRow - fromRow + 1)) { serverRanDry = true; break; }
                 }
                 data = rows;
+                if (isStale()) return;
                 setHasMoreMobile(!serverRanDry && rows.length < (count || 0));
             } else {
                 // Desktop: one page. Built here (not before the branch) so the mobile
@@ -1557,6 +1583,7 @@ const Orders: React.FC = () => {
                 count = res.count;
             }
 
+            if (isStale()) return;
             setTotalCount(count || 0);
 
             const mapped = (data || []).map(mapSaleEntity);
@@ -1587,16 +1614,18 @@ const Orders: React.FC = () => {
                         for (const r of rows || []) revenue += Number((r as any).total) || 0;
                         if (!rows || rows.length < CHUNK) break;
                     }
-                    setRevenueTotal(revenue);
+                    if (!isStale()) setRevenueTotal(revenue);
                 } catch (sumErr) {
                     console.error('Failed to compute revenue total:', sumErr);
-                    setRevenueTotal(null);
+                    if (!isStale()) setRevenueTotal(null);
                 }
             }
         } catch (err) {
             console.error("Fetch orders failed", err);
         } finally {
-            setIsLoadingOrders(false);
+            // Only the newest fetch may clear the spinner — a stale one
+            // finishing late must not hide that a newer fetch is in flight.
+            if (!isStale()) setIsLoadingOrders(false);
         }
     }, [applyOrderFilters, sortConfig, currentPage, itemsPerPage, salesUpdatedAt, isMobile]);
 
