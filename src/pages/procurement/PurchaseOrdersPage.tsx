@@ -36,7 +36,7 @@ const PAYMENT_FILTER_OPTIONS = ['Unpaid', 'Partial', 'Paid'] as const;
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { products, addStock, currentUser } = useStore();
+    const { products, addStock, currentUser, addProduct } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
     const [receivingId, setReceivingId] = useState<string | null>(null);
@@ -120,6 +120,40 @@ const PurchaseOrdersPage = () => {
     const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
     const [newSupplier, setNewSupplier] = useState(EMPTY_NEW_SUPPLIER);
     const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+    // Inline "create product" from a line item's dropdown: which line asked
+    // for it (null = closed), the form values, and the saving flag.
+    const EMPTY_NEW_PRODUCT = { name: '', model: '', category: '', purchase_cost: '', price: '' };
+    const [addProductForLine, setAddProductForLine] = useState<number | null>(null);
+    const [newProduct, setNewProduct] = useState(EMPTY_NEW_PRODUCT);
+    const [isSavingProduct, setIsSavingProduct] = useState(false);
+    const handleCreateProduct = async () => {
+        if (addProductForLine === null) return;
+        if (!newProduct.name.trim()) { showToast('Product name is required', 'error'); return; }
+        setIsSavingProduct(true);
+        try {
+            const created = await addProduct({
+                name: newProduct.name.trim(),
+                model: newProduct.model.trim(),
+                category: newProduct.category.trim(),
+                price: Number(newProduct.price) || 0,
+                purchaseCost: Number(newProduct.purchase_cost) || 0,
+                // Stock starts at 0 — it arrives when this PO is received.
+                stock: 0,
+                lowStockThreshold: 5,
+                image: '',
+                isActive: true,
+                supplier: activeSuppliers.find(s => s.id === supplierId)?.name,
+            });
+            if (created) {
+                const lineIndex = addProductForLine;
+                setLines(prev => prev.map((l, i) => i === lineIndex
+                    ? { ...l, product_id: created.id, unit_price: l.unit_price || created.purchaseCost || 0 }
+                    : l));
+                setAddProductForLine(null);
+                setNewProduct(EMPTY_NEW_PRODUCT);
+            }
+        } finally { setIsSavingProduct(false); }
+    };
     const handleCreateSupplier = async () => {
         if (!newSupplier.name.trim()) { showToast('Supplier name is required', 'error'); return; }
         setIsSavingSupplier(true);
@@ -1144,7 +1178,7 @@ const PurchaseOrdersPage = () => {
                                         onClick={addLine} 
                                         style={{ padding: '7px 14px', fontSize: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}
                                     >
-                                        <Plus size={14} /> Add Product
+                                        <Plus size={14} /> Add Line
                                     </button>
                                 </div>
                                 {/* Mobile: fixed-width columns scroll sideways inside the card */}
@@ -1165,8 +1199,17 @@ const PurchaseOrdersPage = () => {
                                                 <tr key={index} style={{ borderBottom: index < lines.length - 1 ? '1px solid var(--color-border)' : undefined, background: index % 2 === 1 ? 'rgba(0,0,0,0.01)' : undefined }}>
                                                     <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{index + 1}</td>
                                                     <td style={{ padding: '10px 12px' }}>
-                                                        <select className="input-field" style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.product_id} onChange={(e) => updateLine(index, 'product_id', e.target.value)}>
+                                                        <select
+                                                            className="input-field"
+                                                            style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }}
+                                                            value={line.product_id}
+                                                            onChange={(e) => {
+                                                                if (e.target.value === '__new__') { setAddProductForLine(index); return; }
+                                                                updateLine(index, 'product_id', e.target.value);
+                                                            }}
+                                                        >
                                                             <option value="">Select product...</option>
+                                                            <option value="__new__">＋ Create new product…</option>
                                                             {products.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
                                                         </select>
                                                     </td>
@@ -1345,6 +1388,73 @@ const PurchaseOrdersPage = () => {
                     </div>
                 );
             })()}
+
+            {/* Create Product sub-modal (opened from a line item's dropdown) */}
+            {addProductForLine !== null && (
+                <div
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 10000,
+                        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '10px' : '24px'
+                    }}
+                    onClick={() => { if (!isSavingProduct) setAddProductForLine(null); }}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            background: '#ffffff', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '520px',
+                            maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                            boxShadow: '0 24px 48px rgba(0,0,0,0.2)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                    >
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                    <Package size={18} />
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Create Product</h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Stock starts at 0 and arrives when this order is received</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setAddProductForLine(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div style={{ padding: isMobile ? '14px' : '20px 24px', overflowY: 'auto', display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: '12px 16px' }}>
+                            {([
+                                { key: 'name', label: 'Product Name *', placeholder: 'e.g. Speaker X100', type: 'text', autoFocus: true },
+                                { key: 'model', label: 'Model', placeholder: 'Optional', type: 'text' },
+                                { key: 'category', label: 'Category', placeholder: 'Optional', type: 'text' },
+                                { key: 'purchase_cost', label: 'Purchase Cost ($)', placeholder: '0.00', type: 'number' },
+                                { key: 'price', label: 'Sale Price ($)', placeholder: '0.00', type: 'number' },
+                            ] as const).map(f => (
+                                <div key={f.key}>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{f.label}</label>
+                                    <input
+                                        type={f.type}
+                                        min={f.type === 'number' ? 0 : undefined}
+                                        step={f.type === 'number' ? 0.01 : undefined}
+                                        className="input-field"
+                                        autoFocus={'autoFocus' in f && f.autoFocus}
+                                        placeholder={f.placeholder}
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', boxSizing: 'border-box' }}
+                                        value={newProduct[f.key]}
+                                        onChange={(e) => setNewProduct(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleCreateProduct(); }}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button className="secondary-button" disabled={isSavingProduct} onClick={() => setAddProductForLine(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                            <button className="primary-button" disabled={isSavingProduct || !newProduct.name.trim()} onClick={handleCreateProduct} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <CheckCircle2 size={16} /> {isSavingProduct ? 'Saving…' : 'Create Product'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Supplier sub-modal (opened from inside the PO form) */}
             {isAddSupplierOpen && (

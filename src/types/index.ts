@@ -156,7 +156,8 @@ export interface StoreContextType {
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => Promise<Sale | undefined>;
     addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<Sale>;
     updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => void;
-    addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+    // Returns the created product (null on failure) so callers can select it.
+    addProduct: (product: Omit<Product, 'id'>) => Promise<Product | null>;
     updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
     deleteProduct: (id: string) => Promise<void>;
     deleteProducts: (ids: string[]) => Promise<void>;

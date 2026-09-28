@@ -1257,7 +1257,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     // Inventory Actions
-    const addProduct = async (productData: Omit<Product, 'id'>) => {
+    // Returns the created product (or null on failure), so callers like the
+    // PO form's inline "create product" can select it right away.
+    const addProduct = async (productData: Omit<Product, 'id'>): Promise<Product | null> => {
         const newProduct: Product = {
             ...productData,
             id: Date.now().toString()
@@ -1287,18 +1289,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             alert(`Failed to add product: ${error.message}\nPlease check database permissions (RLS) or connection.`);
             // Rollback local state
             setProducts(prev => prev.filter(p => p.id !== newProduct.id));
-        } else {
-            if (newProduct.stock > 0) {
-                const inventoryItems = Array.from({ length: newProduct.stock }).map(() => ({
-                    product_id: newProduct.id,
-                    cost_of_purchase: newProduct.purchaseCost || 0,
-                    status: 'in_stock'
-                }));
-                await supabase.from('inventory_items').insert(inventoryItems);
-            }
-            setProductsUpdatedAt(Date.now());
-            dispatchActivity({ action: 'product_added', description: `Product "${newProduct.name}" added`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: newProduct.id } });
+            return null;
         }
+        if (newProduct.stock > 0) {
+            const inventoryItems = Array.from({ length: newProduct.stock }).map(() => ({
+                product_id: newProduct.id,
+                cost_of_purchase: newProduct.purchaseCost || 0,
+                status: 'in_stock'
+            }));
+            await supabase.from('inventory_items').insert(inventoryItems);
+        }
+        setProductsUpdatedAt(Date.now());
+        dispatchActivity({ action: 'product_added', description: `Product "${newProduct.name}" added`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: newProduct.id } });
+        return newProduct;
     };
 
     const updateProduct = async (id: string, updates: Partial<Product>) => {
