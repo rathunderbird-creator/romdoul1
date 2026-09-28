@@ -661,7 +661,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // If it's another error (e.g. network), do nothing to DB, retain current state fallback
             } else if (configResult.data) {
                 const loadedConfig = configResult.data.data;
-                
+
+                // A config row written by hand (or by an older build) can miss
+                // whole keys. Every list the UI maps over must exist, or pages
+                // crash — e.g. Checkout's "Manage Shipping Companies" hits
+                // .includes()/.map() of undefined.
+                for (const k of ['shippingCompanies', 'salesmen', 'categories', 'pages', 'customerCare', 'paymentMethods', 'cities']) {
+                    if (!Array.isArray(loadedConfig[k])) loadedConfig[k] = [];
+                }
+
                 // Inject telegram configs from their own table
                 if (telegramConfigsResult?.data) {
                     loadedConfig.telegramConfigs = telegramConfigsResult.data.map((tc: any) => ({
@@ -814,12 +822,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return Array.from(new Set([...userNames, ...(config.customerCare || [])])).filter(Boolean);
     }, [users, config.customerCare]);
 
-    // Sync Config to DB
+    // Sync Config to DB. Optimistic: the UI updates at once; if the save
+    // fails the change is ROLLED BACK and the error rethrown, so callers can
+    // show it — otherwise a failed write (e.g. RLS on app_config of a
+    // misconfigured instance) silently vanished on the next reload.
     const updateConfig = async (newConfig: ConfigState) => {
+        const previous = config;
         setConfig(newConfig);
         const { error } = await supabase.from('app_config').upsert({ id: 1, data: newConfig });
         if (error) {
             console.error('Failed to update config in Supabase:', error);
+            setConfig(previous);
             throw new Error('Failed to update configuration: ' + error.message);
         }
     };
@@ -850,18 +863,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    // The add/remove helpers RETURN updateConfig's promise so the UI (e.g.
+    // ConfigModal) can await and surface a failed save; the lists are read
+    // defensively for the same reason as the load-time normalisation above.
     const addShippingCompany = (name: string) => {
-        if (!config.shippingCompanies.includes(name)) {
-            updateConfig({ ...config, shippingCompanies: [...config.shippingCompanies, name] });
-        }
+        const list = config.shippingCompanies || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, shippingCompanies: [...list, name] });
     };
 
     const removeShippingCompany = (name: string) => {
-        updateConfig({ ...config, shippingCompanies: config.shippingCompanies.filter(c => c !== name) });
+        return updateConfig({ ...config, shippingCompanies: (config.shippingCompanies || []).filter(c => c !== name) });
     };
 
     const updateShippingRate = (company: string, rate: number) => {
-        updateConfig({ ...config, shippingRates: { ...(config.shippingRates || {}), [company]: rate } });
+        return updateConfig({ ...config, shippingRates: { ...(config.shippingRates || {}), [company]: rate } });
     };
 
     // Tracking page URL per shipping company ({tracking} = waybill number).
@@ -871,67 +887,67 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const next = { ...(config.trackingUrlTemplates || {}) };
         const t = template.trim();
         if (t) next[company] = t; else delete next[company];
-        updateConfig({ ...config, trackingUrlTemplates: next });
+        return updateConfig({ ...config, trackingUrlTemplates: next });
     };
 
     const addSalesman = (name: string) => {
-        if (!config.salesmen.includes(name)) {
-            updateConfig({ ...config, salesmen: [...config.salesmen, name] });
-        }
+        const list = config.salesmen || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, salesmen: [...list, name] });
     };
 
     const removeSalesman = (name: string) => {
-        updateConfig({ ...config, salesmen: config.salesmen.filter(s => s !== name) });
+        return updateConfig({ ...config, salesmen: (config.salesmen || []).filter(s => s !== name) });
     };
 
     const addCategory = (name: string) => {
-        if (!config.categories.includes(name)) {
-            updateConfig({ ...config, categories: [...config.categories, name] });
-        }
+        const list = config.categories || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, categories: [...list, name] });
     };
 
     const removeCategory = (name: string) => {
-        updateConfig({ ...config, categories: config.categories.filter(c => c !== name) });
+        return updateConfig({ ...config, categories: (config.categories || []).filter(c => c !== name) });
     };
 
     const addPage = (name: string) => {
-        if (!config.pages.includes(name)) {
-            updateConfig({ ...config, pages: [...config.pages, name] });
-        }
+        const list = config.pages || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, pages: [...list, name] });
     };
 
     const removePage = (name: string) => {
-        updateConfig({ ...config, pages: config.pages.filter(p => p !== name) });
+        return updateConfig({ ...config, pages: (config.pages || []).filter(p => p !== name) });
     };
 
     const addCustomerCare = (name: string) => {
-        if (!config.customerCare.includes(name)) {
-            updateConfig({ ...config, customerCare: [...config.customerCare, name] });
-        }
+        const list = config.customerCare || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, customerCare: [...list, name] });
     };
 
     const removeCustomerCare = (name: string) => {
-        updateConfig({ ...config, customerCare: config.customerCare.filter(c => c !== name) });
+        return updateConfig({ ...config, customerCare: (config.customerCare || []).filter(c => c !== name) });
     };
 
     const addPaymentMethod = (name: string) => {
-        if (!config.paymentMethods.includes(name)) {
-            updateConfig({ ...config, paymentMethods: [...config.paymentMethods, name] });
-        }
+        const list = config.paymentMethods || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, paymentMethods: [...list, name] });
     };
 
     const removePaymentMethod = (name: string) => {
-        updateConfig({ ...config, paymentMethods: config.paymentMethods.filter(p => p !== name) });
+        return updateConfig({ ...config, paymentMethods: (config.paymentMethods || []).filter(p => p !== name) });
     };
 
     const addCity = (name: string) => {
-        if (!config.cities.includes(name)) {
-            updateConfig({ ...config, cities: [...config.cities, name] });
-        }
+        const list = config.cities || [];
+        if (list.includes(name)) return Promise.resolve();
+        return updateConfig({ ...config, cities: [...list, name] });
     };
 
     const removeCity = (name: string) => {
-        updateConfig({ ...config, cities: config.cities.filter(c => c !== name) });
+        return updateConfig({ ...config, cities: (config.cities || []).filter(c => c !== name) });
     };
 
     // All blocklist matching is by normalized (digits-only) phone — entries and
@@ -3647,13 +3663,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addCustomer,
             updateCustomer,
             deleteCustomer,
-            shippingCompanies: config.shippingCompanies,
+            shippingCompanies: config.shippingCompanies || [],
             shippingRates: config.shippingRates || {},
             updateShippingRate,
             trackingUrlTemplates: config.trackingUrlTemplates || {},
             updateTrackingUrlTemplate,
-            salesmen: config.salesmen,
-            categories: config.categories,
+            salesmen: config.salesmen || [],
+            categories: config.categories || [],
             addShippingCompany,
             removeShippingCompany,
             addSalesman,
@@ -3662,14 +3678,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             removeCategory,
             addPage,
             removePage,
-            pages: config.pages,
+            pages: config.pages || [],
             customerCare,
             addCustomerCare,
             removeCustomerCare,
-            cities: config.cities,
+            cities: config.cities || [],
             addCity,
             removeCity,
-            paymentMethods: config.paymentMethods,
+            paymentMethods: config.paymentMethods || [],
             addPaymentMethod,
             removePaymentMethod,
             editingOrder,

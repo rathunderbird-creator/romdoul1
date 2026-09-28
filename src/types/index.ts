@@ -193,35 +193,35 @@ export interface StoreContextType {
 
     shippingCompanies: string[];
     shippingRates: Record<string, number>;
-    updateShippingRate: (company: string, rate: number) => void;
+    updateShippingRate: (company: string, rate: number) => Promise<void>;
     // Per-company tracking page URL templates ({tracking} = waybill number).
     trackingUrlTemplates: Record<string, string>;
-    updateTrackingUrlTemplate: (company: string, template: string) => void;
+    updateTrackingUrlTemplate: (company: string, template: string) => Promise<void>;
     salesmen: string[];
     categories: string[];
     pages: string[];
     customerCare: string[];
 
-    addShippingCompany: (name: string) => void;
-    removeShippingCompany: (name: string) => void;
-    addSalesman: (name: string) => void;
-    removeSalesman: (name: string) => void;
-    addCategory: (name: string) => void;
-    removeCategory: (name: string) => void;
-    addPage: (name: string) => void;
-    removePage: (name: string) => void;
-    addCustomerCare: (name: string) => void;
-    removeCustomerCare: (name: string) => void;
+    addShippingCompany: (name: string) => Promise<void>;
+    removeShippingCompany: (name: string) => Promise<void>;
+    addSalesman: (name: string) => Promise<void>;
+    removeSalesman: (name: string) => Promise<void>;
+    addCategory: (name: string) => Promise<void>;
+    removeCategory: (name: string) => Promise<void>;
+    addPage: (name: string) => Promise<void>;
+    removePage: (name: string) => Promise<void>;
+    addCustomerCare: (name: string) => Promise<void>;
+    removeCustomerCare: (name: string) => Promise<void>;
 
     // Cities
     cities: string[];
-    addCity: (name: string) => void;
-    removeCity: (name: string) => void;
+    addCity: (name: string) => Promise<void>;
+    removeCity: (name: string) => Promise<void>;
 
     // Payment Methods
     paymentMethods: string[];
-    addPaymentMethod: (name: string) => void;
-    removePaymentMethod: (name: string) => void;
+    addPaymentMethod: (name: string) => Promise<void>;
+    removePaymentMethod: (name: string) => Promise<void>;
 
     editingOrder: Sale | null;
     setEditingOrder: (order: Sale | null) => void;

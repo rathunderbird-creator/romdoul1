@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Trash2, Link2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { useToast } from '../context/ToastContext';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 interface ConfigModalProps {
@@ -21,21 +22,28 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
         trackingUrlTemplates, updateTrackingUrlTemplate
     } = useStore();
 
+    const { showToast } = useToast();
     const [newItem, setNewItem] = useState('');
     // Draft tracking-URL edits per company (saved on blur / Enter).
     const [templateDrafts, setTemplateDrafts] = useState<Record<string, string>>({});
 
     if (!isOpen) return null;
 
+    // A failed save (bad connection, a misconfigured instance rejecting the
+    // app_config write…) used to vanish as an unhandled rejection — the item
+    // looked added, then reappeared/disappeared on reload. Surface it.
+    const reportSaveError = (err: any) => showToast('Failed to save: ' + (err?.message || 'unknown error'), 'error');
+
     const handleAddItem = () => {
         if (!newItem.trim()) return;
-        if (type === 'shipping') addShippingCompany(newItem.trim());
-        else if (type === 'salesman') addSalesman(newItem.trim());
-        else if (type === 'page') addPage(newItem.trim());
-        else if (type === 'customerCare') addCustomerCare(newItem.trim());
-        else if (type === 'paymentMethod') addPaymentMethod(newItem.trim());
-        else addCity(newItem.trim());
-
+        const name = newItem.trim();
+        const save = type === 'shipping' ? addShippingCompany(name)
+            : type === 'salesman' ? addSalesman(name)
+            : type === 'page' ? addPage(name)
+            : type === 'customerCare' ? addCustomerCare(name)
+            : type === 'paymentMethod' ? addPaymentMethod(name)
+            : addCity(name);
+        Promise.resolve(save).catch(reportSaveError);
         setNewItem('');
     };
 
@@ -52,12 +60,13 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
     };
 
     const handleRemove = (item: string) => {
-        if (type === 'shipping') removeShippingCompany(item);
-        else if (type === 'salesman') removeSalesman(item);
-        else if (type === 'page') removePage(item);
-        else if (type === 'customerCare') removeCustomerCare(item);
-        else if (type === 'paymentMethod') removePaymentMethod(item);
-        else removeCity(item);
+        const save = type === 'shipping' ? removeShippingCompany(item)
+            : type === 'salesman' ? removeSalesman(item)
+            : type === 'page' ? removePage(item)
+            : type === 'customerCare' ? removeCustomerCare(item)
+            : type === 'paymentMethod' ? removePaymentMethod(item)
+            : removeCity(item);
+        Promise.resolve(save).catch(reportSaveError);
     };
 
     const getTitle = () => {
@@ -80,7 +89,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
         // config blob, so tabbing through the fields must not spam it.
         const saved = (trackingUrlTemplates?.[company] || '').trim();
         if (draft.trim() === saved) return;
-        updateTrackingUrlTemplate(company, draft);
+        Promise.resolve(updateTrackingUrlTemplate(company, draft)).catch(reportSaveError);
     };
 
     return (
@@ -102,7 +111,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
                     </div>
                 )}
                 <div style={{ maxHeight: '340px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
-                    {getList().map(item => {
+                    {(getList() || []).map(item => {
                         const carrier = type === 'shipping' ? detectCarrier(item) : null;
                         const builtIn = carrier ? DEFAULT_TRACKING_TEMPLATES[carrier] : '';
                         const saved = trackingUrlTemplates?.[item] || '';
