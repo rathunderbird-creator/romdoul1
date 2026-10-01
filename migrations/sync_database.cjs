@@ -98,6 +98,9 @@ const EXPECTED_TABLES = {
     page_income_predictions: ['date', 'page', 'boost_page', 'shipping', 'updated_at', 'updated_by'],
     // Income Prediction's auto-saved Staff input (create_income_prediction_staff.sql).
     income_prediction_staff: ['date', 'staff', 'updated_at', 'updated_by'],
+    // Profit & CPA Tracker manual inputs.
+    cpa_product_settings: ['product_id', 'courier_fee', 'packaging', 'desired_profit', 'expected_delivery_rate', 'updated_at', 'updated_by'],
+    cpa_daily_entries: ['date', 'page', 'product_id', 'ad_spend', 'inbound_chats', 'closed_override', 'delivered_override', 'updated_at', 'updated_by'],
     // Tables with their own migration file: existence check only (empty list).
     inventory_items: [],
     deleted_orders: [],

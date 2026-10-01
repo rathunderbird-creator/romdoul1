@@ -35,6 +35,7 @@ const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
 const PageIncomePrediction = lazy(() => import('./pages/pageIncomePrediction/PageIncomePredictionPage'));
 const ProductIncomePrediction = lazy(() => import('./pages/productIncomePrediction/ProductIncomePredictionPage'));
 const StaffIncomePrediction = lazy(() => import('./pages/staffIncomePrediction/StaffIncomePredictionPage'));
+const CpaTracker = lazy(() => import('./pages/cpaTracker/CpaTrackerPage'));
 const ActivityLogPage = lazy(() => import('./pages/ActivityLogPage'));
 const PriceListPage = lazy(() => import('./pages/PriceListPage'));
 
@@ -147,6 +148,7 @@ const ProtectedApp = () => {
           <Route path="/income-expense/page-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><PageIncomePrediction /></ProtectedRoute>} />
           <Route path="/income-expense/product-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><ProductIncomePrediction /></ProtectedRoute>} />
           <Route path="/income-expense/staff-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><StaffIncomePrediction /></ProtectedRoute>} />
+          <Route path="/income-expense/cpa-tracker" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><CpaTracker /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
           <Route path="/orders-management-2" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrdersManagement2 /></ProtectedRoute>} />
           <Route path="/orders/shipping" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />

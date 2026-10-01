@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Pin, PinOff, Gauge, Megaphone } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Pin, PinOff, Gauge, Megaphone, Target } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -66,7 +66,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                 { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
                 { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
                 { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
-                { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users }
+                { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users },
+                { label: t('nav.cpaTracker'), path: '/income-expense/cpa-tracker', icon: Target }
             ]
         });
     }

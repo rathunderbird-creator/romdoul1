@@ -743,6 +743,39 @@ CREATE TABLE IF NOT EXISTS page_income_predictions (
 );
 
 -- ============================================================
+-- 11b. PROFIT & CPA TRACKER (Income & Expense → Profit & CPA)
+-- ============================================================
+-- Only the MANUAL inputs live here. Closed / delivered orders and revenue
+-- are counted live from `sales`; price and COGS come from `products`.
+
+-- Per-product unit-economics extras. product_id '__default__' holds the
+-- defaults a product falls back to field by field (NULL = inherit).
+CREATE TABLE IF NOT EXISTS cpa_product_settings (
+    product_id TEXT PRIMARY KEY,
+    courier_fee NUMERIC,             -- $ per delivered ORDER (split across a multi-product order)
+    packaging NUMERIC,               -- $ per delivered ORDER
+    desired_profit NUMERIC,          -- $ per delivered order
+    expected_delivery_rate NUMERIC,  -- 0..1
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_by TEXT
+);
+
+-- Daily ad inputs per (day, page, product), plus optional overrides of the
+-- counted closed / delivered orders (NULL = use the live count).
+CREATE TABLE IF NOT EXISTS cpa_daily_entries (
+    date DATE NOT NULL,
+    page TEXT NOT NULL CHECK (page = btrim(page)),  -- same page key as page_income_predictions
+    product_id TEXT NOT NULL,
+    ad_spend NUMERIC DEFAULT 0,
+    inbound_chats INTEGER,
+    closed_override INTEGER,
+    delivered_override INTEGER,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_by TEXT,
+    PRIMARY KEY (date, page, product_id)
+);
+
+-- ============================================================
 -- 12. INDEXES AND VIEWS
 -- ============================================================
 
@@ -838,6 +871,8 @@ ALTER TABLE deleted_sale_items DISABLE ROW LEVEL SECURITY;
 ALTER TABLE income_predictions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE income_prediction_staff DISABLE ROW LEVEL SECURITY;
 ALTER TABLE page_income_predictions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cpa_product_settings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cpa_daily_entries DISABLE ROW LEVEL SECURITY;
 
 -- SECURITY DEFINER verifier: checks a PIN for ONE account and returns
 -- the matched account WITHOUT the pin. Empty/unset PINs never match;
