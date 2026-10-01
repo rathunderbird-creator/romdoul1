@@ -27,7 +27,10 @@
 
 /* Row states. The sibling page highlights hovered rows the same way. */
 .pip-row td { transition: background 0.15s ease; }
-.pip-row:hover td { background: var(--color-background) !important; }
+/* --color-background is not defined anywhere, which made a hovered row's
+   cells (including the sticky first column) TRANSPARENT, so cells scrolled
+   underneath showed through. Fall back to the app's real background colour. */
+.pip-row:hover td { background: var(--color-background, var(--color-bg)) !important; }
 .pip-row-clickable { cursor: pointer; }
 .pip-row-clickable:focus-visible { outline: 2px solid #8B5CF6; outline-offset: -2px; }
 
