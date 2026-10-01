@@ -19,7 +19,8 @@ export interface EditableMoneyCellProps {
 
 // Spreadsheet-style cell: type, then blur or press Enter to commit. An
 // emptied cell commits null (= "nothing entered"); an unparseable draft
-// reverts. Nothing is sent when the value didn't change.
+// (including one the browser flags as badInput) reverts. Nothing is sent
+// when the value didn't change.
 const EditableMoneyCell: React.FC<EditableMoneyCellProps> = ({ value, placeholder, placeholderTitle, disabled, saving, saved, color, ariaLabel, warnAbove, warnTitle, onCommit }) => {
     // Whole cents only — a computed total like 0.1 + 0.2 must not surface as
     // "0.30000000000000004" in the box (callers round too; this is the guard
@@ -38,11 +39,21 @@ const EditableMoneyCell: React.FC<EditableMoneyCellProps> = ({ value, placeholde
     // discard. This ref, set synchronously before .blur(), lets commit()
     // detect "this blur is the Escape-triggered one" and skip it outright.
     const skipNextCommitRef = useRef(false);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const commit = () => {
         if (skipNextCommitRef.current) { skipNextCommitRef.current = false; return; }
+        const el = inputRef.current;
+        const revert = () => {
+            setDraft(toText(value));
+            // A malformed number ("45-", "4..5") keeps showing in a type=number
+            // box even though React's value is '' — reset the DOM text too.
+            if (el) el.value = toText(value);
+        };
+        // A malformed number reads as '' from a type=number input: that must
+        // revert, never be taken as "cleared" (which would delete the value).
+        if (el?.validity.badInput) { revert(); return; }
         const trimmed = draft.trim();
-        const revert = () => setDraft(toText(value));
         if (trimmed === '') {
             if (value !== null) onCommit(null).catch(revert);
             return;
@@ -73,6 +84,7 @@ const EditableMoneyCell: React.FC<EditableMoneyCellProps> = ({ value, placeholde
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 60 }}>
                     <span aria-hidden style={{ position: 'absolute', left: 6, color: 'var(--color-text-secondary)', fontSize: 11, pointerEvents: 'none', opacity: 0.6 }}>$</span>
                     <input
+                        ref={inputRef}
                         type="number"
                         inputMode="decimal"
                         min={0}
