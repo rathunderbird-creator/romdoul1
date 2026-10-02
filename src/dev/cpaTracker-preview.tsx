@@ -73,9 +73,9 @@ const Preview = () => {
                 return later(() => setEntries(prev => {
                     const same = (r: DailyEntryRow) => r.date === date && r.page === page && r.productId === productId;
                     const existing = prev.find(same);
-                    const next: DailyEntryRow = existing ? { ...existing } : { date, page, productId, adSpend: 0, inboundChats: null, closedOverride: null, deliveredOverride: null };
+                    const next: DailyEntryRow = existing ? { ...existing } : { date, page, productId, adSpend: null, inboundChats: null, closedOverride: null, deliveredOverride: null };
                     for (const [field, value] of Object.entries(patch) as [keyof typeof patch, number | null][]) {
-                        if (field === 'adSpend') next.adSpend = value ?? 0; else next[field] = value;
+                        next[field] = value;
                     }
                     const rest = prev.filter(r => !same(r));
                     return isEmptyEntry(next) ? rest : [...rest, next];

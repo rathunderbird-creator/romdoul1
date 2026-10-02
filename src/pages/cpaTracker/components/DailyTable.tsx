@@ -137,7 +137,7 @@ const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, lang
                         <div className="d2-khmer" style={{ fontSize: 11, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.5 }} title={page}>{page}</div>
                     </button>
                 </td>
-                <td style={{ padding: '3px 6px' }}>{cell('adSpend', row.spend > 0 ? row.spend : null, { prefix: '$', column: 'spend' })}</td>
+                <td style={{ padding: '3px 6px' }}>{cell('adSpend', row.adSpendTyped, { prefix: '$', column: 'spend' })}</td>
                 <td style={{ padding: '3px 6px' }}>{cell('inboundChats', row.inboundChats, { placeholder: '-', integer: true, minWidth: 48, column: 'chats' })}</td>
                 <td style={tdNum}><MoneyText value={row.costPerChat} /></td>
                 <td style={{ padding: '3px 6px' }}>{cell('closedOverride', row.closedOverride, { placeholder: String(row.closedCounted), placeholderTitle: countTitle(row.closedCounted), integer: true, minWidth: 48, column: 'closed' })}</td>

@@ -145,14 +145,18 @@ export const EditableNumberCell: React.FC<EditableNumberCellProps> = ({ value, p
         onCommit(stored).catch(revert);
     };
 
+    // A cell with a MANUALLY ENTERED value must read as such at a glance:
+    // bold purple figure on a tinted box, versus the grey counted/inherited
+    // placeholder of an untouched cell.
     const filled = draft.trim() !== '';
-    const border = filled ? `${ACCENT}55` : 'var(--color-border)';
+    const border = filled ? `${ACCENT}66` : 'var(--color-border)';
+    const TYPED_INK = '#6D28D9';
     return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }} onClick={e => e.stopPropagation()}>
             {saving && <Loader2 size={12} className="pip-spin" style={{ color: ACCENT, flexShrink: 0 }} aria-hidden />}
             {saved && !saving && <Check size={12} style={{ color: '#10B981', flexShrink: 0 }} aria-hidden />}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth }}>
-                {prefix && <span aria-hidden style={{ position: 'absolute', left: 6, color: 'var(--color-text-secondary)', fontSize: 11, pointerEvents: 'none', opacity: 0.6 }}>{prefix}</span>}
+                {prefix && <span aria-hidden style={{ position: 'absolute', left: 6, color: filled ? TYPED_INK : 'var(--color-text-secondary)', fontSize: 11, pointerEvents: 'none', opacity: filled ? 0.75 : 0.6 }}>{prefix}</span>}
                 <input
                     ref={inputRef}
                     type="number"
@@ -189,12 +193,13 @@ export const EditableNumberCell: React.FC<EditableNumberCellProps> = ({ value, p
                         width: '100%', boxSizing: 'border-box', textAlign: 'right',
                         padding: `5px ${suffix ? 18 : 8}px 5px ${prefix ? 16 : 8}px`,
                         borderRadius: 6, border: `1px solid ${border}`,
-                        background: filled ? `${ACCENT}0D` : 'var(--color-background)',
-                        color: 'var(--color-text-main)', fontSize: 12, outline: 'none',
+                        background: filled ? `${ACCENT}14` : 'var(--color-background)',
+                        color: filled ? TYPED_INK : 'var(--color-text-main)',
+                        fontFamily: 'inherit', fontSize: 12, outline: 'none',
                         fontWeight: filled ? 700 : 400, opacity: disabled ? 0.6 : 1,
                     }}
                 />
-                {suffix && <span aria-hidden style={{ position: 'absolute', right: 6, color: 'var(--color-text-secondary)', fontSize: 11, pointerEvents: 'none', opacity: 0.7 }}>{suffix}</span>}
+                {suffix && <span aria-hidden style={{ position: 'absolute', right: 6, color: filled ? TYPED_INK : 'var(--color-text-secondary)', fontSize: 11, pointerEvents: 'none', opacity: 0.7 }}>{suffix}</span>}
             </div>
         </div>
     );

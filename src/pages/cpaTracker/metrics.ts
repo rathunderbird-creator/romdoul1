@@ -95,7 +95,7 @@ export interface DailyEntryRow {
     date: string;                         // YYYY-MM-DD
     page: string;                         // pageKeyOf() value; '' = no page
     productId: string;                    // '' = unknown product
-    adSpend: number;
+    adSpend: number | null;               // null = not entered; 0 = "no spend" TYPED (a real fact)
     inboundChats: number | null;          // null = not entered
     closedOverride: number | null;        // null = use the counted orders
     deliveredOverride: number | null;
@@ -106,9 +106,10 @@ export type EntryPatch = Partial<Record<EntryField, number | null>>;
 
 export const entryKey = (date: string, page: string, productId: string): string => `${date}|${page}|${productId}`;
 
-// An entry with nothing in it is deleted rather than stored.
+// An entry with nothing in it is deleted rather than stored. A typed $0
+// spend is NOT nothing — it records "no ads ran here", so the row stays.
 export const isEmptyEntry = (e: Pick<DailyEntryRow, 'adSpend' | 'inboundChats' | 'closedOverride' | 'deliveredOverride'>): boolean =>
-    !(e.adSpend > 0) && e.inboundChats === null && e.closedOverride === null && e.deliveredOverride === null;
+    e.adSpend === null && e.inboundChats === null && e.closedOverride === null && e.deliveredOverride === null;
 
 export interface MetricsInput {
     sales: Order[];
@@ -416,6 +417,7 @@ export interface DailyRow extends Measures {
     productId: string;
     productName: string;            // '' when the product is unknown
     hasEntry: boolean;
+    adSpendTyped: number | null;    // as typed (0 = typed "no spend"); null = not entered
     inboundChats: number | null;    // as typed
     closedCounted: number;
     deliveredCounted: number;
@@ -502,6 +504,7 @@ const rowOf = (key: string, date: string, page: string, productId: string, flow:
         key, date, page, productId,
         productName: ue?.name ?? '',
         hasEntry: !!entry,
+        adSpendTyped: entry?.adSpend ?? null,
         inboundChats: entry?.inboundChats ?? null,
         closedCounted: flow.closed,
         deliveredCounted: flow.delivered,

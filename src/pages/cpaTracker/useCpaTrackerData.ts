@@ -45,7 +45,12 @@ const mapEntry = (r: any): DailyEntryRow => ({
     date: String(r.date),
     page: String(r.page ?? ''),
     productId: String(r.product_id ?? ''),
-    adSpend: Number(r.ad_spend) || 0,
+    // null = spend never entered; 0 = a typed "no spend". (Rows from before
+    // this distinction may hold 0 via the old column DEFAULT; they also carry
+    // typed figures, so reading them as a typed $0 matches their intent. New
+    // rows always send the field explicitly — see commitEntry — and
+    // migrations/cpa_ad_spend_null_not_entered.sql drops the default.)
+    adSpend: numOrNull(r.ad_spend),
     inboundChats: numOrNull(r.inbound_chats),
     closedOverride: numOrNull(r.closed_override),
     deliveredOverride: numOrNull(r.delivered_override),
@@ -205,11 +210,11 @@ export const useCpaTrackerData = (range: DateRange, userName: string | undefined
         return tracked(key, () => chain(key, async () => {
             const same = (r: DailyEntryRow) => r.date === date && r.page === page && r.productId === productId;
             const existing = entriesRef.current.find(same);
-            const next: DailyEntryRow = existing ? { ...existing } : { date, page, productId, adSpend: 0, inboundChats: null, closedOverride: null, deliveredOverride: null };
+            const next: DailyEntryRow = existing ? { ...existing } : { date, page, productId, adSpend: null, inboundChats: null, closedOverride: null, deliveredOverride: null };
             const payload: Record<string, unknown> = {};
             for (const [field, raw] of Object.entries(patch) as [EntryField, number | null][]) {
-                if (field === 'adSpend') { next.adSpend = raw ?? 0; payload[ENTRY_COLUMN.adSpend] = next.adSpend; }
-                else { next[field] = raw === null ? null : Math.round(raw); payload[ENTRY_COLUMN[field]] = next[field]; }
+                next[field] = field === 'adSpend' || raw === null ? raw : Math.round(raw);
+                payload[ENTRY_COLUMN[field]] = next[field];
             }
             const empty = isEmptyEntry(next);
             if (!existing && empty) return;   // nothing to store, nothing stored
@@ -220,7 +225,13 @@ export const useCpaTrackerData = (range: DateRange, userName: string | undefined
             setEntriesBoth([...entriesRef.current.filter(r => !same(r)), ...(empty ? [] : [next])]);
             try {
                 const { error: upError } = await supabase.from(ENTRY_TABLE).upsert({
-                    date, page, product_id: productId, ...payload,
+                    date, page, product_id: productId,
+                    // On a NEW row, send the spend explicitly even when the edit
+                    // was another field: instances whose ad_spend column still
+                    // has its old DEFAULT 0 would otherwise store "typed $0" for
+                    // a spend nobody entered.
+                    ...(existing ? {} : { ad_spend: next.adSpend }),
+                    ...payload,
                     updated_at: new Date().toISOString(),
                     updated_by: userName || 'System',
                 }, { onConflict: 'date,page,product_id' });
@@ -228,17 +239,16 @@ export const useCpaTrackerData = (range: DateRange, userName: string | undefined
                 if (empty) {
                     const { error: delError } = await supabase.from(ENTRY_TABLE).delete()
                         .eq('date', date).eq('page', page).eq('product_id', productId)
-                        .or('ad_spend.is.null,ad_spend.eq.0')
+                        .is('ad_spend', null)
                         .is('inbound_chats', null).is('closed_override', null).is('delivered_override', null);
                     if (delError) console.warn('Profit & CPA Tracker: empty-row cleanup failed (harmless)', delError);
                 }
             } catch (e) {
                 const current = entriesRef.current.find(same);
-                const base: DailyEntryRow = current ?? existing ?? { date, page, productId, adSpend: 0, inboundChats: null, closedOverride: null, deliveredOverride: null };
+                const base: DailyEntryRow = current ?? existing ?? { date, page, productId, adSpend: null, inboundChats: null, closedOverride: null, deliveredOverride: null };
                 const restored: DailyEntryRow = { ...base };
                 for (const field of Object.keys(patch) as EntryField[]) {
-                    if (field === 'adSpend') restored.adSpend = existing?.adSpend ?? 0;
-                    else restored[field] = existing ? existing[field] : null;
+                    restored[field] = existing ? existing[field] : null;
                 }
                 setEntriesBoth([...entriesRef.current.filter(r => !same(r)), ...(isEmptyEntry(restored) ? [] : [restored])]);
                 throw e;

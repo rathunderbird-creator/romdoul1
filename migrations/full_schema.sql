@@ -766,7 +766,7 @@ CREATE TABLE IF NOT EXISTS cpa_daily_entries (
     date DATE NOT NULL,
     page TEXT NOT NULL CHECK (page = btrim(page)),  -- same page key as page_income_predictions
     product_id TEXT NOT NULL,
-    ad_spend NUMERIC DEFAULT 0,
+    ad_spend NUMERIC,                -- NULL = not entered; 0 = a typed "no spend"
     inbound_chats INTEGER,
     closed_override INTEGER,
     delivered_override INTEGER,
