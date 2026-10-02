@@ -2,13 +2,17 @@
 // group's header row carries the day's subtotal, like the workbook's
 // "Subtotal" rows. Ad Spend and Chats are typed; Closed and Delivered show the
 // counted orders as a grey placeholder and can be typed over (clear = back to
-// the count). "+N" next to Delivered = orders still in transit.
+// the count). "+N" next to Delivered = orders still in transit. The first cell
+// of a row opens the Orders list filtered to exactly that day × page ×
+// product (a day header opens the whole day); Enter in an input moves down
+// the column.
 import React from 'react';
 import type { DayGroup, DailyRow, EntryField, Measures } from '../metrics';
 import { entryKey } from '../metrics';
 import type { Translate, Language } from '../types';
 import { fill, weekdayShort, monthShortLabel } from '../../pageIncomePrediction/format';
 import { parseDay } from '../../../utils/dateRange';
+import { PAGE_UNKNOWN, type OrderListFilters } from '../../../utils/orderListFilters';
 import { thStyle, tdNum, MoneyText, PctText, StatusChip, EditableNumberCell, ACCENT } from './ui';
 
 export interface DailyTableProps {
@@ -21,7 +25,17 @@ export interface DailyTableProps {
     savingKeys: Set<string>;
     savedKeys: Set<string>;
     onCommit: (row: DailyRow, field: EntryField, value: number | null) => Promise<void>;
+    onOpenOrders: (filters: OrderListFilters) => void;
 }
+
+// The Orders subset a daily row counts: that local day, that page (or the
+// no-page bucket), that product by exact name (unknown product → no name to
+// search, so the day × page alone).
+const rowOrderFilters = (row: Pick<DailyRow, 'date' | 'page' | 'productName'>): OrderListFilters => ({
+    dateRange: { start: row.date, end: row.date },
+    pages: [row.page || PAGE_UNKNOWN],
+    ...(row.productName ? { search: `"${row.productName}"` } : {}),
+});
 
 const COLS: { key: string; width: number; align?: 'left' | 'right' | 'center'; color?: string }[] = [
     { key: 'item', width: 210, align: 'left' },
@@ -86,12 +100,18 @@ const SummaryCells: React.FC<{ m: Measures; t: Translate; footer?: boolean }> = 
     );
 };
 
-const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, language, isMobile, savingKeys, savedKeys, onCommit }) => {
+const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, language, isMobile, savingKeys, savedKeys, onCommit, onOpenOrders }) => {
     const countTitle = (n: number) => fill(t('cpaTracker.countedTitle'), { n });
+
+    // Row order as rendered, for Enter-moves-down: the same field's input on
+    // the next row (crossing into the next day group is fine — same column).
+    const rowIndex = new Map<string, number>();
+    days.forEach(g => g.rows.forEach(r => rowIndex.set(r.key, rowIndex.size)));
 
     const renderRow = (row: DailyRow, idx: number) => {
         const product = row.productName || t('cpaTracker.unknownProduct');
         const page = row.page || t('cpaTracker.noPage');
+        const flat = rowIndex.get(row.key) ?? -1;
         const cell = (field: EntryField, value: number | null, opts: { placeholder?: string; placeholderTitle?: string; integer?: boolean; prefix?: string; minWidth?: number; column: string }) => (
             <EditableNumberCell
                 value={value}
@@ -104,14 +124,18 @@ const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, lang
                 saving={savingKeys.has(entryCellKey(row, field))}
                 saved={savedKeys.has(entryCellKey(row, field))}
                 ariaLabel={`${t(`cpaTracker.columns.${opts.column}`)} · ${product} · ${page} · ${row.date}`}
+                cellId={`${field}:${flat}`}
+                nextCellId={flat >= 0 && flat + 1 < rowIndex.size ? `${field}:${flat + 1}` : undefined}
                 onCommit={v => onCommit(row, field, v)}
             />
         );
         return (
             <tr key={row.key} className="pip-row" style={{ background: idx % 2 ? 'rgba(0,0,0,0.015)' : 'transparent' }}>
                 <td className="pip-sticky-first" style={{ padding: '6px 12px', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)', overflow: 'hidden' }}>
-                    <div className="d2-khmer" style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.5 }} title={product}>{product}</div>
-                    <div className="d2-khmer" style={{ fontSize: 11, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.5 }} title={page}>{page}</div>
+                    <button type="button" className="pip-cell-link" title={t('cpaTracker.viewOrders')} onClick={() => onOpenOrders(rowOrderFilters(row))}>
+                        <div className="d2-khmer pip-cell-link-main" style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.5 }} title={product}>{product}</div>
+                        <div className="d2-khmer" style={{ fontSize: 11, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.5 }} title={page}>{page}</div>
+                    </button>
                 </td>
                 <td style={{ padding: '3px 6px' }}>{cell('adSpend', row.spend > 0 ? row.spend : null, { prefix: '$', column: 'spend' })}</td>
                 <td style={{ padding: '3px 6px' }}>{cell('inboundChats', row.inboundChats, { placeholder: '-', integer: true, minWidth: 48, column: 'chats' })}</td>
@@ -144,8 +168,11 @@ const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, lang
     const dayHeader = (g: DayGroup) => (
         <tr key={`h-${g.date}`} style={{ background: 'rgba(139,92,246,0.07)' }}>
             <td className="pip-sticky-first" style={{ padding: '8px 12px', borderRight: '1px solid var(--color-border)', background: 'rgb(245,243,255)', fontWeight: 800, fontSize: 12, whiteSpace: 'nowrap' }}>
-                {dayLabel(g.date, language)}
-                <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)', marginLeft: 6, fontSize: 11 }}>{fill(t('cpaTracker.rowsCount'), { n: g.rows.length })}</span>
+                <button type="button" className="pip-cell-link" title={t('cpaTracker.viewDayOrders')}
+                    onClick={() => onOpenOrders({ dateRange: { start: g.date, end: g.date } })}>
+                    <span className="pip-cell-link-main">{dayLabel(g.date, language)}</span>
+                    <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)', marginLeft: 6, fontSize: 11 }}>{fill(t('cpaTracker.rowsCount'), { n: g.rows.length })}</span>
+                </button>
             </td>
             <SummaryCells m={g.subtotal} t={t} />
         </tr>

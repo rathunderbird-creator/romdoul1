@@ -7,12 +7,13 @@
 // inactive catalogue), NOT useStore() — a discontinued product's history keeps
 // its real price and cost.
 import React, { useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../../context/StoreContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
+import { orderListState } from '../../utils/orderListFilters';
 import { useCpaTrackerData } from './useCpaTrackerData';
 import { paramsToState, stateToParams } from './urlState';
 import CpaTrackerView from './CpaTrackerView';
@@ -24,6 +25,7 @@ const CpaTrackerPage: React.FC = () => {
     const { t, language } = useLanguage();
     const { showToast } = useToast();
     const isMobile = useMobile();
+    const navigate = useNavigate();
     const [params, setParams] = useSearchParams();
 
     const state = useMemo(() => paramsToState(params, new Date()), [params]);
@@ -47,6 +49,7 @@ const CpaTrackerPage: React.FC = () => {
         // so Back steps through tabs but not through every filter tweak.
         onStateChange: next => setParams(stateToParams({ ...state, ...next }), { replace: !('tab' in next) || next.tab === state.tab }),
         onRefresh: () => refresh(),
+        onOpenOrders: filters => navigate('/orders', { state: orderListState(filters) }),
         onCommitEntry: async (date, page, productId, patch) => {
             try {
                 await commitEntry(date, page, productId, patch);
@@ -65,7 +68,7 @@ const CpaTrackerPage: React.FC = () => {
                 throw e;
             }
         },
-    }), [setParams, state, refresh, commitEntry, commitSetting, showToast, t]);
+    }), [setParams, state, navigate, refresh, commitEntry, commitSetting, showToast, t]);
 
     const viewData = useMemo<CpaData>(() => ({
         sales: data.sales,

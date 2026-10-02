@@ -212,6 +212,7 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
                                 savingKeys={cells.saving}
                                 savedKeys={cells.saved}
                                 onCommit={(row, field, value) => commitEntry(row, field, value)}
+                                onOpenOrders={actions.onOpenOrders}
                             />
                             {hiddenDays > 0 && (
                                 <button type="button" className="pip-text-button" style={{ alignSelf: 'center' }} onClick={() => setShownDays(n => n + DAY_PAGE)}>

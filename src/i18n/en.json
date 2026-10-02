@@ -548,7 +548,8 @@
       "unitHardCosts": "Hard Costs",
       "desiredProfit": "Desired Profit",
       "expectedDelivery": "Exp. Delivery",
-      "targetGross": "Target Gross CPA"
+      "targetGross": "Target Gross CPA",
+      "sold": "Sold"
     },
     "columnHelp": {
       "spend": "Ad spend for this product on this page that day (typed)",
@@ -563,7 +564,8 @@
       "hardCosts": "COGS × units + (courier fee + packaging) × delivered orders",
       "unitHardCosts": "COGS + courier fee + packaging: the cost of a one-unit order (courier and packaging are charged once per order)",
       "expectedDelivery": "Share of closed orders you expect to deliver",
-      "targetGross": "Target net CPA × expected delivery rate — the CPA to aim for on closed orders"
+      "targetGross": "Target net CPA × expected delivery rate — the CPA to aim for on closed orders",
+      "sold": "Units on delivered orders in this period — the table's default order (best sellers first). Click any header to sort; a third click restores this order."
     },
     "status": {
       "on-target": "On target",
@@ -596,6 +598,8 @@
     "emptyPeriod": "No orders or ad spend in this period.",
     "noMatches": "No rows match these filters.",
     "openInDaily": "Open in the Daily Tracker",
+    "viewOrders": "Open these orders in Orders Management",
+    "viewDayOrders": "Open this day's orders in Orders Management",
     "weekLabel": "Week {n}",
     "partialWeek": "partial",
     "partialWeekTitle": "The selected period covers only part of this week",

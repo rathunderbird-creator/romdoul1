@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { OrderListFilters } from '../utils/orderListFilters';
+import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
@@ -476,9 +476,8 @@ const postDispatchMessage = (current: string, target: string) =>
 // — the same rule the dashboards group by (and mapper.ts maps by). Filtering
 // on page_source alone hid every order whose page only lives in the snapshot
 // (old orders predating the column), so a dashboard page card could open a
-// list missing rows or empty. 'Unknown Page' is the dashboards' bucket for
-// orders with neither.
-const PAGE_UNKNOWN = 'Unknown Page';
+// list missing rows or empty. PAGE_UNKNOWN (utils/orderListFilters.ts) is the
+// dashboards' bucket for orders with neither.
 const pageOrFilter = (pages: string[]): string => {
     const noSource = 'page_source.is.null,page_source.eq.""';
     const noSnapshot = 'customer_snapshot->>page.is.null,customer_snapshot->>page.eq.""';

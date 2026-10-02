@@ -575,13 +575,21 @@ export interface WeekRow extends Measures {
     health: Health;
 }
 
+// A Unit Economics table row: the product's economics plus how much it sold
+// in the range (units / delivered orders, overrides applied — the same
+// figures as the product summary), which drives the table's default order.
+export interface UnitEconRow extends UnitEconomics {
+    soldUnits: number;
+    soldOrders: number;
+}
+
 export interface CpaTrackerResult {
     days: DayGroup[];               // newest first
     totals: Measures;
     pages: PageSummaryRow[];        // net profit desc, no-page last
     products: ProductSummaryRow[];  // net profit desc
     weeks: WeekRow[];               // oldest first
-    economics: UnitEconomics[];     // every ACTIVE product, plus inactive ones that appear in the range
+    economics: UnitEconRow[];       // every ACTIVE product, plus inactive ones that appear in the range
     defaults: Record<SettingField, number | null>;
     logisticsUnset: boolean;
     pageOptions: string[];          // pages seen in the range's rows (for filters / the add form)
@@ -663,11 +671,17 @@ export const buildCpaTracker = (input: MetricsInput): CpaTrackerResult => {
     }
 
     // Unit economics: every active product, plus any inactive one that still
-    // appears in this range's rows. Sorted by name.
+    // appears in this range's rows. Best sellers first (units sold in the
+    // range, then delivered orders), the rest alphabetical.
     const used = new Set(rows.map(r => r.productId));
-    const econRows = Array.from(economics.values())
+    const soldBy = new Map(products.map(p => [p.productId, p]));
+    const econRows: UnitEconRow[] = Array.from(economics.values())
         .filter(u => u.isActive || used.has(u.productId))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .map(u => {
+            const s = soldBy.get(u.productId);
+            return { ...u, soldUnits: s?.units ?? 0, soldOrders: s?.delivered ?? 0 };
+        })
+        .sort((a, b) => b.soldUnits - a.soldUnits || b.soldOrders - a.soldOrders || a.name.localeCompare(b.name));
 
     const pageOptions = Array.from(new Set(rows.map(r => r.page))).sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
 
