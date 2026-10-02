@@ -122,7 +122,11 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
     const weeklyHeadline = (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
             <KpiCard label={t('cpaTracker.weekly.latestProfit')} value={latestWeek ? fmtMoney(latestWeek.netProfit) : '-'}
-                hint={latestWeek ? `${fill(t('cpaTracker.weekLabel'), { n: latestWeek.isoWeek })}${latestWeek.profitChange !== null ? ` · ${fmtPct(latestWeek.profitChange)} ${t('cpaTracker.weekly.wow')}` : ''}` : undefined}
+                hint={latestWeek
+                    ? `${fill(t('cpaTracker.weekLabel'), { n: latestWeek.isoWeek })}`
+                    + (latestWeek.inProgress ? ` · ${t('cpaTracker.weekly.inProgress')}` : latestWeek.partial ? ` · ${t('cpaTracker.partialWeek')}` : '')
+                    + (latestWeek.profitChange !== null ? ` · ${fmtPct(latestWeek.profitChange)} ${t('cpaTracker.weekly.wow')}` : '')
+                    : undefined}
                 rgb={SIGN(latestWeek?.netProfit ?? 0)} icon={<DollarSign size={12} color={`rgb(${SIGN(latestWeek?.netProfit ?? 0)})`} />} />
             <KpiCard label={t('cpaTracker.weekly.latestNetCpa')} value={latestWeek?.netCpa != null ? fmtMoney(latestWeek.netCpa) : '-'} hint={latestWeek ? `${t('cpaTracker.columns.deliveryRate')} ${fmtPct(latestWeek.deliveryRate)}` : undefined} rgb="139,92,246" icon={<Target size={12} color={ACCENT} />} />
             <KpiCard label={t('cpaTracker.weekly.cumulativeProfit')} value={fmtMoney(result.totals.netProfit)} hint={rangeLabel(range, language)} rgb={SIGN(result.totals.netProfit)} icon={<TrendingUp size={12} color={`rgb(${SIGN(result.totals.netProfit)})`} />} />
@@ -235,7 +239,16 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
     const weeklyBody = loading ? tableSkeleton : !ready ? null : (
         <>
             {weeklyHeadline}
-            <WeeklyTable weeks={result.weeks} t={t} language={language} />
+            <WeeklyTable
+                weeks={result.weeks}
+                totals={result.totals}
+                t={t}
+                language={language}
+                // Drill into one week: the Daily Tracker scoped to exactly its
+                // days, filters cleared (the prev/next arrows then step week
+                // by week; Back returns here with the original range).
+                onOpenWeek={w => { setOnlyAdvertised(false); actions.onStateChange({ tab: 'daily', range: { from: w.weekStart, to: w.weekEnd }, page: null, product: null }); }}
+            />
         </>
     );
 

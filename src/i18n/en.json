@@ -635,7 +635,10 @@
       "cumulativeDelivered": "Total delivered",
       "wow": "vs prev week",
       "inProgress": "in progress",
-      "inProgressTitle": "This week hasn't ended yet, so it isn't compared with the previous week"
+      "inProgressTitle": "This week hasn't ended yet, so it isn't compared with the previous week",
+      "openWeek": "Open this week in the Daily Tracker",
+      "vsWeek": "vs Week {n}",
+      "noCompare": "Shown only between two whole, finished weeks — a partial or still-running week would always read as a collapse"
     },
     "filterPage": "Filter by page",
     "filterProduct": "Filter by product",
