@@ -1,0 +1,13 @@
+-- Profit & CPA Tracker: distinguish "spend not entered" from a typed $0.
+--
+-- ad_spend used to default to 0, so a row created by typing only chats (or an
+-- override) stored 0 — indistinguishable from a deliberately typed "$0, no ads
+-- ran". The app now treats NULL as "not entered" and 0 as a real typed value
+-- (shown bold like any other input).
+--
+-- Dropping the default stops future non-spend inserts from minting false 0s
+-- (the app also sends the field explicitly on new rows, so this is belt and
+-- braces). Existing 0s are deliberately KEPT: the rows carrying them also
+-- carry typed figures (real data entry), so they read as typed $0 — which is
+-- what their authors meant.
+ALTER TABLE cpa_daily_entries ALTER COLUMN ad_spend DROP DEFAULT;
