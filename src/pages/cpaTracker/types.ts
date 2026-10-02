@@ -4,6 +4,7 @@
 // and URL state and hands plain data + callbacks down.
 import type { Product } from '../../types';
 import type { DateRange } from '../../utils/dateRange';
+import type { OrderListFilters } from '../../utils/orderListFilters';
 import type { Order, DailyEntryRow, ProductSettingRow, EntryPatch, SettingField } from './metrics';
 
 export type Translate = (key: string) => string;
@@ -34,6 +35,9 @@ export interface CpaData {
 export interface CpaActions {
     onStateChange: (next: Partial<CpaUrlState>) => void;
     onRefresh: () => void;
+    // Open the Orders list showing exactly this subset (a daily row's day ×
+    // page × product, or a whole day) — the app-wide click-through pattern.
+    onOpenOrders: (filters: OrderListFilters) => void;
     // Persist daily input field(s) of one row (one upsert) / one unit-economics
     // setting. Resolve once stored; reject on failure (the container has
     // already shown a toast by then).

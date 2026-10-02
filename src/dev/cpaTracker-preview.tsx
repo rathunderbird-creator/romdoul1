@@ -67,6 +67,7 @@ const Preview = () => {
         return {
             onStateChange: next => { setState(s => ({ ...s, ...next })); log('stateChange', next); },
             onRefresh: () => log('refresh'),
+            onOpenOrders: filters => log('openOrders', filters),
             onCommitEntry: (date, page, productId, patch) => {
                 log('commitEntry', { date, page, productId, ...patch });
                 return later(() => setEntries(prev => {

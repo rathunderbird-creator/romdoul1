@@ -63,6 +63,32 @@
 }
 .pip-resize-handle:hover { background: rgba(139, 92, 246, 0.3); }
 
+/* A table cell's text block that navigates on click (e.g. the CPA tracker's
+   product · page cell opening the order list). Inherits the cell's look; the
+   hover/focus affordance lives on the main line. */
+.pip-cell-link {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.pip-cell-link:hover .pip-cell-link-main {
+  color: #8B5CF6;
+  text-decoration: underline;
+}
+.pip-cell-link:focus-visible {
+  outline: 2px solid #8B5CF6;
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
 /* Compact buttons in the toolbar. */
 .pip-icon-button {
   display: inline-flex;

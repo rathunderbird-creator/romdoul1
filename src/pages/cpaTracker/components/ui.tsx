@@ -86,6 +86,8 @@ export const Banner: React.FC<{ tone: 'amber' | 'red' | 'grey'; icon: React.Reac
 // Spreadsheet-style number cell: type, then blur or Enter to commit; Escape
 // reverts. Empty commits null ("nothing entered" / "use the counted number").
 // `integer` rounds and rejects decimals; `percent` shows 0..1 as 0..100.
+// Enter also moves to `nextCellId`'s input (same column, next row) so a
+// column of figures can be typed straight down, like a spreadsheet.
 export interface EditableNumberCellProps {
     value: number | null;
     placeholder?: string;
@@ -100,10 +102,12 @@ export interface EditableNumberCellProps {
     percent?: boolean;
     max?: number;              // in displayed units
     minWidth?: number;
+    cellId?: string;           // this input's data-cpa-cell id
+    nextCellId?: string;       // the input Enter moves to (none on the last row)
     onCommit: (value: number | null) => Promise<void>;
 }
 
-export const EditableNumberCell: React.FC<EditableNumberCellProps> = ({ value, placeholder, placeholderTitle, disabled, saving, saved, ariaLabel, prefix, suffix, integer, percent, max, minWidth = 64, onCommit }) => {
+export const EditableNumberCell: React.FC<EditableNumberCellProps> = ({ value, placeholder, placeholderTitle, disabled, saving, saved, ariaLabel, prefix, suffix, integer, percent, max, minWidth = 64, cellId, nextCellId, onCommit }) => {
     const shown = (v: number | null): string => {
         if (v === null || !Number.isFinite(v)) return '';
         const d = percent ? v * 100 : v;
@@ -161,7 +165,13 @@ export const EditableNumberCell: React.FC<EditableNumberCellProps> = ({ value, p
                     onBlur={commit}
                     onKeyDown={e => {
                         e.stopPropagation();
-                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur();   // commits
+                            if (nextCellId) {
+                                const next = document.querySelector<HTMLInputElement>(`input[data-cpa-cell="${nextCellId}"]`);
+                                if (next && !next.disabled) { next.focus(); next.select(); }
+                            }
+                        }
                         if (e.key === 'Escape') {
                             const el = e.target as HTMLInputElement;
                             skipNextCommitRef.current = true;
@@ -173,6 +183,7 @@ export const EditableNumberCell: React.FC<EditableNumberCellProps> = ({ value, p
                     placeholder={placeholder ?? '0'}
                     title={!filled ? placeholderTitle : undefined}
                     aria-label={ariaLabel}
+                    data-cpa-cell={cellId}
                     disabled={disabled}
                     style={{
                         width: '100%', boxSizing: 'border-box', textAlign: 'right',
