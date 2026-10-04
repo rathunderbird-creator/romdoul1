@@ -4,9 +4,12 @@
 // Economics. No store / router access: the container passes data and
 // callbacks; src/dev/cpaTracker-preview.tsx renders it with fixtures.
 import React, { useMemo, useState } from 'react';
-import { Target, RefreshCw, AlertTriangle, AlertCircle, Lock, Plus, Megaphone, PackageCheck, DollarSign, MessageCircle, TrendingUp, Settings2 } from 'lucide-react';
+import { Target, RefreshCw, AlertTriangle, AlertCircle, Lock, Plus, Megaphone, PackageCheck, DollarSign, MessageCircle, TrendingUp, Settings2, Search, X } from 'lucide-react';
 import '../pageIncomePrediction/pageIncomePrediction.css';
-import { buildCpaTracker, sumMeasures, entryKey, type DailyRow, type EntryField, type SettingField, type DayGroup } from './metrics';
+import {
+    buildCpaTracker, sumMeasures, entryKey, pageSummariesOf, productSummariesOf, searchNorm, searchTermsOf, matchesTerms,
+    type DailyRow, type EntryField, type SettingField, type DayGroup,
+} from './metrics';
 import { MAX_RANGE_DAYS } from '../../utils/dateRange';
 import { dayKeyOf } from '../pageIncomePrediction/metrics';
 import { fmtMoney, fmtPct, rangeLabel, fill } from '../pageIncomePrediction/format';
@@ -44,27 +47,44 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
     // load empties the data its overwrite guard relies on, so it closes.
     if (adding && !editable) setAdding(false);
     const [onlyAdvertised, setOnlyAdvertised] = useState(false);
+    // Free-text search over product + page names (Khmer-safe, multi-term AND).
+    // Local like the checkbox — an ephemeral refinement, not a shareable view.
+    const [query, setQuery] = useState('');
+    const terms = useMemo(() => searchTermsOf(query), [query]);
 
-    // ── Daily filters (page / product from the URL, "only rows with spend" local)
+    // ── Filters (page / product from the URL; search + "only rows with spend"
+    // local). One rule set scopes the Daily tracker AND the Summary tables.
+    const filtered = state.page !== null || state.product !== null || onlyAdvertised || terms.length > 0;
     const filteredDays = useMemo<DayGroup[]>(() => {
         const keep = (r: DailyRow) =>
             (state.page === null || r.page === state.page) &&
             (state.product === null || r.productId === state.product) &&
-            (!onlyAdvertised || r.spend > 0);
-        if (state.page === null && state.product === null && !onlyAdvertised) return result.days;
+            (!onlyAdvertised || r.spend > 0) &&
+            (terms.length === 0 || matchesTerms(searchNorm(`${r.productName} ${r.page}`), terms));
+        if (!filtered) return result.days;
         return result.days
             .map(g => { const rows = g.rows.filter(keep); return { date: g.date, rows, subtotal: sumMeasures(rows) }; })
             .filter(g => g.rows.length > 0);
-    }, [result.days, state.page, state.product, onlyAdvertised]);
-    const filtered = state.page !== null || state.product !== null || onlyAdvertised;
+    }, [result.days, state.page, state.product, onlyAdvertised, terms, filtered]);
     const filteredTotals = useMemo(() => (filtered ? sumMeasures(filteredDays.flatMap(g => g.rows)) : result.totals), [filtered, filteredDays, result.totals]);
+
+    // Summary tables follow the same filters (e.g. page = CH Sound scopes the
+    // product table to that page's products; a search narrows both).
+    const summaryPages = useMemo(() => (filtered ? pageSummariesOf(filteredDays.flatMap(g => g.rows)) : result.pages), [filtered, filteredDays, result.pages]);
+    const economicsMap = useMemo(() => new Map(result.economics.map(u => [u.productId, u])), [result.economics]);
+    const summaryProducts = useMemo(() => (filtered ? productSummariesOf(filteredDays.flatMap(g => g.rows), economicsMap) : result.products), [filtered, filteredDays, economicsMap, result.products]);
+    // Unit Economics is a catalogue, not range rows: only the search applies.
+    const economicsShown = useMemo(
+        () => (terms.length === 0 ? result.economics : result.economics.filter(u => matchesTerms(searchNorm(`${u.name} ${u.model}`), terms))),
+        [result.economics, terms],
+    );
 
     // A month is ~400 rows of editable cells; a year would be ~5,000. Render the
     // newest DAY_PAGE days and let the user ask for more (totals always cover
     // every day). Reset whenever the range or filters change.
     const DAY_PAGE = 31;
     const [shownDays, setShownDays] = useState(DAY_PAGE);
-    const viewKey = `${range.from}|${range.to}|${state.page}|${state.product}|${onlyAdvertised}`;
+    const viewKey = `${range.from}|${range.to}|${state.page}|${state.product}|${onlyAdvertised}|${query}`;
     const [shownFor, setShownFor] = useState(viewKey);
     if (shownFor !== viewKey) { setShownFor(viewKey); setShownDays(DAY_PAGE); }
     const visibleDays = filteredDays.slice(0, shownDays);
@@ -104,8 +124,8 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
         return null;
     };
 
-    // ── KPI cards ────────────────────────────────────────────────────────
-    const m = tab === 'daily' ? filteredTotals : result.totals;
+    // ── KPI cards (follow the filters wherever the tables below do) ──────
+    const m = tab === 'daily' || tab === 'summary' ? filteredTotals : result.totals;
     const kpis = (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, minmax(0, 1fr))', gap: 8 }}>
             <KpiCard label={t('cpaTracker.kpi.spend')} value={fmtMoney(m.spend)} hint={`${t('cpaTracker.columns.grossCpa')} ${m.grossCpa === null ? '-' : fmtMoney(m.grossCpa)}`} rgb="245,158,11" icon={<Megaphone size={12} color="#F59E0B" />} />
@@ -158,25 +178,55 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
         <div className="glass-panel" style={{ padding: 32, borderRadius: 16, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 14 }}>{text}</div>
     );
 
+    // ── Filter bar pieces (search on daily / summary / unit; the selects and
+    // the spend checkbox wherever range rows are shown: daily + summary) ────
+    const searchBox = (
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: isMobile ? '1 1 100%' : '0 1 230px', minWidth: 170 }}>
+            <Search size={14} aria-hidden style={{ position: 'absolute', left: 10, color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+            <input
+                type="search"
+                className="d2-khmer"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={t('cpaTracker.searchPlaceholder')}
+                aria-label={t('cpaTracker.searchPlaceholder')}
+                style={{ ...selectStyle, maxWidth: 'none', width: '100%', padding: '0 30px', appearance: 'none', WebkitAppearance: 'none', outline: 'none' }}
+            />
+            {query !== '' && (
+                <button type="button" onClick={() => setQuery('')} aria-label={t('cpaTracker.clearFilters')}
+                    style={{ position: 'absolute', right: 6, display: 'flex', padding: 2, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
+                    <X size={14} />
+                </button>
+            )}
+        </div>
+    );
+    const clearAll = () => { setOnlyAdvertised(false); setQuery(''); actions.onStateChange({ page: null, product: null }); };
+    const filterControls = (
+        <>
+            <select aria-label={t('cpaTracker.filterPage')} style={selectStyle} value={state.page ?? '__all'} onChange={e => actions.onStateChange({ page: e.target.value === '__all' ? null : e.target.value })}>
+                <option value="__all">{t('cpaTracker.allPages')}</option>
+                {pageOptions.map(p => <option key={p || '__none'} value={p}>{p || t('cpaTracker.noPage')}</option>)}
+            </select>
+            <select aria-label={t('cpaTracker.filterProduct')} style={selectStyle} value={state.product ?? '__all'} onChange={e => actions.onStateChange({ product: e.target.value === '__all' ? null : e.target.value })}>
+                <option value="__all">{t('cpaTracker.allProducts')}</option>
+                {productOptions.map(p => <option key={p.id || '__unknown'} value={p.id}>{p.name}</option>)}
+            </select>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                <input type="checkbox" checked={onlyAdvertised} onChange={e => setOnlyAdvertised(e.target.checked)} />
+                {t('cpaTracker.onlyAdvertised')}
+            </label>
+            {filtered && (
+                <button type="button" className="pip-text-button" onClick={clearAll}>{t('cpaTracker.clearFilters')}</button>
+            )}
+        </>
+    );
+
     // ── Tab bodies ───────────────────────────────────────────────────────
     const dailyBody = (
         <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <select aria-label={t('cpaTracker.filterPage')} style={selectStyle} value={state.page ?? '__all'} onChange={e => actions.onStateChange({ page: e.target.value === '__all' ? null : e.target.value })}>
-                    <option value="__all">{t('cpaTracker.allPages')}</option>
-                    {pageOptions.map(p => <option key={p || '__none'} value={p}>{p || t('cpaTracker.noPage')}</option>)}
-                </select>
-                <select aria-label={t('cpaTracker.filterProduct')} style={selectStyle} value={state.product ?? '__all'} onChange={e => actions.onStateChange({ product: e.target.value === '__all' ? null : e.target.value })}>
-                    <option value="__all">{t('cpaTracker.allProducts')}</option>
-                    {productOptions.map(p => <option key={p.id || '__unknown'} value={p.id}>{p.name}</option>)}
-                </select>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                    <input type="checkbox" checked={onlyAdvertised} onChange={e => setOnlyAdvertised(e.target.checked)} />
-                    {t('cpaTracker.onlyAdvertised')}
-                </label>
-                {filtered && (
-                    <button type="button" className="pip-text-button" onClick={() => { setOnlyAdvertised(false); actions.onStateChange({ page: null, product: null }); }}>{t('cpaTracker.clearFilters')}</button>
-                )}
+                {searchBox}
+                {filterControls}
                 <div style={{ flex: 1 }} />
                 {editable && !adding && (
                     <button type="button" className="pip-text-button" onClick={() => setAdding(true)} style={{ borderColor: ACCENT, color: ACCENT }}>
@@ -231,8 +281,12 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
 
     const summaryBody = loading ? tableSkeleton : !ready ? null : (
         <>
-            <PageSummaryTable rows={result.pages} totals={result.totals} t={t} onOpen={page => { setOnlyAdvertised(false); actions.onStateChange({ tab: 'daily', page, product: null }); }} />
-            <ProductSummaryTable rows={result.products} totals={result.totals} t={t} onOpen={product => { setOnlyAdvertised(false); actions.onStateChange({ tab: 'daily', product, page: null }); }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {searchBox}
+                {filterControls}
+            </div>
+            <PageSummaryTable rows={summaryPages} totals={filteredTotals} t={t} emptyText={filtered ? t('cpaTracker.noMatches') : undefined} onOpen={page => { setOnlyAdvertised(false); actions.onStateChange({ tab: 'daily', page, product: null }); }} />
+            <ProductSummaryTable rows={summaryProducts} totals={filteredTotals} t={t} emptyText={filtered ? t('cpaTracker.noMatches') : undefined} onOpen={product => { setOnlyAdvertised(false); actions.onStateChange({ tab: 'daily', product, page: null }); }} />
         </>
     );
 
@@ -255,15 +309,22 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
     const unitBody = loading ? tableSkeleton : !ready ? null : (
         <>
             <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{t('cpaTracker.unitIntro')}</div>
-            <UnitEconomicsTable
-                rows={result.economics}
-                defaults={result.defaults}
-                editable={editable}
-                t={t}
-                savingKeys={cells.saving}
-                savedKeys={cells.saved}
-                onCommit={commitSetting}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {searchBox}
+            </div>
+            {terms.length > 0 && economicsShown.length === 0
+                ? empty(t('cpaTracker.noMatches'))
+                : (
+                    <UnitEconomicsTable
+                        rows={economicsShown}
+                        defaults={result.defaults}
+                        editable={editable}
+                        t={t}
+                        savingKeys={cells.saving}
+                        savedKeys={cells.saved}
+                        onCommit={commitSetting}
+                    />
+                )}
         </>
     );
 
@@ -316,7 +377,7 @@ const CpaTrackerView: React.FC<CpaViewProps> = ({ state, data, loading, refreshi
             )}
 
             {kpis}
-            {filtered && tab === 'daily' && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('cpaTracker.kpiFiltered')}</div>}
+            {filtered && (tab === 'daily' || tab === 'summary') && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{t('cpaTracker.kpiFiltered')}</div>}
 
             {tab === 'daily' && dailyBody}
             {tab === 'summary' && summaryBody}

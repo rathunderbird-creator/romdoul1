@@ -622,6 +622,36 @@ const groupBy = <K,>(rows: DailyRow[], keyOf: (r: DailyRow) => K): Map<K, DailyR
     return map;
 };
 
+// The Summary tables, as pure functions of a row subset — the view re-derives
+// them from the FILTERED daily rows, so the page/product/search filters scope
+// the summaries exactly like they scope the Daily tracker.
+export const pageSummariesOf = (rows: DailyRow[]): PageSummaryRow[] =>
+    Array.from(groupBy(rows, r => r.page), ([page, list]) => {
+        const m = sumMeasures(list);
+        return { ...m, page, health: healthOf(m) };
+    }).sort((a, b) => (a.page === '' ? 1 : b.page === '' ? -1 : byProfitDesc(a, b)));
+
+export const productSummariesOf = (rows: DailyRow[], economics: Map<string, UnitEconomics>): ProductSummaryRow[] =>
+    Array.from(groupBy(rows, r => r.productId), ([productId, list]) => {
+        const m = sumMeasures(list);
+        const ue = economics.get(productId);
+        return { ...m, productId, productName: ue?.name ?? '', targetNetCpa: ue ? ue.targetNetCpa : null, status: productStatusOf(m, ue ? ue.desiredProfit : null) };
+    }).sort(byProfitDesc);
+
+// ─── Search (view-side row filtering) ─────────────────────────────────────
+
+// Khmer-safe text normalisation for matching: case-fold, strip the zero-width
+// characters pasted page/product names carry, collapse whitespace (the same
+// rules as Shipping Points' pinned-location search).
+export const searchNorm = (s: string): string =>
+    s.toLowerCase().replace(/\u200B|\u200C|\u200D|\uFEFF/g, '').replace(/\s+/g, ' ').trim();
+
+export const searchTermsOf = (query: string): string[] => searchNorm(query).split(' ').filter(Boolean);
+
+// Multi-term AND: every term must appear somewhere in the normalised text.
+export const matchesTerms = (haystack: string, terms: string[]): boolean =>
+    terms.every(term => haystack.includes(term));
+
 export const buildCpaTracker = (input: MetricsInput): CpaTrackerResult => {
     const { rows, economics, settings } = prepare(input);
 
@@ -630,16 +660,8 @@ export const buildCpaTracker = (input: MetricsInput): CpaTrackerResult => {
 
     const totals = sumMeasures(rows);
 
-    const pages: PageSummaryRow[] = Array.from(groupBy(rows, r => r.page), ([page, list]) => {
-        const m = sumMeasures(list);
-        return { ...m, page, health: healthOf(m) };
-    }).sort((a, b) => (a.page === '' ? 1 : b.page === '' ? -1 : byProfitDesc(a, b)));
-
-    const products: ProductSummaryRow[] = Array.from(groupBy(rows, r => r.productId), ([productId, list]) => {
-        const m = sumMeasures(list);
-        const ue = economics.get(productId);
-        return { ...m, productId, productName: ue?.name ?? '', targetNetCpa: ue ? ue.targetNetCpa : null, status: productStatusOf(m, ue ? ue.desiredProfit : null) };
-    }).sort(byProfitDesc);
+    const pages = pageSummariesOf(rows);
+    const products = productSummariesOf(rows, economics);
 
     // Weeks (Monday–Sunday), clipped to the range; every week the range touches
     // is listed, even an empty one, so week-over-week reads straight down.

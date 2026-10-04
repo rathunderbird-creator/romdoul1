@@ -640,6 +640,7 @@
       "vsWeek": "vs Week {n}",
       "noCompare": "Shown only between two whole, finished weeks — a partial or still-running week would always read as a collapse"
     },
+    "searchPlaceholder": "Search product or page…",
     "filterPage": "Filter by page",
     "filterProduct": "Filter by product",
     "allPages": "All pages",
