@@ -91,7 +91,7 @@ const deliveredCell = (m: Measures, t: Translate) => (
     </>
 );
 
-export const PageSummaryTable: React.FC<{ rows: PageSummaryRow[]; totals: Measures; t: Translate; onOpen: (page: string) => void }> = ({ rows, totals, t, onOpen }) => (
+export const PageSummaryTable: React.FC<{ rows: PageSummaryRow[]; totals: Measures; t: Translate; emptyText?: string; onOpen: (page: string) => void }> = ({ rows, totals, t, emptyText, onOpen }) => (
     <SummaryTable<PageSummaryRow>
         title={t('cpaTracker.byPage')}
         rows={rows}
@@ -99,7 +99,7 @@ export const PageSummaryTable: React.FC<{ rows: PageSummaryRow[]; totals: Measur
         rowKey={r => `p|${r.page}`}
         onOpen={r => onOpen(r.page)}
         t={t}
-        emptyText={t('cpaTracker.emptyPeriod')}
+        emptyText={emptyText ?? t('cpaTracker.emptyPeriod')}
         cols={[
             { key: 'page', width: 200, align: 'left', render: r => nameCell(r.page || t('cpaTracker.noPage')) },
             { key: 'spend', width: 110, color: '#F59E0B', render: r => <MoneyText value={r.spend} /> },
@@ -117,7 +117,7 @@ export const PageSummaryTable: React.FC<{ rows: PageSummaryRow[]; totals: Measur
     />
 );
 
-export const ProductSummaryTable: React.FC<{ rows: ProductSummaryRow[]; totals: Measures; t: Translate; onOpen: (productId: string) => void }> = ({ rows, totals, t, onOpen }) => (
+export const ProductSummaryTable: React.FC<{ rows: ProductSummaryRow[]; totals: Measures; t: Translate; emptyText?: string; onOpen: (productId: string) => void }> = ({ rows, totals, t, emptyText, onOpen }) => (
     <SummaryTable<ProductSummaryRow>
         title={t('cpaTracker.byProduct')}
         rows={rows}
@@ -125,7 +125,7 @@ export const ProductSummaryTable: React.FC<{ rows: ProductSummaryRow[]; totals: 
         rowKey={r => `x|${r.productId}`}
         onOpen={r => onOpen(r.productId)}
         t={t}
-        emptyText={t('cpaTracker.emptyPeriod')}
+        emptyText={emptyText ?? t('cpaTracker.emptyPeriod')}
         cols={[
             { key: 'product', width: 200, align: 'left', render: r => nameCell(r.productName || t('cpaTracker.unknownProduct')) },
             { key: 'shippedDelivered', width: 132, render: r => r.shippedDelivered.toLocaleString() },
