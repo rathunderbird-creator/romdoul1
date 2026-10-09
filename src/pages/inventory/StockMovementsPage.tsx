@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ArrowLeftRight, Search, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Download, PackagePlus, PackageMinus, Activity, Trash2, RefreshCw, X, Package, FileText, User, Warehouse as WarehouseIcon, ChevronDown, Table2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useHeader } from '../../context/HeaderContext';
@@ -9,6 +9,8 @@ import { supabase } from '../../lib/supabase';
 import DateRangePicker from '../../components/DateRangePicker';
 import { StatsCard } from '../../components';
 import StockMovementSummaryModal from '../../components/StockMovementSummaryModal';
+import { attributeMovement, SPECIAL_LABELS, SPECIAL_ORDER, type Portion, type SpecialRow } from '../../utils/stockMovementSummary';
+import { fetchSalesmanLookups } from '../../utils/stockMovementSalesmen';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -60,6 +62,10 @@ const StockMovementsPage: React.FC = () => {
     const [warehouseFilter, setWarehouseFilter] = useState<string>(() => {
         return localStorage.getItem('stock_movements_warehouseFilter') || 'all';
     });
+    // 'all', 'salesman:<name>' or 'special:<row>' — the keys attributeMovement produces.
+    const [salesmanFilter, setSalesmanFilter] = useState<string>(() => {
+        return localStorage.getItem('stock_movements_salesmanFilter') || 'all';
+    });
     
     // Sorting state. Always open newest-first — a persisted sort (e.g. an old
     // ascending click restored from localStorage) buried the latest entries.
@@ -79,8 +85,9 @@ const StockMovementsPage: React.FC = () => {
         localStorage.setItem('stock_movements_searchTerm', searchTerm);
         localStorage.setItem('stock_movements_typeFilter', typeFilter);
         localStorage.setItem('stock_movements_warehouseFilter', warehouseFilter);
+        localStorage.setItem('stock_movements_salesmanFilter', salesmanFilter);
         localStorage.setItem('stock_movements_itemsPerPage', itemsPerPage.toString());
-    }, [dateRange, searchTerm, typeFilter, warehouseFilter, itemsPerPage]);
+    }, [dateRange, searchTerm, typeFilter, warehouseFilter, salesmanFilter, itemsPerPage]);
 
     useEffect(() => {
         setHeaderContent({
@@ -130,22 +137,88 @@ const StockMovementsPage: React.FC = () => {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, itemsPerPage]);
+    }, [searchTerm, salesmanFilter, itemsPerPage]);
 
+    // Which salesman each movement belongs to — the salesman on the ORDER, resolved
+    // through the same rules as the "Show Movements" summary (stockMovementSummary.ts).
+    // null = still resolving for the current fetch; resolved rows without an entry
+    // simply have no retail salesman.
+    const [attrib, setAttrib] = useState<Map<string, Portion[]> | null>(null);
+
+    useEffect(() => {
+        let alive = true;
+        setAttrib(null);
+        if (movements.length === 0) { setAttrib(new Map()); return; }
+        (async () => {
+            try {
+                const lookups = await fetchSalesmanLookups(supabase, movements);
+                if (!alive) return;
+                const next = new Map<string, Portion[]>();
+                for (const m of movements) next.set(m.id, attributeMovement(m, lookups));
+                setAttrib(next);
+            } catch (e) {
+                console.error('Could not resolve salesmen for stock movements:', e);
+                if (alive) setAttrib(new Map());
+            }
+        })();
+        return () => { alive = false; };
+    }, [movements]);
+
+    // Table text for a movement's salesman: named salesmen joined (a bulk restock can
+    // span several orders), else the pinned-row label; '-' for movements that have no
+    // retail salesman by nature (purchase receipts, manual adjustments, wholesale).
+    const salesmanTextOf = useCallback((id: string): { text: string; muted: boolean } => {
+        if (!attrib) return { text: '…', muted: true };
+        const portions = attrib.get(id);
+        if (!portions || portions.length === 0) return { text: '-', muted: true };
+        const named = Array.from(new Set(portions.filter(p => !p.who.special).map(p => p.who.label)));
+        if (named.length > 0) return { text: named.join(', '), muted: false };
+        if (portions.some(p => p.who.special === 'no-salesman')) return { text: SPECIAL_LABELS['no-salesman'], muted: true };
+        if (portions.some(p => p.who.special === 'unknown')) return { text: SPECIAL_LABELS['unknown'], muted: true };
+        return { text: '-', muted: true };
+    }, [attrib]);
+
+    const salesmanOptions = useMemo(() => {
+        if (!attrib) return [];
+        const named = new Set<string>();
+        const specials = new Set<SpecialRow>();
+        for (const portions of attrib.values()) {
+            for (const p of portions) {
+                if (p.who.special) specials.add(p.who.special);
+                else named.add(p.who.label);
+            }
+        }
+        return [
+            ...Array.from(named).sort((a, b) => a.localeCompare(b)).map(n => ({ value: `salesman:${n}`, label: n })),
+            ...SPECIAL_ORDER.filter(s => specials.has(s)).map(s => ({ value: `special:${s}`, label: SPECIAL_LABELS[s] })),
+        ];
+    }, [attrib]);
+
+    const salesmanFilterLabel = salesmanFilter.startsWith('salesman:')
+        ? salesmanFilter.slice('salesman:'.length)
+        : (SPECIAL_LABELS as Record<string, string>)[salesmanFilter.slice('special:'.length)] || salesmanFilter;
 
     const filteredMovements = useMemo(() => {
-        if (!searchTerm) return movements;
+        let list = movements;
+        if (salesmanFilter !== 'all') {
+            // Until the lookups land we can't tell who is who — show the loading state
+            // rather than briefly flashing every row as if it matched.
+            if (attrib === null) return [];
+            list = list.filter(m => (attrib.get(m.id) || []).some(p => p.who.key === salesmanFilter));
+        }
+        if (!searchTerm) return list;
         const q = searchTerm.toLowerCase();
-        return movements.filter(m => 
+        return list.filter(m =>
             (m.product_name || '').toLowerCase().includes(q) ||
             (m.source || '').toLowerCase().includes(q) ||
             (m.reason || '').toLowerCase().includes(q) ||
             (m.reference_id || '').toLowerCase().includes(q) ||
             (m.note || '').toLowerCase().includes(q) ||
             (m.customer_name || '').toLowerCase().includes(q) ||
-            (m.supplier || '').toLowerCase().includes(q)
+            (m.supplier || '').toLowerCase().includes(q) ||
+            (attrib?.get(m.id) || []).some(p => !p.who.special && p.who.label.toLowerCase().includes(q))
         );
-    }, [movements, searchTerm]);
+    }, [movements, searchTerm, salesmanFilter, attrib]);
 
     const sortedMovements = useMemo(() => {
         let sortableItems = [...filteredMovements];
@@ -175,6 +248,9 @@ const StockMovementsPage: React.FC = () => {
                 } else if (sortConfig.key === 'warehouse_id') {
                     aValue = warehouses.find(w => w.id === a.warehouse_id)?.name || '';
                     bValue = warehouses.find(w => w.id === b.warehouse_id)?.name || '';
+                } else if (sortConfig.key === 'salesman') {
+                    aValue = salesmanTextOf(a.id).text;
+                    bValue = salesmanTextOf(b.id).text;
                 } else if (sortConfig.key === 'value') {
                     aValue = a.quantity * (a.unit_price || 0);
                     bValue = b.quantity * (b.unit_price || 0);
@@ -196,7 +272,8 @@ const StockMovementsPage: React.FC = () => {
             });
         }
         return sortableItems;
-    }, [filteredMovements, sortConfig, warehouses]);
+        // salesmanTextOf changes when the lookups land, re-sorting the Salesman column.
+    }, [filteredMovements, sortConfig, warehouses, salesmanTextOf]);
 
     const stats = useMemo(() => {
         let totalIn = 0;
@@ -351,6 +428,7 @@ const StockMovementsPage: React.FC = () => {
             'Source/Reason': m.type === 'in' ? m.source : m.reason,
             'Supplier': m.supplier || '-',
             'Customer': m.customer_name || '-',
+            'Salesman': (() => { const s = salesmanTextOf(m.id).text; return s === '…' ? '-' : s; })(),
             'Phone': m.customer_phone || '-',
             'Shipping Co': m.shipping_co || '-',
             'Reference': m.reference_id || '-',
@@ -372,9 +450,10 @@ const StockMovementsPage: React.FC = () => {
         setSearchTerm('');
         setTypeFilter('all');
         setWarehouseFilter('all');
+        setSalesmanFilter('all');
     };
 
-    const hasActiveFilters = dateRange.start || dateRange.end || searchTerm || typeFilter !== 'all' || warehouseFilter !== 'all';
+    const hasActiveFilters = dateRange.start || dateRange.end || searchTerm || typeFilter !== 'all' || warehouseFilter !== 'all' || salesmanFilter !== 'all';
 
     const formatDate = (dateStr: string) => {
         if (!dateStr) return '-';
@@ -531,6 +610,37 @@ const StockMovementsPage: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Salesman Filter */}
+                        <div style={{ position: 'relative' }}>
+                            <User size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--color-text-muted)' }} />
+                            <select
+                                value={salesmanFilter}
+                                onChange={(e) => setSalesmanFilter(e.target.value)}
+                                style={{
+                                    padding: '9px 32px 9px 30px',
+                                    borderRadius: '10px',
+                                    border: '1px solid var(--color-border)',
+                                    fontSize: '13px',
+                                    outline: 'none',
+                                    background: 'var(--color-bg)',
+                                    color: 'var(--color-text)',
+                                    cursor: 'pointer',
+                                    appearance: 'none',
+                                    fontWeight: 500,
+                                    maxWidth: '220px',
+                                }}
+                            >
+                                <option value="all">All Salesmen</option>
+                                {salesmanFilter !== 'all' && !salesmanOptions.some(o => o.value === salesmanFilter) && (
+                                    <option value={salesmanFilter}>{salesmanFilterLabel}</option>
+                                )}
+                                {salesmanOptions.map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <ChevronDown size={14} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--color-text-muted)' }} />
+                        </div>
+
                         {/* Date Range */}
                         <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '3px' }}>
                             <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -590,10 +700,10 @@ const StockMovementsPage: React.FC = () => {
 
                 {/* Table */}
                 <div style={{ overflowX: 'auto', background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
-                    {isLoading ? (
+                    {isLoading || (salesmanFilter !== 'all' && attrib === null) ? (
                         <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                             <RefreshCw size={32} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 16px', display: 'block', opacity: 0.4 }} />
-                            <p style={{ fontSize: '14px' }}>Loading movements...</p>
+                            <p style={{ fontSize: '14px' }}>{isLoading ? 'Loading movements...' : 'Resolving salesmen...'}</p>
                         </div>
                     ) : paginatedMovements.length === 0 ? (
                         <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
@@ -608,6 +718,7 @@ const StockMovementsPage: React.FC = () => {
                                 const isIn = record.type === 'in';
                                 const accent = isIn ? '#10B981' : '#EF4444';
                                 const who = record.supplier || record.customer_name;
+                                const sm = salesmanTextOf(record.id);
                                 return (
                                     <div
                                         key={record.id}
@@ -622,7 +733,7 @@ const StockMovementsPage: React.FC = () => {
                                                 {record.product_name}
                                             </div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {(isIn ? record.source : record.reason) || '—'}{who ? ` · ${who}` : ''}
+                                                {(isIn ? record.source : record.reason) || '—'}{who ? ` · ${who}` : ''}{!sm.muted ? ` · ${sm.text}` : ''}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -647,7 +758,7 @@ const StockMovementsPage: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1220px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
                                     <th style={{ width: '40px', padding: '12px 14px', textAlign: 'center' }}>
@@ -666,6 +777,7 @@ const StockMovementsPage: React.FC = () => {
                                     <th onClick={() => handleSort('warehouse_id')} style={thStyle}>Warehouse{sortArrow('warehouse_id')}</th>
                                     <th onClick={() => handleSort('source')} style={thStyle}>Source / Reason{sortArrow('source')}</th>
                                     <th onClick={() => handleSort('supplier')} style={thStyle}>Supplier / Customer{sortArrow('supplier')}</th>
+                                    <th onClick={() => handleSort('salesman')} style={thStyle}>Salesman{sortArrow('salesman')}</th>
                                     <th onClick={() => handleSort('reference_id')} style={thStyle}>Reference / Note{sortArrow('reference_id')}</th>
                                 </tr>
                             </thead>
@@ -734,6 +846,14 @@ const StockMovementsPage: React.FC = () => {
                                             <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                                 {record.supplier || record.customer_name || <span style={{ color: 'var(--color-text-muted)' }}>-</span>}
                                             </td>
+                                            {(() => {
+                                                const sm = salesmanTextOf(record.id);
+                                                return (
+                                                    <td title={sm.text} style={{ padding: '11px 14px', fontSize: '13px', fontWeight: sm.muted ? 400 : 600, color: sm.muted ? 'var(--color-text-muted)' : 'var(--color-text)', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {sm.text}
+                                                    </td>
+                                                );
+                                            })()}
                                             <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--color-text-secondary)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{record.reference_id || record.note || '-'}</span>
                                             </td>
@@ -756,7 +876,7 @@ const StockMovementsPage: React.FC = () => {
                                         <div style={{ color: '#10B981', fontSize: '12px' }}>{formatCurrency(pageTotals.valIn)}</div>
                                         <div style={{ color: '#EF4444', fontSize: '12px' }}>{formatCurrency(pageTotals.valOut)}</div>
                                     </td>
-                                    <td colSpan={4}></td>
+                                    <td colSpan={5}></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -950,6 +1070,7 @@ const StockMovementsPage: React.FC = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <DetailField label="Supplier" value={detailRecord.supplier || '-'} />
                                     <DetailField label="Customer" value={detailRecord.customer_name || '-'} />
+                                    <DetailField label="Salesman" value={salesmanTextOf(detailRecord.id).text} />
                                     <DetailField label="Phone" value={detailRecord.customer_phone || '-'} />
                                     <DetailField label="Shipping Co" value={detailRecord.shipping_co || '-'} />
                                 </div>
