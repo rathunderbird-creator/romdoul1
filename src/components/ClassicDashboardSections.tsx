@@ -115,18 +115,23 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
     }, [filteredSales, products]);
 
     const { topProducts, soldUnits } = useMemo(() => {
-        const productStats: Record<string, { name: string; quantity: number; revenue: number }> = {};
+        // `orders` counts an order once per product (an order can list the same
+        // product on two lines), so the card's order count is the number of rows
+        // its click-through shows in Orders Management.
+        const productStats: Record<string, { name: string; quantity: number; revenue: number; orders: number }> = {};
         let soldUnits = 0;
 
         filteredSales.forEach(sale => {
             if (sale.shipping?.status === 'Shipped' || sale.shipping?.status === 'Delivered') {
+                const counted = new Set<string>();
                 sale.items.forEach(item => {
                     const id = item.id;
                     if (!productStats[id]) {
-                        productStats[id] = { name: item.name, quantity: 0, revenue: 0 };
+                        productStats[id] = { name: item.name, quantity: 0, revenue: 0, orders: 0 };
                     }
                     productStats[id].quantity += item.quantity;
                     productStats[id].revenue += item.price * item.quantity;
+                    if (!counted.has(id)) { counted.add(id); productStats[id].orders += 1; }
                     soldUnits += item.quantity;
                 });
             }
@@ -565,6 +570,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                                 key={index}
                                 title={product.name}
                                 value={`${product.quantity} ${t('dashboard.sold')}`}
+                                trend={<div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{product.orders} {t('dashboard.orders')}</div>}
                                 icon={ShoppingBag}
                                 color="var(--color-primary)"
                                 onClick={() => openOrders({ search: `"${product.name}"`, statuses: ['Shipped', 'Delivered'], dateRange })}

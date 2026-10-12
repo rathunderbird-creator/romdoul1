@@ -1235,103 +1235,136 @@ const Orders: React.FC = () => {
     // false->true right after mount, restarting fetchOrders) share one scan.
     const balanceScanRef = useRef<{ key: string; at: number; result: Promise<{ match: string[]; rest: string[] }> } | null>(null);
 
+    // Product-name matches that must travel as an id list: ~400 13-char order
+    // ids are ~6KB of URL. The gateway was measured to accept 11KB and drop
+    // requests at 17KB, which leaves room for the rest of the query.
+    const SEARCH_ID_CAP = 400;
+    // The search term whose "showing the newest N" notice was already shown —
+    // every page change re-runs applyOrderFilters, and one notice is enough.
+    const truncationNoticeRef = useRef<string | null>(null);
+
     // Applies every active filter (status, salesman, pay status, shipping co,
-    // page, date range, search, column filters) to a sales query builder.
-    // Shared by the page fetch and the revenue-total query so both always agree.
-    const applyOrderFilters = React.useCallback(async (query: any) => {
-            query = applyScopeFilters(query);
+    // page, date range, search, column filters) to a sales query. Takes a
+    // builder FACTORY rather than a builder because a search may need an extra
+    // embed in the select (see the search block). Shared by the page fetch and
+    // the revenue-total query so both always agree.
+    const applyOrderFilters = React.useCallback(async (makeQuery: (extraSelect: string) => unknown) => {
             const isSalesman = currentUser?.roleId === 'salesman';
             const effectiveSalesmanFilter = (isSalesman && salesmanFilter === 'All') ? (currentUser?.name || 'All') : salesmanFilter;
+
+            // What the search decides: a top-level OR, and/or an inner-joined
+            // sale_items embed (`matched`) carrying its own OR. The embed has to be
+            // part of the select, so all of this is settled before the query is built.
+            let searchOr: string | null = null;
+            let itemEmbed = '';
+            let itemEmbedOr: string | null = null;
 
             if (searchTerm.trim()) {
                 const trimmedTerm = searchTerm.trim();
                 const isExact = trimmedTerm.startsWith('"') && trimmedTerm.endsWith('"');
                 const phrase = isExact ? trimmedTerm.slice(1, -1) : trimmedTerm;
-                
+
                 const terms = isExact ? (phrase ? [phrase] : []) : phrase.split(/[\s,]+/).filter(t => t.trim().length > 0);
 
                 if (terms.length > 0) {
                     // Bulk target detection: If there are many terms, the user is pasting a list of IDs/Phones.
                     // Doing comprehensive ilike searching across 10 columns for > 15 terms breaks URL limits on PostgREST.
                     const isBulk = terms.length > 10;
-                    
-                    let matchingSaleIds: string[] = [];
-
-                    if (!isBulk) {
-                        // Combine item matching into one query using OR
-                        let itemQuery = supabase
-                            .from('sale_items')
-                            .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company, page_source)');
-
-                        const itemOrFilters = terms.map(t => {
-                            const escaped = t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                            return isExact ? `name.ilike."${escaped}"` : `name.ilike."%${escaped}%"`;
-                        }).join(',');
-                        itemQuery = itemQuery.or(itemOrFilters);
-
-                        // Mirror the sales filters onto the inner joined table
-                        if (statusFilter.length > 0) {
-                            itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
-                        }
-                        if (effectiveSalesmanFilter !== 'All') {
-                            itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
-                        }
-                        if (payStatusFilter.length > 0) {
-                            itemQuery = itemQuery.in('sales.payment_status', payStatusFilter);
-                        }
-                        if (shippingCoFilter.length > 0) {
-                            itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
-                        }
-                        if (pageFilter.length > 0) {
-                            // Same page_source-with-snapshot-fallback rule as the main query.
-                            itemQuery = itemQuery.or(pageOrFilter(pageFilter), { foreignTable: 'sales' });
-                        }
-                        
-                        if (dateRange.start) {
-                            const start = new Date(dateRange.start);
-                            start.setHours(0, 0, 0, 0);
-                            itemQuery = itemQuery.gte('sales.date', start.toISOString());
-                        }
-                        if (dateRange.end) {
-                            const end = new Date(dateRange.end);
-                            end.setHours(23, 59, 59, 999);
-                            itemQuery = itemQuery.lte('sales.date', end.toISOString());
-                        }
-
-                        // Order by sale_id descending to get newest first before the limit kicks in
-                        itemQuery = itemQuery.order('sale_id', { ascending: false }).limit(50);
-
-                        const { data: itemMatches } = await itemQuery;
-
-                        if (itemMatches && itemMatches.length > 0) {
-                            matchingSaleIds = Array.from(new Set(itemMatches.map((m: any) => m.sale_id))).slice(0, 50);
-                        }
-                    }
 
                     if (isBulk) {
                         // Safely map values into an 'in' string, e.g. "term1","term2"
                         const inList = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(',');
-                        query = query.or(`id.in.(${inList}),tracking_number.in.(${inList}),customer_snapshot->>phone.in.(${inList})`);
+                        searchOr = `id.in.(${inList}),tracking_number.in.(${inList}),customer_snapshot->>phone.in.(${inList})`;
                     } else {
+                        const escape = (t: string) => t.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                        const itemOrFilters = terms.map(t => isExact ? `name.ilike."${escape(t)}"` : `name.ilike."%${escape(t)}%"`).join(',');
+
                         // Build the comprehensive OR string combining all terms for complex partial text searches
-                        let finalOrFilters: string[] = [];
-                        
-                        for (const term of terms) {
-                            const escapedTerm = term.toLowerCase().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                            const matchStr = isExact ? `"${escapedTerm}"` : `"%${escapedTerm}%"`;
-                            finalOrFilters.push(`id.ilike.${matchStr},salesman.ilike.${matchStr},remark.ilike.${matchStr},customer_care.ilike.${matchStr},shipping_company.ilike.${matchStr},tracking_number.ilike.${matchStr},payment_method.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`);
+                        const parentOr = terms.map(term => {
+                            const matchStr = isExact ? `"${escape(term)}"` : `"%${escape(term)}%"`;
+                            return `id.ilike.${matchStr},salesman.ilike.${matchStr},remark.ilike.${matchStr},customer_care.ilike.${matchStr},shipping_company.ilike.${matchStr},tracking_number.ilike.${matchStr},payment_method.ilike.${matchStr},customer_snapshot->>name.ilike.${matchStr},customer_snapshot->>phone.ilike.${matchStr},customer_snapshot->>city.ilike.${matchStr}`;
+                        }).join(',');
+
+                        // Does the term hit any ORDER column at all (inside the toolbar
+                        // scope)? A product name usually doesn't, and then the item
+                        // matches need not be OR-ed with anything: they go through an
+                        // inner-joined embed instead of an id list, which is exact for
+                        // any number of orders and paged and counted by the server like
+                        // every other filter. A failed probe must not read as "no
+                        // matches": throw so fetchOrders keeps the previous list.
+                        const { data: parentHits, error: probeError } = await applyScopeFilters(supabase.from('sales').select('id')).or(parentOr).limit(1);
+                        if (probeError) throw probeError;
+
+                        if (!parentHits || parentHits.length === 0) {
+                            itemEmbed = ', matched:sale_items!inner(sale_id)';
+                            itemEmbedOr = itemOrFilters;
+                        } else {
+                            // Order columns match too, so the item matches must be OR-ed in
+                            // as an id list, newest first (ids are time-ordered). The list
+                            // is capped by the URL limit; a truncated search says so instead
+                            // of quietly showing fewer orders, as the old 50-row cap did.
+                            const ids = new Set<string>();
+                            let truncated = false;
+                            const MAX_SCAN = 10000;
+                            for (let fromRow = 0; !truncated; fromRow += 1000) {
+                                if (fromRow >= MAX_SCAN) { truncated = true; break; }
+                                let itemQuery = supabase
+                                    .from('sale_items')
+                                    .select('sale_id, sales!inner(date, shipping_status, salesman, payment_status, shipping_company, page_source)')
+                                    .or(itemOrFilters);
+
+                                // Mirror the sales filters onto the inner joined table
+                                if (statusFilter.length > 0) {
+                                    itemQuery = itemQuery.in('sales.shipping_status', statusFilter);
+                                }
+                                if (effectiveSalesmanFilter !== 'All') {
+                                    itemQuery = itemQuery.eq('sales.salesman', effectiveSalesmanFilter);
+                                }
+                                if (payStatusFilter.length > 0) {
+                                    itemQuery = itemQuery.in('sales.payment_status', payStatusFilter);
+                                }
+                                if (shippingCoFilter.length > 0) {
+                                    itemQuery = itemQuery.in('sales.shipping_company', shippingCoFilter);
+                                }
+                                if (pageFilter.length > 0) {
+                                    // Same page_source-with-snapshot-fallback rule as the main query.
+                                    itemQuery = itemQuery.or(pageOrFilter(pageFilter), { foreignTable: 'sales' });
+                                }
+                                if (dateRange.start) {
+                                    const start = new Date(dateRange.start);
+                                    start.setHours(0, 0, 0, 0);
+                                    itemQuery = itemQuery.gte('sales.date', start.toISOString());
+                                }
+                                if (dateRange.end) {
+                                    const end = new Date(dateRange.end);
+                                    end.setHours(23, 59, 59, 999);
+                                    itemQuery = itemQuery.lte('sales.date', end.toISOString());
+                                }
+
+                                const { data: itemMatches, error: itemError } = await itemQuery
+                                    .order('sale_id', { ascending: false })
+                                    .range(fromRow, fromRow + 999);
+                                if (itemError) throw itemError;
+                                for (const m of itemMatches || []) {
+                                    ids.add(String((m as unknown as { sale_id: string | number }).sale_id));
+                                    if (ids.size > SEARCH_ID_CAP) { truncated = true; break; }
+                                }
+                                if (!itemMatches || itemMatches.length < 1000) break;
+                            }
+                            const matchingSaleIds = Array.from(ids).slice(0, SEARCH_ID_CAP);
+                            if (truncated && truncationNoticeRef.current !== searchTerm) {
+                                truncationNoticeRef.current = searchTerm;
+                                showToast(`The search matches more than ${SEARCH_ID_CAP} orders by product — showing the newest ${SEARCH_ID_CAP}. Narrow the date range to see them all.`, 'info');
+                            }
+                            searchOr = parentOr + (matchingSaleIds.length > 0 ? `,id.in.(${matchingSaleIds.join(',')})` : '');
                         }
-
-                        let orFilter = finalOrFilters.join(',');
-
-                        if (matchingSaleIds.length > 0) {
-                            orFilter += `,id.in.(${matchingSaleIds.join(',')})`;
-                        }
-
-                        query = query.or(orFilter);
                     }
                 }
             }
+
+            let query = applyScopeFilters(makeQuery(itemEmbed));
+            if (searchOr) query = query.or(searchOr);
+            if (itemEmbedOr) query = query.or(itemEmbedOr, { foreignTable: 'matched' });
 
             for (const [key, val] of Object.entries(columnFilters)) {
                 if (!val || typeof val !== 'string' || !val.trim()) continue;
@@ -1550,8 +1583,9 @@ const Orders: React.FC = () => {
                 const rows: any[] = [];
                 let serverRanDry = false;
                 for (let fromRow = 0; fromRow <= targetTo; fromRow += CHUNK) {
-                    let chunkQuery: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
-                    chunkQuery = (await applyOrderFilters(chunkQuery)).query;
+                    const chunkQuery: any = (await applyOrderFilters(extra =>
+                        supabase.from('sales').select(`*, items:sale_items(id, sale_id, product_id, name, price, quantity)${extra}`, { count: 'exact' })
+                    )).query;
                     const toRow = Math.min(fromRow + CHUNK - 1, targetTo);
                     const { data: chunk, count: chunkCount, error: chunkError } = await chunkQuery
                         .order(dbSortCol, { ascending: sortConfig?.direction === 'asc' })
@@ -1569,8 +1603,9 @@ const Orders: React.FC = () => {
                 // Desktop: one page. Built here (not before the branch) so the mobile
                 // path doesn't pay for a filtered query it never executes —
                 // applyOrderFilters can run real sale_items subqueries.
-                let query: any = supabase.from('sales').select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)', { count: 'exact' });
-                query = (await applyOrderFilters(query)).query;
+                let query: any = (await applyOrderFilters(extra =>
+                    supabase.from('sales').select(`*, items:sale_items(id, sale_id, product_id, name, price, quantity)${extra}`, { count: 'exact' })
+                )).query;
                 // Secondary sort on id keeps paged windows deterministic when the
                 // primary sort column has ties (row order is unspecified otherwise).
                 query = query.order(dbSortCol, { ascending: sortConfig?.direction === 'asc' }).order('id', { ascending: true });
@@ -1597,8 +1632,7 @@ const Orders: React.FC = () => {
                     let revenue = 0;
                     const CHUNK = 1000;
                     for (let fromRow = 0; fromRow < 20000; fromRow += CHUNK) {
-                        let sumQuery: any = supabase.from('sales').select('total');
-                        sumQuery = (await applyOrderFilters(sumQuery)).query;
+                        const sumQuery: any = (await applyOrderFilters(extra => supabase.from('sales').select(`total${extra}`))).query;
                         const { data: rows, error: sumError } = await sumQuery
                             .in('shipping_status', REVENUE_STATUSES)
                             // Matches isRevenueOrder: a Cancel-paid order never counts,
