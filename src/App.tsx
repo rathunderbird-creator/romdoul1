@@ -60,6 +60,7 @@ const SupplierDetailsPage = lazy(() => import('./pages/procurement/SupplierDetai
 const PurchaseOrdersPage = lazy(() => import('./pages/procurement/PurchaseOrdersPage'));
 const ReceivingPage = lazy(() => import('./pages/procurement/ReceivingPage'));
 const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
+const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialReportsPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
 const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
@@ -205,6 +206,10 @@ const ProtectedApp = () => {
           <Route path="/procurement/receiving" element={<ProtectedRoute requiredPermission="manage_procurement"><ReceivingPage /></ProtectedRoute>} />
 
           <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
+          <Route path="/accounting/financial-reports" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage /></ProtectedRoute>} />
+          <Route path="/accounting/balance-sheet" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="balance" /></ProtectedRoute>} />
+          <Route path="/accounting/income-statement" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="income" /></ProtectedRoute>} />
+          <Route path="/accounting/cash-in-out" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="cashflow" /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
           <Route path="/accounting/payable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsPayablePage /></ProtectedRoute>} />
           <Route path="/accounting/receivable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsReceivablePage /></ProtectedRoute>} />

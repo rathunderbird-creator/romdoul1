@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Pin, PinOff, Gauge, Megaphone, Target } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Pin, PinOff, Gauge, Megaphone, Target, Scale, ArrowDownUp } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -119,6 +119,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
             subItems: [
                 { label: t('nav.chartOfAccounts'), path: '/accounting/chart-of-accounts', icon: Network },
                 { label: t('nav.journalEntries'), path: '/accounting/journal-entries', icon: BookOpen },
+                { label: t('nav.balanceSheet'), path: '/accounting/balance-sheet', icon: Scale },
+                { label: t('nav.incomeStatement'), path: '/accounting/income-statement', icon: TrendingUp },
+                { label: t('nav.cashInOut'), path: '/accounting/cash-in-out', icon: ArrowDownUp },
                 { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
                 { label: t('nav.accountsReceivable'), path: '/accounting/receivable', icon: HandCoins },
                 { label: t('nav.payments'), path: '/accounting/payments', icon: CreditCard }
