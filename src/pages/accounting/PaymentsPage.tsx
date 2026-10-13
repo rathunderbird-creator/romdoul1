@@ -74,8 +74,8 @@ const PaymentsPage: React.FC = () => {
     };
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', background: 'var(--color-surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+        <div className="acct-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', background: 'var(--color-surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', gap: '16px' }}>
                     <div style={{ padding: '12px', background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', borderRadius: '12px' }}>
                         <Wallet size={24} />
@@ -108,7 +108,8 @@ const PaymentsPage: React.FC = () => {
                         <p>No payments recorded yet.</p>
                     </div>
                 ) : (
-                    <table className="spreadsheet-table" style={{ tableLayout: 'fixed' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                    <table className="spreadsheet-table" style={{ tableLayout: 'fixed', minWidth: '680px' }}>
                         <thead>
                             <tr>
                                 <th style={{ width: '120px' }}>Date</th>
@@ -152,6 +153,7 @@ const PaymentsPage: React.FC = () => {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                 )}
             </div>
 

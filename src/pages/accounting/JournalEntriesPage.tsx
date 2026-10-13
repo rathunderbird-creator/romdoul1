@@ -125,10 +125,10 @@ const JournalEntriesPage = () => {
     }, [journalEntries, searchQuery, dateRange]);
 
     return (
-        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <div style={{ position: 'relative', width: '350px' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                    <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: '380px' }}>
                         <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
                         <input 
                             type="text" 
@@ -174,7 +174,8 @@ const JournalEntriesPage = () => {
             </div>
 
             <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '680px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Entry #</th>
@@ -227,9 +228,10 @@ const JournalEntriesPage = () => {
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
 
-            <Modal 
+            <Modal
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
                 title="New Journal Entry"
@@ -272,13 +274,14 @@ const JournalEntriesPage = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <label style={{ fontWeight: 500, fontSize: '14px', color: '#334155' }}>Line Items</label>
                         </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '420px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>
                                     <th style={{ padding: '8px 4px', textAlign: 'left', fontWeight: 600 }}>Account</th>
-                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '100px', fontWeight: 600 }}>Debit</th>
-                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '100px', fontWeight: 600 }}>Credit</th>
-                                    <th style={{ padding: '8px 4px', width: '40px' }}></th>
+                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '90px', fontWeight: 600 }}>Debit</th>
+                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '90px', fontWeight: 600 }}>Credit</th>
+                                    <th style={{ padding: '8px 4px', width: '36px' }}></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -331,7 +334,8 @@ const JournalEntriesPage = () => {
                                 ))}
                             </tbody>
                         </table>
-                        <button 
+                        </div>
+                        <button
                             onClick={addLine}
                             style={{ marginTop: '8px', padding: '6px 12px', fontSize: '13px', borderRadius: '6px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontWeight: 500, cursor: 'pointer' }}
                         >

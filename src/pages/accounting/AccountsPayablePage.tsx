@@ -112,7 +112,7 @@ const AccountsPayablePage: React.FC = () => {
     };
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="acct-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
             {/* Summary */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <SummaryCard icon={Wallet} color="#EF4444" label="Total Payable" value={fmt(totals.totalPayable)} />
@@ -139,7 +139,7 @@ const AccountsPayablePage: React.FC = () => {
                             <div key={g.supplierId} className="glass-panel" style={{ overflow: 'hidden' }}>
                                 <div
                                     onClick={() => toggle(g.supplierId)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', cursor: 'pointer' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', cursor: 'pointer', flexWrap: 'wrap' }}
                                 >
                                     {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                                     <div style={{ flex: 1, minWidth: 0 }}>
