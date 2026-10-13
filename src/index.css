@@ -611,6 +611,91 @@ div:has(> svg) .search-input {
   font-weight: 500;
 }
 
+/* ── Modern layout (ThemeContext.layout === 'modern') ─────────────────────
+   The body class restyles the chrome: a wider light sidebar and a softer
+   content background. Pages keep their own styles via the CSS variables. */
+body.layout-modern {
+  --sidebar-width: 250px;
+  --color-bg: #F6F8FB;
+}
+
+/* Modern sidebar items: pill rows on a white surface. */
+.msidebar-item {
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  transition: background 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.msidebar-item:hover {
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+}
+
+.msidebar-item.active {
+  background-color: var(--color-primary-light) !important;
+  color: var(--color-primary) !important;
+  font-weight: 700;
+}
+
+/* Uppercase collapsible group labels, like REPORTS / INVENTORY. */
+.msidebar-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px 5px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.msidebar-group:hover {
+  color: var(--color-text-main);
+}
+
+/* Header profile dropdown items */
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.profile-menu-item:hover {
+  background: var(--color-bg);
+}
+
+.profile-menu-item.profile-menu-danger {
+  color: #EF4444;
+}
+
+.profile-menu-item.profile-menu-danger:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
 /* Image Hover Preview Animation */
 @keyframes fadeInPreview {
   from {

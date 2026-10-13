@@ -455,7 +455,13 @@
     "logout": "ចាកចេញ",
     "refreshData": "ផ្ទុកទិន្នន័យឡើងវិញ",
     "guest": "ភ្ញៀវ",
-    "justNow": "ទើបតែឥឡូវ"
+    "justNow": "ទើបតែឥឡូវ",
+    "signOut": "ចាកចេញ",
+    "language": "ភាសា",
+    "textSize": "ទំហំអក្សរ",
+    "layout": "ប្លង់",
+    "layoutClassic": "បុរាណ",
+    "layoutModern": "ទំនើប"
   },
   "common": {
     "save": "រក្សាទុក",

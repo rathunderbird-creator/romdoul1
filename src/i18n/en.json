@@ -455,7 +455,13 @@
     "logout": "Logout",
     "refreshData": "Refresh Data",
     "guest": "Guest",
-    "justNow": "Just now"
+    "justNow": "Just now",
+    "signOut": "Sign Out",
+    "language": "Language",
+    "textSize": "Text Size",
+    "layout": "Layout",
+    "layoutClassic": "Classic",
+    "layoutModern": "Modern"
   },
   "common": {
     "save": "Save",

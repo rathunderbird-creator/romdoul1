@@ -3,7 +3,8 @@ import ReactDOM from 'react-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useActivityLog } from '../context/ActivityLogContext';
-import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus, Calculator } from 'lucide-react';
+import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus, Calculator, Users, ChevronDown } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import CalculatorDrawer from './CalculatorDrawer';
 import { useMobile } from '../hooks/useMobile';
@@ -54,16 +55,22 @@ const getTimeAgo = (dateStr: string): string => {
 
 const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const { headerContent } = useHeader();
-    const { currentUser, roles, logout, refreshData } = useStore();
+    const { currentUser, roles, logout, refreshData, hasPermission } = useStore();
     const { logs, unreadCount, isOpen, togglePanel, closePanel, markAllRead, isLoading } = useActivityLog();
     const isMobile = useMobile();
     const navigate = useNavigate();
-    const { t } = useLanguage();
+    const { t, language, setLanguage } = useLanguage();
+    const { fontSize, setFontSize, layout, setLayout } = useTheme();
     const [isRefreshing, setIsRefreshing] = React.useState(false);
 
     const panelRef = useClickOutside<HTMLDivElement>(() => {
         if (isOpen) closePanel();
     });
+
+    // Profile dropdown: Settings, User Management, language and text size live
+    // here now (moved out of the sidebars), plus Sign Out.
+    const [isProfileOpen, setIsProfileOpen] = React.useState(false);
+    const profileRef = useClickOutside<HTMLDivElement>(() => setIsProfileOpen(false));
 
     const handleLogout = () => {
         logout();
@@ -497,30 +504,153 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         </div>
                     )}
 
-                    {/* User Profile */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {!isMobile && (
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                                    {currentUser?.name || t('header.guest')}
+                    {/* User Profile → dropdown menu (Settings, User Management,
+                        language, text size, sign out) */}
+                    <div style={{ position: 'relative' }} ref={profileRef}>
+                        <button
+                            onClick={() => setIsProfileOpen(o => !o)}
+                            aria-haspopup="menu"
+                            aria-expanded={isProfileOpen}
+                            title={currentUser?.name || t('header.guest')}
+                            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                        >
+                            {!isMobile && (
+                                <div style={{ textAlign: 'right' }}>
+                                    <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                        {currentUser?.name || t('header.guest')}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                        {currentUser?.roleId ? (roles?.find(r => r.id === currentUser.roleId)?.name || currentUser.roleId) : ''}
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                    {currentUser?.roleId ? (roles?.find(r => r.id === currentUser.roleId)?.name || currentUser.roleId) : ''}
+                            )}
+                            <div style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '50%',
+                                backgroundColor: isProfileOpen ? 'var(--color-primary)' : (isMobile ? '#1F2937' : 'var(--color-surface-hover)'),
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: isProfileOpen ? 'white' : 'var(--color-primary)',
+                                transition: 'all 0.15s',
+                                flexShrink: 0
+                            }}>
+                                <User size={16} />
+                            </div>
+                            {!isMobile && <ChevronDown size={13} style={{ color: 'var(--color-text-muted)', transform: isProfileOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />}
+                        </button>
+
+                        {isProfileOpen && (
+                            <div role="menu" style={{
+                                position: 'absolute', top: '100%', right: 0, marginTop: '10px', width: '264px',
+                                backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                                borderRadius: '14px', boxShadow: '0 12px 40px rgba(0,0,0,0.18)', zIndex: 300, overflow: 'hidden',
+                            }}>
+                                {/* Who is signed in */}
+                                <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <User size={18} />
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div className="d2-khmer" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {currentUser?.name || t('header.guest')}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                            {currentUser?.roleId ? (roles?.find(r => r.id === currentUser.roleId)?.name || currentUser.roleId) : ''}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Links */}
+                                <div style={{ padding: '6px' }}>
+                                    {hasPermission('manage_users') && (
+                                        <button role="menuitem" onClick={() => { setIsProfileOpen(false); navigate('/users'); }} className="profile-menu-item">
+                                            <Users size={16} /> {t('nav.userManagement')}
+                                        </button>
+                                    )}
+                                    {hasPermission('manage_settings') && (
+                                        <button role="menuitem" onClick={() => { setIsProfileOpen(false); navigate('/settings'); }} className="profile-menu-item">
+                                            <Settings size={16} /> {t('nav.settings')}
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Language */}
+                                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{t('header.language')}</div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        {([['en', 'English'], ['km', 'ភាសាខ្មែរ']] as const).map(([code, label]) => (
+                                            <button
+                                                key={code}
+                                                onClick={() => setLanguage(code)}
+                                                className="d2-khmer"
+                                                style={{
+                                                    flex: 1, padding: '7px 10px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                                                    border: '1px solid ' + (language === code ? 'var(--color-primary)' : 'var(--color-border)'),
+                                                    background: language === code ? 'var(--color-primary-light)' : 'var(--color-bg)',
+                                                    color: language === code ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                }}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Layout */}
+                                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{t('header.layout')}</div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        {([['classic', t('header.layoutClassic')], ['modern', t('header.layoutModern')]] as const).map(([key, label]) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setLayout(key)}
+                                                className="d2-khmer"
+                                                style={{
+                                                    flex: 1, padding: '7px 10px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                                                    border: '1px solid ' + (layout === key ? 'var(--color-primary)' : 'var(--color-border)'),
+                                                    background: layout === key ? 'var(--color-primary-light)' : 'var(--color-bg)',
+                                                    color: layout === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                }}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Text size */}
+                                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{t('header.textSize')}</div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        {[12, 14, 16, 18].map((size, i) => (
+                                            <button
+                                                key={size}
+                                                onClick={() => setFontSize(size)}
+                                                title={`${size}px`}
+                                                style={{
+                                                    flex: 1, padding: '5px 0', borderRadius: '8px', cursor: 'pointer',
+                                                    fontSize: `${11 + i * 2}px`, fontWeight: 700, lineHeight: 1.3,
+                                                    border: '1px solid ' + (fontSize === size ? 'var(--color-primary)' : 'var(--color-border)'),
+                                                    background: fontSize === size ? 'var(--color-primary-light)' : 'var(--color-bg)',
+                                                    color: fontSize === size ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                }}
+                                            >
+                                                A
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Sign out */}
+                                <div style={{ padding: '6px', borderTop: '1px solid var(--color-border)' }}>
+                                    <button role="menuitem" onClick={() => { setIsProfileOpen(false); handleLogout(); }} className="profile-menu-item profile-menu-danger">
+                                        <LogOut size={16} /> {t('header.signOut')}
+                                    </button>
                                 </div>
                             </div>
                         )}
-                        <div style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            backgroundColor: isMobile ? '#1F2937' : 'var(--color-surface-hover)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'var(--color-primary)'
-                        }}>
-                            <User size={16} />
-                        </div>
                     </div>
 
                     {/* Calculator */}
@@ -577,24 +707,6 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         )}
                     </button>
 
-                    {/* Logout Button */}
-                    <button
-                        onClick={handleLogout}
-                        title="Logout"
-                        style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: isMobile ? '#D1D5DB' : 'var(--color-text-secondary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '4px',
-                            marginLeft: '4px'
-                        }}
-                        className="hover-danger"
-                    >
-                        <LogOut size={18} />
-                    </button>
                 </div>
             </div>
 

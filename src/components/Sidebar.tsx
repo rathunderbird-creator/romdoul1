@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, Settings, Truck, Users, X, Wallet, MapPin, PieChart, CalendarClock, ChevronDown, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Pin, PinOff, Gauge, Megaphone, Target, Scale, ArrowDownUp } from 'lucide-react';
+import { X, ChevronDown, Pin, PinOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { useLanguage } from '../context/LanguageContext';
+import { useNavItems } from './useNavItems';
 import { NavLink, useLocation } from 'react-router-dom';
 
 interface SidebarProps {
@@ -15,171 +15,12 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile, isPinned = false, canPin = true, onTogglePin }) => {
-    const { hasPermission, logo } = useStore();
-    const { t, language, setLanguage } = useLanguage();
-
-
-    // ... (rest of the hook logic is same)
-    // Determine if user has access to management features
-    const canManageUsers = hasPermission('manage_users');
-    const canManageSettings = hasPermission('manage_settings');
+    const { logo } = useStore();
 
     const location = useLocation();
 
-    // Define navItems before hooks that depend on it
-    const navItems: any[] = [];
-
-    if (hasPermission('view_dashboard')) {
-        // One dashboard entry: / is the merged dashboard (Dashboard 2 + every
-        // classic card section); /dashboard-classic stays reachable by URL.
-        navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
-        navItems.push({ icon: Tags, label: t('nav.priceList'), path: '/price-list' });
-        navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
-    }
-
-    if (hasPermission('manage_orders') || hasPermission('create_orders') || hasPermission('view_orders')) {
-        navItems.push({
-            icon: Truck,
-            label: t('nav.orders'),
-            path: '/orders',
-            subItems: [
-                { label: t('nav.allOrders'), path: '/orders', icon: List },
-                { label: t('nav.ordersManagement2'), path: '/orders-management-2', icon: Gauge },
-                { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
-                { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
-                { label: t('nav.scammers'), path: '/orders/scammers', icon: AlertTriangle },
-                { label: t('nav.deletedOrders'), path: '/orders/deleted', icon: Trash2 }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_income_expense')) {
-        navItems.push({
-            icon: Wallet,
-            label: t('nav.incomeExpense'),
-            path: '/income-expense',
-            subItems: [
-                { label: t('nav.allTransactions'), path: '/income-expense', icon: ArrowRightLeft },
-                { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
-                { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
-                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign },
-                { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
-                { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
-                { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
-                { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users },
-                { label: t('nav.cpaTracker'), path: '/income-expense/cpa-tracker', icon: Target }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_procurement')) {
-        navItems.push({
-            icon: ShoppingCart,
-            label: t('nav.procurement'),
-            path: '/procurement',
-            subItems: [
-                { label: t('nav.purchaseOrders'), path: '/procurement/purchase-orders', icon: FileCheck },
-                { label: t('nav.suppliers'), path: '/procurement/suppliers', icon: Building2 },
-                { label: t('nav.receiving'), path: '/procurement/receiving', icon: PackageCheck }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_orders')) {
-        navItems.push({
-            icon: Store,
-            label: t('nav.wholesale'),
-            path: '/wholesale',
-            subItems: [
-                { label: t('nav.wholesaleOrders'), path: '/wholesale/orders', icon: ShoppingCart },
-                { label: t('nav.wholesaleCustomers'), path: '/wholesale/customers', icon: Users }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_inventory') || hasPermission('view_inventory_stock')) {
-        navItems.push({
-            icon: Package,
-            label: t('nav.inventory'),
-            path: '/inventory',
-            subItems: [
-                { label: t('nav.products'), path: '/inventory', icon: PackageSearch },
-                { label: t('nav.categories'), path: '/inventory/categories', icon: Tags },
-                { label: t('nav.warehouses'), path: '/inventory/warehouses', icon: Warehouse },
-                { label: t('nav.stockMovements'), path: '/inventory/stock-movements', icon: ArrowRightLeft }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_accounting')) {
-        navItems.push({
-            icon: Calculator,
-            label: t('nav.accounting'),
-            path: '/accounting',
-            subItems: [
-                { label: t('nav.chartOfAccounts'), path: '/accounting/chart-of-accounts', icon: Network },
-                { label: t('nav.journalEntries'), path: '/accounting/journal-entries', icon: BookOpen },
-                { label: t('nav.balanceSheet'), path: '/accounting/balance-sheet', icon: Scale },
-                { label: t('nav.incomeStatement'), path: '/accounting/income-statement', icon: TrendingUp },
-                { label: t('nav.cashInOut'), path: '/accounting/cash-in-out', icon: ArrowDownUp },
-                { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
-                { label: t('nav.accountsReceivable'), path: '/accounting/receivable', icon: HandCoins },
-                { label: t('nav.payments'), path: '/accounting/payments', icon: CreditCard }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_hr') || hasPermission('manage_attendance')) {
-        navItems.push({
-            icon: Briefcase,
-            label: t('nav.hrPayroll'),
-            path: '/hr',
-            subItems: [
-                { label: t('nav.attendance'), path: '/hr/attendance', icon: CalendarClock },
-                { label: t('nav.employees'), path: '/hr/employees', icon: Users },
-                { label: t('nav.leaves'), path: '/hr/leaves', icon: CalendarOff },
-                { label: t('nav.payroll'), path: '/hr/payroll', icon: Banknote }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_crm')) {
-        navItems.push({
-            icon: HeartHandshake,
-            label: t('nav.crm'),
-            path: '/crm',
-            subItems: [
-                { label: t('nav.leads'), path: '/crm/leads', icon: UserPlus },
-                { label: t('nav.interactions'), path: '/crm/interactions', icon: MessageSquare },
-                { label: t('nav.quotations'), path: '/crm/quotations', icon: FileText }
-            ]
-        });
-    }
-
-    if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
-    }
-
-    if (hasPermission('view_reports')) {
-        navItems.push({
-            icon: PieChart,
-            label: t('nav.reportsCenter'),
-            path: '/reports',
-            subItems: [
-                { label: t('nav.salesOverview'), path: '/reports/sales', icon: BarChart3 },
-                { label: t('nav.topProducts'), path: '/reports/products', icon: Award },
-                { label: t('nav.inventory'), path: '/reports/inventory', icon: Package },
-                { label: t('nav.financials'), path: '/reports/financials', icon: DollarSign },
-                { label: t('nav.staffPerformance'), path: '/reports/staff', icon: Users },
-                { label: t('nav.shippingCompanies'), path: '/reports/shipping', icon: Truck },
-                { label: t('nav.purchaseCost'), path: '/reports/purchase-cost', icon: Banknote },
-            ]
-        });
-    }
-
-    if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: History, label: t('nav.activityLog'), path: '/activity-log' });
-    }
+    // The shared, permission-filtered nav tree (same source as the modern sidebar).
+    const navItems = useNavItems();
 
     const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>(() => {
         const initialExpanded: Record<string, boolean> = {};
@@ -349,22 +190,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
 
                 <nav aria-label="Pages" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', overflowX: 'hidden' }}>
                     {navItems.map((item) => {
-                        const hasSubItems = item.subItems && item.subItems.length > 0;
+                        // Bound once so TypeScript knows it stays defined past the check.
+                        const subItems = item.subItems && item.subItems.length > 0 ? item.subItems : null;
                         const isExpanded = expandedMenus[item.label] || false;
 
                         // Check if active matches exactly or if subroute is matched (e.g. /orders/returns)
-                        const isParentActive = hasSubItems ? item.subItems.some((sub: any) => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')) : location.pathname === item.path;
+                        const isParentActive = subItems ? subItems.some(sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')) : location.pathname === item.path;
 
                         return (
                             <div key={item.label}>
-                                {hasSubItems ? (
+                                {subItems ? (
                                     visualCollapsed ? (
                                         // Rail: a toggle here would disclose a sub-item list that
                                         // never renders while collapsed (dead click, dead Enter/Space,
                                         // misleading aria-expanded for screen readers) — link straight
                                         // to the group's first page instead, like every other icon.
                                         <NavLink
-                                            to={item.subItems[0].path}
+                                            to={subItems[0].path}
                                             title={item.label}
                                             aria-label={item.label}
                                             className={() => `sidebar-item ${isParentActive ? 'active-parent' : ''}`}
@@ -418,9 +260,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                                 )}
 
                                 {/* Render Sub Items */}
-                                {hasSubItems && isExpanded && !visualCollapsed && (
+                                {subItems && isExpanded && !visualCollapsed && (
                                     <div style={{ display: 'flex', flexDirection: 'column', marginTop: '3px', marginLeft: '28px', gap: '3px' }}>
-                                        {item.subItems.map((subItem: any) => {
+                                        {subItems.map(subItem => {
                                             const isSubActive = location.pathname === subItem.path || (subItem.path !== item.path && location.pathname.startsWith(subItem.path + '/'));
                                             return (
                                                 <NavLink
@@ -446,101 +288,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                     })}
                 </nav>
 
-                <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {canManageUsers && (
-                        <NavLink
-                            to="/users"
-                            title={visualCollapsed ? t('nav.userManagement') : ''}
-                            aria-label={t('nav.userManagement')}
-                            onClick={() => {
-                                if (isMobile && !isCollapsed) {
-                                    toggleSidebar();
-                                }
-                            }}
-                            className={({ isActive }) => `sidebar-item ${isActive ? 'active-link' : ''}`}
-                            style={{
-                                justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                                gap: '10px',
-                                padding: visualCollapsed ? '10px' : '9px 14px'
-                            }}
-                        >
-                            <Users size={17} />
-                            {!visualCollapsed && <span>{t('nav.userManagement')}</span>}
-                        </NavLink>
-                    )}
-
-                    {canManageSettings && (
-                        <NavLink
-                            to="/settings"
-                            title={visualCollapsed ? t('nav.settings') : ''}
-                            aria-label={t('nav.settings')}
-                            onClick={() => {
-                                if (isMobile && !isCollapsed) {
-                                    toggleSidebar();
-                                }
-                            }}
-                            className={({ isActive }) => `sidebar-item ${isActive ? 'active-link' : ''}`}
-                            style={{
-                                justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                                gap: '10px',
-                                padding: visualCollapsed ? '10px' : '9px 14px'
-                            }}
-                        >
-                            <Settings size={17} />
-                            {!visualCollapsed && <span>{t('nav.settings')}</span>}
-                        </NavLink>
-                    )}
-
-                    {/* Language Toggle */}
-                    <button
-                        onClick={() => setLanguage(language === 'en' ? 'km' : 'en')}
-                        title={language === 'en' ? 'ប្ដូរទៅភាសាខ្មែរ' : 'Switch to English'}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: visualCollapsed ? 'center' : 'flex-start',
-                            gap: '10px',
-                            padding: visualCollapsed ? '10px' : '9px 14px',
-                            borderRadius: '8px',
-                            background: 'transparent',
-                            border: '1px solid #333',
-                            color: '#9CA3AF',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            fontWeight: 500,
-                            width: '100%',
-                            transition: 'background 0.2s'
-                        }}
-                        className="sidebar-item"
-                    >
-                        {language === 'en' ? (
-                            <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
-                                <rect width="25" height="4" fill="#032EA1" />
-                                <rect y="4" width="25" height="8" fill="#E00025" />
-                                <rect y="12" width="25" height="4" fill="#032EA1" />
-                                <g fill="#fff" transform="translate(12.5,8)">
-                                    <rect x="-5" y="-1.5" width="10" height="3" />
-                                    <rect x="-4" y="-3" width="8" height="1.5" />
-                                    <rect x="-1" y="-5" width="2" height="2" />
-                                    <rect x="-3.5" y="-4" width="1.5" height="1" />
-                                    <rect x="2" y="-4" width="1.5" height="1" />
-                                </g>
-                            </svg>
-                        ) : (
-                            <svg width="20" height="14" viewBox="0 0 25 16" style={{ borderRadius: '2px', flexShrink: 0 }}>
-                                <rect width="25" height="16" fill="#B22234" />
-                                <rect y="1.23" width="25" height="1.23" fill="#fff" />
-                                <rect y="3.69" width="25" height="1.23" fill="#fff" />
-                                <rect y="6.15" width="25" height="1.23" fill="#fff" />
-                                <rect y="8.62" width="25" height="1.23" fill="#fff" />
-                                <rect y="11.08" width="25" height="1.23" fill="#fff" />
-                                <rect y="13.54" width="25" height="1.23" fill="#fff" />
-                                <rect width="10" height="8.62" fill="#3C3B6E" />
-                            </svg>
-                        )}
-                        {!visualCollapsed && <span>{language === 'en' ? 'ខ្មែរ' : 'English'}</span>}
-                    </button>
-                </div>
 
             </aside>
         </>
