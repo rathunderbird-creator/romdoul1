@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
@@ -57,6 +58,7 @@ const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFraction
 
 const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mode }) => {
     const cfg = CFG[mode];
+    const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { saveJournalEntry } = useAccounting();
@@ -350,6 +352,29 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
                         No {mode} entries yet — record the first one above.
                     </div>
+                ) : isMobile ? (
+                    // Phones: one card per entry — no sideways scrolling.
+                    <>
+                        {rows.map(r => (
+                            <div key={r.entryId} style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{r.date}</span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                        <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
+                                        <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} />
+                                    </span>
+                                </div>
+                                {r.description && <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 2px' }}>{r.description}</div>}
+                                <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                    {mode === 'revenue' ? `${r.accountName} → ${r.counterName}` : `${r.accountName} ← ${r.counterName}`}
+                                </div>
+                            </div>
+                        ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--color-bg)', fontWeight: 800, fontSize: '13px' }}>
+                            <span style={{ color: 'var(--color-text-main)' }}>Total</span>
+                            <span style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(totals.all)}</span>
+                        </div>
+                    </>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '680px' }}>

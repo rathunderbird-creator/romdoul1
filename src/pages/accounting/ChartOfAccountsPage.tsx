@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
 import { useAccounting } from '../../hooks/useAccounting';
@@ -37,6 +38,7 @@ const signedBalance = (type: ChartOfAccount['account_type'], s: { debit: number;
     type === 'Asset' || type === 'Expense' ? s.debit - s.credit : s.credit - s.debit;
 
 const ChartOfAccountsPage = () => {
+    const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { accounts, isLoading, fetchAccounts, saveAccount, deleteAccount } = useAccounting();
 
@@ -238,6 +240,31 @@ const ChartOfAccountsPage = () => {
         return { text: formatCurrency(bal), negative: bal < 0 };
     };
 
+    // Phone row: name + code/type on the left, balance + actions on the right.
+    const mobileAccountRow = (acc: ChartOfAccount, opts: { indent?: boolean; bold?: boolean; chevron?: boolean | undefined; onPress?: () => void } = {}) => {
+        const bal = balanceCell(acc);
+        return (
+            <div
+                key={acc.id}
+                onClick={opts.onPress}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 14px', paddingLeft: opts.indent ? '30px' : '14px', borderBottom: '1px solid #f1f5f9', cursor: opts.onPress ? 'pointer' : 'default', background: opts.indent ? '#fafbfc' : 'white' }}
+            >
+                {opts.chevron !== undefined && (opts.chevron ? <ChevronDown size={15} color="#94a3b8" style={{ flexShrink: 0 }} /> : <ChevronRight size={15} color="#94a3b8" style={{ flexShrink: 0 }} />)}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: opts.bold ? 700 : 500, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.account_name}</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '1px' }}>{acc.account_code} · {acc.account_type.toUpperCase()}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: bal.negative ? '#DC2626' : '#334155', fontVariantNumeric: 'tabular-nums' }}>{bal.text}</div>
+                    <div style={{ display: 'flex', gap: '14px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                        <Edit size={14} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); handleOpenModal(acc); }} />
+                        <Trash2 size={14} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); handleDelete(acc.id); }} />
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
@@ -300,6 +327,28 @@ const ChartOfAccountsPage = () => {
             </div>
 
             <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                {isMobile ? (
+                    // Phones: stacked account rows instead of the wide table.
+                    isLoading ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>Loading accounts...</div>
+                    ) : accounts.length === 0 ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found</div>
+                    ) : (
+                        <>
+                            {hierarchicalAccounts.parents.map(parent => {
+                                const isExpanded = expandedGroups[parent.account_code];
+                                const hasChildren = parent.children.length > 0;
+                                return (
+                                    <React.Fragment key={parent.id}>
+                                        {mobileAccountRow(parent, { bold: true, chevron: hasChildren ? !!isExpanded : undefined, onPress: hasChildren ? () => toggleGroup(parent.account_code) : undefined })}
+                                        {isExpanded && parent.children.map(child => mobileAccountRow(child, { indent: true }))}
+                                    </React.Fragment>
+                                );
+                            })}
+                            {hierarchicalAccounts.orphans.map(orphan => mobileAccountRow(orphan))}
+                        </>
+                    )
+                ) : (
                 <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '620px' }}>
                     <thead>
@@ -387,6 +436,7 @@ const ChartOfAccountsPage = () => {
                     </tbody>
                 </table>
                 </div>
+                )}
             </div>
 
             <Modal 

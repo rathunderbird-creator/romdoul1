@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Search } from 'lucide-react';
+import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
@@ -13,6 +14,7 @@ const formatCurrency = (amount: number) => {
 
 
 const JournalEntriesPage = () => {
+    const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { journalEntries, accounts, isLoading, fetchJournalEntries, fetchAccounts, saveJournalEntry } = useAccounting();
 
@@ -174,6 +176,36 @@ const JournalEntriesPage = () => {
             </div>
 
             <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                {isMobile ? (
+                    // Phones: one card per entry — no sideways scrolling.
+                    isLoading ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>Loading entries...</div>
+                    ) : filteredEntries.length === 0 ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No entries found</div>
+                    ) : (
+                        filteredEntries.map(entry => {
+                            const totalDebits = entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0;
+                            const displayId = entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
+                            return (
+                                <div key={entry.id} style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
+                                        <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayId}</span>
+                                        <span style={{ fontSize: '12px', color: '#94a3b8', flexShrink: 0 }}>
+                                            {new Date(entry.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                                        </span>
+                                    </div>
+                                    <div className="d2-khmer" style={{ fontSize: '13px', color: '#334155', margin: '4px 0 6px', fontWeight: 500 }}>
+                                        {entry.description || 'No Description'}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDebits)}</span>
+                                        <span style={{ padding: '3px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 'bold', background: '#dcfce7', color: '#166534', letterSpacing: '0.5px' }}>POSTED</span>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )
+                ) : (
                 <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '680px' }}>
                     <thead>
@@ -229,6 +261,7 @@ const JournalEntriesPage = () => {
                     </tbody>
                 </table>
                 </div>
+                )}
             </div>
 
             <Modal

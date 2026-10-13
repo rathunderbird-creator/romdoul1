@@ -6,6 +6,7 @@ import { useProcurement } from '../../hooks/useProcurement';
 import { Modal } from '../../components';
 import { useToast } from '../../context/ToastContext';
 import type { PurchaseOrder } from '../../types';
+import { useMobile } from '../../hooks/useMobile';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 
@@ -18,6 +19,7 @@ const daysOverdue = (due?: string): number | null => {
 };
 
 const AccountsPayablePage: React.FC = () => {
+    const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { currentUser } = useStore();
@@ -154,7 +156,31 @@ const AccountsPayablePage: React.FC = () => {
                                     <div style={{ fontSize: '18px', fontWeight: 700, color: '#EF4444' }}>{fmt(g.total)}</div>
                                 </div>
 
-                                {isOpen && (
+                                {isOpen && isMobile ? (
+                                    // Phones: one card per open purchase order.
+                                    <div style={{ borderTop: '1px solid var(--color-border)' }}>
+                                        {g.pos.map(po => {
+                                            const od = daysOverdue(po.payment_due_date);
+                                            return (
+                                                <div key={po.id} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                                        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text)' }}>{po.invoice_number || `PO-${po.id.slice(0, 8)}`}</span>
+                                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{po.order_date ? new Date(po.order_date).toLocaleDateString() : '—'}</span>
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '5px 0' }}>
+                                                        {po.payment_due_date ? <>Due {new Date(po.payment_due_date).toLocaleDateString()}</> : 'No due date'}
+                                                        {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                                        {' · '}{fmt(po.total_amount || 0)} − {fmt(po.amount_paid || 0)} paid
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                                        <span style={{ fontWeight: 700, color: '#EF4444', fontVariantNumeric: 'tabular-nums' }}>{fmt(po.outstanding)}</span>
+                                                        <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openPay(po)}>Record Payment</button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : isOpen && (
                                     <div style={{ borderTop: '1px solid var(--color-border)', overflowX: 'auto' }}>
                                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
                                             <thead>
