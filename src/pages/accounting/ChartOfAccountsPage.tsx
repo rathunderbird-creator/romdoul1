@@ -239,9 +239,9 @@ const ChartOfAccountsPage = () => {
     };
 
     return (
-        <div style={{ padding: '32px', maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <div style={{ position: 'relative', width: '300px' }}>
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '360px' }}>
                     <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
                     <input 
                         type="text" 
@@ -300,7 +300,8 @@ const ChartOfAccountsPage = () => {
             </div>
 
             <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '620px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', width: '120px' }}>Code</th>
@@ -385,6 +386,7 @@ const ChartOfAccountsPage = () => {
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             <Modal 

@@ -222,7 +222,7 @@ const AccountsReceivablePage: React.FC = () => {
     const bothMissing = transferTableMissing && woMissing;
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="acct-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <SummaryCard icon={HandCoins} color="#059669" label="Total Receivable" value={fmt(totals.totalReceivable)} />
                 <SummaryCard icon={AlertTriangle} color="#D97706" label="Overdue" value={fmt(totals.overdue)} />

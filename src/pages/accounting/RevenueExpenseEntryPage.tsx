@@ -248,7 +248,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const Icon = cfg.icon;
 
     return (
-        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             {/* Totals */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px' }}>
                 {[

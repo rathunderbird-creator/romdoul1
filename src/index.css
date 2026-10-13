@@ -666,6 +666,17 @@ body.layout-modern {
   color: var(--color-text-main);
 }
 
+/* Accounting pages: one shared page padding that tightens on phones. */
+.acct-page {
+  padding: 24px;
+}
+
+@media (max-width: 767px) {
+  .acct-page {
+    padding: 12px;
+  }
+}
+
 /* Header profile dropdown items */
 .profile-menu-item {
   display: flex;

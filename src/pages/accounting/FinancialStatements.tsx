@@ -478,7 +478,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
 
             {/* Statement body */}
             {tab === 'balance' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
                     <SectionCard title="Assets" color={BLUE} rows={balanceSheet.assets} totalLabel="Total Assets" total={balanceSheet.totals.assets} prevTotal={balanceSheet.prevTotals?.assets} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <SectionCard title="Liabilities" color={RED} rows={balanceSheet.liabilities} totalLabel="Total Liabilities" total={balanceSheet.totals.liabilities} prevTotal={balanceSheet.prevTotals?.liabilities} />
@@ -492,7 +492,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             )}
 
             {tab === 'income' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
                     <SectionCard title="Revenue" color={GREEN} rows={incomeStatement.revenue} totalLabel="Total Revenue" total={incomeStatement.totals.revenue} prevTotal={incomeStatement.prevTotals?.revenue} />
                     <SectionCard title="Expenses" color={RED} rows={incomeStatement.expenses} totalLabel="Total Expenses" total={incomeStatement.totals.expenses} prevTotal={incomeStatement.prevTotals?.expenses} />
                 </div>
@@ -531,7 +531,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             {tab === 'trial' && (
                 <div style={{ ...cardStyle, overflow: 'hidden' }}>
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '600px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
                                     <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: '90px' }}>Code</th>
