@@ -61,6 +61,7 @@ const PurchaseOrdersPage = lazy(() => import('./pages/procurement/PurchaseOrders
 const ReceivingPage = lazy(() => import('./pages/procurement/ReceivingPage'));
 const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
 const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialReportsPage'));
+const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExpenseEntryPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
 const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
@@ -211,6 +212,8 @@ const ProtectedApp = () => {
           <Route path="/accounting/income-statement" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="income" /></ProtectedRoute>} />
           <Route path="/accounting/cash-in-out" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="cashflow" /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
+          <Route path="/accounting/revenue" element={<ProtectedRoute requiredPermission="manage_accounting"><RevenueExpenseEntryPage mode="revenue" /></ProtectedRoute>} />
+          <Route path="/accounting/expense" element={<ProtectedRoute requiredPermission="manage_accounting"><RevenueExpenseEntryPage mode="expense" /></ProtectedRoute>} />
           <Route path="/accounting/payable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsPayablePage /></ProtectedRoute>} />
           <Route path="/accounting/receivable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsReceivablePage /></ProtectedRoute>} />
           <Route path="/accounting/payments" element={<ProtectedRoute requiredPermission="manage_accounting"><PaymentsPage /></ProtectedRoute>} />

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import Sidebar from './Sidebar';
+import SidebarModern from './SidebarModern';
 import Header from './Header';
 import TopLoadingBar from './TopLoadingBar';
 import { useLocation } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
 
 import { useMobile } from '../hooks/useMobile';
 
@@ -26,6 +28,10 @@ const matchesWide = (): boolean =>
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const isMobile = useMobile();
     const location = useLocation();
+    // 'classic' = the black rail, 'modern' = the light grouped sidebar. Same
+    // props and mechanics; only the component (look) changes.
+    const { layout } = useTheme();
+    const SidebarComponent = layout === 'modern' ? SidebarModern : Sidebar;
     // Mobile: the sidebar is a drawer (true = hidden).
     const [isDrawerHidden, setIsDrawerHidden] = useState(true);
     const [isPinned, setIsPinned] = useState<boolean>(readPinned);
@@ -87,7 +93,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         // inside the zoomed body (see index.css) and left a bottom/right gap.
         <div style={{ height: 'var(--vh-full)', display: 'flex', overflow: 'hidden' }}>
             <TopLoadingBar />
-            <Sidebar
+            <SidebarComponent
                 isCollapsed={isCollapsed}
                 toggleSidebar={toggleSidebar}
                 isMobile={isMobile}
