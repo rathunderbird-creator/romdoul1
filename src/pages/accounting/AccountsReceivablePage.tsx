@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
 import { Modal } from '../../components';
 import { supabase } from '../../lib/supabase';
+import { useMobile } from '../../hooks/useMobile';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 
@@ -50,6 +51,7 @@ interface Receivable {
 }
 
 const AccountsReceivablePage: React.FC = () => {
+    const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const navigate = useNavigate();
@@ -253,6 +255,36 @@ const AccountsReceivablePage: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <HandCoins size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
                     <p>No outstanding receivables. Everything is collected. 🎉</p>
+                </div>
+            ) : isMobile ? (
+                // Phones: one card per receivable — no sideways scrolling.
+                <div className="glass-panel" style={{ overflow: 'hidden' }}>
+                    {receivables.map(r => {
+                        const od = daysOverdue(r.due_date);
+                        const isWholesale = r.source === 'wholesale';
+                        return (
+                            <div key={r.key} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', color: isWholesale ? '#7E22CE' : '#0369A1', background: isWholesale ? 'rgba(126,34,206,0.1)' : 'rgba(3,105,161,0.1)', flexShrink: 0 }}>
+                                        {isWholesale ? 'WHOLESALE' : 'TRANSFER'}
+                                    </span>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{r.date ? new Date(r.date).toLocaleDateString() : '—'}</span>
+                                </div>
+                                <div className="d2-khmer" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text)', margin: '6px 0 2px' }}>{r.party}</div>
+                                <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                    {r.desc}
+                                    {r.due_date && <> · Due {new Date(r.due_date).toLocaleDateString()}</>}
+                                    {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', gap: '10px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {fmt(r.total)} − {fmt(r.received)} = <span style={{ fontWeight: 700, color: '#059669' }}>{fmt(r.balance)}</span>
+                                    </span>
+                                    <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openReceipt(r)}>Record Receipt</button>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto' }}>

@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Scale, TrendingUp, ArrowDownUp, ClipboardList, CheckCircle2, AlertTriangle, Printer, Download, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useMobile } from '../../hooks/useMobile';
 import type { ChartOfAccount } from '../../types';
 
 type AccountType = ChartOfAccount['account_type'];
@@ -49,6 +50,7 @@ export interface FinancialStatementsProps {
 }
 
 const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, endDate, initialTab }) => {
+    const isMobile = useMobile();
     const [tab, setTab] = useState<TabKey>(initialTab || 'balance');
     const [compare, setCompare] = useState(false);
 
@@ -528,7 +530,28 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 </div>
             )}
 
-            {tab === 'trial' && (
+            {tab === 'trial' && isMobile && (
+                <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                    {/* Phones: one row per account — no sideways scrolling. */}
+                    {trialBalance.rows.map(r => (
+                        <div key={`${r.code}|${r.name}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '1px' }}>{r.code} · {r.type.toUpperCase()}</div>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontSize: '13px' }}>
+                                {loading ? '…' : r.debit ? <span style={{ color: BLUE, fontWeight: 600 }}>Dr {fmt(r.debit)}</span> : r.credit ? <span style={{ color: RED, fontWeight: 600 }}>Cr {fmt(r.credit)}</span> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                            </div>
+                        </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', background: 'var(--color-bg)', fontWeight: 800, fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
+                        <span style={{ color: BLUE }}>Dr {loading ? '…' : fmt(trialBalance.totals.debit)}</span>
+                        <span style={{ color: RED }}>Cr {loading ? '…' : fmt(trialBalance.totals.credit)}</span>
+                    </div>
+                </div>
+            )}
+
+            {tab === 'trial' && !isMobile && (
                 <div style={{ ...cardStyle, overflow: 'hidden' }}>
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '600px' }}>

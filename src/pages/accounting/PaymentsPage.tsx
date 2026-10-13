@@ -4,8 +4,10 @@ import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useMobile } from '../../hooks/useMobile';
 
 const PaymentsPage: React.FC = () => {
+    const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { transactions, addTransaction, deleteTransaction, refreshData } = useStore();
     const { showToast } = useToast();
@@ -107,6 +109,30 @@ const PaymentsPage: React.FC = () => {
                         <DollarSign size={48} style={{ opacity: 0.2, margin: '0 auto 16px' }} />
                         <p>No payments recorded yet.</p>
                     </div>
+                ) : isMobile ? (
+                    // Phones: one card per payment — no sideways scrolling.
+                    paymentsList.map(payment => (
+                        <div key={payment.id} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'var(--color-bg)', fontSize: '11px', border: '1px solid var(--color-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {payment.category || '—'}
+                                </span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{new Date(payment.date).toLocaleDateString()}</span>
+                            </div>
+                            <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text)', margin: '6px 0' }}>
+                                {payment.description || '—'}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{payment.pay_by || '—'}</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
+                                        ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    </span>
+                                    <Trash2 size={15} color="#EF4444" style={{ cursor: 'pointer' }} onClick={() => handleDelete(payment.id)} />
+                                </span>
+                            </div>
+                        </div>
+                    ))
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
                     <table className="spreadsheet-table" style={{ tableLayout: 'fixed', minWidth: '680px' }}>
