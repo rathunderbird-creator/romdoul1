@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2 } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
 import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
@@ -94,6 +94,25 @@ const ShippingModalComponent: React.FC<{
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                     Please select the shipping company for this order before changing its status to {targetStatus}.
                 </p>
+                {/* Who the parcel goes to */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <User size={17} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="d2-khmer" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {order.customer?.name || '—'}
+                        </div>
+                        {order.customer?.phone ? (
+                            <a href={`tel:${order.customer.phone}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: 'var(--color-primary)', fontWeight: 600, textDecoration: 'none', fontVariantNumeric: 'tabular-nums' }}>
+                                <Phone size={12} /> {order.customer.phone}
+                            </a>
+                        ) : (
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No phone number</span>
+                        )}
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
+                </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
                     <select
