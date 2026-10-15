@@ -320,7 +320,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
                         onChange={handleSearchChange}
                         placeholder={searchPlaceholder}
                         aria-label={searchPlaceholder}
-                        style={{ width: '100%', height: 36, paddingLeft: 32, paddingRight: 10, borderRadius: 8, border: `1px solid ${D2.border}`, fontSize: 13, background: '#fff', color: D2.ink }}
+                        style={{ width: '100%', height: 36, paddingLeft: 32, paddingRight: 10, borderRadius: 8, border: `1px solid ${D2.border}`, fontSize: 13, background: 'var(--color-surface)', color: D2.ink }}
                     />
                 </div>
             )}
@@ -368,7 +368,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
                         <select
                             value={filters.salesman}
                             onChange={handleSalesmanChange}
-                            style={{ width: '100%', height: 32, borderRadius: 8, border: `1px solid ${D2.border}`, fontSize: 13, color: D2.ink, background: '#fff', padding: '0 8px' }}
+                            style={{ width: '100%', height: 32, borderRadius: 8, border: `1px solid ${D2.border}`, fontSize: 13, color: D2.ink, background: 'var(--color-surface)', padding: '0 8px' }}
                         >
                             <option value="">{allLabel}</option>
                             {salesmen.map(s => <option key={s} value={s}>{s}</option>)}

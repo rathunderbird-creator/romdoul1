@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useActivityLog } from '../context/ActivityLogContext';
-import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus, Calculator, Users, ChevronDown } from 'lucide-react';
+import { Bell, User, Menu, LogOut, RefreshCw, Package, Truck, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings, X, ClipboardList, CheckCircle2, Circle, ExternalLink, Plus, Calculator, Users, ChevronDown, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import CalculatorDrawer from './CalculatorDrawer';
@@ -60,7 +60,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const isMobile = useMobile();
     const navigate = useNavigate();
     const { t, language, setLanguage } = useLanguage();
-    const { fontSize, setFontSize, layout, setLayout } = useTheme();
+    const { fontSize, setFontSize, layout, setLayout, mode, setMode } = useTheme();
     const [isRefreshing, setIsRefreshing] = React.useState(false);
 
     const panelRef = useClickOutside<HTMLDivElement>(() => {
@@ -593,6 +593,29 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                                 }}
                                             >
                                                 {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Light / dark theme */}
+                                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{t('header.theme')}</div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        {([['light', t('header.themeLight'), Sun], ['dark', t('header.themeDark'), Moon]] as const).map(([key, label, Icon]) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setMode(key)}
+                                                className="d2-khmer"
+                                                style={{
+                                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                                                    padding: '7px 10px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                                                    border: '1px solid ' + (mode === key ? 'var(--color-primary)' : 'var(--color-border)'),
+                                                    background: mode === key ? 'var(--color-primary-light)' : 'var(--color-bg)',
+                                                    color: mode === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                }}
+                                            >
+                                                <Icon size={13} /> {label}
                                             </button>
                                         ))}
                                     </div>

@@ -264,7 +264,7 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                 <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#F9FAFB' }}>
                     <button
                         onClick={handleClose}
-                        style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'white', cursor: 'pointer' }}
+                        style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', cursor: 'pointer' }}
                     >
                         Cancel
                     </button>

@@ -150,7 +150,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                         padding: '12px 14px 12px 42px',
                                         borderRadius: '14px',
                                         fontSize: '15px',
-                                        background: 'white',
+                                        background: 'var(--color-surface)',
                                         border: '1px solid transparent',
                                         boxShadow: '0 4px 10px rgba(0,0,0,0.03)'
                                     }}
@@ -345,7 +345,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                                 padding: '14px 14px 14px 44px',
                                                 borderRadius: '14px',
                                                 border: '1px solid transparent',
-                                                backgroundColor: 'white',
+                                                backgroundColor: 'var(--color-surface)',
                                                 color: 'var(--color-text-main)',
                                                 fontSize: '14px',
                                                 outline: 'none',
@@ -379,7 +379,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                         {cart.map(item => (
                                             <div key={item.id} style={{
                                                 display: 'flex', gap: '16px', padding: '12px',
-                                                background: 'white', borderRadius: '16px',
+                                                background: 'var(--color-surface)', borderRadius: '16px',
                                                 boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
                                                 border: '1px solid transparent'
                                             }}>
@@ -391,9 +391,9 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                         <div style={{ fontSize: '14px', color: 'var(--color-primary)', fontWeight: 700 }}>${item.price.toFixed(2)}</div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#F3F4F6', borderRadius: '8px', padding: '2px 4px' }}>
-                                                            <button onClick={() => updateCartQuantity(item.id, item.quantity - 1)} style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'white', borderRadius: '6px' }}>-</button>
+                                                            <button onClick={() => updateCartQuantity(item.id, item.quantity - 1)} style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--color-surface)', borderRadius: '6px' }}>-</button>
                                                             <span style={{ fontSize: '13px', minWidth: '20px', textAlign: 'center', fontWeight: 700 }}>{item.quantity}</span>
-                                                            <button onClick={() => updateCartQuantity(item.id, item.quantity + 1)} style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'white', borderRadius: '6px' }}>+</button>
+                                                            <button onClick={() => updateCartQuantity(item.id, item.quantity + 1)} style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--color-surface)', borderRadius: '6px' }}>+</button>
                                                         </div>
                                                     </div>
                                                 </div>

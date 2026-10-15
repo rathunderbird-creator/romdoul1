@@ -1052,7 +1052,7 @@ const PurchaseOrdersPage = () => {
                     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '10px' : '24px'
                 }}>
                     <div style={{
-                        background: '#ffffff',
+                        background: 'var(--color-surface)',
                         borderRadius: isMobile ? '16px' : '24px',
                         width: '100%',
                         maxWidth: '940px',
@@ -1103,7 +1103,7 @@ const PurchaseOrdersPage = () => {
                                         </div>
                                         <select
                                             className="input-field"
-                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                             value={supplierId}
                                             onChange={(e) => setSupplierId(e.target.value)}
                                         >
@@ -1117,7 +1117,7 @@ const PurchaseOrdersPage = () => {
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Status</label>
                                         <select 
                                             className="input-field" 
-                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                             value={status}
                                             onChange={(e) => setStatus(e.target.value as any)}
                                         >
@@ -1138,15 +1138,15 @@ const PurchaseOrdersPage = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Order Date *</label>
-                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Expected Delivery</label>
-                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
+                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Due Date</label>
-                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={paymentDueDate} onChange={(e) => setPaymentDueDate(e.target.value)} />
+                                        <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={paymentDueDate} onChange={(e) => setPaymentDueDate(e.target.value)} />
                                     </div>
                                 </div>
                             </div>
@@ -1159,11 +1159,11 @@ const PurchaseOrdersPage = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
-                                        <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', fontFamily: 'monospace' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                                        <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontFamily: 'monospace' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Notes</label>
-                                        <input type="text" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." />
+                                        <input type="text" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." />
                                     </div>
                                 </div>
                             </div>
@@ -1184,7 +1184,7 @@ const PurchaseOrdersPage = () => {
                                     </button>
                                 </div>
                                 {/* Mobile: fixed-width columns scroll sideways inside the card */}
-                                <div style={{ borderRadius: '10px', overflow: 'hidden', overflowX: 'auto', border: '1px solid var(--color-border)', background: '#ffffff' }}>
+                                <div style={{ borderRadius: '10px', overflow: 'hidden', overflowX: 'auto', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '560px' : undefined }}>
                                         <thead>
                                             <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
@@ -1277,7 +1277,7 @@ const PurchaseOrdersPage = () => {
                         onClick={() => setViewPO(null)}
                         style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
                     >
-                        <div onClick={(e) => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: '24px', width: '100%', maxWidth: '760px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                        <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: '24px', width: '100%', maxWidth: '760px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                             {/* Header */}
                             <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -1315,7 +1315,7 @@ const PurchaseOrdersPage = () => {
                                         <Package size={15} /> Line Items
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPO.items?.length || 0}</span>
                                     </h4>
-                                    <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: '#ffffff' }}>
+                                    <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
                                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                             <thead>
                                                 <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
@@ -1354,7 +1354,7 @@ const PurchaseOrdersPage = () => {
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {viewPayments.map((p: any) => (
-                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
                                                     <div>
                                                         <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</div>
                                                         <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method, p.notes].filter(Boolean).join(' · ') || '—'}</div>
@@ -1404,7 +1404,7 @@ const PurchaseOrdersPage = () => {
                     <div
                         onClick={(e) => e.stopPropagation()}
                         style={{
-                            background: '#ffffff', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '520px',
+                            background: 'var(--color-surface)', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '520px',
                             maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
                             boxShadow: '0 24px 48px rgba(0,0,0,0.2)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
@@ -1440,7 +1440,7 @@ const PurchaseOrdersPage = () => {
                                         className="input-field"
                                         autoFocus={'autoFocus' in f && f.autoFocus}
                                         placeholder={f.placeholder}
-                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', boxSizing: 'border-box' }}
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', boxSizing: 'border-box' }}
                                         value={newProduct[f.key]}
                                         onChange={(e) => setNewProduct(prev => ({ ...prev, [f.key]: e.target.value }))}
                                         onKeyDown={(e) => { if (e.key === 'Enter') handleCreateProduct(); }}
@@ -1471,7 +1471,7 @@ const PurchaseOrdersPage = () => {
                     <div
                         onClick={(e) => e.stopPropagation()}
                         style={{
-                            background: '#ffffff', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '520px',
+                            background: 'var(--color-surface)', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '520px',
                             maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
                             boxShadow: '0 24px 48px rgba(0,0,0,0.2)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
@@ -1506,7 +1506,7 @@ const PurchaseOrdersPage = () => {
                                         className="input-field"
                                         autoFocus={'autoFocus' in f && f.autoFocus}
                                         placeholder={f.placeholder}
-                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff', boxSizing: 'border-box' }}
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', boxSizing: 'border-box' }}
                                         value={newSupplier[f.key]}
                                         onChange={(e) => setNewSupplier(prev => ({ ...prev, [f.key]: e.target.value }))}
                                         onKeyDown={(e) => { if (e.key === 'Enter') handleCreateSupplier(); }}
@@ -1532,7 +1532,7 @@ const PurchaseOrdersPage = () => {
                     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
                 }}>
                     <div style={{
-                        background: '#ffffff',
+                        background: 'var(--color-surface)',
                         borderRadius: '24px',
                         width: '100%',
                         maxWidth: '520px',

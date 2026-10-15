@@ -24,7 +24,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
             case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
             case 'Cancel': return { bg: '#FEF2F2', color: '#991B1B', border: '#FECACA' }; // Dark Red
             case 'Pending': return { bg: '#FEF3C7', color: '#D97706', border: '#FCD34D' }; // Yellow/Orange
-            default: return { bg: '#F3F4F6', color: '#4B5563', border: '#D1D5DB' };
+            default: return { bg: 'var(--color-surface-hover)', color: '#4B5563', border: '#D1D5DB' };
         }
     };
 
@@ -125,7 +125,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
                         top: position.top,
                         left: position.left,
                         width: position.width,
-                        backgroundColor: 'white',
+                        backgroundColor: 'var(--color-surface)',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
                         border: '1px solid #E5E7EB',
@@ -146,7 +146,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
                                     fontSize: '12px',
                                     fontWeight: 500,
                                     color: isDisabled ? '#9CA3AF' : optStyle.color,
-                                    backgroundColor: opt === status ? '#F3F4F6' : 'white',
+                                    backgroundColor: opt === status ? 'var(--color-surface-hover)' : 'white',
                                     display: 'flex',
                                     alignItems: 'center',
                                     whiteSpace: 'nowrap',
@@ -158,7 +158,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
                                     if (!isDisabled) e.currentTarget.style.backgroundColor = '#F9FAFB';
                                 }}
                                 onMouseLeave={(e) => {
-                                    if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? '#F3F4F6' : 'white';
+                                    if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? 'var(--color-surface-hover)' : 'white';
                                 }}
                             >
                                 {opt}

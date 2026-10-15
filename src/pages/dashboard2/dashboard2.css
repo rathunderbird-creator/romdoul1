@@ -3,11 +3,11 @@
    inline styles cannot express (media queries, pseudo-classes, keyframes). */
 
 .d2 {
-    --d2-bg: #f4f6fa;
-    --d2-card: #ffffff;
-    --d2-border: #e5e7eb;
-    --d2-ink: #111827;
-    --d2-muted: #6b7280;
+    --d2-bg: var(--color-bg);
+    --d2-card: var(--color-surface);
+    --d2-border: var(--color-border);
+    --d2-ink: var(--color-text-main);
+    --d2-muted: var(--color-text-secondary);
     --d2-blue: #2563eb;
     --d2-focus: #2563eb;
     color: var(--d2-ink);
@@ -201,4 +201,10 @@
     .d2-clickable, .d2-row-clickable { transition: none; }
     .d2-clickable:hover { transform: none; }
     .d2-skeleton { animation: none; }
+}
+
+/* Chart grid follows the theme (stroke set via CSS because SVG attributes
+   cannot resolve var()). */
+.d2 .recharts-cartesian-grid line {
+    stroke: var(--color-border);
 }

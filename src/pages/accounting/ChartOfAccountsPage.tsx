@@ -67,8 +67,8 @@ const ChartOfAccountsPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: '#1a1f36' }}>Chart of Accounts</h1>
-                    <p style={{ color: '#8792a2', fontSize: '13px' }}>Manage your ledger accounts and hierarchies.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Chart of Accounts</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Manage your ledger accounts and hierarchies.</p>
                 </div>
             )
         });
@@ -247,15 +247,15 @@ const ChartOfAccountsPage = () => {
             <div
                 key={acc.id}
                 onClick={opts.onPress}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 14px', paddingLeft: opts.indent ? '30px' : '14px', borderBottom: '1px solid #f1f5f9', cursor: opts.onPress ? 'pointer' : 'default', background: opts.indent ? '#fafbfc' : 'white' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 14px', paddingLeft: opts.indent ? '30px' : '14px', borderBottom: '1px solid #f1f5f9', cursor: opts.onPress ? 'pointer' : 'default', background: opts.indent ? 'var(--color-bg)' : 'white' }}
             >
                 {opts.chevron !== undefined && (opts.chevron ? <ChevronDown size={15} color="#94a3b8" style={{ flexShrink: 0 }} /> : <ChevronRight size={15} color="#94a3b8" style={{ flexShrink: 0 }} />)}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: opts.bold ? 700 : 500, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.account_name}</div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '1px' }}>{acc.account_code} · {acc.account_type.toUpperCase()}</div>
+                    <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: opts.bold ? 700 : 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.account_name}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{acc.account_code} · {acc.account_type.toUpperCase()}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: bal.negative ? '#DC2626' : '#334155', fontVariantNumeric: 'tabular-nums' }}>{bal.text}</div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: bal.negative ? '#DC2626' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{bal.text}</div>
                     <div style={{ display: 'flex', gap: '14px', justifyContent: 'flex-end', marginTop: '4px' }}>
                         <Edit size={14} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); handleOpenModal(acc); }} />
                         <Trash2 size={14} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); handleDelete(acc.id); }} />
@@ -266,7 +266,7 @@ const ChartOfAccountsPage = () => {
     };
 
     return (
-        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '360px' }}>
                     <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
@@ -276,7 +276,7 @@ const ChartOfAccountsPage = () => {
                         style={{ 
                             width: '100%', padding: '8px 12px 8px 36px', 
                             borderRadius: '8px', border: '1px solid #e2e8f0',
-                            fontSize: '14px', outline: 'none', background: 'white'
+                            fontSize: '14px', outline: 'none', background: 'var(--color-surface)'
                         }}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -301,12 +301,12 @@ const ChartOfAccountsPage = () => {
                 {TYPE_CARDS.map(({ type, label, color }) => {
                     const t = summary.types[type];
                     return (
-                        <div key={type} style={{ background: 'white', border: '1px solid #e2e8f0', borderTop: `3px solid ${color}`, borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
-                            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', fontVariantNumeric: 'tabular-nums', color: lineSums === null ? '#94a3b8' : t.balance < 0 ? '#DC2626' : '#1a1f36' }}>
+                        <div key={type} style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderTop: `3px solid ${color}`, borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', fontVariantNumeric: 'tabular-nums', color: lineSums === null ? 'var(--color-text-muted)' : t.balance < 0 ? '#DC2626' : 'var(--color-text-main)' }}>
                                 {lineSums === null ? '…' : formatCurrency(t.balance)}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#8792a2', marginTop: '4px' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                                 {t.count} {t.count === 1 ? 'account' : 'accounts'}
                             </div>
                         </div>
@@ -314,25 +314,25 @@ const ChartOfAccountsPage = () => {
                 })}
                 <div
                     title="In double-entry bookkeeping, total debits must equal total credits across all journal entries."
-                    style={{ background: 'white', border: '1px solid #e2e8f0', borderTop: `3px solid ${lineSums !== null && !summary.balanced ? '#DC2626' : '#10B981'}`, borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+                    style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderTop: `3px solid ${lineSums !== null && !summary.balanced ? '#DC2626' : '#10B981'}`, borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
                 >
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Ledger Check</div>
-                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', color: lineSums === null ? '#94a3b8' : summary.balanced ? '#10B981' : '#DC2626' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Ledger Check</div>
+                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', color: lineSums === null ? 'var(--color-text-muted)' : summary.balanced ? '#10B981' : '#DC2626' }}>
                         {lineSums === null ? '…' : summary.balanced ? 'Balanced' : `Off by ${formatCurrency(summary.debits - summary.credits)}`}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#8792a2', marginTop: '4px', fontVariantNumeric: 'tabular-nums' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px', fontVariantNumeric: 'tabular-nums' }}>
                         {lineSums === null ? 'Loading journal entries…' : `Debits ${formatCurrency(summary.debits)} · Credits ${formatCurrency(summary.credits)}`}
                     </div>
                 </div>
             </div>
 
-            <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+            <div style={{ background: 'var(--color-surface)', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                 {isMobile ? (
                     // Phones: stacked account rows instead of the wide table.
                     isLoading ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>Loading accounts...</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading accounts...</div>
                     ) : accounts.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No accounts found</div>
                     ) : (
                         <>
                             {hierarchicalAccounts.parents.map(parent => {
@@ -353,18 +353,18 @@ const ChartOfAccountsPage = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '620px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', width: '120px' }}>Code</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Account Name</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', width: '150px' }}>Type</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', width: '150px', textAlign: 'right' }}>Balance</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', width: '100px', textAlign: 'right' }}>Actions</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '120px' }}>Code</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Account Name</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px' }}>Type</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px', textAlign: 'right' }}>Balance</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '100px', textAlign: 'right' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading accounts...</td></tr>
+                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading accounts...</td></tr>
                         ) : accounts.length === 0 ? (
-                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>No accounts found</td></tr>
+                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No accounts found</td></tr>
                         ) : (
                             <>
                                 {hierarchicalAccounts.parents.map(parent => {
@@ -374,9 +374,9 @@ const ChartOfAccountsPage = () => {
 
                                     return (
                                         <React.Fragment key={parent.id}>
-                                            <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#ffffff', transition: 'background 0.2s' }}>
-                                                <td style={{ padding: '16px 24px', fontWeight: '600', color: '#334155' }}>{parent.account_code}</td>
-                                                <td style={{ padding: '16px 24px', fontWeight: '600', color: '#334155' }}>
+                                            <tr style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
+                                                <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)' }}>{parent.account_code}</td>
+                                                <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)' }}>
                                                     <div 
                                                         style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: hasChildren ? 'pointer' : 'default' }}
                                                         onClick={() => hasChildren && toggleGroup(parent.account_code)}
@@ -385,8 +385,8 @@ const ChartOfAccountsPage = () => {
                                                         {parent.account_name}
                                                     </div>
                                                 </td>
-                                                <td style={{ padding: '16px 24px', color: '#64748b', textTransform: 'uppercase', fontSize: '12px' }}>{parent.account_type}</td>
-                                                <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: balance.negative ? '#DC2626' : '#334155' }}>{balance.text}</td>
+                                                <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{parent.account_type}</td>
+                                                <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: balance.negative ? '#DC2626' : 'var(--color-text-main)' }}>{balance.text}</td>
                                                 <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                                                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                                         <Edit size={16} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={() => handleOpenModal(parent)} />
@@ -397,11 +397,11 @@ const ChartOfAccountsPage = () => {
                                             {isExpanded && parent.children.map(child => {
                                                 const childBalance = balanceCell(child);
                                                 return (
-                                                    <tr key={child.id} style={{ borderBottom: '1px solid #f8fafc', background: '#fafbfc' }}>
-                                                        <td style={{ padding: '14px 24px 14px 48px', color: '#475569', fontWeight: '500' }}>{child.account_code}</td>
-                                                        <td style={{ padding: '14px 24px 14px 48px', color: '#475569' }}>{child.account_name}</td>
-                                                        <td style={{ padding: '14px 24px', color: '#94a3b8', textTransform: 'uppercase', fontSize: '12px' }}>{child.account_type}</td>
-                                                        <td style={{ padding: '14px 24px', textAlign: 'right', color: childBalance.negative ? '#DC2626' : '#475569' }}>{childBalance.text}</td>
+                                                    <tr key={child.id} style={{ borderBottom: '1px solid #f8fafc', background: 'var(--color-bg)' }}>
+                                                        <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)', fontWeight: '500' }}>{child.account_code}</td>
+                                                        <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)' }}>{child.account_name}</td>
+                                                        <td style={{ padding: '14px 24px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontSize: '12px' }}>{child.account_type}</td>
+                                                        <td style={{ padding: '14px 24px', textAlign: 'right', color: childBalance.negative ? '#DC2626' : 'var(--color-text-secondary)' }}>{childBalance.text}</td>
                                                         <td style={{ padding: '14px 24px', textAlign: 'right' }}>
                                                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                                                 <Edit size={16} color="#cbd5e1" style={{ cursor: 'pointer' }} onClick={() => handleOpenModal(child)} />
@@ -418,10 +418,10 @@ const ChartOfAccountsPage = () => {
                                     const orphanBalance = balanceCell(orphan);
                                     return (
                                         <tr key={orphan.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '16px 24px', fontWeight: '500', color: '#334155' }}>{orphan.account_code}</td>
-                                            <td style={{ padding: '16px 24px', color: '#334155' }}>{orphan.account_name}</td>
-                                            <td style={{ padding: '16px 24px', color: '#64748b', textTransform: 'uppercase', fontSize: '12px' }}>{orphan.account_type}</td>
-                                            <td style={{ padding: '16px 24px', textAlign: 'right', color: orphanBalance.negative ? '#DC2626' : '#334155' }}>{orphanBalance.text}</td>
+                                            <td style={{ padding: '16px 24px', fontWeight: '500', color: 'var(--color-text-main)' }}>{orphan.account_code}</td>
+                                            <td style={{ padding: '16px 24px', color: 'var(--color-text-main)' }}>{orphan.account_name}</td>
+                                            <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{orphan.account_type}</td>
+                                            <td style={{ padding: '16px 24px', textAlign: 'right', color: orphanBalance.negative ? '#DC2626' : 'var(--color-text-main)' }}>{orphanBalance.text}</td>
                                             <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                                     <Edit size={16} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={() => handleOpenModal(orphan)} />
@@ -446,7 +446,7 @@ const ChartOfAccountsPage = () => {
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Account Code</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Code</label>
                         <input 
                             type="text" 
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
@@ -456,7 +456,7 @@ const ChartOfAccountsPage = () => {
                         />
                     </div>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Account Name</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Name</label>
                         <input 
                             type="text" 
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
@@ -466,9 +466,9 @@ const ChartOfAccountsPage = () => {
                         />
                     </div>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Account Type</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Type</label>
                         <select 
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'white' }}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)' }}
                             value={formData.account_type}
                             onChange={(e) => setFormData({...formData, account_type: e.target.value as any})}
                         >
@@ -485,11 +485,11 @@ const ChartOfAccountsPage = () => {
                             checked={formData.is_active} 
                             onChange={(e) => setFormData({...formData, is_active: e.target.checked})} 
                         />
-                        <span style={{ fontSize: '14px', color: '#334155' }}>Active</span>
+                        <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>Active</span>
                     </label>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
                         <button 
                             onClick={handleSave} 
                             disabled={!formData.account_code || !formData.account_name}

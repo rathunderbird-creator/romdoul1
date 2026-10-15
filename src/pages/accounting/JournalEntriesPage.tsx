@@ -35,8 +35,8 @@ const JournalEntriesPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: '#1a1f36' }}>Journal Entries</h1>
-                    <p style={{ color: '#8792a2', fontSize: '13px' }}>Record and review general journal entries.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Journal Entries</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Record and review general journal entries.</p>
                 </div>
             )
         });
@@ -127,7 +127,7 @@ const JournalEntriesPage = () => {
     }, [journalEntries, searchQuery, dateRange]);
 
     return (
-        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: '#f7f9fc', minHeight: 'var(--vh-full)' }}>
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
                     <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: '380px' }}>
@@ -138,14 +138,14 @@ const JournalEntriesPage = () => {
                             style={{ 
                                 width: '100%', padding: '8px 12px 8px 36px', 
                                 borderRadius: '8px', border: '1px solid #e2e8f0',
-                                fontSize: '14px', outline: 'none', background: 'white'
+                                fontSize: '14px', outline: 'none', background: 'var(--color-surface)'
                             }}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
                     
-                    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '2px' }}>
+                    <div style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '2px' }}>
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
                     
@@ -175,13 +175,13 @@ const JournalEntriesPage = () => {
                 </button>
             </div>
 
-            <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+            <div style={{ background: 'var(--color-surface)', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                 {isMobile ? (
                     // Phones: one card per entry — no sideways scrolling.
                     isLoading ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>Loading entries...</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading entries...</div>
                     ) : filteredEntries.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No entries found</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No entries found</div>
                     ) : (
                         filteredEntries.map(entry => {
                             const totalDebits = entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0;
@@ -190,15 +190,15 @@ const JournalEntriesPage = () => {
                                 <div key={entry.id} style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
                                         <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayId}</span>
-                                        <span style={{ fontSize: '12px', color: '#94a3b8', flexShrink: 0 }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
                                             {new Date(entry.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
                                         </span>
                                     </div>
-                                    <div className="d2-khmer" style={{ fontSize: '13px', color: '#334155', margin: '4px 0 6px', fontWeight: 500 }}>
+                                    <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 6px', fontWeight: 500 }}>
                                         {entry.description || 'No Description'}
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDebits)}</span>
+                                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDebits)}</span>
                                         <span style={{ padding: '3px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 'bold', background: '#dcfce7', color: '#166534', letterSpacing: '0.5px' }}>POSTED</span>
                                     </div>
                                 </div>
@@ -210,19 +210,19 @@ const JournalEntriesPage = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '680px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Entry #</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Date</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Description</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Debit Total</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Credit Total</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: '#64748b', fontSize: '12px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Entry #</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Date</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Description</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Debit Total</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Credit Total</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading entries...</td></tr>
+                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
                         ) : filteredEntries.length === 0 ? (
-                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>No entries found</td></tr>
+                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
                         ) : (
                             filteredEntries.map(entry => {
                                 const totalDebits = entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0;
@@ -230,20 +230,20 @@ const JournalEntriesPage = () => {
                                 const displayId = entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
                                 
                                 return (
-                                    <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9', background: '#ffffff', transition: 'background 0.2s' }}>
+                                    <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
                                         <td style={{ padding: '16px 24px', fontWeight: '500', color: '#5469d4', cursor: 'pointer' }}>
                                             {displayId}
                                         </td>
-                                        <td style={{ padding: '16px 24px', color: '#475569' }}>
+                                        <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)' }}>
                                             {new Date(entry.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
                                         </td>
-                                        <td style={{ padding: '16px 24px', color: '#334155', fontWeight: '500' }}>
+                                        <td style={{ padding: '16px 24px', color: 'var(--color-text-main)', fontWeight: '500' }}>
                                             {entry.description || 'No Description'}
                                         </td>
-                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: '#334155' }}>
+                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: 'var(--color-text-main)' }}>
                                             {formatCurrency(totalDebits)}
                                         </td>
-                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: '#334155' }}>
+                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: 'var(--color-text-main)' }}>
                                             {formatCurrency(totalCredits)}
                                         </td>
                                         <td style={{ padding: '16px 24px', textAlign: 'center' }}>
@@ -272,7 +272,7 @@ const JournalEntriesPage = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Date</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Date</label>
                             <input 
                                 type="date" 
                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
@@ -281,7 +281,7 @@ const JournalEntriesPage = () => {
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Reference (Optional)</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Reference (Optional)</label>
                             <input 
                                 type="text" 
                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
@@ -293,7 +293,7 @@ const JournalEntriesPage = () => {
                     </div>
                     
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#334155' }}>Description</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Description</label>
                         <input 
                             type="text" 
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
@@ -305,12 +305,12 @@ const JournalEntriesPage = () => {
 
                     <div style={{ marginTop: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <label style={{ fontWeight: 500, fontSize: '14px', color: '#334155' }}>Line Items</label>
+                            <label style={{ fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Line Items</label>
                         </div>
                         <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '420px' }}>
                             <thead>
-                                <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>
+                                <tr style={{ borderBottom: '1px solid #cbd5e1', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
                                     <th style={{ padding: '8px 4px', textAlign: 'left', fontWeight: 600 }}>Account</th>
                                     <th style={{ padding: '8px 4px', textAlign: 'right', width: '90px', fontWeight: 600 }}>Debit</th>
                                     <th style={{ padding: '8px 4px', textAlign: 'right', width: '90px', fontWeight: 600 }}>Credit</th>
@@ -322,7 +322,7 @@ const JournalEntriesPage = () => {
                                     <tr key={index}>
                                         <td style={{ padding: '4px' }}>
                                             <select 
-                                                style={{ width: '100%', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', outline: 'none' }}
+                                                style={{ width: '100%', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', outline: 'none' }}
                                                 value={line.account_id}
                                                 onChange={(e) => updateLine(index, 'account_id', e.target.value)}
                                             >
@@ -356,7 +356,7 @@ const JournalEntriesPage = () => {
                                                 disabled={lines.length <= 2}
                                                 style={{ 
                                                     background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'not-allowed', 
-                                                    color: lines.length > 2 ? '#ef4444' : '#cbd5e1',
+                                                    color: lines.length > 2 ? '#ef4444' : 'var(--color-border)',
                                                     padding: '4px'
                                                 }}
                                             >
@@ -370,19 +370,19 @@ const JournalEntriesPage = () => {
                         </div>
                         <button
                             onClick={addLine}
-                            style={{ marginTop: '8px', padding: '6px 12px', fontSize: '13px', borderRadius: '6px', background: 'white', border: '1px solid #cbd5e1', color: '#475569', fontWeight: 500, cursor: 'pointer' }}
+                            style={{ marginTop: '8px', padding: '6px 12px', fontSize: '13px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid #cbd5e1', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}
                         >
                             + Add Line
                         </button>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '32px', margin: '16px 0', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '32px', margin: '16px 0', padding: '16px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Total Debit</div>
+                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Debit</div>
                             <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#10b981' }}>{formatCurrency(totalDebit)}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Total Credit</div>
+                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Credit</div>
                             <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#ef4444' }}>{formatCurrency(totalCredit)}</div>
                         </div>
                     </div>
@@ -393,7 +393,7 @@ const JournalEntriesPage = () => {
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
                         <button 
                             onClick={handleSave} 
                             disabled={!isFormValid}

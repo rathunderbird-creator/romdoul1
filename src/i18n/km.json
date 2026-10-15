@@ -44,7 +44,8 @@
     "pagePrediction": "ការព្យាករណ៍តាមផេក",
     "productPrediction": "ការព្យាករណ៍តាមផលិតផល",
     "staffPrediction": "ការព្យាករណ៍តាមបុគ្គលិក",
-    "cpaTracker": "តាមដានប្រាក់ចំណេញ & CPA",
+    "cpaTracker": "តាមដាន CPA",
+    "profitCpa": "តាមដានប្រាក់ចំណេញ & CPA",
     "receiving": "ការទទួលទំនិញ",
     "wholesale": "លក់ដុំ",
     "wholesaleOrders": "ការបញ្ជាទិញលក់ដុំ",
@@ -461,7 +462,10 @@
     "textSize": "ទំហំអក្សរ",
     "layout": "ប្លង់",
     "layoutClassic": "បុរាណ",
-    "layoutModern": "ទំនើប"
+    "layoutModern": "ទំនើប",
+    "theme": "ផ្ទៃពណ៌",
+    "themeLight": "ភ្លឺ",
+    "themeDark": "ងងឹត"
   },
   "common": {
     "save": "រក្សាទុក",

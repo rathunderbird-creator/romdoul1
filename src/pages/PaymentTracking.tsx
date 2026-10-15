@@ -804,7 +804,7 @@ const PaymentTracking: React.FC = () => {
 
                         {isSalesmanOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,
@@ -865,7 +865,7 @@ const PaymentTracking: React.FC = () => {
 
                         {isCustomerCareOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,
@@ -925,7 +925,7 @@ const PaymentTracking: React.FC = () => {
                         </button>
                         {isShippingCoOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,

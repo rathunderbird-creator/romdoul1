@@ -82,6 +82,18 @@
   /* Compact-UI scale factor (matches the body zoom below). Inside a zoomed
      body, viewport units render scaled — height:100vh ends short of the real
      screen bottom — so full-viewport elements must size with these instead. */
+  /* Table row states (dark overrides below) */
+  --row-hover: #E5E7EB;
+  --row-confirmed: #F0F9FF;
+  --row-pending: #FFFBEB;
+  --row-shipped: #EFF6FF;
+  --row-delivered: #ECFDF5;
+  --row-alert: #FCA5A5;
+  --row-paid-settled: #EFF6FF;
+  --sticky-plain: #FFFFFF;
+  --table-head: #E5E7EB;
+  --range-tint: #D1FAE5;
+
   --app-zoom: 1;
   --vh-full: calc(100vh / var(--app-zoom));
   --vw-full: calc(100vw / var(--app-zoom));
@@ -222,8 +234,7 @@ button {
   vertical-align: middle;
   height: var(--table-row-height, auto);
   /* Taller rows like reference */
-  color: #000000;
-  /* Black text */
+  color: var(--color-text-main);
   font-variant-numeric: tabular-nums;
 }
 
@@ -261,7 +272,7 @@ button {
 }
 
 .spreadsheet-table tbody tr:hover {
-  background-color: #E5E7EB !important;
+  background-color: var(--row-hover) !important;
   /* User requested lightgreen - updated to primary light for consistency or keep if variable exists */
   /* If we want to keep the green/blue distinction but make it theme aware, we need variables for these states */
 }
@@ -276,31 +287,31 @@ button {
 
 /* Row Status Colors */
 .spreadsheet-table tbody tr.confirmed-row {
-  background-color: #F0F9FF;
+  background-color: var(--row-confirmed);
 }
 
 .spreadsheet-table tbody tr.pending-row {
-  background-color: #FFFBEB;
+  background-color: var(--row-pending);
 }
 
 /* Amber 50 */
 .spreadsheet-table tbody tr.shipped-row {
-  background-color: #EFF6FF;
+  background-color: var(--row-shipped);
 }
 
 /* Blue 50 */
 .spreadsheet-table tbody tr.delivered-row {
-  background-color: #ECFDF5;
+  background-color: var(--row-delivered);
 }
 
 /* Green 50 */
 .spreadsheet-table tbody tr.cancelled-row {
-  background-color: #FCA5A5 !important;
+  background-color: var(--row-alert) !important;
 }
 
 /* Red 50 */
 .spreadsheet-table tbody tr.returned-row {
-  background-color: #FCA5A5 !important;
+  background-color: var(--row-alert) !important;
 }
 
 /* Gray 50 */
@@ -315,7 +326,7 @@ button {
 
 /* Purple 50 */
 .spreadsheet-table tbody tr.paid-settled-row {
-  background-color: #EFF6FF;
+  background-color: var(--row-paid-settled);
 }
 
 /* Fallback/Legacy if needed */
@@ -323,37 +334,37 @@ button {
 /* Ensure sticky columns match row background */
 .spreadsheet-table tr.ordered-row td.sticky-col-first,
 .spreadsheet-table tr.ordered-row td.sticky-col-last {
-  background-color: white !important;
+  background-color: var(--sticky-plain) !important;
 }
 
 .spreadsheet-table tbody tr.confirmed-row td.sticky-col-first,
 .spreadsheet-table tbody tr.confirmed-row td.sticky-col-second {
-  background-color: #F0F9FF;
+  background-color: var(--row-confirmed);
 }
 
 .spreadsheet-table tbody tr.pending-row td.sticky-col-first,
 .spreadsheet-table tbody tr.pending-row td.sticky-col-second {
-  background-color: #FFFBEB;
+  background-color: var(--row-pending);
 }
 
 .spreadsheet-table tbody tr.shipped-row td.sticky-col-first,
 .spreadsheet-table tbody tr.shipped-row td.sticky-col-second {
-  background-color: #EFF6FF;
+  background-color: var(--row-shipped);
 }
 
 .spreadsheet-table tbody tr.delivered-row td.sticky-col-first,
 .spreadsheet-table tbody tr.delivered-row td.sticky-col-second {
-  background-color: #ECFDF5;
+  background-color: var(--row-delivered);
 }
 
 .spreadsheet-table tbody tr.cancelled-row td.sticky-col-first,
 .spreadsheet-table tbody tr.cancelled-row td.sticky-col-second {
-  background-color: #FCA5A5 !important;
+  background-color: var(--row-alert) !important;
 }
 
 .spreadsheet-table tbody tr.returned-row td.sticky-col-first,
 .spreadsheet-table tbody tr.returned-row td.sticky-col-second {
-  background-color: #FCA5A5 !important;
+  background-color: var(--row-alert) !important;
 }
 
 .spreadsheet-table tbody tr.duplicate-row {
@@ -406,7 +417,7 @@ button {
 
 .spreadsheet-table tbody tr.paid-settled-row td.sticky-col-first,
 .spreadsheet-table tbody tr.paid-settled-row td.sticky-col-second {
-  background-color: #EFF6FF;
+  background-color: var(--row-paid-settled);
 }
 
 /* Footer */
@@ -664,6 +675,59 @@ body.layout-modern {
 
 .msidebar-group:hover {
   color: var(--color-text-main);
+}
+
+/* ── Dark theme (ThemeContext.mode === 'dark') ────────────────────────────
+   One body class flips the palette variables; pages built on the variables
+   follow automatically. color-scheme makes native inputs render dark too. */
+body.theme-dark {
+  --color-primary-light: rgba(84, 143, 245, 0.16);
+  --color-highlight-bg: #3B3420;
+
+  --color-blue-light: rgba(96, 165, 250, 0.16);
+  --color-green-light: rgba(52, 211, 153, 0.14);
+  --color-purple-light: rgba(167, 139, 250, 0.16);
+  --color-red-light: rgba(248, 113, 113, 0.14);
+
+  --color-bg: #0B1220;
+  --color-surface: #121A2C;
+  --color-surface-hover: #1A2438;
+
+  --color-text-main: #F2F6FC;
+  --color-text-secondary: #93A4BE;
+  --color-text-muted: #64748E;
+
+  --color-border: #223050;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.55), 0 4px 6px -2px rgba(0, 0, 0, 0.45);
+
+  --row-hover: #1C2A44;
+  --row-confirmed: #13304A;
+  --row-pending: #322C1A;
+  --row-shipped: #1B2C4F;
+  --row-delivered: #11352C;
+  --row-alert: #4E222D;
+  --row-paid-settled: #1B2C4F;
+  --sticky-plain: var(--color-surface);
+  --table-head: #19233B;
+  --range-tint: rgba(16, 185, 129, 0.22);
+
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  color-scheme: dark;
+}
+
+/* Dark glass: the light frosted panels read as glowing slabs on a dark page. */
+/* Unified deep-navy sidebar in dark, matching the page background. */
+body.theme-dark aside[aria-label="Main navigation"] {
+  background-color: var(--color-bg) !important;
+  border-right-color: var(--color-border) !important;
+}
+
+body.theme-dark .glass-panel {
+  background: rgba(18, 26, 44, 0.9);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 /* Accounting pages: one shared page padding that tightens on phones. */

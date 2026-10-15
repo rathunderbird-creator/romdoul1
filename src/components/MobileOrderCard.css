@@ -4,13 +4,13 @@
    is a rounded pill bar on the left, inset top/bottom so consecutive rows'
    bars have a little space between them. */
 .mobile-order-card {
-    background: white;
+    background: var(--color-surface);
     border-radius: 0;
     margin-bottom: 0;
     overflow: hidden;
     transition: background-color 0.15s ease;
     position: relative;
-    border-bottom: 1px solid #F3F4F6;
+    border-bottom: 1px solid var(--color-border);
 }
 
 /* The rounded left status bar. Color comes from the status-* classes below. */
@@ -86,13 +86,13 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #111827;
+    color: var(--color-text-main);
     line-height: 1.3;
 }
 
 .moc-products-summary {
     font-size: 12px;
-    color: #6B7280;
+    color: var(--color-text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -150,7 +150,7 @@
 
 .moc-time {
     font-size: 11px;
-    color: #9CA3AF;
+    color: var(--color-text-muted);
     flex-shrink: 0;
     white-space: nowrap;
 }
@@ -205,7 +205,7 @@
     align-items: center;
     gap: 5px;
     font-size: 10px;
-    color: #9CA3AF;
+    color: var(--color-text-muted);
     margin-top: 2px;
     flex-wrap: nowrap;
     overflow: hidden;
@@ -227,7 +227,7 @@
 .moc-total-amount {
     font-size: 13px;
     font-weight: 800;
-    color: #111827;
+    color: var(--color-text-main);
     letter-spacing: -0.3px;
     margin-left: auto;
     flex-shrink: 0;
@@ -252,7 +252,7 @@
     line-height: 1.6;
 }
 
-.moc-badge.shipping-drafted { background: #F3F4F6; color: #6B7280; }
+.moc-badge.shipping-drafted { background: #F3F4F6; color: var(--color-text-secondary); }
 .moc-badge.shipping-pending { background: #FEF3C7; color: #92400E; }
 .moc-badge.shipping-confirmed { background: #E0F2FE; color: #0369A1; }
 .moc-badge.shipping-shipped { background: #DBEAFE; color: #1D4ED8; }
@@ -264,7 +264,7 @@
 .moc-badge.pay-unpaid { background: #FEE2E2; color: #DC2626; }
 .moc-badge.pay-paid { background: #D1FAE5; color: #059669; }
 .moc-badge.pay-getfile { background: #DBEAFE; color: #1D4ED8; }
-.moc-badge.pay-cancel { background: #F3F4F6; color: #6B7280; text-decoration: line-through; }
+.moc-badge.pay-cancel { background: #F3F4F6; color: var(--color-text-secondary); text-decoration: line-through; }
 
 /* Hide old status dot */
 .moc-status-dot {
@@ -299,7 +299,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    color: #9CA3AF;
+    color: var(--color-text-muted);
     margin-bottom: 8px;
 }
 
@@ -324,7 +324,7 @@
 }
 
 .moc-detail-item svg {
-    color: #9CA3AF;
+    color: var(--color-text-muted);
     flex-shrink: 0;
 }
 
@@ -342,7 +342,7 @@
     font-size: 13px;
     padding: 6px 0;
     color: #374151;
-    border-bottom: 1px solid #F3F4F6;
+    border-bottom: 1px solid var(--color-border);
 }
 
 .moc-item-row:last-of-type {
@@ -350,7 +350,7 @@
 }
 
 .moc-item-qty {
-    color: #6B7280;
+    color: var(--color-text-secondary);
     font-size: 12px;
     margin-left: 4px;
 }
@@ -363,7 +363,7 @@
     justify-content: space-between;
     font-weight: 700;
     font-size: 14px;
-    color: #111827;
+    color: var(--color-text-main);
 }
 
 /* Status Controls */
@@ -405,7 +405,7 @@
     padding: 10px 8px;
     border-radius: 10px;
     border: 1px solid #E5E7EB;
-    background: white;
+    background: var(--color-surface);
     cursor: pointer;
     color: #374151;
     font-size: 12px;

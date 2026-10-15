@@ -21,10 +21,10 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
             case 'Shipped': return { bg: '#DBEAFE', color: '#2563EB', border: '#93C5FD' }; // Blue
             case 'Delivered': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
             case 'Cancelled': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
-            case 'Returned': return { bg: '#F3F4F6', color: '#DC2626', border: '#D1D5DB' }; // Red text, Gray bg
+            case 'Returned': return { bg: 'var(--color-surface-hover)', color: '#DC2626', border: '#D1D5DB' }; // Red text, Gray bg
             case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE', border: '#C084FC' }; // Purple
-            case 'Drafted': return { bg: '#F3F4F6', color: '#111827', border: '#E5E7EB' }; // Gray/Neutral
-            default: return { bg: '#F3F4F6', color: '#4B5563', border: '#D1D5DB' };
+            case 'Drafted': return { bg: 'var(--color-surface-hover)', color: '#111827', border: '#E5E7EB' }; // Gray/Neutral
+            default: return { bg: 'var(--color-surface-hover)', color: '#4B5563', border: '#D1D5DB' };
         }
     };
 
@@ -127,7 +127,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                         top: position.top,
                         left: position.left,
                         width: position.width,
-                        backgroundColor: 'white',
+                        backgroundColor: 'var(--color-surface)',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
                         border: '1px solid #E5E7EB',
@@ -149,7 +149,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                                     fontSize: '12px',
                                     fontWeight: 500,
                                     color: isDisabled ? '#9CA3AF' : optStyle.color,
-                                    backgroundColor: opt === status ? '#F3F4F6' : 'white',
+                                    backgroundColor: opt === status ? 'var(--color-surface-hover)' : 'white',
                                     display: 'flex',
                                     alignItems: 'center',
                                     whiteSpace: 'nowrap',
@@ -161,7 +161,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                                     if (!isDisabled) e.currentTarget.style.backgroundColor = '#F9FAFB';
                                 }}
                                 onMouseLeave={(e) => {
-                                    if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? '#F3F4F6' : 'white';
+                                    if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? 'var(--color-surface-hover)' : 'white';
                                 }}
                             >
                                 {opt}

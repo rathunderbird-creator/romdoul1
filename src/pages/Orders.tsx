@@ -431,7 +431,7 @@ const ColumnFilterPopover: React.FC<{
             className="glass-panel"
             style={{
                 position: 'fixed', top: pos.top, left: pos.left, width: `${WIDTH}px`, zIndex: 9999,
-                padding: '12px', background: 'white', boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
+                padding: '12px', background: 'var(--color-surface)', boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
                 borderRadius: '10px', border: '1px solid var(--color-border)',
                 display: 'flex', flexDirection: 'column', gap: '8px'
             }}
@@ -1780,18 +1780,18 @@ const Orders: React.FC = () => {
         if (order.shipping?.status === 'ReStock') return '#2596be';
 
         // Priority 2: Payment Status = Cancel
-        if (order.paymentStatus === 'Cancel') return '#FCA5A5'; // Red 300
+        if (order.paymentStatus === 'Cancel') return 'var(--row-alert)';
 
         // Priority 2: Shipping Status
         const shippingStatus = order.shipping?.status;
-        if (shippingStatus === 'Drafted') return 'white';
-        if (shippingStatus === 'Confirmed') return '#F0F9FF';
-        if (shippingStatus === 'Pending') return '#FFFBEB';
-        if (shippingStatus === 'Shipped') return '#EFF6FF';
-        if (shippingStatus === 'Delivered') return '#ECFDF5';
-        if (shippingStatus === 'Returned') return '#FCA5A5';
-        if (shippingStatus === 'Cancelled') return '#FCA5A5';
-        return 'white';
+        if (shippingStatus === 'Drafted') return 'var(--sticky-plain)';
+        if (shippingStatus === 'Confirmed') return 'var(--row-confirmed)';
+        if (shippingStatus === 'Pending') return 'var(--row-pending)';
+        if (shippingStatus === 'Shipped') return 'var(--row-shipped)';
+        if (shippingStatus === 'Delivered') return 'var(--row-delivered)';
+        if (shippingStatus === 'Returned') return 'var(--row-alert)';
+        if (shippingStatus === 'Cancelled') return 'var(--row-alert)';
+        return 'var(--sticky-plain)';
     };
 
 
@@ -2415,7 +2415,7 @@ const Orders: React.FC = () => {
                                             alignItems: 'center',
                                             cursor: 'pointer',
                                             paddingRight: '12px',
-                                            background: 'white',
+                                            background: 'var(--color-surface)',
                                             height: '40px',
                                             borderRadius: '8px',
                                             border: '1px solid var(--color-border)'
@@ -2443,7 +2443,7 @@ const Orders: React.FC = () => {
                                                 flexDirection: 'column',
                                                 gap: '2px',
                                                 zIndex: 100,
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
                                                 <label style={{
@@ -2495,7 +2495,7 @@ const Orders: React.FC = () => {
                                             alignItems: 'center',
                                             cursor: 'pointer',
                                             paddingRight: '12px',
-                                            background: 'white',
+                                            background: 'var(--color-surface)',
                                             height: '40px',
                                             borderRadius: '8px',
                                             border: '1px solid var(--color-border)'
@@ -2523,7 +2523,7 @@ const Orders: React.FC = () => {
                                                 flexDirection: 'column',
                                                 gap: '2px',
                                                 zIndex: 100,
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
                                                 <label style={{
@@ -2593,7 +2593,7 @@ const Orders: React.FC = () => {
                                             alignItems: 'center',
                                             cursor: 'pointer',
                                             paddingRight: '12px',
-                                            background: 'white',
+                                            background: 'var(--color-surface)',
                                             height: '40px',
                                             borderRadius: '8px',
                                             border: '1px solid var(--color-border)'
@@ -2613,7 +2613,7 @@ const Orders: React.FC = () => {
                                             <div className="glass-panel" style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px',
                                                 padding: '8px', width: '220px', zIndex: 100,
                                                 display: 'flex', flexDirection: 'column', gap: '2px',
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
                                                 {filterShippingCompanies.length > 0 && (
@@ -2681,7 +2681,7 @@ const Orders: React.FC = () => {
                                             alignItems: 'center',
                                             cursor: 'pointer',
                                             paddingRight: '12px',
-                                            background: 'white',
+                                            background: 'var(--color-surface)',
                                             height: '40px',
                                             borderRadius: '8px',
                                             border: '1px solid var(--color-border)'
@@ -2709,7 +2709,7 @@ const Orders: React.FC = () => {
                                                 flexDirection: 'column',
                                                 gap: '2px',
                                                 zIndex: 100,
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
                                                 <label style={{
@@ -2776,7 +2776,7 @@ const Orders: React.FC = () => {
                                             alignItems: 'center',
                                             cursor: 'pointer',
                                             paddingRight: '12px',
-                                            background: 'white',
+                                            background: 'var(--color-surface)',
                                             height: '40px',
                                             borderRadius: '8px',
                                             border: '1px solid var(--color-border)'
@@ -2803,7 +2803,7 @@ const Orders: React.FC = () => {
                                                 flexDirection: 'column',
                                                 gap: '2px',
                                                 zIndex: 100,
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
                                                 {pages.length > 0 && (
@@ -2915,7 +2915,7 @@ const Orders: React.FC = () => {
                                             <div className="glass-panel" style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px',
                                                 padding: '8px', width: '220px', zIndex: 100,
                                                 display: 'flex', flexDirection: 'column', gap: '4px',
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
                                                 <div ref={appearanceMenuRef} style={{ position: 'relative', width: '100%' }}>
@@ -2937,7 +2937,7 @@ const Orders: React.FC = () => {
                                                     {showAppearanceMenu && (
                                                         <div className="glass-panel" style={{ position: 'absolute', top: 0, right: '100%', marginRight: '8px',
                                                             padding: '16px', width: '250px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
-                                                            display: 'flex', flexDirection: 'column', gap: '12px', background: 'white',
+                                                            display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--color-surface)',
                                                             boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
                                                         }}>
                                                             <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
@@ -3015,7 +3015,7 @@ const Orders: React.FC = () => {
                                                     {showColumnMenu && (
                                                         <div className="glass-panel" style={{ position: 'absolute', top: 0, right: '100%', marginRight: '8px',
                                                             padding: '16px', width: '200px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
-                                                            display: 'flex', flexDirection: 'column', gap: '8px', background: 'white',
+                                                            display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--color-surface)',
                                                             boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
                                                         }}>
                                                             <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
@@ -3357,7 +3357,7 @@ const Orders: React.FC = () => {
                                     bottom: 0,
                                     left: 0,
                                     right: 0,
-                                    background: 'rgba(255,255,255,0.95)',
+                                    background: 'var(--color-surface)',
                                     backdropFilter: 'blur(10px)',
                                     WebkitBackdropFilter: 'blur(10px)',
                                     borderTop: '1px solid var(--color-border)',
@@ -3405,7 +3405,7 @@ const Orders: React.FC = () => {
                                     }}>
                                     <thead>
                                         <tr>
-                                            <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: '#e5e7eb' }} className="sticky-col-first">
+                                            <th style={{ width: '40px', padding: '10px 12px', position: 'sticky', left: 0, top: 0, zIndex: 40, background: 'var(--table-head)' }} className="sticky-col-first">
                                                 {canUseCheckbox && (
                                                     <input
                                                         type="checkbox"
@@ -3444,7 +3444,7 @@ const Orders: React.FC = () => {
                                                             position: 'sticky',
                                                             left: isPinned ? stickyLeft : undefined,
                                                             zIndex: isPinned ? 40 : 30,
-                                                            background: '#e5e7eb',
+                                                            background: 'var(--table-head)',
                                                             boxShadow: isPinned ? '2px 0 5px rgba(0,0,0,0.05)' : 'none',
                                                             top: 0
                                                         }}
@@ -3528,7 +3528,7 @@ const Orders: React.FC = () => {
                                                     </th>
                                                 );
                                             })}
-                                            <th style={{ width: '100%', minWidth: 'auto', background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
+                                            <th style={{ width: '100%', minWidth: 'auto', background: 'var(--table-head)', borderBottom: '1px solid var(--color-border)' }}></th>
                                         </tr>
                                     </thead>
                                     <tbody>

@@ -606,7 +606,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 <div style={{ display: 'flex', gap: '8px' }}>
                     {!isMobile && (
                         <>
-                            <button onClick={onCancel} disabled={isSubmitting} style={{ padding: '10px 20px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
+                            <button onClick={onCancel} disabled={isSubmitting} style={{ padding: '10px 20px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
                             <button onClick={handleSubmit} disabled={isSubmitting || !!detectedScammer} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: detectedScammer ? 'none' : '0 4px 10px rgba(239, 68, 68, 0.2)', cursor: (isSubmitting || detectedScammer) ? 'not-allowed' : 'pointer', opacity: (isSubmitting || detectedScammer) ? 0.5 : 1, background: detectedScammer ? '#9CA3AF' : undefined }}>
                                 {detectedScammer ? '⛔ Scammer — Blocked' : isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
                             </button>
@@ -700,7 +700,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                                 alignItems: 'center',
                                                 justifyContent: 'space-between',
                                                 padding: '12px',
-                                                background: 'white',
+                                                background: 'var(--color-surface)',
                                                 border: '1px solid var(--color-border)',
                                                 borderRadius: '10px',
                                                 fontSize: '14px',
@@ -769,7 +769,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         left: 0,
                                         right: 0,
                                         zIndex: 1000,
-                                        background: 'white',
+                                        background: 'var(--color-surface)',
                                         border: '1px solid var(--color-border)',
                                         borderRadius: '0 0 10px 10px',
                                         boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
@@ -831,7 +831,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         left: 0,
                                         right: 0,
                                         zIndex: 1000,
-                                        background: 'white',
+                                        background: 'var(--color-surface)',
                                         border: '1px solid var(--color-border)',
                                         borderRadius: '0 0 10px 10px',
                                         boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
@@ -875,12 +875,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             <div>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ប្រភពទំព័រ <span style={{ color: '#EF4444' }}>*</span></label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.pageName} onChange={e => setFormData({ ...formData, pageName: e.target.value })}>
+                                    <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.pageName} onChange={e => setFormData({ ...formData, pageName: e.target.value })}>
                                         <option value="">ជ្រើសរើសទំព័រ...</option>
                                         {pages.map(p => <option key={p} value={p}>{p}</option>)}
                                     </select>
                                     {!isMobile && (
-                                        <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                        <button onClick={() => { setConfigType('page'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                     )}
                                 </div>
                             </div>
@@ -900,7 +900,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>រាជធានី / ខេត្ត <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })}>
+                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })}>
                                             <option value="">-- បង្ហាញរាជធានី និងខេត្ត --</option>
                                             {locationData.map(p => (
                                                 <option key={p.code} value={p.khmer}>
@@ -909,7 +909,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             ))}
                                         </select>
                                         {!isMobile && (
-                                            <button onClick={() => { setConfigType('city'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                            <button onClick={() => { setConfigType('city'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                         )}
                                     </div>
                                 </div>
@@ -918,7 +918,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     {availableDistricts.length > 0 ? (
                                         <select 
                                             className="search-input" 
-                                            style={{ width: '100%', padding: '10px 12px', background: 'white' }} 
+                                            style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} 
                                             value={formData.district} 
                                             onChange={e => setFormData({ ...formData, district: e.target.value, commune: '' })}
                                         >
@@ -926,7 +926,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             {availableDistricts.map(d => <option key={d.code} value={d.khmer}>{d.khmer} ({d.latin})</option>)}
                                         </select>
                                     ) : (
-                                        <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'white' }} value={formData.district} onChange={e => setFormData({ ...formData, district: e.target.value })} placeholder="ស្រុក / ខណ្ឌ" disabled={!formData.city} />
+                                        <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.district} onChange={e => setFormData({ ...formData, district: e.target.value })} placeholder="ស្រុក / ខណ្ឌ" disabled={!formData.city} />
                                     )}
                                 </div>
                                 <div>
@@ -934,7 +934,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     {availableCommunes.length > 0 ? (
                                         <select 
                                             className="search-input" 
-                                            style={{ width: '100%', padding: '10px 12px', background: 'white' }} 
+                                            style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} 
                                             value={formData.commune} 
                                             onChange={e => setFormData({ ...formData, commune: e.target.value })}
                                         >
@@ -942,7 +942,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             {availableCommunes.map(c => <option key={c.code} value={c.khmer}>{c.khmer} ({c.latin})</option>)}
                                         </select>
                                     ) : (
-                                        <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'white' }} value={formData.commune} onChange={e => setFormData({ ...formData, commune: e.target.value })} placeholder="ឃុំ / សង្កាត់" disabled={!formData.district} />
+                                        <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.commune} onChange={e => setFormData({ ...formData, commune: e.target.value })} placeholder="ឃុំ / សង្កាត់" disabled={!formData.district} />
                                     )}
                                 </div>
                             </div>
@@ -950,18 +950,18 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: isMobile ? '12px' : '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>ផ្លូវ / លេខផ្ទះ</label>
-                                    <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'white' }} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} placeholder="ផ្ទះ, ផ្លូវ ។ល។" />
+                                    <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} placeholder="ផ្ទះ, ផ្លូវ ។ល។" />
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>ក្រុមហ៊ុនដឹកជញ្ជូន <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'white' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
+                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })}>
                                             <option value="">ជ្រើសរើសក្រុមហ៊ុនដឹកជញ្ជូន...</option>
                                             <option value="អ្នកដឹក">អ្នកដឹក</option>
                                             {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                         {!isMobile && (
-                                            <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
+                                            <button onClick={() => { setConfigType('shipping'); setIsConfigModalOpen(true); }} style={{ padding: '0 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Settings size={18} /></button>
                                         )}
                                     </div>
                                 </div>
@@ -1178,7 +1178,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', maxHeight: isMobile ? '300px' : 'none' }}>
                         {cartItems.map((item) => (
                             <div key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '12px', padding: '8px', borderRadius: '8px', background: 'var(--color-bg)', border: '1px solid transparent' }}>
-                                <div style={{ width: '48px', height: '48px', background: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.05)' }}>
+                                <div style={{ width: '48px', height: '48px', background: 'var(--color-surface)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.05)' }}>
                                     <LazyAvatar productId={item.id} initialImage={item.image} alt="" style={{ width: '100%', height: '100%', borderRadius: '8px' }} />
                                 </div>
                                 <div style={{ flex: 1 }}>
@@ -1259,8 +1259,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             </div >
 
             {isMobile && (
-                <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'white', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
-                    <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>បោះបង់</button>
+                <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'var(--color-surface)', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
+                    <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>បោះបង់</button>
                     <button onClick={handleSubmit} disabled={isSubmitting || !!detectedScammer} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: detectedScammer ? 'none' : '0 4px 12px rgba(239, 68, 68, 0.2)', opacity: (isSubmitting || detectedScammer) ? 0.5 : 1, background: detectedScammer ? '#9CA3AF' : undefined }}>
                         {detectedScammer ? '⛔ Scammer' : isSubmitting ? 'កំពុងរក្សាទុក...' : (orderToEdit ? 'កែប្រែការកម្ម៉ង់' : 'បញ្ជាក់ការកម្ម៉ង់')}
                     </button>

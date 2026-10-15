@@ -145,7 +145,7 @@ export const ErrorInline: React.FC<{ message: string; onRetry: () => void; retry
     <div role="alert" style={{ ...cardStyle, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, background: D2.redBg, borderColor: '#fecaca', color: D2.red, fontSize: 13 }}>
         <AlertCircle size={16} aria-hidden />
         <span style={{ flex: 1 }}>{message}</span>
-        <button type="button" onClick={onRetry} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: D2.red, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+        <button type="button" onClick={onRetry} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1px solid #fecaca', background: 'var(--color-surface)', color: D2.red, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
             <RefreshCw size={13} aria-hidden /> {retryLabel}
         </button>
     </div>
