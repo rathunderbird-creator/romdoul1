@@ -154,10 +154,6 @@ export const useNavItems = (): NavItem[] => {
         });
     }
 
-    if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
-    }
-
     if (hasPermission('view_reports')) {
         navItems.push({
             icon: PieChart,
@@ -174,6 +170,11 @@ export const useNavItems = (): NavItem[] => {
             ]
         });
     }
+
+    if (hasPermission('view_dashboard')) {
+        navItems.push({ icon: MapPin, label: t('nav.shippingPoint'), path: '/shipping-point' });
+    }
+
 
     if (hasPermission('view_dashboard')) {
         navItems.push({ icon: History, label: t('nav.activityLog'), path: '/activity-log' });
