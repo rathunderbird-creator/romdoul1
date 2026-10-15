@@ -238,7 +238,7 @@ const Dashboard: React.FC = () => {
                         type="button"
                         onClick={fetchDashboardSales}
                         disabled={isLoadingSales}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: '#fff', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: 'var(--color-surface)', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                     >
                         <RefreshCw size={13} /> {t('dashboard.retry')}
                     </button>

@@ -784,7 +784,7 @@ const DeliveryTracking: React.FC = () => {
         if (isCancelled) {
             return (
                 <div style={{ padding: '24px', background: '#FEF2F2', borderRadius: '12px', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', gap: '12px', color: '#DC2626' }}>
-                    <div style={{ padding: '8px', background: 'white', borderRadius: '50%' }}><X size={24} /></div>
+                    <div style={{ padding: '8px', background: 'var(--color-surface)', borderRadius: '50%' }}><X size={24} /></div>
                     <div>
                         <h4 style={{ fontWeight: 'bold' }}>Order Cancelled</h4>
                         <p style={{ fontSize: '13px', opacity: 0.8 }}>This shipment has been cancelled.</p>
@@ -911,7 +911,7 @@ const DeliveryTracking: React.FC = () => {
 
                         {isSalesmanOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,
@@ -972,7 +972,7 @@ const DeliveryTracking: React.FC = () => {
 
                         {isCustomerCareOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,
@@ -1032,7 +1032,7 @@ const DeliveryTracking: React.FC = () => {
                         </button>
                         {isShippingCoOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,
@@ -1109,7 +1109,7 @@ const DeliveryTracking: React.FC = () => {
                         </button>
                         {isStatusFilterOpen && (
                             <div className="glass-panel" style={{
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 position: 'absolute',
                                 top: '100%',
                                 left: 0,
@@ -1305,7 +1305,7 @@ const DeliveryTracking: React.FC = () => {
                         type="button"
                         onClick={fetchOrders}
                         disabled={isLoadingOrders}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: '#fff', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: 'var(--color-surface)', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                     >
                         <RefreshCw size={13} /> Retry
                     </button>

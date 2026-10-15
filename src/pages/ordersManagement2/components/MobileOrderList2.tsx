@@ -205,7 +205,7 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
                         className="om2-tap-target"
                         value={filters.salesman}
                         onChange={(e) => onFiltersChange(prev => ({ ...prev, salesman: e.target.value, page: 1 }))}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${D2.border}`, fontSize: 14, background: '#fff', color: D2.ink }}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${D2.border}`, fontSize: 14, background: 'var(--color-surface)', color: D2.ink }}
                     >
                         <option value="">All</option>
                         {salesmen.map(s => <option key={s} value={s}>{s}</option>)}

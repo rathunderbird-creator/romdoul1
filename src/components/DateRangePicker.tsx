@@ -244,7 +244,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                                 onClick={() => handleDateClick(d)}
                                 style={{
                                     width: '100%', aspectRatio: '1', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                    background: isSelected ? '#10B981' : isInRange ? '#D1FAE5' : 'transparent',
+                                    background: isSelected ? '#10B981' : isInRange ? 'var(--range-tint)' : 'transparent',
                                     color: isSelected ? 'white' : 'var(--color-text-main)',
                                     fontWeight: isToday ? 600 : 400,
                                 }}
@@ -306,14 +306,14 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
         <div
             style={isMobile ? {
                 position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                backgroundColor: '#ffffff', zIndex: 9999,
+                backgroundColor: 'var(--color-surface)', zIndex: 9999,
                 display: 'flex', flexDirection: 'column', padding: '16px',
                 overflowY: 'auto'
             } : {
                 position: 'fixed',
                 top: coords.top,
                 left: coords.left,
-                backgroundColor: '#ffffff', border: '1px solid var(--color-border)',
+                backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)',
                 borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                 zIndex: 9999, display: 'flex', overflow: 'hidden',
                 maxWidth: '90vw'
@@ -335,7 +335,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                     width: isMobile ? '100%' : '140px',
                     borderRight: isMobile ? 'none' : '1px solid var(--color-border)',
                     padding: isMobile ? '0 0 16px 0' : '8px 0',
-                    background: isMobile ? 'transparent' : '#f9fafb',
+                    background: isMobile ? 'transparent' : 'var(--color-bg)',
                     display: isMobile ? 'grid' : 'block',
                     gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : '1fr',
                     gap: isMobile ? '8px' : '0',

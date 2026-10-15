@@ -44,7 +44,8 @@
     "pagePrediction": "Prediction by Page",
     "productPrediction": "Prediction by Product",
     "staffPrediction": "Prediction by Staff",
-    "cpaTracker": "Profit & CPA Tracker",
+    "cpaTracker": "CPA Tracker",
+    "profitCpa": "Profit & CPA Tracker",
     "receiving": "Receiving",
     "wholesale": "Wholesale",
     "wholesaleOrders": "Wholesale Orders",
@@ -461,7 +462,10 @@
     "textSize": "Text Size",
     "layout": "Layout",
     "layoutClassic": "Classic",
-    "layoutModern": "Modern"
+    "layoutModern": "Modern",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark"
   },
   "common": {
     "save": "Save",

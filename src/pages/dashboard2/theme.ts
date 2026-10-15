@@ -3,12 +3,12 @@
 import type { CSSProperties } from 'react';
 
 export const D2 = {
-    bg: '#f4f6fa',
-    card: '#ffffff',
-    border: '#e5e7eb',
+    bg: 'var(--color-bg)',
+    card: 'var(--color-surface)',
+    border: 'var(--color-border)',
     radius: 12,
-    ink: '#111827',
-    muted: '#6b7280',
+    ink: 'var(--color-text-main)',
+    muted: 'var(--color-text-secondary)',
     blue: '#2563eb', blueBg: '#eff4ff',
     violet: '#6d28d9', violetBg: '#f5f3ff',
     amber: '#b45309', amberBg: '#fff7ed', amberLine: '#f59e0b',

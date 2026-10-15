@@ -76,7 +76,7 @@ const ReceivingPage: React.FC = () => {
                 </div>
             </div>
 
-            <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+            <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                 <div style={{ padding: '20px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ position: 'relative', flex: '1 1 300px' }}>
                         <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
@@ -90,7 +90,7 @@ const ReceivingPage: React.FC = () => {
                                 padding: '12px 16px 12px 44px',
                                 borderRadius: '8px',
                                 border: '1px solid var(--color-border)',
-                                background: '#ffffff',
+                                background: 'var(--color-surface)',
                                 fontSize: '14px',
                                 outline: 'none'
                             }}

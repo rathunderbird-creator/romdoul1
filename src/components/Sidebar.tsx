@@ -26,7 +26,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
         const initialExpanded: Record<string, boolean> = {};
         navItems.forEach(item => {
             if (item.subItems) {
-                const isParentActive = item.subItems.some((sub: any) => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/'));
+                const isParentActive = item.subItems.some((sub: any) => location.pathname === sub.path || (sub.path !== item.path && location.pathname.startsWith(sub.path + '/')));
                 if (isParentActive) {
                     initialExpanded[item.label] = true;
                 }
@@ -38,7 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
     useEffect(() => {
         navItems.forEach(item => {
             if (item.subItems) {
-                const isParentActive = item.subItems.some((sub: any) => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/'));
+                const isParentActive = item.subItems.some((sub: any) => location.pathname === sub.path || (sub.path !== item.path && location.pathname.startsWith(sub.path + '/')));
                 if (isParentActive) {
                     setExpandedMenus(prev => {
                         if (!prev[item.label]) {
@@ -195,7 +195,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                         const isExpanded = expandedMenus[item.label] || false;
 
                         // Check if active matches exactly or if subroute is matched (e.g. /orders/returns)
-                        const isParentActive = subItems ? subItems.some(sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')) : location.pathname === item.path;
+                        const isParentActive = subItems ? subItems.some(sub => location.pathname === sub.path || (sub.path !== item.path && location.pathname.startsWith(sub.path + '/'))) : location.pathname === item.path;
 
                         return (
                             <div key={item.label}>

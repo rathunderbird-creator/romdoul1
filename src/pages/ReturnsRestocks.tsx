@@ -192,7 +192,7 @@ const ReturnsRestocks: React.FC = () => {
                                     placeholder="Search by ID, Customer, Phone, Item..."
                                     value={returnedSearchTerm}
                                     onChange={(e) => setReturnedSearchTerm(e.target.value)}
-                                    style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid #FCA5A5', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'white' }}
+                                    style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid #FCA5A5', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-surface)' }}
                                 />
                             </div>
                         </div>
@@ -311,7 +311,7 @@ const ReturnsRestocks: React.FC = () => {
                                     placeholder="Search by ID, Customer, Phone, Item..."
                                     value={restockedSearchTerm}
                                     onChange={(e) => setRestockedSearchTerm(e.target.value)}
-                                    style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid #BFDBFE', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'white' }}
+                                    style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '6px', paddingBottom: '6px', border: '1px solid #BFDBFE', borderRadius: '6px', fontSize: '12px', outline: 'none', background: 'var(--color-surface)' }}
                                 />
                             </div>
                         </div>

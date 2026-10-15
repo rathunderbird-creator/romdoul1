@@ -355,7 +355,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                    background: '#FFFFFF', borderRadius: '20px',
+                    background: 'var(--color-surface)', borderRadius: '20px',
                     width: '100%', maxWidth: '820px', maxHeight: '88vh',
                     display: 'flex', flexDirection: 'column', overflow: 'hidden',
                     boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
@@ -386,7 +386,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexShrink: 0, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <div style={{ background: '#FFFFFF', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                        <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
                             <DateRangePicker
                                 compact={isMobile}
                                 value={range}
@@ -398,7 +398,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                 onClick={() => { const all = { start: '', end: '' }; setRange(all); fetchSummary(all); }}
                                 style={{
                                     padding: '8px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
-                                    border: '1px solid var(--color-border)', background: '#FFFFFF',
+                                    border: '1px solid var(--color-border)', background: 'var(--color-surface)',
                                     color: '#6B7280', cursor: 'pointer', whiteSpace: 'nowrap'
                                 }}
                             >
@@ -423,7 +423,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                 </div>
 
                 {/* View toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', padding: isMobile ? '10px 12px' : '12px 22px', borderBottom: '1px solid var(--color-border)', background: '#FFFFFF', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', padding: isMobile ? '10px 12px' : '12px 22px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)', flexShrink: 0 }}>
                     <div role="tablist" aria-label="Group movements by" style={{ display: 'inline-flex', gap: '2px', padding: '2px', borderRadius: '18px', border: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
                         <button role="tab" aria-selected={view === 'product'} onClick={() => setView('product')} style={{ ...chip(view === 'product'), border: 'none' }}>By Product</button>
                         <button role="tab" aria-selected={view === 'salesman'} onClick={() => setView('salesman')} style={{ ...chip(view === 'salesman'), border: 'none' }}>By Salesman</button>
@@ -471,7 +471,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                 No stock movements in this period.
                             </div>
                         ) : (
-                            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: '#FFFFFF' }}>
+                            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: 'var(--color-surface)' }}>
                                 <thead>
                                     <tr>
                                         <th onClick={() => toggleSalesmanSort('label')} style={{ ...thBase, textAlign: 'left' }}>Salesman{salesmanArrow('label')}</th>
@@ -550,7 +550,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             No products with movement in this period.
                         </div>
                     ) : (
-                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: '#FFFFFF' }}>
+                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: 'var(--color-surface)' }}>
                             <thead>
                                 <tr>
                                     <th onClick={() => toggleSort('name')} style={{ ...thBase, textAlign: 'left' }}>Model{arrow('name')}</th>

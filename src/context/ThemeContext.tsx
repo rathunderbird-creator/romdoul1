@@ -1,14 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 export type AppLayout = 'classic' | 'modern';
+export type ThemeMode = 'light' | 'dark';
 
 interface ThemeContextType {
     themeColor: string;
     fontSize: number; // in pixels
     layout: AppLayout; // 'classic' = black sidebar, 'modern' = light grouped sidebar
+    mode: ThemeMode;   // light or dark color scheme (body.theme-dark)
     setThemeColor: (color: string) => void;
     setFontSize: (size: number) => void;
     setLayout: (layout: AppLayout) => void;
+    setMode: (mode: ThemeMode) => void;
     resetTheme: () => void;
 }
 
@@ -32,6 +35,10 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const [layout, setLayoutState] = useState<AppLayout>(() => {
         return localStorage.getItem('jbl_pos_layout') === 'modern' ? 'modern' : DEFAULT_LAYOUT;
+    });
+
+    const [mode, setModeState] = useState<ThemeMode>(() => {
+        return localStorage.getItem('jbl_pos_theme_mode') === 'dark' ? 'dark' : 'light';
     });
 
     // Apply Styles
@@ -73,6 +80,16 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setLayoutState(next);
     };
 
+    // Dark scheme: one body class flips the CSS variables (see index.css).
+    useEffect(() => {
+        document.body.classList.toggle('theme-dark', mode === 'dark');
+        localStorage.setItem('jbl_pos_theme_mode', mode);
+    }, [mode]);
+
+    const setMode = (next: ThemeMode) => {
+        setModeState(next);
+    };
+
     const setFontSize = (size: number) => {
         setFontSizeState(size);
     };
@@ -87,9 +104,11 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             themeColor,
             fontSize,
             layout,
+            mode,
             setThemeColor,
             setFontSize,
             setLayout,
+            setMode,
             resetTheme
         }}>
             {children}

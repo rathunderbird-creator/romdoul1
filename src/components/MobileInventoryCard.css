@@ -3,7 +3,7 @@
 .mobile-inventory-card {
     border-bottom: 1px solid var(--color-border);
     transition: background-color 0.2s ease;
-    background-color: white;
+    background-color: var(--color-surface);
 }
 
 .mobile-inventory-card.selected {
@@ -11,7 +11,7 @@
 }
 
 .mobile-inventory-card.low-stock {
-    background-color: #FEF2F2;
+    background-color: var(--color-red-light);
     /* Red 50 */
 }
 
@@ -37,7 +37,7 @@
     height: 40px;
     border-radius: 4px;
     object-fit: contain;
-    background: #fff;
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
     flex-shrink: 0;
 }
@@ -158,7 +158,7 @@
     padding: 8px;
     border-radius: 8px;
     border: 1px solid var(--color-border);
-    background-color: white;
+    background-color: var(--color-surface);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -177,8 +177,8 @@
 }
 
 .mic-action-btn.delete:hover {
-    background-color: #FEF2F2;
-    border-color: #FECACA;
+    background-color: var(--color-red-light);
+    border-color: var(--color-red-light);
 }
 
 .mic-action-btn.primary {

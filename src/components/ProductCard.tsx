@@ -121,7 +121,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
                 style={{
                     height: isMobile ? '120px' : '200px',
                     flexShrink: 0,
-                    background: 'white',
+                    background: 'var(--color-surface)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',

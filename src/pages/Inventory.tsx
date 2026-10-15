@@ -936,28 +936,28 @@ const Inventory: React.FC = () => {
                 two cards were pushed off-screen on a phone with no way to scroll to
                 them, so "Out of Stock" and "Total Value" were simply unreachable. */}
             <div className="inventory-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Products</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalProducts}</div>
                 </div>
-                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #3B82F6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #3B82F6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Stock</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalAllStock.toLocaleString()}</div>
                 </div>
-                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #10B981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #10B981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>In Stock</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock > 0).length}</div>
                 </div>
-                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #F59E0B', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #F59E0B', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Low Stock</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.lowStock}</div>
                 </div>
-                <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #EF4444', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #EF4444', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Out of Stock</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock === 0).length}</div>
                 </div>
                 {canViewFinancials && (
-                    <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #8B5CF6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #8B5CF6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Value</span>
                         <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>${stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
@@ -966,7 +966,7 @@ const Inventory: React.FC = () => {
 
             {/* Simple Search Bar */}
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '24px' }}>
-                <div style={{ flex: 1, position: 'relative', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <div style={{ flex: 1, position: 'relative', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                     <Search size={18} color="var(--color-text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input 
                         type="text" 
@@ -985,7 +985,7 @@ const Inventory: React.FC = () => {
             </div>
 
             {/* Table (desktop) / card list (mobile) */}
-            <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+            <div style={{ overflowX: 'auto', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                 {isMobile ? (
                     /* The table needs 600px minimum, which forces horizontal scrolling on a
                        phone. MobileInventoryCard renders the same row data as a tappable card. */
@@ -1160,14 +1160,14 @@ const Inventory: React.FC = () => {
                         <button
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                             disabled={currentPage === 1}
-                            style={{ padding: '6px 12px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--color-border)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                            style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
                         >
                             Previous
                         </button>
                         <button
                             onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
                             disabled={currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0}
-                            style={{ padding: '6px 12px', borderRadius: '6px', background: '#ffffff', border: '1px solid var(--color-border)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'not-allowed' : 'pointer' }}
+                            style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'not-allowed' : 'pointer' }}
                         >
                             Next
                         </button>
@@ -1294,7 +1294,7 @@ const Inventory: React.FC = () => {
                                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Image</label>
                                     <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
                                         {formData.image && (
-                                            <div style={{ width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-border)', flexShrink: 0, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <div style={{ width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-border)', flexShrink: 0, background: 'var(--color-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 <img src={formData.image} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                                             </div>
                                         )}
@@ -1535,7 +1535,7 @@ const Inventory: React.FC = () => {
                         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
                     }}>
                         <div style={{
-                            background: '#ffffff',
+                            background: 'var(--color-surface)',
                             borderRadius: '24px',
                             width: '100%',
                             maxWidth: '740px',
@@ -1577,7 +1577,7 @@ const Inventory: React.FC = () => {
                                             <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Customer Name *</label>
                                             <select
                                                 className="input-field"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesaleCustomer}
                                                 onChange={e => {
                                                     const val = e.target.value;
@@ -1599,7 +1599,7 @@ const Inventory: React.FC = () => {
                                             <input
                                                 className="input-field"
                                                 type="text"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 placeholder="e.g. 012345678"
                                                 value={wholesalePhone}
                                                 onChange={e => setWholesalePhone(e.target.value)}
@@ -1619,7 +1619,7 @@ const Inventory: React.FC = () => {
                                             <input
                                                 className="input-field"
                                                 type="number"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 placeholder="e.g. 50"
                                                 value={wholesaleQuantity}
                                                 onChange={e => setWholesaleQuantity(e.target.value === '' ? '' : Number(e.target.value))}
@@ -1630,7 +1630,7 @@ const Inventory: React.FC = () => {
                                             <input
                                                 className="input-field"
                                                 type="number"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 placeholder="0.00"
                                                 value={wholesalePrice}
                                                 onChange={e => setWholesalePrice(e.target.value === '' ? '' : Number(e.target.value))}
@@ -1649,7 +1649,7 @@ const Inventory: React.FC = () => {
                                             <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Method</label>
                                             <select
                                                 className="input-field"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesalePaymentMethod}
                                                 onChange={e => setWholesalePaymentMethod(e.target.value)}
                                             >
@@ -1662,7 +1662,7 @@ const Inventory: React.FC = () => {
                                             <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Status</label>
                                             <select
                                                 className="input-field"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesalePaymentStatus}
                                                 onChange={e => setWholesalePaymentStatus(e.target.value)}
                                             >
@@ -1677,7 +1677,7 @@ const Inventory: React.FC = () => {
                                             <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Status</label>
                                             <select
                                                 className="input-field"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesaleShippingStatus}
                                                 onChange={e => setWholesaleShippingStatus(e.target.value)}
                                             >
@@ -1692,7 +1692,7 @@ const Inventory: React.FC = () => {
                                             <input
                                                 className="input-field"
                                                 type="text"
-                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: '#ffffff' }}
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 placeholder="e.g. Wholesale"
                                                 value={wholesaleRemark}
                                                 onChange={e => setWholesaleRemark(e.target.value)}

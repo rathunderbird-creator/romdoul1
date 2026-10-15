@@ -48,7 +48,16 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.allTransactions'), path: '/income-expense', icon: ArrowRightLeft },
                 { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
                 { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
-                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign },
+                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign }
+            ]
+        });
+        // The prediction pages and the CPA tracker live in their own section;
+        // the URLs stay under /income-expense/* so saved links keep working.
+        navItems.push({
+            icon: Target,
+            label: t('nav.profitCpa'),
+            path: '/income-expense/cpa-tracker',
+            subItems: [
                 { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
                 { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
                 { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
