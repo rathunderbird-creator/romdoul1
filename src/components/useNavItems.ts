@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, CalendarClock, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Gauge, Megaphone, Target, Scale, ArrowDownUp } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, CalendarClock, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Gauge, Megaphone, Target, Scale, ArrowDownUp, FlaskConical } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -62,7 +62,8 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
                 { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
                 { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users },
-                { label: t('nav.cpaTracker'), path: '/income-expense/cpa-tracker', icon: Target }
+                { label: t('nav.cpaTracker'), path: '/income-expense/cpa-tracker', icon: Target },
+                { label: t('nav.creativeTesting'), path: '/income-expense/creative-testing', icon: FlaskConical }
             ]
         });
     }
