@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, DollarSign, Wallet } from 'lucide-react';
+import { Plus, Trash2, DollarSign } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
 import { useStore } from '../../context/StoreContext';
@@ -25,8 +25,8 @@ const PaymentsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Payments</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Record and track outgoing payments</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Payments</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Record and track outgoing payments.</p>
                 </div>
             )
         });
@@ -76,34 +76,37 @@ const PaymentsPage: React.FC = () => {
     };
 
     return (
-        <div className="acct-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', background: 'var(--color-surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                    <div style={{ padding: '12px', background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', borderRadius: '12px' }}>
-                        <Wallet size={24} />
-                    </div>
-                    <div>
-                        <h2 style={{ fontSize: '16px', fontWeight: 'bold' }}>Total Payments</h2>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--color-text)' }}>
-                            ${paymentsList.reduce((sum, p) => sum + p.amount, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </div>
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
+            {/* Summary — same flat cards as the financial statements */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+                <div style={{ ...cardStyle, padding: '16px 20px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Total Payments</div>
+                    <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B82F6', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>
+                        ${paymentsList.reduce((sum, p) => sum + p.amount, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <button className="secondary-button" onClick={() => { refreshData(); showToast('Refreshed payments', 'success'); }}>Refresh</button>
-                    <button className="primary-button" onClick={() => {
-                        setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
-                        setAmount('');
-                        setCategory('');
-                        setDescription('');
-                        setIsModalOpen(true);
-                    }}>
-                        <Plus size={18} /> Record Payment
-                    </button>
+                <div style={{ ...cardStyle, padding: '16px 20px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Payments Recorded</div>
+                    <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>
+                        {paymentsList.length}
+                    </div>
                 </div>
             </div>
 
-            <div className="glass-panel" style={{ overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <button className="secondary-button" onClick={() => { refreshData(); showToast('Refreshed payments', 'success'); }}>Refresh</button>
+                <button className="primary-button" onClick={() => {
+                    setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+                    setAmount('');
+                    setCategory('');
+                    setDescription('');
+                    setIsModalOpen(true);
+                }}>
+                    <Plus size={18} /> Record Payment
+                </button>
+            </div>
+
+            <div style={{ ...cardStyle, overflow: 'hidden' }}>
                 {paymentsList.length === 0 ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                         <DollarSign size={48} style={{ opacity: 0.2, margin: '0 auto 16px' }} />
@@ -119,13 +122,13 @@ const PaymentsPage: React.FC = () => {
                                 </span>
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{new Date(payment.date).toLocaleDateString()}</span>
                             </div>
-                            <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text)', margin: '6px 0' }}>
+                            <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '6px 0' }}>
                                 {payment.description || '—'}
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{payment.pay_by || '—'}</span>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                    <span style={{ fontWeight: 700, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
                                         ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </span>
                                     <Trash2 size={15} color="#EF4444" style={{ cursor: 'pointer' }} onClick={() => handleDelete(payment.id)} />
@@ -135,39 +138,39 @@ const PaymentsPage: React.FC = () => {
                     ))
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                    <table className="spreadsheet-table" style={{ tableLayout: 'fixed', minWidth: '680px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', minWidth: '680px' }}>
                         <thead>
-                            <tr>
-                                <th style={{ width: '120px' }}>Date</th>
-                                <th style={{ width: '150px' }}>Category</th>
-                                <th>Description</th>
-                                <th style={{ width: '120px' }}>Payment Method</th>
-                                <th style={{ width: '120px', textAlign: 'right' }}>Amount</th>
-                                <th style={{ width: '80px', textAlign: 'right' }}>Actions</th>
+                            <tr style={{ background: 'var(--color-bg)' }}>
+                                <th style={{ ...thStyle, width: '120px' }}>Date</th>
+                                <th style={{ ...thStyle, width: '150px' }}>Category</th>
+                                <th style={thStyle}>Description</th>
+                                <th style={{ ...thStyle, width: '140px' }}>Payment Method</th>
+                                <th style={{ ...thStyle, width: '120px', textAlign: 'right' }}>Amount</th>
+                                <th style={{ ...thStyle, width: '80px', textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {paymentsList.map(payment => (
-                                <tr key={payment.id} className="hover-bg-subtle">
-                                    <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                <tr key={payment.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                                    <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>
                                         {new Date(payment.date).toLocaleDateString()}
                                     </td>
-                                    <td>
+                                    <td style={tdStyle}>
                                         <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: 'var(--color-bg)', fontSize: '12px', border: '1px solid var(--color-border)' }}>
                                             {payment.category || '—'}
                                         </span>
                                     </td>
-                                    <td style={{ color: 'var(--color-text)' }}>
+                                    <td className="d2-khmer" style={{ ...tdStyle, whiteSpace: 'normal', color: 'var(--color-text-main)' }}>
                                         {payment.description || '—'}
                                     </td>
-                                    <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                    <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>
                                         {payment.pay_by || '—'}
                                     </td>
-                                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-text)' }}>
+                                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>
                                         ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </td>
-                                    <td style={{ textAlign: 'right' }}>
-                                        <button 
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                        <button
                                             className="icon-button"
                                             onClick={() => handleDelete(payment.id)}
                                             style={{ color: '#EF4444' }}
@@ -255,5 +258,10 @@ const PaymentsPage: React.FC = () => {
         </div>
     );
 };
+
+// The flat card + table text styles used across the financial statements.
+const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
+const thStyle: React.CSSProperties = { padding: '10px 14px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' };
+const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: '13px', whiteSpace: 'nowrap' };
 
 export default PaymentsPage;

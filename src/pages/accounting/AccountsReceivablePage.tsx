@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HandCoins, AlertTriangle, Warehouse as WarehouseIcon, Plus, RefreshCw, ArrowRight, Database, ShoppingCart } from 'lucide-react';
+import { HandCoins, Plus, RefreshCw, ArrowRight, Database, ShoppingCart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -83,8 +83,8 @@ const AccountsReceivablePage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Accounts Receivable</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Money owed to you — wholesale customer orders and warehouse transfers on credit</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Accounts Receivable</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Money owed to you — wholesale customer orders and warehouse transfers on credit.</p>
                 </div>
             )
         });
@@ -224,11 +224,12 @@ const AccountsReceivablePage: React.FC = () => {
     const bothMissing = transferTableMissing && woMissing;
 
     return (
-        <div className="acct-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <SummaryCard icon={HandCoins} color="#059669" label="Total Receivable" value={fmt(totals.totalReceivable)} />
-                <SummaryCard icon={AlertTriangle} color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
-                <SummaryCard icon={WarehouseIcon} color="#3B82F6" label="Open Items" value={String(totals.count)} />
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
+            {/* Summary — same flat cards as the financial statements */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+                <SummaryCard color="#059669" label="Total Receivable" value={fmt(totals.totalReceivable)} />
+                <SummaryCard color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
+                <SummaryCard color="#3B82F6" label="Open Items" value={String(totals.count)} />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -244,21 +245,21 @@ const AccountsReceivablePage: React.FC = () => {
             </div>
 
             {bothMissing ? (
-                <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                <div style={{ ...cardStyle, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
+                    <p style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Database setup needed</p>
                     <p style={{ fontSize: '13px' }}>
                         Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.
                     </p>
                 </div>
             ) : receivables.length === 0 ? (
-                <div className="glass-panel" style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <HandCoins size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
                     <p>No outstanding receivables. Everything is collected. 🎉</p>
                 </div>
             ) : isMobile ? (
                 // Phones: one card per receivable — no sideways scrolling.
-                <div className="glass-panel" style={{ overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, overflow: 'hidden' }}>
                     {receivables.map(r => {
                         const od = daysOverdue(r.due_date);
                         const isWholesale = r.source === 'wholesale';
@@ -270,7 +271,7 @@ const AccountsReceivablePage: React.FC = () => {
                                     </span>
                                     <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{r.date ? new Date(r.date).toLocaleDateString() : '—'}</span>
                                 </div>
-                                <div className="d2-khmer" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text)', margin: '6px 0 2px' }}>{r.party}</div>
+                                <div className="d2-khmer" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text-main)', margin: '6px 0 2px' }}>{r.party}</div>
                                 <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                     {r.desc}
                                     {r.due_date && <> · Due {new Date(r.due_date).toLocaleDateString()}</>}
@@ -287,7 +288,7 @@ const AccountsReceivablePage: React.FC = () => {
                     })}
                 </div>
             ) : (
-                <div className="glass-panel" style={{ overflowX: 'auto' }}>
+                <div style={{ ...cardStyle, overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '860px' }}>
                         <thead>
                             <tr style={{ background: 'var(--color-bg)' }}>
@@ -372,7 +373,7 @@ const AccountsReceivablePage: React.FC = () => {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'end' }}>
                         <div><label style={labelStyle}>Due Date (optional)</label><input type="date" className="search-input" style={{ width: '100%' }} value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
-                        <div style={{ textAlign: 'right', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Total: <strong style={{ color: 'var(--color-text)', fontSize: '16px' }}>{fmt((Number(qty) || 0) * (Number(unitPrice) || 0))}</strong></div>
+                        <div style={{ textAlign: 'right', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Total: <strong style={{ color: 'var(--color-text-main)', fontSize: '16px' }}>{fmt((Number(qty) || 0) * (Number(unitPrice) || 0))}</strong></div>
                     </div>
                     <div><label style={labelStyle}>Note (optional)</label><input type="text" className="search-input" style={{ width: '100%' }} value={note} onChange={e => setNote(e.target.value)} /></div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
@@ -408,13 +409,13 @@ const AccountsReceivablePage: React.FC = () => {
     );
 };
 
-const SummaryCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; color: string; label: string; value: string }> = ({ icon: Icon, color, label, value }) => (
-    <div className="glass-panel" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <div style={{ padding: '12px', borderRadius: '12px', background: `${color}1A`, color }}><Icon size={22} /></div>
-        <div>
-            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{label}</div>
-            <div style={{ fontSize: '22px', fontWeight: 700 }}>{value}</div>
-        </div>
+// The flat card + big colored total used across the financial statements.
+const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
+
+const SummaryCard: React.FC<{ color: string; label: string; value: string }> = ({ color, label, value }) => (
+    <div style={{ ...cardStyle, padding: '16px 20px' }}>
+        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: '26px', fontWeight: 800, color, marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
 );
 
