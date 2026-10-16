@@ -64,6 +64,7 @@ const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccount
 const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialReportsPage'));
 const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExpenseEntryPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
+const GeneralLedgerPage = lazy(() => import('./pages/accounting/GeneralLedgerPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
 const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
 const AccountsReceivablePage = lazy(() => import('./pages/accounting/AccountsReceivablePage'));
@@ -216,6 +217,7 @@ const ProtectedApp = () => {
           <Route path="/accounting/income-statement" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="income" /></ProtectedRoute>} />
           <Route path="/accounting/cash-in-out" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="cashflow" /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
+          <Route path="/accounting/general-ledger" element={<ProtectedRoute requiredPermission="manage_accounting"><GeneralLedgerPage /></ProtectedRoute>} />
           <Route path="/accounting/revenue" element={<ProtectedRoute requiredPermission="manage_accounting"><RevenueExpenseEntryPage mode="revenue" /></ProtectedRoute>} />
           <Route path="/accounting/expense" element={<ProtectedRoute requiredPermission="manage_accounting"><RevenueExpenseEntryPage mode="expense" /></ProtectedRoute>} />
           <Route path="/accounting/payable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsPayablePage /></ProtectedRoute>} />
