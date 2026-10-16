@@ -185,6 +185,8 @@ const ProtectedApp = () => {
           </Route>
 
           <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
+          {/* Same page, Roles & Permissions tab — its own URL so the Team nav can target it. */}
+          <Route path="/users/roles" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute requiredPermission="manage_settings"><SettingsLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="store-profile" replace />} />
             <Route path="store-profile" element={<StoreProfileSettings />} />

@@ -4,10 +4,13 @@ import type { User, Role, Permission } from '../types';
 import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Check, Lock, Users as UsersIcon,
     LayoutDashboard, ShoppingCart, Truck, Wallet, Package, Briefcase, HeartHandshake,
-    Calculator, Settings, ShieldCheck, X, Search, AlertCircle, Mail, Eye, EyeOff, Target
+    Calculator, Settings, X, Search, AlertCircle, Mail, Eye, EyeOff, Target,
+    ChevronRight, ChevronDown, Minus
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
+import { useMobile } from '../hooks/useMobile';
+import { useLocation } from 'react-router-dom';
 
 // --- Permission catalog -----------------------------------------------------
 // Grouped to mirror the app's actual navigation (see Sidebar.tsx / App.tsx routes),
@@ -106,19 +109,27 @@ const UserManagement: React.FC = () => {
     const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole, refreshData, currentUser } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
-    const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
+    const isMobile = useMobile();
+    const location = useLocation();
+    // Which page this URL is: /users = Users, /users/roles = Roles & Permissions
+    // (two sidebar entries sharing this component).
+    const activeTab: 'users' | 'roles' = location.pathname.startsWith('/users/roles') ? 'roles' : 'users';
 
     React.useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>User Management</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage user accounts and roles</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>
+                        {activeTab === 'users' ? 'Users' : 'Roles & Permissions'}
+                    </h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>
+                        {activeTab === 'users' ? 'Manage user accounts' : 'Define roles and what they can access'}
+                    </p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, activeTab]);
 
     React.useEffect(() => {
         refreshData(true);
@@ -146,15 +157,22 @@ const UserManagement: React.FC = () => {
         return () => window.removeEventListener('keydown', onKey);
     }, [isUserModalOpen]);
 
-    // Role State
+    // Role State — the modal only edits a role's name/description now;
+    // permissions are granted inline in the master-detail panel below.
     const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [roleFormData, setRoleFormData] = useState<Partial<Role>>({ name: '', description: '', permissions: [] });
-    const [roleSearch, setRoleSearch] = useState('');
+
+    // Master-detail state: which role is open on the right, its unsaved
+    // permission draft (null = no edits), the permission search and the
+    // collapsed category sections.
+    const [selectedRoleId, setSelectedRoleId] = useState('');
+    const [permDraft, setPermDraft] = useState<Permission[] | null>(null);
+    const [permSearch, setPermSearch] = useState('');
+    const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
 
     const closeRoleModal = () => {
         setIsRoleModalOpen(false);
-        setRoleSearch('');
     };
 
     // Close the role modal on Escape for keyboard users.
@@ -243,7 +261,6 @@ const UserManagement: React.FC = () => {
             setEditingRole(null);
             setRoleFormData({ name: '', description: '', permissions: [] });
         }
-        setRoleSearch('');
         setIsRoleModalOpen(true);
     };
 
@@ -261,10 +278,15 @@ const UserManagement: React.FC = () => {
 
         try {
             if (editingRole) {
-                await updateRole(editingRole.id, roleFormData);
+                // The modal only renames; permissions are edited in the panel.
+                await updateRole(editingRole.id, { name, description: roleFormData.description || '' });
                 showToast('Role updated successfully', 'success');
             } else {
-                await addRole(roleFormData as Omit<Role, 'id'>);
+                // New roles start with nothing granted (like the reference
+                // design) and open in the panel for granting.
+                const newRole = await addRole({ name, description: roleFormData.description || '', permissions: [] });
+                setSelectedRoleId(newRole.id);
+                setPermDraft(null);
                 showToast('Role added successfully', 'success');
             }
             setIsRoleModalOpen(false);
@@ -285,57 +307,80 @@ const UserManagement: React.FC = () => {
         }
     };
 
-    // The Admin role is always full-access (enforced in hasPermission), so its
-    // checkboxes are shown ticked-and-locked rather than pretending they're editable.
-    const isEditingAdminRole = editingRole?.id === 'admin';
-
-    const togglePermission = (permission: Permission) => {
-        if (isEditingAdminRole) return;
-        const currentPermissions = roleFormData.permissions || [];
-        if (currentPermissions.includes(permission)) {
-            setRoleFormData({ ...roleFormData, permissions: currentPermissions.filter(p => p !== permission) });
-        } else {
-            setRoleFormData({ ...roleFormData, permissions: [...currentPermissions, permission] });
+    // ── Master-detail panel logic ────────────────────────────────────────
+    // Keep a valid selection: default to the first role, recover after deletes.
+    React.useEffect(() => {
+        if (roles.length === 0) return;
+        if (!roles.some(r => r.id === selectedRoleId)) {
+            setSelectedRoleId(roles[0].id);
+            setPermDraft(null);
         }
+    }, [roles, selectedRoleId]);
+
+    const selectedRole = roles.find(r => r.id === selectedRoleId) || null;
+    // The built-in Admin role is managed by the system: always full access
+    // (hasPermission hardcodes it), never editable here.
+    const isSystemRole = selectedRole?.id === 'admin';
+    const savedPerms: Permission[] = selectedRole
+        ? (isSystemRole ? ALL_PERMISSIONS : selectedRole.permissions.filter(p => ALL_PERMISSIONS.includes(p)))
+        : [];
+    const effectivePerms = permDraft ?? savedPerms;
+    const permsDirty = permDraft !== null
+        && (permDraft.length !== savedPerms.length || permDraft.some(p => !savedPerms.includes(p)));
+
+    const selectRole = (id: string) => {
+        if (id === selectedRoleId) return;
+        if (permsDirty && !confirm('Discard unsaved permission changes?')) return;
+        setSelectedRoleId(id);
+        setPermDraft(null);
+    };
+
+    const toggleRolePermission = (key: Permission) => {
+        if (!selectedRole || isSystemRole) return;
+        setPermDraft(effectivePerms.includes(key)
+            ? effectivePerms.filter(p => p !== key)
+            : [...effectivePerms, key]);
     };
 
     // Toggle every permission in a category on/off at once.
-    const toggleGroup = (group: PermissionGroup) => {
-        if (isEditingAdminRole) return;
-        const current = roleFormData.permissions || [];
+    const toggleRoleGroup = (group: PermissionGroup) => {
+        if (!selectedRole || isSystemRole) return;
         const keys = group.permissions.map(p => p.key);
-        const allSelected = keys.every(k => current.includes(k));
-        const next = allSelected
-            ? current.filter(p => !keys.includes(p))
-            : Array.from(new Set([...current, ...keys]));
-        setRoleFormData({ ...roleFormData, permissions: next });
+        const allSelected = keys.every(k => effectivePerms.includes(k));
+        setPermDraft(allSelected
+            ? effectivePerms.filter(p => !keys.includes(p))
+            : Array.from(new Set([...effectivePerms, ...keys])));
     };
 
-    // Select-all / clear-all across every permission.
-    const toggleAllPermissions = () => {
-        if (isEditingAdminRole) return;
-        const current = roleFormData.permissions || [];
-        const allSelected = ALL_PERMISSIONS.every(p => current.includes(p));
-        setRoleFormData({ ...roleFormData, permissions: allSelected ? [] : [...ALL_PERMISSIONS] });
+    const savePermissions = async () => {
+        if (!selectedRole || permDraft === null) return;
+        try {
+            await updateRole(selectedRole.id, { permissions: permDraft });
+            setPermDraft(null);
+            showToast('Permissions updated successfully', 'success');
+        } catch (error) {
+            // Surface the store guard's actual reason (e.g. self-lockout).
+            showToast(error instanceof Error ? error.message : 'Failed to save permissions', 'error');
+        }
     };
 
-    const selectedCount = isEditingAdminRole ? ALL_PERMISSIONS.length : (roleFormData.permissions?.length || 0);
-
-    // Live validation + search filtering for the role modal.
+    // Live validation for the role modal.
     const roleNameTrimmed = roleFormData.name?.trim() || '';
     const roleNameDuplicate = !!roleNameTrimmed && roles.some(
         r => r.id !== editingRole?.id && r.name.trim().toLowerCase() === roleNameTrimmed.toLowerCase()
     );
     const canSaveRole = !!roleNameTrimmed && !roleNameDuplicate;
-    const roleSearchLower = roleSearch.trim().toLowerCase();
+
+    // Search filtering for the permissions panel.
+    const permSearchLower = permSearch.trim().toLowerCase();
     const filteredRoleGroups = PERMISSION_GROUPS
         .map(group => ({
             ...group,
-            permissions: roleSearchLower
+            permissions: permSearchLower
                 ? group.permissions.filter(p =>
-                    p.label.toLowerCase().includes(roleSearchLower) ||
-                    p.description.toLowerCase().includes(roleSearchLower) ||
-                    group.category.toLowerCase().includes(roleSearchLower))
+                    p.label.toLowerCase().includes(permSearchLower) ||
+                    p.description.toLowerCase().includes(permSearchLower) ||
+                    group.category.toLowerCase().includes(permSearchLower))
                 : group.permissions,
         }))
         .filter(g => g.permissions.length > 0);
@@ -365,41 +410,11 @@ const UserManagement: React.FC = () => {
     return (
         <div style={{ padding: '24px', maxWidth: '100%', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--color-border)' }}>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                    <button
-                        onClick={() => setActiveTab('users')}
-                        style={{
-                            padding: '12px 24px',
-                            borderBottom: activeTab === 'users' ? '2px solid var(--color-primary)' : 'none',
-                            color: activeTab === 'users' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                            fontWeight: activeTab === 'users' ? 'bold' : 'normal',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                        }}
-                    >
-                        <UserIcon size={18} /> Users
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('roles')}
-                        style={{
-                            padding: '12px 24px',
-                            borderBottom: activeTab === 'roles' ? '2px solid var(--color-primary)' : 'none',
-                            color: activeTab === 'roles' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                            fontWeight: activeTab === 'roles' ? 'bold' : 'normal',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                        }}
-                    >
-                        <Shield size={18} /> Roles & Permissions
-                    </button>
+                {/* Users and Roles & Permissions are separate pages now (Team menu),
+                    so each shows only its own title — no cross tabs. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                    {activeTab === 'users' ? <UserIcon size={18} /> : <Shield size={18} />}
+                    {activeTab === 'users' ? 'Users' : 'Roles & Permissions'}
                 </div>
                 
                 <div style={{ paddingBottom: '12px' }}>
@@ -425,7 +440,7 @@ const UserManagement: React.FC = () => {
                                 border: 'none', cursor: 'pointer', fontWeight: 500
                             }}
                         >
-                            <Plus size={18} /> Add Role
+                            <Plus size={18} /> New Role
                         </button>
                     )}
                 </div>
@@ -531,16 +546,18 @@ const UserManagement: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div>
-
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                // Master-detail: roles list on the left, the selected role's
+                // permissions on the right (stacked on phones).
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(260px, 340px) 1fr', gap: '16px', alignItems: 'start' }}>
+                    {/* Roles list */}
+                    <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                        <div style={{ padding: '16px 20px', fontSize: '15px', fontWeight: 700 }}>Roles</div>
                         {roles.map(role => {
-                            const assignedUsers = users.filter(u => u.roleId === role.id).length;
-                            const permCount = role.permissions.length;
                             const isAdminRole = role.id === 'admin';
-                            // Admin has full access regardless of its stored list.
-                            const hasFullAccess = isAdminRole || ALL_PERMISSIONS.every(p => role.permissions.includes(p));
+                            const granted = isAdminRole ? ALL_PERMISSIONS.length : role.permissions.filter(p => ALL_PERMISSIONS.includes(p)).length;
+                            const available = ALL_PERMISSIONS.length - granted;
+                            const selected = role.id === selectedRoleId;
+                            const assignedUsers = users.filter(u => u.roleId === role.id).length;
                             // Why deletion is blocked, if it is — mirrors the store guards.
                             const deleteBlockedReason = isAdminRole
                                 ? 'The Admin role is protected'
@@ -550,79 +567,191 @@ const UserManagement: React.FC = () => {
                                         ? 'This is your own role'
                                         : null;
                             return (
-                                <div key={role.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', borderRadius: '12px', padding: '20px', border: '1px solid var(--color-border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                                            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)', flexShrink: 0 }}>
-                                                <Shield size={20} />
-                                            </div>
-                                            <div style={{ minWidth: 0 }}>
-                                                <h3 style={{ margin: '0 0 2px 0', fontSize: '17px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role.name}</h3>
-                                                <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{role.description || 'No description'}</p>
-                                            </div>
+                                <div
+                                    key={role.id}
+                                    onClick={() => selectRole(role.id)}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-pressed={selected}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectRole(role.id); } }}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        padding: '14px 14px 14px 20px',
+                                        borderTop: '1px solid var(--color-border)',
+                                        background: selected ? 'var(--color-primary-light)' : 'transparent',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontWeight: 700, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role.name}</span>
+                                            {isAdminRole && (
+                                                <span style={{ fontSize: '11px', fontWeight: 500, padding: '1px 8px', borderRadius: '6px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', flexShrink: 0 }}>system</span>
+                                            )}
                                         </div>
-                                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                                            <button onClick={() => handleOpenRoleModal(role)} title={isAdminRole ? 'View Admin role (always full access)' : 'Edit role'} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}><Edit2 size={16} /></button>
-                                            <button
-                                                onClick={() => handleDeleteRole(role.id)}
-                                                disabled={!!deleteBlockedReason}
-                                                title={deleteBlockedReason || 'Delete role'}
-                                                style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: deleteBlockedReason ? 'not-allowed' : 'pointer', opacity: deleteBlockedReason ? 0.35 : 1 }}
-                                            ><Trash2 size={16} /></button>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '3px' }}>
+                                            {granted} granted
+                                            {available > 0 && <span style={{ color: '#D97706' }}> · {available} more available</span>}
                                         </div>
                                     </div>
-
-                                    <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                            <UsersIcon size={13} /> {assignedUsers} {assignedUsers === 1 ? 'user' : 'users'}
-                                        </span>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                            <ShieldCheck size={13} /> {permCount} {permCount === 1 ? 'permission' : 'permissions'}
-                                        </span>
-                                    </div>
-
-                                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: 'auto' }}>
-                                        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Permissions</h4>
-                                        {hasFullAccess ? (
-                                            <span style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.1)', color: '#16A34A', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                                <ShieldCheck size={13} /> Full access
-                                            </span>
-                                        ) : permCount === 0 ? (
-                                            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>No permissions granted</span>
-                                        ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                {PERMISSION_GROUPS.map(group => {
-                                                    const granted = group.permissions.filter(p => role.permissions.includes(p.key));
-                                                    if (granted.length === 0) return null;
-                                                    const GroupIcon = group.icon;
-                                                    return (
-                                                        <div key={group.category}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
-                                                                <GroupIcon size={12} /> {group.category}
-                                                            </div>
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                                {granted.map(p => (
-                                                                    <span key={p.key} style={{
-                                                                        fontSize: '12px',
-                                                                        padding: '4px 10px',
-                                                                        borderRadius: '12px',
-                                                                        background: 'var(--color-bg-secondary)',
-                                                                        color: 'var(--color-text)',
-                                                                        border: '1px solid var(--color-border)'
-                                                                    }}>
-                                                                        {p.label}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
+                                    {!isAdminRole && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); if (!deleteBlockedReason) handleDeleteRole(role.id); }}
+                                            disabled={!!deleteBlockedReason}
+                                            title={deleteBlockedReason || 'Delete role'}
+                                            style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: deleteBlockedReason ? 'not-allowed' : 'pointer', opacity: deleteBlockedReason ? 0.35 : 1, flexShrink: 0, display: 'flex' }}
+                                        ><Trash2 size={15} /></button>
+                                    )}
+                                    <ChevronRight size={16} style={{ color: 'var(--color-text-secondary)', flexShrink: 0 }} />
                                 </div>
                             );
                         })}
+                        {roles.length === 0 && (
+                            <div style={{ padding: '32px 20px', borderTop: '1px solid var(--color-border)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                No roles yet — create your first role.
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Permissions panel */}
+                    <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                        {selectedRole ? (
+                            <>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '15px', fontWeight: 700 }}>
+                                            Permissions — <span style={{ color: 'var(--color-primary)' }}>{selectedRole.name}</span>
+                                        </div>
+                                        <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginTop: '3px' }}>
+                                            {isSystemRole
+                                                ? 'This role is managed by the system and cannot be edited.'
+                                                : (selectedRole.description || 'Click the permission chips to grant or revoke, then save.')}
+                                        </div>
+                                    </div>
+                                    {!isSystemRole && (
+                                        <button
+                                            onClick={() => handleOpenRoleModal(selectedRole)}
+                                            title="Rename role"
+                                            aria-label="Rename role"
+                                            style={{ padding: '7px', borderRadius: '8px', color: 'var(--color-text-secondary)', background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer', display: 'flex', flexShrink: 0 }}
+                                        ><Edit2 size={14} /></button>
+                                    )}
+                                </div>
+
+                                {/* Search + granted count */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                                    <div style={{ position: 'relative', flex: 1 }}>
+                                        <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                                        <input
+                                            type="text"
+                                            value={permSearch}
+                                            onChange={e => setPermSearch(e.target.value)}
+                                            placeholder="Search permissions…"
+                                            style={{ width: '100%', padding: '9px 12px 9px 34px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', boxSizing: 'border-box', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
+                                        {effectivePerms.length} / {ALL_PERMISSIONS.length}
+                                    </span>
+                                </div>
+
+                                {/* Category sections */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px' }}>
+                                    {filteredRoleGroups.map(group => {
+                                        const keys = group.permissions.map(p => p.key);
+                                        const grantedInGroup = keys.filter(k => effectivePerms.includes(k)).length;
+                                        const allInGroup = grantedInGroup === keys.length;
+                                        // Searching always shows matches, even in a collapsed section.
+                                        const collapsed = !!collapsedCats[group.category] && !permSearchLower;
+                                        return (
+                                            <div key={group.category} style={{ border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px' }}>
+                                                    <button
+                                                        onClick={() => setCollapsedCats(prev => ({ ...prev, [group.category]: !prev[group.category] }))}
+                                                        aria-label={collapsed ? `Expand ${group.category}` : `Collapse ${group.category}`}
+                                                        aria-expanded={!collapsed}
+                                                        style={{ padding: '2px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', display: 'flex' }}
+                                                    >
+                                                        <ChevronDown size={15} style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s' }} />
+                                                    </button>
+                                                    <div
+                                                        onClick={() => toggleRoleGroup(group)}
+                                                        role="checkbox"
+                                                        aria-checked={allInGroup ? true : grantedInGroup > 0 ? 'mixed' : false}
+                                                        aria-label={`Toggle all ${group.category} permissions`}
+                                                        tabIndex={isSystemRole ? -1 : 0}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoleGroup(group); } }}
+                                                        style={{
+                                                            width: '18px', height: '18px', borderRadius: '5px', flexShrink: 0,
+                                                            border: '1px solid',
+                                                            borderColor: grantedInGroup > 0 ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                            background: grantedInGroup > 0 ? 'var(--color-primary)' : 'transparent',
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                                                            cursor: isSystemRole ? 'not-allowed' : 'pointer',
+                                                            opacity: isSystemRole ? 0.55 : 1
+                                                        }}
+                                                    >
+                                                        {allInGroup ? <Check size={12} /> : grantedInGroup > 0 ? <Minus size={12} /> : null}
+                                                    </div>
+                                                    <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{group.category}</span>
+                                                    <span style={{ marginLeft: 'auto', fontSize: '12.5px', fontWeight: 600, color: allInGroup ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}>
+                                                        {grantedInGroup}/{keys.length}
+                                                    </span>
+                                                </div>
+                                                {!collapsed && (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 14px 14px 42px' }}>
+                                                        {group.permissions.map(({ key, label, description }) => {
+                                                            const checked = effectivePerms.includes(key);
+                                                            return (
+                                                                <button
+                                                                    key={key}
+                                                                    onClick={() => toggleRolePermission(key)}
+                                                                    title={description}
+                                                                    aria-pressed={checked}
+                                                                    style={{
+                                                                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                                                        padding: '6px 13px', borderRadius: '999px',
+                                                                        fontSize: '12.5px', fontWeight: 500,
+                                                                        border: checked ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                                        background: checked ? 'var(--color-primary-light)' : 'var(--color-surface)',
+                                                                        color: checked ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                                        cursor: isSystemRole ? 'not-allowed' : 'pointer',
+                                                                        transition: 'all 0.12s'
+                                                                    }}
+                                                                >
+                                                                    {checked && <Check size={12} />}
+                                                                    {label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {filteredRoleGroups.length === 0 && (
+                                        <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                            No permissions match “{permSearch}”.
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Unsaved-changes bar */}
+                                {permsDirty && (
+                                    <div style={{ position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 20px', borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>You have unsaved changes</span>
+                                        <div style={{ display: 'flex', gap: '10px' }}>
+                                            <button onClick={() => setPermDraft(null)} style={{ padding: '8px 14px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500, fontSize: '13px' }}>Discard</button>
+                                            <button onClick={savePermissions} style={{ padding: '8px 16px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>Save changes</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                Select a role to view its permissions.
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -783,7 +912,7 @@ const UserManagement: React.FC = () => {
                 >
                     <div
                         onClick={e => e.stopPropagation()}
-                        style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '640px', maxWidth: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+                        style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '520px', maxWidth: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }}
                     >
                         {/* Header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '20px 24px', borderBottom: '1px solid var(--color-border)' }}>
@@ -791,9 +920,9 @@ const UserManagement: React.FC = () => {
                                 <Shield size={22} />
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingRole ? 'Edit Role' : 'Add Role'}</h2>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingRole ? 'Rename Role' : 'New Role'}</h2>
                                 <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                    {editingRole ? 'Update this role and its permissions' : 'Define a role and choose what it can access'}
+                                    {editingRole ? 'Update this role’s name and description' : 'Name the role — grant its permissions in the panel'}
                                 </p>
                             </div>
                             <button
@@ -809,7 +938,7 @@ const UserManagement: React.FC = () => {
 
                         {/* Body */}
                         <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
                                         Role Name <span style={{ color: 'var(--color-red)' }}>*</span>
@@ -842,121 +971,6 @@ const UserManagement: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Permissions toolbar */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <label style={{ fontSize: '14px', fontWeight: 600 }}>Permissions</label>
-                                    <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 10px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
-                                        {selectedCount} / {ALL_PERMISSIONS.length}
-                                    </span>
-                                </div>
-                                {!isEditingAdminRole && (
-                                    <button
-                                        type="button"
-                                        onClick={toggleAllPermissions}
-                                        style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                                    >
-                                        {ALL_PERMISSIONS.every(p => roleFormData.permissions?.includes(p)) ? 'Clear all' : 'Select all'}
-                                    </button>
-                                )}
-                            </div>
-
-                            {isEditingAdminRole && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', marginBottom: '16px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.08)', color: '#16A34A', fontSize: '12px', fontWeight: 500 }}>
-                                    <ShieldCheck size={14} /> The Admin role always has full access and cannot be changed.
-                                </div>
-                            )}
-
-                            {/* Search */}
-                            {!isEditingAdminRole && (
-                                <div style={{ position: 'relative', marginBottom: '16px' }}>
-                                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                                    <input
-                                        type="text"
-                                        value={roleSearch}
-                                        onChange={e => setRoleSearch(e.target.value)}
-                                        placeholder="Search permissions…"
-                                        style={{ width: '100%', padding: '9px 12px 9px 36px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
-                                    />
-                                </div>
-                            )}
-
-                            {/* Permission groups */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                                {filteredRoleGroups.map(group => {
-                                    const GroupIcon = group.icon;
-                                    const groupKeys = group.permissions.map(p => p.key);
-                                    const selectedInGroup = groupKeys.filter(k => isEditingAdminRole || roleFormData.permissions?.includes(k)).length;
-                                    const allInGroup = selectedInGroup === groupKeys.length;
-                                    return (
-                                        <div key={group.category}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                                                    <GroupIcon size={14} /> {group.category}
-                                                    <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0, color: 'var(--color-text-secondary)' }}>· {selectedInGroup}/{groupKeys.length}</span>
-                                                </div>
-                                                {!isEditingAdminRole && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggleGroup(group)}
-                                                        style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                                                    >
-                                                        {allInGroup ? 'Clear' : 'Select all'}
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                {group.permissions.map(({ key, label, description }) => {
-                                                    const checked = isEditingAdminRole || roleFormData.permissions?.includes(key);
-                                                    return (
-                                                        <div
-                                                            key={key}
-                                                            onClick={() => togglePermission(key)}
-                                                            style={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '12px',
-                                                                padding: '12px 14px',
-                                                                borderRadius: '10px',
-                                                                border: checked ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                                                                background: checked ? 'rgba(59, 130, 246, 0.06)' : 'var(--color-bg-secondary)',
-                                                                cursor: isEditingAdminRole ? 'not-allowed' : 'pointer',
-                                                                opacity: isEditingAdminRole ? 0.75 : 1,
-                                                                transition: 'all 0.15s'
-                                                            }}
-                                                        >
-                                                            <div style={{
-                                                                width: '20px',
-                                                                height: '20px',
-                                                                borderRadius: '5px',
-                                                                border: '1px solid',
-                                                                borderColor: checked ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                                                background: checked ? 'var(--color-primary)' : 'transparent',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                color: 'white',
-                                                                flexShrink: 0
-                                                            }}>
-                                                                {checked && <Check size={13} />}
-                                                            </div>
-                                                            <div style={{ minWidth: 0 }}>
-                                                                <div style={{ fontSize: '14px', fontWeight: 500 }}>{label}</div>
-                                                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.35, marginTop: '2px' }}>{description}</div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {filteredRoleGroups.length === 0 && (
-                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                        No permissions match “{roleSearch}”.
-                                    </div>
-                                )}
-                            </div>
                         </div>
 
                         {/* Footer */}

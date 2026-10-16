@@ -130,10 +130,11 @@ body {
 }
 
 /* Receipts print from THIS document (ReceiptModal calls window.print), so the
-   on-screen compacting must never shrink the printed page. */
+   on-screen compacting must never shrink the printed page. !important because
+   ThemeContext applies the text-size zoom as an inline style. */
 @media print {
   body {
-    zoom: 1;
+    zoom: 1 !important;
   }
 }
 
@@ -675,6 +676,13 @@ body.layout-modern {
 
 .msidebar-group:hover {
   color: var(--color-text-main);
+}
+
+/* The section that holds the current page: a bolder, darker label — text
+   only, no background — so the active section reads at a glance. */
+.msidebar-group.active-section {
+  color: var(--color-text-main);
+  font-weight: 800;
 }
 
 /* ── Dark theme (ThemeContext.mode === 'dark') ────────────────────────────

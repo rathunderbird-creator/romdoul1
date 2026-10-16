@@ -20,7 +20,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 // Default Values
 const DEFAULT_THEME_COLOR = '#3B82F6'; // Default Blue
 const DEFAULT_FONT_SIZE = 14;
-const DEFAULT_LAYOUT: AppLayout = 'classic';
+const DEFAULT_LAYOUT: AppLayout = 'modern';
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // Initialize State from LocalStorage
@@ -34,7 +34,9 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
 
     const [layout, setLayoutState] = useState<AppLayout>(() => {
-        return localStorage.getItem('jbl_pos_layout') === 'modern' ? 'modern' : DEFAULT_LAYOUT;
+        // Respect an explicit choice either way; anything else gets the default.
+        const saved = localStorage.getItem('jbl_pos_layout');
+        return saved === 'classic' || saved === 'modern' ? saved : DEFAULT_LAYOUT;
     });
 
     const [mode, setModeState] = useState<ThemeMode>(() => {
@@ -59,10 +61,25 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     useEffect(() => {
         const root = document.documentElement;
-        // Update Base Font Size on Body
-        root.style.fontSize = `${fontSize}px`;
+        // Retired mechanism: the whole codebase styles text in absolute px, so
+        // changing the rem base never showed anywhere.
+        root.style.fontSize = '';
+
+        // Text size drives the app zoom instead — the same "one knob" the
+        // compact-UI scale in index.css uses, and the only change that reaches
+        // inline-px styles uniformly. 14 is the baseline (desktop 0.88, phone 1);
+        // --app-zoom keeps --vh-full/--vw-full compensating correctly.
+        const desktop = window.matchMedia('(min-width: 768px)');
+        const apply = () => {
+            const zoom = (desktop.matches ? 0.88 : 1) * (fontSize / 14);
+            document.body.style.setProperty('zoom', String(zoom));
+            root.style.setProperty('--app-zoom', String(zoom));
+        };
+        apply();
+        desktop.addEventListener('change', apply);
 
         localStorage.setItem('jbl_pos_font_size', fontSize.toString());
+        return () => desktop.removeEventListener('change', apply);
     }, [fontSize]);
 
     // The body class lets CSS restyle the chrome (sidebar width, content

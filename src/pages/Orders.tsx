@@ -1087,9 +1087,6 @@ const Orders: React.FC = () => {
         setColumnWidths(newWidths);
     };
 
-    // Appearance State
-    const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
-
     // Pending Modal State
     const [isPendingRemarkModalOpen, setIsPendingRemarkModalOpen] = useState(false);
     const [pendingOrderToUpdate, setPendingOrderToUpdate] = useState<Sale | null>(null);
@@ -1102,7 +1099,9 @@ const Orders: React.FC = () => {
     // Mobile: the filter bar is replaced by a right-side slide-in drawer.
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
-    const [tableSettings, setTableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
+    // Fixed table appearance (the old Appearance submenu is gone); saved
+    // values from localStorage still apply so existing setups don't jump.
+    const [tableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
         if (saved) {
             const parsed = JSON.parse(saved);
@@ -1172,7 +1171,6 @@ const Orders: React.FC = () => {
         ((dateRange.start || dateRange.end) ? 1 : 0);
     const pageFilterRef = useClickOutside<HTMLDivElement>(() => setIsPageOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
-    const appearanceMenuRef = useClickOutside<HTMLDivElement>(() => setShowAppearanceMenu(false));
     const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
     const toolsMenuRef = useClickOutside<HTMLDivElement>(() => setShowTools(false));
 
@@ -2918,87 +2916,9 @@ const Orders: React.FC = () => {
                                                 background: 'var(--color-surface)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                                             }}>
-                                                <div ref={appearanceMenuRef} style={{ position: 'relative', width: '100%' }}>
-                                                    <button
-                                                        onClick={() => { setShowAppearanceMenu(!showAppearanceMenu); setShowColumnMenu(false); }}
-                                                        style={{
-                                                            padding: '8px 12px', borderRadius: '6px', border: 'none',
-                                                            background: showAppearanceMenu ? 'var(--color-bg)' : 'transparent',
-                                                            color: 'var(--color-text-main)', cursor: 'pointer',
-                                                            display: 'flex', alignItems: 'center', gap: '8px',
-                                                            width: '100%', textAlign: 'left', fontSize: '13px',
-                                                            transition: 'background 0.2s'
-                                                        }}
-                                                    >
-                                                        <Eye size={16} color="var(--color-primary)" />
-                                                        <span style={{ flex: 1, textAlign: 'left' }}>Appearance</span>
-                                                        <ChevronRight size={14} color="var(--color-text-secondary)" />
-                                                    </button>
-                                                    {showAppearanceMenu && (
-                                                        <div className="glass-panel" style={{ position: 'absolute', top: 0, right: '100%', marginRight: '8px',
-                                                            padding: '16px', width: '250px', zIndex: 101, maxHeight: '300px', overflowY: 'auto',
-                                                            display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--color-surface)',
-                                                            boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
-                                                        }}>
-                                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Table Settings</h4>
-                                                            <div>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                                    <label style={{ fontSize: '13px' }}>Font Size</label>
-                                                                    <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.fontSize}px</span>
-                                                                </div>
-                                                                <input
-                                                                    type="range" min="9" max="16" value={tableSettings.fontSize}
-                                                                    onChange={(e) => setTableSettings({ ...tableSettings, fontSize: parseInt(e.target.value) })}
-                                                                    style={{ width: '100%' }}
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                                    <label style={{ fontSize: '13px' }}>Row Padding</label>
-                                                                    <span style={{ fontSize: '12px', color: 'gray' }}>{tableSettings.padding}px</span>
-                                                                </div>
-                                                                <input
-                                                                    type="range" min="0" max="20" step="1" value={tableSettings.padding}
-                                                                    onChange={(e) => setTableSettings({ ...tableSettings, padding: parseInt(e.target.value) })}
-                                                                    style={{ width: '100%' }}
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>Row Height</label>
-                                                                <div style={{ display: 'flex', gap: '8px' }}>
-                                                                    <button
-                                                                        onClick={() => setTableSettings({ ...tableSettings, height: 'auto' })}
-                                                                        style={{
-                                                                            flex: 1, padding: '6px', fontSize: '12px',
-                                                                            background: tableSettings.height === 'auto' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                            color: tableSettings.height === 'auto' ? 'white' : 'var(--color-text-main)',
-                                                                            borderRadius: '4px', border: 'none', cursor: 'pointer'
-                                                                        }}
-                                                                    >
-                                                                        Auto
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => setTableSettings({ ...tableSettings, height: '35px' })}
-                                                                        style={{
-                                                                            flex: 1, padding: '6px', fontSize: '12px',
-                                                                            background: tableSettings.height === '35px' ? 'var(--color-primary)' : 'var(--color-bg)',
-                                                                            color: tableSettings.height === '35px' ? 'white' : 'var(--color-text-main)',
-                                                                            borderRadius: '4px', border: 'none', cursor: 'pointer'
-                                                                        }}
-                                                                    >
-                                                                        Fixed
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-
-
                                                 <div ref={columnMenuRef} style={{ position: 'relative', width: '100%' }}>
                                                     <button
-                                                        onClick={() => { setShowColumnMenu(!showColumnMenu); setShowAppearanceMenu(false); }}
+                                                        onClick={() => setShowColumnMenu(!showColumnMenu)}
                                                         style={{
                                                             padding: '8px 12px', borderRadius: '6px', border: 'none',
                                                             background: showColumnMenu ? 'var(--color-bg)' : 'transparent',

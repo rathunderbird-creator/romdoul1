@@ -3495,6 +3495,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const newRole: Role = { ...roleData, id: Date.now().toString() };
         const newRoles = [...(config.roles || []), newRole];
         await updateConfig({ ...config, roles: newRoles });
+        // Hand the caller the new role so the UI can select it right away.
+        return newRole;
     };
 
     const updateRole = async (id: string, updates: Partial<Role>) => {
