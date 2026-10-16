@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Wallet, AlertTriangle, Users, DollarSign, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { DollarSign, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -36,8 +36,8 @@ const AccountsPayablePage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Accounts Payable</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Money you owe suppliers on credit purchase orders</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Accounts Payable</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Money you owe suppliers on credit purchase orders.</p>
                 </div>
             )
         });
@@ -114,12 +114,12 @@ const AccountsPayablePage: React.FC = () => {
     };
 
     return (
-        <div className="acct-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            {/* Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <SummaryCard icon={Wallet} color="#EF4444" label="Total Payable" value={fmt(totals.totalPayable)} />
-                <SummaryCard icon={AlertTriangle} color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
-                <SummaryCard icon={Users} color="#3B82F6" label="Suppliers Owed" value={String(totals.suppliers)} />
+        <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
+            {/* Summary — same flat cards as the financial statements */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+                <SummaryCard color="#EF4444" label="Total Payable" value={fmt(totals.totalPayable)} />
+                <SummaryCard color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
+                <SummaryCard color="#3B82F6" label="Suppliers Owed" value={String(totals.suppliers)} />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
@@ -129,7 +129,7 @@ const AccountsPayablePage: React.FC = () => {
             </div>
 
             {groups.length === 0 ? (
-                <div className="glass-panel" style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <DollarSign size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
                     <p>No outstanding payables. All purchase orders are paid. 🎉</p>
                 </div>
@@ -138,7 +138,7 @@ const AccountsPayablePage: React.FC = () => {
                     {groups.map(g => {
                         const isOpen = expanded.has(g.supplierId);
                         return (
-                            <div key={g.supplierId} className="glass-panel" style={{ overflow: 'hidden' }}>
+                            <div key={g.supplierId} style={{ ...cardStyle, borderLeft: '4px solid #EF4444', overflow: 'hidden' }}>
                                 <div
                                     onClick={() => toggle(g.supplierId)}
                                     style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', cursor: 'pointer', flexWrap: 'wrap' }}
@@ -164,7 +164,7 @@ const AccountsPayablePage: React.FC = () => {
                                             return (
                                                 <div key={po.id} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                                        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text)' }}>{po.invoice_number || `PO-${po.id.slice(0, 8)}`}</span>
+                                                        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-main)' }}>{po.invoice_number || `PO-${po.id.slice(0, 8)}`}</span>
                                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{po.order_date ? new Date(po.order_date).toLocaleDateString() : '—'}</span>
                                                     </div>
                                                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '5px 0' }}>
@@ -264,13 +264,13 @@ const AccountsPayablePage: React.FC = () => {
     );
 };
 
-const SummaryCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; color: string; label: string; value: string }> = ({ icon: Icon, color, label, value }) => (
-    <div className="glass-panel" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <div style={{ padding: '12px', borderRadius: '12px', background: `${color}1A`, color }}><Icon size={22} /></div>
-        <div>
-            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{label}</div>
-            <div style={{ fontSize: '22px', fontWeight: 700 }}>{value}</div>
-        </div>
+// The flat card + big colored total used across the financial statements.
+const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
+
+const SummaryCard: React.FC<{ color: string; label: string; value: string }> = ({ color, label, value }) => (
+    <div style={{ ...cardStyle, padding: '16px 20px' }}>
+        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: '26px', fontWeight: 800, color, marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
 );
 
