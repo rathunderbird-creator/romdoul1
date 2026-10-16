@@ -685,6 +685,40 @@ body.layout-modern {
   font-weight: 800;
 }
 
+/* App-wide scrollbars: thin and grayish, with no up/down arrow buttons —
+   the default Windows scrollbar was too loud next to the UI. The universal
+   selector stays lower-specificity than spots that hide their scrollbar on
+   purpose (e.g. .d2-tabs). Standard properties cover current Chromium and
+   Firefox; the webkit rules below do the same on engines that predate them. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ── Dark theme (ThemeContext.mode === 'dark') ────────────────────────────
    One body class flips the palette variables; pages built on the variables
    follow automatically. color-scheme makes native inputs render dark too. */
