@@ -39,6 +39,7 @@ const WholesaleOrdersPage: React.FC = () => {
     const [search, setSearch] = useState('');
     const [payFilter, setPayFilter] = useState<'All' | 'Unpaid' | 'Partial' | 'Paid'>('All');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Delivered' | 'Cancelled'>('All');
+    const [customerFilter, setCustomerFilter] = useState<string>('All');
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
@@ -252,8 +253,16 @@ const WholesaleOrdersPage: React.FC = () => {
         return wholesaleOrders
             .filter(o => statusFilter === 'All' || (o.status || 'Open') === statusFilter)
             .filter(o => payFilter === 'All' || (o.payment_status || 'Unpaid') === payFilter)
+            .filter(o => customerFilter === 'All' || o.customer_name === customerFilter)
             .filter(o => !q || o.customer_name.toLowerCase().includes(q) || (o.customer_phone || '').includes(q) || (o.invoice_number || '').toLowerCase().includes(q));
-    }, [wholesaleOrders, search, payFilter, statusFilter]);
+    }, [wholesaleOrders, search, payFilter, statusFilter, customerFilter]);
+
+    // Every customer that has a wholesale order, for the Customer filter.
+    const customerNames = useMemo(() => {
+        const names = new Set<string>();
+        for (const o of wholesaleOrders) if (o.customer_name) names.add(o.customer_name);
+        return Array.from(names).sort((a, b) => a.localeCompare(b));
+    }, [wholesaleOrders]);
 
     const totals = useMemo(() => {
         let sales = 0, outstanding = 0, overdue = 0, overdueCount = 0;
@@ -299,16 +308,29 @@ const WholesaleOrdersPage: React.FC = () => {
     // --- Pagination ---
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(() => Number(localStorage.getItem('ws_orders_itemsPerPage')) || 100);
-    useEffect(() => { setCurrentPage(1); }, [search, payFilter, statusFilter, itemsPerPage]);
+    useEffect(() => { setCurrentPage(1); }, [search, payFilter, statusFilter, customerFilter, itemsPerPage]);
     useEffect(() => { localStorage.setItem('ws_orders_itemsPerPage', String(itemsPerPage)); }, [itemsPerPage]);
     const totalPages = Math.max(1, Math.ceil(sortedOrders.length / itemsPerPage));
     const safePage = Math.min(currentPage, totalPages);
     const paginatedOrders = sortedOrders.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
-    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0);
+    // Footer sums over every FILTERED row (not just the visible page), exactly
+    // as the columns render them — so the footer always matches the table.
+    const footerTotals = useMemo(() => {
+        let items = 0, total = 0, paid = 0, balance = 0;
+        for (const o of sortedOrders) {
+            items += o.items?.length || 0;
+            total += o.total_amount || 0;
+            paid += o.amount_paid || 0;
+            balance += (o.total_amount || 0) - (o.amount_paid || 0);
+        }
+        return { count: sortedOrders.length, items, total, paid, balance };
+    }, [sortedOrders]);
+
+    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0) + (customerFilter !== 'All' ? 1 : 0);
     // Clear resets the search too (the badge count above only covers the drawer's filters).
     const hasActiveFilters = !!search || activeFilterCount > 0;
-    const clearFilters = () => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); };
+    const clearFilters = () => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); setCustomerFilter('All'); };
 
     return (
         <div style={{ padding: isMobile ? '12px' : '24px' }}>
@@ -362,6 +384,12 @@ const WholesaleOrdersPage: React.FC = () => {
                             selected={statusFilter}
                             onSelect={(v) => setStatusFilter(v as any)}
                         />
+                        <MobileChipGroup
+                            title="Customer"
+                            options={['All', ...customerNames].map(v => ({ value: v }))}
+                            selected={customerFilter}
+                            onSelect={setCustomerFilter}
+                        />
                     </MobileFilterDrawer>
                 </>
             )}
@@ -399,6 +427,15 @@ const WholesaleOrdersPage: React.FC = () => {
                     <option value="Open">Open</option>
                     <option value="Delivered">Delivered</option>
                     <option value="Cancelled">Cancelled</option>
+                </select>
+                <select
+                    value={customerFilter}
+                    onChange={e => setCustomerFilter(e.target.value)}
+                    className="d2-khmer"
+                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 500, cursor: 'pointer', maxWidth: '200px' }}
+                >
+                    <option value="All">All Customers</option>
+                    {customerNames.map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
                 {/* Clear every filter (payment, status, search) */}
                 <button
@@ -488,6 +525,17 @@ const WholesaleOrdersPage: React.FC = () => {
                             </SwipeRow>
                         );
                     })}
+                    {/* Column totals across every filtered order */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 14px', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                            Total · {footerTotals.count} order{footerTotals.count === 1 ? '' : 's'} · {footerTotals.items} items
+                        </span>
+                        <span style={{ fontSize: '12.5px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+                            <span style={{ color: 'var(--color-text-main)' }}>{fmt(footerTotals.total)}</span>
+                            <span style={{ color: '#059669' }}> · {fmt(footerTotals.paid)} paid</span>
+                            <span style={{ color: footerTotals.balance > 0.005 ? '#ef4444' : '#059669' }}> · {fmt(footerTotals.balance)} due</span>
+                        </span>
+                    </div>
                     {/* Compact pager */}
                     {totalPages > 1 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)' }}>
@@ -611,6 +659,18 @@ const WholesaleOrdersPage: React.FC = () => {
                                 );
                             })}
                         </tbody>
+                        <tfoot>
+                            <tr style={{ fontWeight: 700 }}>
+                                <td colSpan={4} style={{ ...tdStyle, fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.4px' }}>
+                                    Total · {footerTotals.count} order{footerTotals.count === 1 ? '' : 's'}
+                                </td>
+                                <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700 }}>{footerTotals.items}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: 'var(--color-text-main)' }}>{fmt(footerTotals.total)}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#059669' }}>{fmt(footerTotals.paid)}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: footerTotals.balance > 0.005 ? '#ef4444' : '#059669' }}>{fmt(footerTotals.balance)}</td>
+                                <td colSpan={3}></td>
+                            </tr>
+                        </tfoot>
                     </table>
                     {/* Pagination */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '10px' }}>
