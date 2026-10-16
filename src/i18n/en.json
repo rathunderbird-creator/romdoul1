@@ -67,7 +67,11 @@
     "interactions": "Interactions",
     "quotations": "Quotations",
     "activityLog": "Activity Log",
-    "priceList": "Price List"
+    "priceList": "Price List",
+    "team": "Team",
+    "teamUsers": "Users",
+    "rolesPermissions": "Roles & Permissions",
+    "security": "Security"
   },
   "login": {
     "title": "POS Login",

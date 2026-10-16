@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, CalendarClock, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Gauge, Megaphone, Target, Scale, ArrowDownUp, FlaskConical } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, CalendarClock, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -30,7 +30,7 @@ export const useNavItems = (): NavItem[] => {
             path: '/orders',
             subItems: [
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
-                { label: t('nav.ordersManagement2'), path: '/orders-management-2', icon: Gauge },
+                // Orders Management 2 is hidden from the menu; /orders-management-2 stays reachable by URL.
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
                 { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
                 { label: t('nav.scammers'), path: '/orders/scammers', icon: AlertTriangle },
@@ -176,8 +176,21 @@ export const useNavItems = (): NavItem[] => {
     }
 
 
+    // Team: the people-management pages gathered in one group. Each entry keeps
+    // its own permission, so the group only shows what the user can open.
+    const teamSubs: NavSubItem[] = [];
+    if (hasPermission('manage_users')) {
+        teamSubs.push({ label: t('nav.teamUsers'), path: '/users', icon: User });
+        teamSubs.push({ label: t('nav.rolesPermissions'), path: '/users/roles', icon: ShieldCheck });
+    }
     if (hasPermission('view_dashboard')) {
-        navItems.push({ icon: History, label: t('nav.activityLog'), path: '/activity-log' });
+        teamSubs.push({ label: t('nav.activityLog'), path: '/activity-log', icon: History });
+    }
+    if (hasPermission('manage_settings')) {
+        teamSubs.push({ label: t('nav.security'), path: '/settings/security', icon: Lock });
+    }
+    if (teamSubs.length > 0) {
+        navItems.push({ icon: Users, label: t('nav.team'), path: teamSubs[0].path, subItems: teamSubs });
     }
 
     return navItems;

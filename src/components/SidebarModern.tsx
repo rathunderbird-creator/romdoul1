@@ -94,14 +94,15 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
         return (
             <div key={item.label} style={{ marginTop: '10px' }}>
                 <div
-                    className="msidebar-group"
+                    // The active section is marked by bolder, darker label text
+                    // (.active-section) — never a background tint.
+                    className={active ? 'msidebar-group active-section' : 'msidebar-group'}
                     role="button"
                     tabIndex={0}
                     aria-expanded={isExpanded}
                     aria-label={item.label}
                     onClick={() => setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] }))}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] })); } }}
-                    style={{ color: active && !isExpanded ? 'var(--color-primary)' : undefined }}
                 >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                         <item.icon size={17} style={{ flexShrink: 0 }} />
@@ -116,7 +117,9 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                                 key={sub.path}
                                 to={sub.path}
                                 onClick={closeOnMobile}
-                                className={isSubActive(sub, item) ? 'msidebar-item active' : 'msidebar-item'}
+                                // Function form: a plain string would make NavLink append its own
+                                // prefix-matched 'active' class, double-highlighting /users on /users/roles.
+                                className={() => isSubActive(sub, item) ? 'msidebar-item active' : 'msidebar-item'}
                                 style={{ padding: '8px 12px', gap: '10px' }}
                             >
                                 <sub.icon size={16} style={{ flexShrink: 0 }} />

@@ -282,7 +282,7 @@ export interface StoreContextType {
     addUser: (user: Omit<User, 'id'>) => Promise<void>;
     updateUser: (id: string, user: Partial<User>) => Promise<void>;
     deleteUser: (id: string) => Promise<void>;
-    addRole: (role: Omit<Role, 'id'>) => Promise<void>;
+    addRole: (role: Omit<Role, 'id'>) => Promise<Role>;
     updateRole: (id: string, role: Partial<Role>) => Promise<void>;
     deleteRole: (id: string) => Promise<void>;
 
