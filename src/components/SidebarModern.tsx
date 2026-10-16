@@ -103,7 +103,10 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedMenus(prev => ({ ...prev, [item.label]: !prev[item.label] })); } }}
                     style={{ color: active && !isExpanded ? 'var(--color-primary)' : undefined }}
                 >
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <item.icon size={17} style={{ flexShrink: 0 }} />
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                    </div>
                     <ChevronDown size={13} style={{ flexShrink: 0, transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
                 </div>
                 {isExpanded && (
