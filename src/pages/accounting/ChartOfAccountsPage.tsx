@@ -165,39 +165,45 @@ const ChartOfAccountsPage = () => {
         setExpandedGroups(prev => ({ ...prev, [code]: !prev[code] }));
     };
 
-    // Build hierarchy
-    const hierarchicalAccounts = useMemo(() => {
+    // Collapsible category sections (Assets, Liabilities, …), default expanded.
+    const [collapsedTypes, setCollapsedTypes] = useState<Record<string, boolean>>({});
+    const toggleType = (type: string) => setCollapsedTypes(prev => ({ ...prev, [type]: !prev[type] }));
+
+    // Group accounts by their category, then build the code hierarchy inside
+    // each one (parents = short codes, children matched by code prefix) so an
+    // account can never nest under a parent of another category.
+    const accountGroups = useMemo(() => {
         let filtered = accounts;
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
-            filtered = accounts.filter(a => 
-                a.account_name.toLowerCase().includes(q) || 
+            filtered = accounts.filter(a =>
+                a.account_name.toLowerCase().includes(q) ||
                 a.account_code.toLowerCase().includes(q)
             );
         }
 
         // Sort by code first
         const sorted = [...filtered].sort((a, b) => a.account_code.localeCompare(b.account_code));
-        
-        const parents: (ChartOfAccount & { children: ChartOfAccount[], isParent: boolean })[] = [];
-        const orphans: ChartOfAccount[] = [];
 
-        // Identify parents (usually shorter codes, e.g., 3 digits)
-        sorted.forEach(acc => {
-            if (acc.account_code.length <= 3) {
-                parents.push({ ...acc, children: [], isParent: true });
-            } else {
-                // Find matching parent (first 2 or 3 chars)
-                const parent = parents.find(p => acc.account_code.startsWith(p.account_code.substring(0, 2)));
-                if (parent) {
-                    parent.children.push(acc);
+        return TYPE_CARDS.map(card => {
+            const parents: (ChartOfAccount & { children: ChartOfAccount[], isParent: boolean })[] = [];
+            const orphans: ChartOfAccount[] = [];
+            sorted.filter(a => a.account_type === card.type).forEach(acc => {
+                if (acc.account_code.length <= 3) {
+                    parents.push({ ...acc, children: [], isParent: true });
                 } else {
-                    orphans.push(acc);
+                    // Find matching parent (first 2 or 3 chars)
+                    const parent = parents.find(p => acc.account_code.startsWith(p.account_code.substring(0, 2)));
+                    if (parent) {
+                        parent.children.push(acc);
+                    } else {
+                        orphans.push(acc);
+                    }
                 }
-            }
-        });
-
-        return { parents, orphans };
+            });
+            const count = parents.reduce((n, p) => n + 1 + p.children.length, 0) + orphans.length;
+            return { ...card, parents, orphans, count };
+        }).filter(g => g.count > 0);
     }, [accounts, searchQuery]);
 
     // One account's own ledger balance (no roll-up of children).
@@ -238,6 +244,15 @@ const ChartOfAccountsPage = () => {
         if (lineSums === null) return { text: '…', negative: false };
         const bal = balanceOf(account);
         return { text: formatCurrency(bal), negative: bal < 0 };
+    };
+
+    // Subtotal of the rows actually shown in one category section (so it
+    // follows the search filter, and matches the type cards when unfiltered).
+    const groupBalance = (g: { parents: (ChartOfAccount & { children: ChartOfAccount[] })[]; orphans: ChartOfAccount[] }): number => {
+        let total = 0;
+        for (const p of g.parents) { total += balanceOf(p); for (const c of p.children) total += balanceOf(c); }
+        for (const o of g.orphans) total += balanceOf(o);
+        return total;
     };
 
     // Phone row: name + code/type on the left, balance + actions on the right.
@@ -335,17 +350,42 @@ const ChartOfAccountsPage = () => {
                         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No accounts found</div>
                     ) : (
                         <>
-                            {hierarchicalAccounts.parents.map(parent => {
-                                const isExpanded = expandedGroups[parent.account_code];
-                                const hasChildren = parent.children.length > 0;
+                            {accountGroups.length === 0 && (
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No accounts found</div>
+                            )}
+                            {accountGroups.map(group => {
+                                const typeCollapsed = !!collapsedTypes[group.type] && !searchQuery;
                                 return (
-                                    <React.Fragment key={parent.id}>
-                                        {mobileAccountRow(parent, { bold: true, chevron: hasChildren ? !!isExpanded : undefined, onPress: hasChildren ? () => toggleGroup(parent.account_code) : undefined })}
-                                        {isExpanded && parent.children.map(child => mobileAccountRow(child, { indent: true }))}
+                                    <React.Fragment key={group.type}>
+                                        <div
+                                            onClick={() => toggleType(group.type)}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'var(--color-bg)', borderBottom: '1px solid #f1f5f9', borderLeft: `3px solid ${group.color}`, cursor: 'pointer' }}
+                                        >
+                                            {typeCollapsed ? <ChevronRight size={14} color="#94a3b8" style={{ flexShrink: 0 }} /> : <ChevronDown size={14} color="#94a3b8" style={{ flexShrink: 0 }} />}
+                                            <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: group.color }}>{group.label}</span>
+                                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>· {group.count}</span>
+                                            <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)' }}>
+                                                {lineSums === null ? '…' : formatCurrency(groupBalance(group))}
+                                            </span>
+                                        </div>
+                                        {!typeCollapsed && (
+                                            <>
+                                                {group.parents.map(parent => {
+                                                    const isExpanded = expandedGroups[parent.account_code];
+                                                    const hasChildren = parent.children.length > 0;
+                                                    return (
+                                                        <React.Fragment key={parent.id}>
+                                                            {mobileAccountRow(parent, { bold: true, chevron: hasChildren ? !!isExpanded : undefined, onPress: hasChildren ? () => toggleGroup(parent.account_code) : undefined })}
+                                                            {isExpanded && parent.children.map(child => mobileAccountRow(child, { indent: true }))}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                                {group.orphans.map(orphan => mobileAccountRow(orphan))}
+                                            </>
+                                        )}
                                     </React.Fragment>
                                 );
                             })}
-                            {hierarchicalAccounts.orphans.map(orphan => mobileAccountRow(orphan))}
                         </>
                     )
                 ) : (
@@ -367,7 +407,30 @@ const ChartOfAccountsPage = () => {
                             <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No accounts found</td></tr>
                         ) : (
                             <>
-                                {hierarchicalAccounts.parents.map(parent => {
+                                {accountGroups.length === 0 && (
+                                    <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No accounts found</td></tr>
+                                )}
+                                {accountGroups.map(group => {
+                                    const typeCollapsed = !!collapsedTypes[group.type] && !searchQuery;
+                                    return (
+                                <React.Fragment key={group.type}>
+                                <tr
+                                    onClick={() => toggleType(group.type)}
+                                    style={{ background: 'var(--color-bg)', borderBottom: '1px solid #e2e8f0', cursor: 'pointer' }}
+                                >
+                                    <td colSpan={3} style={{ padding: '10px 24px', borderLeft: `3px solid ${group.color}` }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            {typeCollapsed ? <ChevronRight size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                                            <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: group.color }}>{group.label}</span>
+                                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>· {group.count} {group.count === 1 ? 'account' : 'accounts'}</span>
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '10px 24px', textAlign: 'right', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)' }}>
+                                        {lineSums === null ? '…' : formatCurrency(groupBalance(group))}
+                                    </td>
+                                    <td />
+                                </tr>
+                                {!typeCollapsed && group.parents.map(parent => {
                                     const isExpanded = expandedGroups[parent.account_code];
                                     const hasChildren = parent.children.length > 0;
                                     const balance = balanceCell(parent);
@@ -414,7 +477,7 @@ const ChartOfAccountsPage = () => {
                                         </React.Fragment>
                                     );
                                 })}
-                                {hierarchicalAccounts.orphans.map(orphan => {
+                                {!typeCollapsed && group.orphans.map(orphan => {
                                     const orphanBalance = balanceCell(orphan);
                                     return (
                                         <tr key={orphan.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -429,6 +492,9 @@ const ChartOfAccountsPage = () => {
                                                 </div>
                                             </td>
                                         </tr>
+                                    );
+                                })}
+                                </React.Fragment>
                                     );
                                 })}
                             </>
