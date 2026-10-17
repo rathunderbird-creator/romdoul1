@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Search } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
+import { useToast } from '../../context/ToastContext';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
+import { supabase } from '../../lib/supabase';
 import type { JournalEntryLine } from '../../types';
 
 const formatCurrency = (amount: number) => {
@@ -13,9 +15,19 @@ const formatCurrency = (amount: number) => {
 
 
 
+// Posted (green) / Draft (amber) chip, with a Post button on drafts.
+const statusChip = (status: string) => (
+    <span style={{
+        padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', letterSpacing: '0.5px',
+        background: status === 'Draft' ? '#fef3c7' : '#dcfce7',
+        color: status === 'Draft' ? '#92400e' : '#166534',
+    }}>{status === 'Draft' ? 'DRAFT' : 'POSTED'}</span>
+);
+
 const JournalEntriesPage = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
+    const { showToast } = useToast();
     const { journalEntries, accounts, isLoading, fetchJournalEntries, fetchAccounts, saveJournalEntry } = useAccounting();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,10 +38,26 @@ const JournalEntriesPage = () => {
     const [date, setDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [description, setDescription] = useState('');
     const [referenceId, setReferenceId] = useState('');
+    const [entryStatus, setEntryStatus] = useState<'Posted' | 'Draft'>('Posted');
     const [lines, setLines] = useState<Partial<JournalEntryLine>[]>([
         { account_id: '', debit: 0, credit: 0 },
         { account_id: '', debit: 0, credit: 0 }
     ]);
+
+    // Manually post a draft entry.
+    const postEntry = async (entryId: string) => {
+        try {
+            const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', entryId);
+            if (error) throw error;
+            showToast('Entry posted', 'success');
+            fetchJournalEntries();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(/status/i.test(msg)
+                ? 'Posting needs migrations/add_entry_status.sql on this instance'
+                : 'Failed to post entry: ' + msg, 'error');
+        }
+    };
 
     useEffect(() => {
         setHeaderContent({
@@ -54,6 +82,7 @@ const JournalEntriesPage = () => {
         setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setDescription('');
         setReferenceId('');
+        setEntryStatus('Posted');
         setLines([
             { account_id: '', debit: 0, credit: 0 },
             { account_id: '', debit: 0, credit: 0 }
@@ -93,7 +122,7 @@ const JournalEntriesPage = () => {
         if (!isFormValid) return;
         try {
             await saveJournalEntry(
-                { date, description, reference_id: referenceId },
+                { date, description, reference_id: referenceId, status: entryStatus },
                 lines
             );
             setIsModalOpen(false);
@@ -199,7 +228,12 @@ const JournalEntriesPage = () => {
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDebits)}</span>
-                                        <span style={{ padding: '3px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 'bold', background: '#dcfce7', color: '#166534', letterSpacing: '0.5px' }}>POSTED</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                            {statusChip(entry.status || 'Posted')}
+                                            {entry.status === 'Draft' && (
+                                                <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                            )}
+                                        </span>
                                     </div>
                                 </div>
                             );
@@ -247,11 +281,11 @@ const JournalEntriesPage = () => {
                                             {formatCurrency(totalCredits)}
                                         </td>
                                         <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                                            <span style={{ 
-                                                padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold',
-                                                background: '#dcfce7', color: '#166534', letterSpacing: '0.5px'
-                                            }}>
-                                                POSTED
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                                {statusChip(entry.status || 'Posted')}
+                                                {entry.status === 'Draft' && (
+                                                    <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                )}
                                             </span>
                                         </td>
                                     </tr>
@@ -270,25 +304,36 @@ const JournalEntriesPage = () => {
                 title="New Journal Entry"
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Date</label>
-                            <input 
-                                type="date" 
-                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                                value={date} 
-                                onChange={(e) => setDate(e.target.value)} 
+                            <input
+                                type="date"
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
+                                value={date}
+                                onChange={(e) => setDate(e.target.value)}
                             />
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Reference (Optional)</label>
-                            <input 
-                                type="text" 
-                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                                value={referenceId} 
-                                onChange={(e) => setReferenceId(e.target.value)} 
+                            <input
+                                type="text"
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
+                                value={referenceId}
+                                onChange={(e) => setReferenceId(e.target.value)}
                                 placeholder="e.g. INV-1002"
                             />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Status</label>
+                            <select
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)', boxSizing: 'border-box' }}
+                                value={entryStatus}
+                                onChange={(e) => setEntryStatus(e.target.value as 'Posted' | 'Draft')}
+                            >
+                                <option value="Posted">Posted</option>
+                                <option value="Draft">Draft</option>
+                            </select>
                         </div>
                     </div>
                     
