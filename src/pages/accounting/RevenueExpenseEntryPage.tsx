@@ -3,7 +3,7 @@
 // the cash/bank side posts a balanced journal entry, which the Journal
 // Entries page, Income Statement and Cash In / Out then all see.
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -46,7 +46,16 @@ interface EntryRow {
     accountName: string;
     counterName: string;
     amount: number;
+    status: string;
 }
+
+const StatusChip: React.FC<{ status: string }> = ({ status }) => (
+    <span style={{
+        fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap',
+        color: status === 'Draft' ? '#B45309' : '#047857',
+        background: status === 'Draft' ? 'rgba(217, 119, 6, 0.12)' : 'rgba(5, 150, 105, 0.12)',
+    }}>{status}</span>
+);
 
 const todayYmd = (): string => {
     const d = new Date();
@@ -65,8 +74,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const navigate = useNavigate();
 
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string }
+    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; status: string }
     const [lines, setLines] = useState<RawLine[] | null>(null);
+    // False once loading falls back because journal_entries.status does not
+    // exist yet (migrations/add_entry_status.sql not run on this instance).
+    const [statusSupported, setStatusSupported] = useState(true);
     const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
@@ -92,15 +104,24 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
                 if (accErr) throw accErr;
 
+                const loadPage = (from: number, withStatus: boolean) => supabase
+                    .from('journal_entry_lines')
+                    .select(`account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description${withStatus ? ', status' : ''})`)
+                    .order('id', { ascending: true })
+                    .range(from, from + 999);
+
                 const all: RawLine[] = [];
+                let withStatus = true;
                 for (let from = 0; from < 100000; from += 1000) {
-                    const { data, error } = await supabase
-                        .from('journal_entry_lines')
-                        .select('account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description)')
-                        .order('id', { ascending: true })
-                        .range(from, from + 999);
+                    let { data, error } = await loadPage(from, withStatus);
+                    // Instances that haven't run add_entry_status.sql have no
+                    // status column — reload without it; everything is Posted.
+                    if (error && withStatus && /status/i.test(error.message || '')) {
+                        withStatus = false;
+                        ({ data, error } = await loadPage(from, withStatus));
+                    }
                     if (error) throw error;
-                    type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown } | null };
+                    type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown; status?: unknown } | null };
                     for (const l of (data || []) as Row[]) {
                         all.push({
                             entryId: String(l.journal_entry_id),
@@ -109,6 +130,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             credit: Number(l.credit) || 0,
                             date: String(l.entry?.date || '').slice(0, 10),
                             description: String(l.entry?.description || ''),
+                            status: String(l.entry?.status || 'Posted'),
                         });
                     }
                     if (!data || data.length < 1000) break;
@@ -116,6 +138,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 if (!alive) return;
                 setAccounts(accs || []);
                 setLines(all);
+                setStatusSupported(withStatus);
             } catch (e) {
                 console.error('Failed to load the ledger:', e);
                 if (alive) setLines([]);
@@ -142,6 +165,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const [accountId, setAccountId] = useState('');
     const [counterId, setCounterId] = useState('');
     const [amount, setAmount] = useState('');
+    const [entryStatus, setEntryStatus] = useState<'Posted' | 'Draft'>('Posted');
     const [isSaving, setIsSaving] = useState(false);
 
     // Default the selects once accounts arrive, and re-default when switching
@@ -169,7 +193,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     { account_id: counterId, debit: 0, credit: amountNum },
                 ];
             await saveJournalEntry(
-                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: `${cfg.refPrefix}-${Date.now()}` },
+                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: `${cfg.refPrefix}-${Date.now()}`, status: entryStatus },
                 entryLines
             );
             setAmount('');
@@ -209,19 +233,53 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 accountName: mains.map(l => accountById.get(l.accountId)?.account_name || '?').join(', '),
                 counterName: counters.map(l => accountById.get(l.accountId)?.account_name || '?').join(', ') || '—',
                 amount,
+                status: entryLines[0].status,
             });
         }
         return out.sort((a, b) => b.date.localeCompare(a.date) || b.entryId.localeCompare(a.entryId));
     }, [lines, accountById, cfg.accountType, mode]);
 
+    // The money cards count Posted entries only; drafts aren't final yet.
     const totals = useMemo(() => {
         const month = todayYmd().slice(0, 7);
+        const posted = rows.filter(r => r.status !== 'Draft');
         return {
-            month: rows.filter(r => r.date.startsWith(month)).reduce((s, r) => s + r.amount, 0),
-            all: rows.reduce((s, r) => s + r.amount, 0),
+            month: posted.filter(r => r.date.startsWith(month)).reduce((s, r) => s + r.amount, 0),
+            all: posted.reduce((s, r) => s + r.amount, 0),
             count: rows.length,
         };
     }, [rows]);
+
+    // ── List filters: search, date range, status ──
+    const [search, setSearch] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
+    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All');
+
+    const filteredRows = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return rows.filter(r =>
+            (statusFilter === 'All' || r.status === statusFilter) &&
+            (!dateFrom || r.date >= dateFrom) &&
+            (!dateTo || r.date <= dateTo) &&
+            (!q || r.description.toLowerCase().includes(q) || r.accountName.toLowerCase().includes(q) || r.counterName.toLowerCase().includes(q)));
+    }, [rows, search, dateFrom, dateTo, statusFilter]);
+
+    const filteredTotal = useMemo(() => filteredRows.reduce((s, r) => s + r.amount, 0), [filteredRows]);
+
+    // Post a draft entry (one way, like real books).
+    const postEntry = async (row: EntryRow) => {
+        try {
+            const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', row.entryId);
+            if (error) throw error;
+            showToast('Entry posted', 'success');
+            refetch();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to post entry: ' + msg, 'error');
+        }
+    };
 
     const handleDelete = async (row: EntryRow) => {
         if (!confirm(`Delete this ${mode} entry of ${fmt(row.amount)} (${row.date})? The journal entry and its lines are removed.`)) return;
@@ -312,6 +370,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 style={inputStyle}
                             />
                         </div>
+                        <div>
+                            <label style={labelStyle}>Status</label>
+                            <select value={entryStatus} onChange={e => setEntryStatus(e.target.value as 'Posted' | 'Draft')} style={{ ...inputStyle, cursor: 'pointer' }}>
+                                <option value="Posted">Posted</option>
+                                <option value="Draft">Draft</option>
+                            </select>
+                        </div>
                         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', alignItems: 'end', flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: '220px' }}>
                                 <label style={labelStyle}>Description (optional)</label>
@@ -346,33 +411,83 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
                 </div>
+
+                {/* Filters: search, date range, status */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flex: '1 1 180px', maxWidth: '300px' }}>
+                        <Search size={14} color="var(--color-text-muted)" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+                        <input
+                            type="text" className="d2-khmer" placeholder="Search description or account…"
+                            value={search} onChange={e => setSearch(e.target.value)}
+                            style={{ ...inputStyle, paddingLeft: '32px', boxSizing: 'border-box' }}
+                        />
+                    </div>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle, width: 'auto' }} aria-label="From date" />
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle, width: 'auto' }} aria-label="To date" />
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+                        <option value="All">All Statuses</option>
+                        <option value="Posted">Posted</option>
+                        <option value="Draft">Draft</option>
+                    </select>
+                    {filtersActive && (
+                        <button
+                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); }}
+                            style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
+                        >
+                            Clear
+                        </button>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                        {loading ? '…' : `${filteredRows.length} of ${rows.length}`}
+                    </span>
+                </div>
+
+                {!statusSupported && !loading && (
+                    <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', color: '#B45309', background: 'rgba(217, 119, 6, 0.07)' }}>
+                        Draft / Posted statuses need <code>migrations/add_entry_status.sql</code> on this instance — every entry shows as Posted for now.
+                    </div>
+                )}
+
                 {loading ? (
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading entries…</div>
                 ) : rows.length === 0 ? (
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
                         No {mode} entries yet — record the first one above.
                     </div>
+                ) : filteredRows.length === 0 ? (
+                    <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                        No entries match these filters.
+                    </div>
                 ) : isMobile ? (
                     // Phones: one card per entry — no sideways scrolling.
                     <>
-                        {rows.map(r => (
+                        {filteredRows.map(r => (
                             <div key={r.entryId} style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{r.date}</span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{r.date}</span>
+                                        <StatusChip status={r.status} />
+                                    </span>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                         <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
                                         <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} />
                                     </span>
                                 </div>
                                 {r.description && <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 2px' }}>{r.description}</div>}
-                                <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                    {mode === 'revenue' ? `${r.accountName} → ${r.counterName}` : `${r.accountName} ← ${r.counterName}`}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                    <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        {mode === 'revenue' ? `${r.accountName} → ${r.counterName}` : `${r.accountName} ← ${r.counterName}`}
+                                    </div>
+                                    {r.status === 'Draft' && statusSupported && (
+                                        <button onClick={() => postEntry(r)} style={{ padding: '4px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Post</button>
+                                    )}
                                 </div>
                             </div>
                         ))}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--color-bg)', fontWeight: 800, fontSize: '13px' }}>
-                            <span style={{ color: 'var(--color-text-main)' }}>Total</span>
-                            <span style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(totals.all)}</span>
+                            <span style={{ color: 'var(--color-text-main)' }}>{filtersActive ? 'Total (filtered)' : 'Total'}</span>
+                            <span style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</span>
                         </div>
                     </>
                 ) : (
@@ -380,19 +495,27 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '680px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    {['Date', 'Description', cfg.accountLabel, cfg.counterLabel, 'Amount', ''].map((h, i) => (
-                                        <th key={h || 'x'} style={{ padding: '10px 16px', textAlign: i === 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: i === 5 ? '50px' : undefined }}>{h}</th>
+                                    {['Date', 'Description', cfg.accountLabel, cfg.counterLabel, 'Amount', 'Status', ''].map((h, i) => (
+                                        <th key={h || 'x'} style={{ padding: '10px 16px', textAlign: i === 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: i === 6 ? '50px' : undefined }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {rows.map((r, idx) => (
+                                {filteredRows.map((r, idx) => (
                                     <tr key={r.entryId} style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 ? 'rgba(0,0,0,0.015)' : 'transparent' }}>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.accountName}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.counterName}</td>
                                         <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmt(r.amount)}</td>
+                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                                <StatusChip status={r.status} />
+                                                {r.status === 'Draft' && statusSupported && (
+                                                    <button onClick={() => postEntry(r)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                )}
+                                            </span>
+                                        </td>
                                         <td style={{ padding: '10px 16px', textAlign: 'center' }}>
                                             <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} />
                                         </td>
@@ -401,9 +524,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
-                                    <td colSpan={4} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>Total</td>
-                                    <td style={{ padding: '11px 16px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(totals.all)}</td>
-                                    <td></td>
+                                    <td colSpan={4} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>{filtersActive ? `Total (filtered · ${filteredRows.length})` : 'Total'}</td>
+                                    <td style={{ padding: '11px 16px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
+                                    <td colSpan={2}></td>
                                 </tr>
                             </tfoot>
                         </table>

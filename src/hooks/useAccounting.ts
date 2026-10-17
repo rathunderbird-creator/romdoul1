@@ -44,7 +44,8 @@ export const useAccounting = () => {
                 : supabase.from('chart_of_accounts').insert([body]);
             let { error } = await write(payload);
             if (error && /sub_type/i.test(error.message || '')) {
-                const { sub_type: _omitted, ...withoutSubType } = payload;
+                const withoutSubType: Record<string, unknown> = { ...payload };
+                delete withoutSubType.sub_type;
                 ({ error } = await write(withoutSubType));
                 if (!error) showToast('Saved without the sub-category — run migrations/add_account_subtype.sql to enable it', 'info');
             }
@@ -93,16 +94,30 @@ export const useAccounting = () => {
         try {
             // Very simple transaction equivalent (Supabase JS doesn't do real multi-table transactions easily without an RPC, 
             // so we do two inserts. For production ERP, you'd write a PostgreSQL RPC for atomic inserts).
-            const { data: insertedEntry, error: entryError } = await supabase
+            const entryPayload: Record<string, unknown> = {
+                date: entry.date,
+                description: entry.description,
+                reference_id: entry.reference_id,
+                status: entry.status || 'Posted'
+            };
+            // The status column arrives with migrations/add_entry_status.sql;
+            // until an instance has run it, save the entry without it.
+            let { data: insertedEntry, error: entryError } = await supabase
                 .from('journal_entries')
-                .insert([{
-                    date: entry.date,
-                    description: entry.description,
-                    reference_id: entry.reference_id
-                }])
+                .insert([entryPayload])
                 .select()
                 .single();
-                
+            if (entryError && /status/i.test(entryError.message || '')) {
+                const withoutStatus = { ...entryPayload };
+                delete withoutStatus.status;
+                ({ data: insertedEntry, error: entryError } = await supabase
+                    .from('journal_entries')
+                    .insert([withoutStatus])
+                    .select()
+                    .single());
+                if (!entryError) showToast('Saved as Posted — run migrations/add_entry_status.sql to enable drafts', 'info');
+            }
+
             if (entryError) throw entryError;
 
             const linesToInsert = lines.map(line => ({

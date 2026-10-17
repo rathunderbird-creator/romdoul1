@@ -399,6 +399,8 @@ export interface JournalEntry {
     date: string; // YYYY-MM-DD
     description?: string;
     reference_id?: string;
+    // Posted (final) or Draft; needs migrations/add_entry_status.sql.
+    status?: string;
     created_at?: string;
     lines?: JournalEntryLine[];
 }
