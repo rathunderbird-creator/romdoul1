@@ -375,6 +375,9 @@ export interface ChartOfAccount {
     account_code: string;
     account_name: string;
     account_type: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
+    // Optional sub-category shown next to the name (e.g. Current Asset).
+    // Needs migrations/add_account_subtype.sql on the instance.
+    sub_type?: string | null;
     description?: string;
     is_active: boolean;
     created_at?: string;

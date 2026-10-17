@@ -29,32 +29,27 @@ export const useAccounting = () => {
 
     const saveAccount = useCallback(async (account: Partial<ChartOfAccount>) => {
         try {
-            if (account.id) {
-                const { error } = await supabase
-                    .from('chart_of_accounts')
-                    .update({
-                        account_code: account.account_code,
-                        account_name: account.account_name,
-                        account_type: account.account_type,
-                        description: account.description,
-                        is_active: account.is_active
-                    })
-                    .eq('id', account.id);
-                if (error) throw error;
-                showToast('Account updated successfully', 'success');
-            } else {
-                const { error } = await supabase
-                    .from('chart_of_accounts')
-                    .insert([{
-                        account_code: account.account_code,
-                        account_name: account.account_name,
-                        account_type: account.account_type,
-                        description: account.description,
-                        is_active: account.is_active ?? true
-                    }]);
-                if (error) throw error;
-                showToast('Account created successfully', 'success');
+            const payload = {
+                account_code: account.account_code,
+                account_name: account.account_name,
+                account_type: account.account_type,
+                sub_type: account.sub_type || null,
+                description: account.description,
+                is_active: account.is_active ?? true
+            };
+            // The sub_type column arrives with migrations/add_account_subtype.sql;
+            // until an instance has run it, save everything else and say so.
+            const write = async (body: Record<string, unknown>) => account.id
+                ? supabase.from('chart_of_accounts').update(body).eq('id', account.id)
+                : supabase.from('chart_of_accounts').insert([body]);
+            let { error } = await write(payload);
+            if (error && /sub_type/i.test(error.message || '')) {
+                const { sub_type: _omitted, ...withoutSubType } = payload;
+                ({ error } = await write(withoutSubType));
+                if (!error) showToast('Saved without the sub-category — run migrations/add_account_subtype.sql to enable it', 'info');
             }
+            if (error) throw error;
+            showToast(account.id ? 'Account updated successfully' : 'Account created successfully', 'success');
             await fetchAccounts();
         } catch (error: any) {
             console.error('Failed to save account:', error);
