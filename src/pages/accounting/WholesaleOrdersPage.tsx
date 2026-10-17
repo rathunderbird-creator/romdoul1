@@ -4,6 +4,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
+import { useAccounting } from '../../hooks/useAccounting';
 import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
 import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
 import { useMobile } from '../../hooks/useMobile';
@@ -35,6 +36,15 @@ const WholesaleOrdersPage: React.FC = () => {
     const { showToast } = useToast();
     const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings } = useStore();
     const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
+    const { accounts, fetchAccounts } = useAccounting();
+
+    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+    // Cash/bank ledger accounts for the "Received into" select.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     const isMobile = useMobile();
     const [search, setSearch] = useState('');
@@ -65,12 +75,19 @@ const WholesaleOrdersPage: React.FC = () => {
     const [payMethod, setPayMethod] = useState('Bank Transfer');
     const [payNote, setPayNote] = useState('');
     const [payDate, setPayDate] = useState(today());
+    const [receiveAccountId, setReceiveAccountId] = useState('');
 
     // View-details modal
     const [viewOrder, setViewOrder] = useState<WholesaleOrder | null>(null);
 
     // --- Column sorting (mirror of Purchase Orders) ---
-    type WsSortKey = 'invoice' | 'customer' | 'order_date' | 'due_date' | 'items' | 'total' | 'paid' | 'balance' | 'ostatus' | 'status';
+    type WsSortKey = 'invoice' | 'customer' | 'order_date' | 'due_date' | 'payment_date' | 'items' | 'total' | 'paid' | 'balance' | 'ostatus' | 'status';
+
+    // Latest actual payment on an order (from customer_payments), or null.
+    const lastPaymentDate = (o: WholesaleOrder): string | null => {
+        const ds = (o.payments || []).map(p => String(p.payment_date || '').slice(0, 10)).filter(Boolean).sort();
+        return ds.length ? ds[ds.length - 1] : null;
+    };
     const [sortConfig, setSortConfig] = useState<{ key: WsSortKey; direction: 'asc' | 'desc' } | null>(null);
 
     const handleSort = (key: WsSortKey) => {
@@ -87,6 +104,7 @@ const WholesaleOrdersPage: React.FC = () => {
             case 'customer': return o.customer_name.toLowerCase();
             case 'order_date': return o.order_date ? new Date(o.order_date).getTime() : 0;
             case 'due_date': return o.due_date ? new Date(o.due_date).getTime() : 0;
+            case 'payment_date': { const d = lastPaymentDate(o); return d ? new Date(d).getTime() : 0; }
             case 'items': return o.items?.length || 0;
             case 'total': return o.total_amount || 0;
             case 'paid': return o.amount_paid || 0;
@@ -226,15 +244,24 @@ const WholesaleOrdersPage: React.FC = () => {
         setPayOrder(o);
         setPayAmount(((o.total_amount || 0) - (o.amount_paid || 0)).toFixed(2));
         setPayMethod('Bank Transfer'); setPayNote(''); setPayDate(today());
+        // Wholesale Setup's default payment account prefills "Received into".
+        const def = wholesaleSettings.defaultPaymentAccountId;
+        setReceiveAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
     };
 
     const submitPay = async () => {
         if (!payOrder) return;
         const amount = Number(payAmount);
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        // "Received into" is required whenever cash/bank accounts exist to pick.
+        if (paymentAccounts.length > 0 && !receiveAccountId) {
+            showToast('Choose the account this payment is received into', 'error');
+            return;
+        }
         setSaving(true);
         try {
-            await recordCustomerPayment(payOrder.id, amount, payMethod, payNote, payDate, currentUser?.name);
+            const acc = paymentAccounts.find(a => a.id === receiveAccountId);
+            await recordCustomerPayment(payOrder.id, amount, payMethod, payNote, payDate, currentUser?.name, receiveAccountId || undefined, acc?.account_name);
             setPayOrder(null);
         } catch { /* hook toasts */ } finally { setSaving(false); }
     };
@@ -604,6 +631,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                     { key: 'customer', label: 'Customer', align: 'left' },
                                     { key: 'order_date', label: 'Date', align: 'left' },
                                     { key: 'due_date', label: 'Due', align: 'left' },
+                                    { key: 'payment_date', label: 'Payment Date', align: 'left' },
                                     { key: 'items', label: 'Items', align: 'center' },
                                     { key: 'total', label: 'Total', align: 'right' },
                                     { key: 'paid', label: 'Paid', align: 'right' },
@@ -654,6 +682,9 @@ const WholesaleOrdersPage: React.FC = () => {
                                                     {late !== null && <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 700 }}>{late}d late</span>}
                                                 </span>
                                             ) : '—'}
+                                        </td>
+                                        <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>
+                                            {(() => { const d = lastPaymentDate(o); return d ? new Date(d).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'; })()}
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{o.items?.length || 0}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', fontSize: '14px', fontWeight: 700, color: 'var(--color-text)' }}>{fmt(o.total_amount || 0)}</td>
@@ -710,7 +741,7 @@ const WholesaleOrdersPage: React.FC = () => {
                         </tbody>
                         <tfoot>
                             <tr style={{ fontWeight: 700 }}>
-                                <td colSpan={4} style={{ ...tdStyle, fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.4px' }}>
+                                <td colSpan={5} style={{ ...tdStyle, fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.4px' }}>
                                     Total · {footerTotals.count} order{footerTotals.count === 1 ? '' : 's'}
                                 </td>
                                 <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700 }}>{footerTotals.items}</td>
@@ -1103,6 +1134,19 @@ const WholesaleOrdersPage: React.FC = () => {
                                             <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
                                         </select>
                                     </div>
+                                </div>
+
+                                <div>
+                                    <label style={fieldLabel}>Received into *</label>
+                                    <select className="d2-khmer" style={fieldInput} value={receiveAccountId} onChange={e => setReceiveAccountId(e.target.value)}>
+                                        <option value="">Bank or cash account…</option>
+                                        {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                    </select>
+                                    {paymentAccounts.length === 0 && (
+                                        <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                            No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div>

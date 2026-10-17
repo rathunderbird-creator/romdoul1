@@ -1004,5 +1004,13 @@ ALTER TABLE chart_of_accounts ADD COLUMN IF NOT EXISTS sub_type TEXT;
 -- Journal entries: Posted / Draft status (see add_entry_status.sql).
 ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Posted';
 
+-- Supplier payments: the cash/bank account paid from (see
+-- add_supplier_payment_account.sql).
+ALTER TABLE supplier_payments ADD COLUMN IF NOT EXISTS paid_from_account_id TEXT;
+
+-- Customer payments: the cash/bank account received into (see
+-- add_customer_payment_account.sql).
+ALTER TABLE customer_payments ADD COLUMN IF NOT EXISTS received_in_account_id TEXT;
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';

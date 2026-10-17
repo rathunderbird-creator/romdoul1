@@ -506,6 +506,7 @@ export interface PurchaseOrder {
     // Joined fields for UI
     supplier?: Supplier;
     items?: PurchaseOrderItem[];
+    payments?: { payment_date?: string }[];
 }
 
 export interface SupplierPayment {
@@ -516,6 +517,7 @@ export interface SupplierPayment {
     payment_date: string;
     payment_method?: string;
     notes?: string;
+    paid_from_account_id?: string; // chart-of-accounts cash/bank account (migrations/add_supplier_payment_account.sql)
     created_at?: string;
 }
 
@@ -539,6 +541,7 @@ export interface CustomerPayment {
     payment_date: string;
     payment_method?: string;
     notes?: string;
+    received_in_account_id?: string; // chart-of-accounts cash/bank account (migrations/add_customer_payment_account.sql)
     created_at?: string;
 }
 

@@ -3,6 +3,7 @@ import { DollarSign, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
+import { useAccounting } from '../../hooks/useAccounting';
 import { Modal } from '../../components';
 import { useToast } from '../../context/ToastContext';
 import type { PurchaseOrder } from '../../types';
@@ -29,8 +30,18 @@ const AccountsPayablePage: React.FC = () => {
     const [payPO, setPayPO] = useState<PurchaseOrder | null>(null);
     const [payAmount, setPayAmount] = useState<number | string>('');
     const [payMethod, setPayMethod] = useState('Cash');
+    const [payAccountId, setPayAccountId] = useState('');
     const [payNote, setPayNote] = useState('');
     const [saving, setSaving] = useState(false);
+
+    const { accounts, fetchAccounts } = useAccounting();
+    const { purchaseSettings } = useStore();
+    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+    // Cash/bank ledger accounts for the "Paid from" select.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     useEffect(() => {
         setHeaderContent({
@@ -96,15 +107,20 @@ const AccountsPayablePage: React.FC = () => {
         setPayAmount(po.outstanding.toFixed(2));
         setPayMethod('Cash');
         setPayNote('');
+        // Purchase Setup's default payment account prefills "Paid from".
+        const def = purchaseSettings.defaultPaymentAccountId;
+        setPayAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
     };
 
     const submitPayment = async () => {
         if (!payPO) return;
         const amount = Number(payAmount);
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
         setSaving(true);
         try {
-            await recordSupplierPayment(payPO.id, payPO.supplier_id, amount, payMethod, payNote, undefined, currentUser?.name);
+            const acc = paymentAccounts.find(a => a.id === payAccountId);
+            await recordSupplierPayment(payPO.id, payPO.supplier_id, amount, payMethod, payNote, undefined, currentUser?.name, payAccountId || undefined, acc?.account_name);
             setPayPO(null);
         } catch {
             /* hook already toasts */
@@ -248,6 +264,18 @@ const AccountsPayablePage: React.FC = () => {
                             <select className="search-input" style={{ width: '100%' }} value={payMethod} onChange={e => setPayMethod(e.target.value)}>
                                 <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
                             </select>
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Paid from *</label>
+                            <select className="search-input d2-khmer" style={{ width: '100%' }} value={payAccountId} onChange={e => setPayAccountId(e.target.value)}>
+                                <option value="">Bank or cash account…</option>
+                                {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                            </select>
+                            {paymentAccounts.length === 0 && (
+                                <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                    No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                                </div>
+                            )}
                         </div>
                         <div>
                             <label style={labelStyle}>Note (optional)</label>

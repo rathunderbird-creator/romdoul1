@@ -8,6 +8,7 @@ import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
+import { useAccounting } from '../../hooks/useAccounting';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, MobileMultiChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 import DateRangePicker from '../../components/DateRangePicker';
 
@@ -41,6 +42,15 @@ const PurchaseOrdersPage = () => {
     const { products, addStock, currentUser, addProduct, purchaseSettings } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
+    const { accounts, fetchAccounts } = useAccounting();
+
+    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+    // Cash/bank ledger accounts for the "Paid from" select.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
     const [receivingId, setReceivingId] = useState<string | null>(null);
     const receivingRef = useRef<Set<string>>(new Set());
 
@@ -206,6 +216,7 @@ const PurchaseOrdersPage = () => {
     const [payingPORemaining, setPayingPORemaining] = useState<number>(0);
     const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
     const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
+    const [payingAccountId, setPayingAccountId] = useState('');
     const [paymentDate, setPaymentDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [paymentNotes, setPaymentNotes] = useState('');
 
@@ -383,13 +394,22 @@ const PurchaseOrdersPage = () => {
         setPaymentMethod('Bank Transfer');
         setPaymentDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setPaymentNotes('');
+        // Purchase Setup's default payment account prefills "Paid from".
+        const def = purchaseSettings.defaultPaymentAccountId;
+        setPayingAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
         setIsPaymentModalOpen(true);
     };
 
     const handleSavePayment = async () => {
         if (!paymentAmount) return;
+        // "Paid from" is required whenever cash/bank accounts exist to pick.
+        if (paymentAccounts.length > 0 && !payingAccountId) {
+            showToast('Choose the account this payment is paid from', 'error');
+            return;
+        }
         try {
-            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes, paymentDate, currentUser?.name);
+            const acc = paymentAccounts.find(a => a.id === payingAccountId);
+            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes, paymentDate, currentUser?.name, payingAccountId || undefined, acc?.account_name);
             setIsPaymentModalOpen(false);
         } catch (error) {
             // Error handled in hook
@@ -437,7 +457,13 @@ const PurchaseOrdersPage = () => {
     const thStyle: React.CSSProperties = { padding: '8px 12px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' };
 
     // --- Sorting ---
-    type SortKey = 'po' | 'supplier' | 'order_date' | 'expected' | 'invoice' | 'due_date' | 'items' | 'total' | 'balance' | 'status' | 'payment';
+    type SortKey = 'po' | 'supplier' | 'order_date' | 'expected' | 'invoice' | 'due_date' | 'payment_date' | 'items' | 'total' | 'balance' | 'status' | 'payment';
+
+    // Latest actual payment on a PO (from supplier_payments), or null.
+    const lastPaymentDate = (po: PurchaseOrder): string | null => {
+        const ds = (po.payments || []).map(p => String(p.payment_date || '').slice(0, 10)).filter(Boolean).sort();
+        return ds.length ? ds[ds.length - 1] : null;
+    };
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
 
     const handleSort = (key: SortKey) => {
@@ -458,6 +484,7 @@ const PurchaseOrdersPage = () => {
             case 'expected': return po.expected_delivery_date ? new Date(po.expected_delivery_date).getTime() : 0;
             case 'invoice': return (po.invoice_number || '').toLowerCase();
             case 'due_date': return po.payment_due_date ? new Date(po.payment_due_date).getTime() : 0;
+            case 'payment_date': { const d = lastPaymentDate(po); return d ? new Date(d).getTime() : 0; }
             case 'items': return po.items?.length || 0;
             case 'total': return po.total_amount || 0;
             case 'balance': return (po.total_amount || 0) - (po.amount_paid || 0);
@@ -496,6 +523,7 @@ const PurchaseOrdersPage = () => {
         { key: 'expected', label: 'Expected', align: 'left', width: 110, sortable: true },
         { key: 'invoice', label: 'Invoice #', align: 'left', width: 130, sortable: true },
         { key: 'due_date', label: 'Due Date', align: 'left', width: 110, sortable: true },
+        { key: 'payment_date', label: 'Payment Date', align: 'left', width: 115, sortable: true },
         { key: 'items', label: 'Items', align: 'center', width: 80, sortable: true },
         { key: 'total', label: 'Total', align: 'right', width: 110, sortable: true },
         { key: 'balance', label: 'Balance', align: 'right', width: 110, sortable: true },
@@ -505,11 +533,13 @@ const PurchaseOrdersPage = () => {
     ];
 
     const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+        const defaults = Object.fromEntries(PO_COLUMNS.map(c => [c.key, c.width]));
         try {
             const saved = localStorage.getItem('po-col-widths');
-            if (saved) return JSON.parse(saved);
+            // Merge over the defaults so newly added columns get a width too.
+            if (saved) return { ...defaults, ...JSON.parse(saved) };
         } catch { /* ignore malformed value */ }
-        return Object.fromEntries(PO_COLUMNS.map(c => [c.key, c.width]));
+        return defaults;
     });
 
     // Drag state lives in a ref: it changes on every mousemove and must not re-render.
@@ -991,6 +1021,9 @@ const PurchaseOrdersPage = () => {
                                                     {isOverdue && <span style={{ fontSize: '10px', marginLeft: '4px' }}>⚠</span>}
                                                 </span>
                                             ) : '—'}
+                                        </td>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                            {(() => { const d = lastPaymentDate(po); return d ? new Date(d).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'; })()}
                                         </td>
                                         <td style={{ padding: '8px 12px', fontSize: '13px', textAlign: 'center', fontWeight: 600, color: 'var(--color-text)' }}>
                                             {po.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 0}
@@ -1714,6 +1747,25 @@ const PurchaseOrdersPage = () => {
                                         <option value="On Credit">On Credit</option>
                                     </select>
                                 </div>
+                            </div>
+
+                            {/* Paid from (ledger account) */}
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Paid from *</label>
+                                <select
+                                    className="input-field d2-khmer"
+                                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }}
+                                    value={payingAccountId}
+                                    onChange={(e) => setPayingAccountId(e.target.value)}
+                                >
+                                    <option value="">Bank or cash account…</option>
+                                    {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                </select>
+                                {paymentAccounts.length === 0 && (
+                                    <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                        No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                                    </div>
+                                )}
                             </div>
 
                             {/* Notes */}

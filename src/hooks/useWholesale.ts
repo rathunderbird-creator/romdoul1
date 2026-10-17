@@ -224,16 +224,26 @@ export const useWholesale = () => {
 
     // Record a customer payment against an order (mirror of recordSupplierPayment).
     // Also logs each receipt to Income & Expense so wholesale money shows up as Income.
-    const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string) => {
+    const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string, receivedInAccountId?: string, receivedInAccountName?: string) => {
         try {
             const payDate = paymentDate || new Date().toISOString().split('T')[0];
-            const { data: inserted, error: pErr } = await supabase.from('customer_payments').insert([{
+            // "Received into" needs migrations/add_customer_payment_account.sql;
+            // until an instance has run it, save the receipt without the account.
+            const payload: Record<string, unknown> = {
                 wholesale_order_id: orderId,
                 amount,
                 payment_date: payDate,
                 payment_method: paymentMethod,
-                notes: notes || null
-            }]).select().single();
+                notes: notes || null,
+                received_in_account_id: receivedInAccountId || null
+            };
+            let { data: inserted, error: pErr } = await supabase.from('customer_payments').insert([payload]).select().single();
+            if (pErr && /received_in_account_id/i.test(pErr.message || '')) {
+                const withoutAccount = { ...payload };
+                delete withoutAccount.received_in_account_id;
+                ({ data: inserted, error: pErr } = await supabase.from('customer_payments').insert([withoutAccount]).select().single());
+                if (!pErr) showToast('Saved without the Received-into account — run migrations/add_customer_payment_account.sql to store it', 'info');
+            }
             if (pErr) throw pErr;
 
             const { data: order, error: fErr } = await supabase
@@ -256,7 +266,9 @@ export const useWholesale = () => {
                 category: 'លក់ដុំ',
                 amount: Number(amount),
                 description: `${order.customer_name || 'Wholesale'} · ${order.invoice_number || 'WO-' + orderId.slice(0, 8).toUpperCase()} ${marker}`,
-                pay_by: paymentMethod || null,
+                // The account name (when picked) beats the generic method: Income &
+                // Expense shows where the money landed, and the ledger import maps it.
+                pay_by: receivedInAccountName || paymentMethod || null,
                 added_by: receivedBy || 'Wholesale'
             }]);
             if (tErr) {
