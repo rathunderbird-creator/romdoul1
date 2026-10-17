@@ -3,7 +3,7 @@
 // the cash/bank side posts a balanced journal entry, which the Journal
 // Entries page, Income Statement and Cash In / Out then all see.
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil } from 'lucide-react';
 import { Modal } from '../../components';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
@@ -199,8 +199,94 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const amountNum = Math.round((Number(amount) || 0) * 100) / 100;
     const canSave = !isSaving && amountNum > 0 && !!accountId && !!counterId && !!date;
 
+    // ── Edit an existing entry: the form switches into edit mode. Entries made
+    // here are always two balanced lines, so those are fully editable; an entry
+    // with more lines (made in Journal Entries) only changes its header here. ──
+    const [editingEntry, setEditingEntry] = useState<EntryRow | null>(null);
+    const [editSimple, setEditSimple] = useState(true);
+
+    const cancelEdit = () => {
+        setEditingEntry(null);
+        setEditSimple(true);
+        setAmount('');
+        setDescription('');
+        setDate(todayYmd());
+        setEntryStatus('Posted');
+    };
+
+    // Switching between the Revenue and Expense pages abandons an open edit.
+    useEffect(() => {
+        setEditingEntry(null);
+        setEditSimple(true);
+    }, [mode]);
+
+    const startEdit = (row: EntryRow) => {
+        const ls = entryLinesOf(row.entryId);
+        const simple = ls.length === 2;
+        const main = ls.find(l => accountById.get(l.accountId)?.account_type === cfg.accountType);
+        const counter = ls.find(l => l !== main);
+        setEditingEntry(row);
+        setEditSimple(simple);
+        setDate(row.date);
+        setDescription(row.description);
+        setEntryStatus(row.status === 'Draft' ? 'Draft' : 'Posted');
+        if (simple && main && counter) {
+            setAccountId(main.accountId);
+            setCounterId(counter.accountId);
+        }
+        setAmount(row.amount.toFixed(2));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleUpdate = async () => {
+        if (!editingEntry) return;
+        setIsSaving(true);
+        try {
+            const accName = accountById.get(accountId)?.account_name || cfg.title;
+            const headerPayload: Record<string, unknown> = {
+                date,
+                description: description.trim() || `${cfg.title}: ${accName}`,
+                status: entryStatus,
+            };
+            let { error } = await supabase.from('journal_entries').update(headerPayload).eq('id', editingEntry.entryId);
+            if (error && /status/i.test(error.message || '')) {
+                const noStatus = { ...headerPayload };
+                delete noStatus.status;
+                ({ error } = await supabase.from('journal_entries').update(noStatus).eq('id', editingEntry.entryId));
+                if (!error) showToast('Saved without the status — run migrations/add_entry_status.sql to enable drafts', 'info');
+            }
+            if (error) throw error;
+
+            if (editSimple) {
+                // Rebuild the two balanced lines with the edited values.
+                const newLines = mode === 'revenue'
+                    ? [
+                        { journal_entry_id: editingEntry.entryId, account_id: counterId, debit: amountNum, credit: 0 },
+                        { journal_entry_id: editingEntry.entryId, account_id: accountId, debit: 0, credit: amountNum },
+                    ]
+                    : [
+                        { journal_entry_id: editingEntry.entryId, account_id: accountId, debit: amountNum, credit: 0 },
+                        { journal_entry_id: editingEntry.entryId, account_id: counterId, debit: 0, credit: amountNum },
+                    ];
+                const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', editingEntry.entryId);
+                if (delErr) throw delErr;
+                const { error: insErr } = await supabase.from('journal_entry_lines').insert(newLines);
+                if (insErr) throw insErr;
+            }
+            showToast('Entry updated', 'success');
+            cancelEdit();
+            refetch();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to update entry: ' + msg, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!canSave) return;
+        if (editingEntry) { await handleUpdate(); return; }
         setIsSaving(true);
         try {
             const accName = accountById.get(accountId)?.account_name || cfg.title;
@@ -430,8 +516,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: `${cfg.color}1A`, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Icon size={18} />
                     </div>
-                    <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>New {cfg.title} Entry</div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                        {editingEntry ? `Edit ${cfg.title} Entry` : `New ${cfg.title} Entry`}
+                        {editingEntry && <span style={{ marginLeft: '10px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)' }}>{editingEntry.ref || editingEntry.entryId}</span>}
+                    </div>
                 </div>
+
+                {editingEntry && !editSimple && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', marginBottom: '14px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '12.5px', color: 'var(--color-text-main)' }}>
+                        <AlertTriangle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
+                        This entry has more than two ledger lines, so only its date, description and status can change here — the accounts and amount stay as they are.
+                    </div>
+                )}
 
                 {!loading && mainAccounts.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '13px', color: 'var(--color-text-main)' }}>
@@ -452,13 +548,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         </div>
                         <div>
                             <label style={labelStyle}>{cfg.accountLabel}</label>
-                            <select value={accountId} onChange={e => setAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                            <select value={accountId} onChange={e => setAccountId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {mainAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                             </select>
                         </div>
                         <div>
                             <label style={labelStyle}>{cfg.counterLabel}</label>
-                            <select value={counterId} onChange={e => setCounterId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                            <select value={counterId} onChange={e => setCounterId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {counterAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                             </select>
                         </div>
@@ -468,6 +564,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 type="number" min="0.01" step="0.01" placeholder="0.00" value={amount}
                                 onChange={e => setAmount(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                                disabled={!!editingEntry && !editSimple}
                                 style={inputStyle}
                             />
                         </div>
@@ -497,8 +594,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     fontSize: '13px', fontWeight: 700, cursor: canSave ? 'pointer' : 'not-allowed', flexShrink: 0, height: '38px',
                                 }}
                             >
-                                <Plus size={16} /> {isSaving ? 'Saving…' : cfg.submit}
+                                {editingEntry ? <Pencil size={15} /> : <Plus size={16} />} {isSaving ? 'Saving…' : editingEntry ? 'Save Changes' : cfg.submit}
                             </button>
+                            {editingEntry && (
+                                <button
+                                    onClick={cancelEdit}
+                                    style={{ padding: '10px 16px', borderRadius: '9px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', flexShrink: 0, height: '38px' }}
+                                >
+                                    Cancel
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
@@ -589,6 +694,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     </span>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                         <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
+                                        <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />
                                         <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} />
                                         <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} />
                                         <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} />
@@ -639,6 +745,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         </td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+                                                <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />
                                                 <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label="View entry" />
                                                 <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} aria-label="Print entry" />
                                                 <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />
