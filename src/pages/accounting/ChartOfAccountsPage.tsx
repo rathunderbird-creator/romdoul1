@@ -37,6 +37,25 @@ const TYPE_CARDS: { type: ChartOfAccount['account_type']; label: string; color: 
 const signedBalance = (type: ChartOfAccount['account_type'], s: { debit: number; credit: number }): number =>
     type === 'Asset' || type === 'Expense' ? s.debit - s.credit : s.credit - s.debit;
 
+// Sub-category choices per account type, shown next to the account name.
+const SUB_TYPES: Record<ChartOfAccount['account_type'], string[]> = {
+    Asset: ['Current Asset', 'Fixed Asset', 'Other Asset'],
+    Liability: ['Current Liability', 'Long-term Liability'],
+    Equity: ['Equity'],
+    Revenue: ['Operating Revenue', 'Other Revenue'],
+    Expense: ['Operating Expense', 'Cost of Goods Sold', 'Other Expense'],
+};
+
+// The label next to the name: the account's own sub-category, or its parent
+// group's name for children that have no explicit sub_type yet.
+const subLabelOf = (acc: ChartOfAccount, parentName?: string): string =>
+    acc.sub_type || parentName || '';
+
+const subLabelStyle: React.CSSProperties = {
+    fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)',
+    marginLeft: '8px', whiteSpace: 'nowrap'
+};
+
 const ChartOfAccountsPage = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
@@ -59,6 +78,7 @@ const ChartOfAccountsPage = () => {
         account_code: '',
         account_name: '',
         account_type: 'Asset',
+        sub_type: '',
         description: '',
         is_active: true
     });
@@ -140,7 +160,7 @@ const ChartOfAccountsPage = () => {
             setFormData(account);
         } else {
             setEditingAccount(null);
-            setFormData({ account_code: '', account_name: '', account_type: 'Asset', description: '', is_active: true });
+            setFormData({ account_code: '', account_name: '', account_type: 'Asset', sub_type: '', description: '', is_active: true });
         }
         setIsModalOpen(true);
     };
@@ -256,7 +276,7 @@ const ChartOfAccountsPage = () => {
     };
 
     // Phone row: name + code/type on the left, balance + actions on the right.
-    const mobileAccountRow = (acc: ChartOfAccount, opts: { indent?: boolean; bold?: boolean; chevron?: boolean | undefined; onPress?: () => void } = {}) => {
+    const mobileAccountRow = (acc: ChartOfAccount, opts: { indent?: boolean; bold?: boolean; chevron?: boolean | undefined; onPress?: () => void; subLabel?: string } = {}) => {
         const bal = balanceCell(acc);
         return (
             <div
@@ -267,7 +287,7 @@ const ChartOfAccountsPage = () => {
                 {opts.chevron !== undefined && (opts.chevron ? <ChevronDown size={15} color="#94a3b8" style={{ flexShrink: 0 }} /> : <ChevronRight size={15} color="#94a3b8" style={{ flexShrink: 0 }} />)}
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: opts.bold ? 700 : 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.account_name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{acc.account_code} · {acc.account_type.toUpperCase()}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{acc.account_code} · {opts.subLabel || acc.account_type.toUpperCase()}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: bal.negative ? '#DC2626' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{bal.text}</div>
@@ -375,12 +395,12 @@ const ChartOfAccountsPage = () => {
                                                     const hasChildren = parent.children.length > 0;
                                                     return (
                                                         <React.Fragment key={parent.id}>
-                                                            {mobileAccountRow(parent, { bold: true, chevron: hasChildren ? !!isExpanded : undefined, onPress: hasChildren ? () => toggleGroup(parent.account_code) : undefined })}
-                                                            {isExpanded && parent.children.map(child => mobileAccountRow(child, { indent: true }))}
+                                                            {mobileAccountRow(parent, { bold: true, chevron: hasChildren ? !!isExpanded : undefined, onPress: hasChildren ? () => toggleGroup(parent.account_code) : undefined, subLabel: subLabelOf(parent) })}
+                                                            {isExpanded && parent.children.map(child => mobileAccountRow(child, { indent: true, subLabel: subLabelOf(child, parent.account_name) }))}
                                                         </React.Fragment>
                                                     );
                                                 })}
-                                                {group.orphans.map(orphan => mobileAccountRow(orphan))}
+                                                {group.orphans.map(orphan => mobileAccountRow(orphan, { subLabel: subLabelOf(orphan) }))}
                                             </>
                                         )}
                                     </React.Fragment>
@@ -446,6 +466,7 @@ const ChartOfAccountsPage = () => {
                                                     >
                                                         {hasChildren ? (isExpanded ? <ChevronDown size={16} color="#94a3b8" /> : <ChevronRight size={16} color="#94a3b8" />) : <span style={{ width: 16 }}/>}
                                                         {parent.account_name}
+                                                        {subLabelOf(parent) && <span style={subLabelStyle}>{subLabelOf(parent)}</span>}
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{parent.account_type}</td>
@@ -462,7 +483,10 @@ const ChartOfAccountsPage = () => {
                                                 return (
                                                     <tr key={child.id} style={{ borderBottom: '1px solid #f8fafc', background: 'var(--color-bg)' }}>
                                                         <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)', fontWeight: '500' }}>{child.account_code}</td>
-                                                        <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)' }}>{child.account_name}</td>
+                                                        <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)' }}>
+                                                            {child.account_name}
+                                                            {subLabelOf(child, parent.account_name) && <span style={subLabelStyle}>{subLabelOf(child, parent.account_name)}</span>}
+                                                        </td>
                                                         <td style={{ padding: '14px 24px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontSize: '12px' }}>{child.account_type}</td>
                                                         <td style={{ padding: '14px 24px', textAlign: 'right', color: childBalance.negative ? '#DC2626' : 'var(--color-text-secondary)' }}>{childBalance.text}</td>
                                                         <td style={{ padding: '14px 24px', textAlign: 'right' }}>
@@ -482,7 +506,10 @@ const ChartOfAccountsPage = () => {
                                     return (
                                         <tr key={orphan.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                             <td style={{ padding: '16px 24px', fontWeight: '500', color: 'var(--color-text-main)' }}>{orphan.account_code}</td>
-                                            <td style={{ padding: '16px 24px', color: 'var(--color-text-main)' }}>{orphan.account_name}</td>
+                                            <td style={{ padding: '16px 24px', color: 'var(--color-text-main)' }}>
+                                                {orphan.account_name}
+                                                {subLabelOf(orphan) && <span style={subLabelStyle}>{subLabelOf(orphan)}</span>}
+                                            </td>
                                             <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{orphan.account_type}</td>
                                             <td style={{ padding: '16px 24px', textAlign: 'right', color: orphanBalance.negative ? '#DC2626' : 'var(--color-text-main)' }}>{orphanBalance.text}</td>
                                             <td style={{ padding: '16px 24px', textAlign: 'right' }}>
@@ -533,16 +560,31 @@ const ChartOfAccountsPage = () => {
                     </div>
                     <div>
                         <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Type</label>
-                        <select 
+                        <select
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)' }}
                             value={formData.account_type}
-                            onChange={(e) => setFormData({...formData, account_type: e.target.value as any})}
+                            onChange={(e) => setFormData({...formData, account_type: e.target.value as ChartOfAccount['account_type'], sub_type: ''})}
                         >
                             <option value="Asset">Asset</option>
                             <option value="Liability">Liability</option>
                             <option value="Equity">Equity</option>
                             <option value="Revenue">Revenue</option>
                             <option value="Expense">Expense</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>
+                            Sub Category <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span>
+                        </label>
+                        <select
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)' }}
+                            value={formData.sub_type || ''}
+                            onChange={(e) => setFormData({ ...formData, sub_type: e.target.value })}
+                        >
+                            <option value="">—</option>
+                            {SUB_TYPES[formData.account_type || 'Asset'].map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
                         </select>
                     </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px' }}>

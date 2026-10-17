@@ -997,5 +997,9 @@ CREATE TABLE IF NOT EXISTS winner_ads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Chart of Accounts: optional sub-category per account (see
+-- add_account_subtype.sql).
+ALTER TABLE chart_of_accounts ADD COLUMN IF NOT EXISTS sub_type TEXT;
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
