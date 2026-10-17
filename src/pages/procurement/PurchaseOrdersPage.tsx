@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, MobileMultiChipGroup, SwipeRow } from '../../components/MobileFilterKit';
+import DateRangePicker from '../../components/DateRangePicker';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -174,6 +175,7 @@ const PurchaseOrdersPage = () => {
     const [supplierFilter, setSupplierFilter] = useState<string>('All');
     // Multi-select: empty = all payments.
     const [paymentFilter, setPaymentFilter] = useState<string[]>([]);
+    const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
     const togglePaymentFilter = (v: string) =>
         setPaymentFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
 
@@ -387,6 +389,12 @@ const PurchaseOrdersPage = () => {
             if (supplierFilter !== 'All' && (po.supplier?.name || '') !== supplierFilter) return false;
             // Payment filter
             if (paymentFilter.length > 0 && !paymentFilter.includes(po.payment_status || 'Unpaid')) return false;
+            // Order-date range
+            if (dateRange.start || dateRange.end) {
+                const d = String(po.order_date || '').slice(0, 10);
+                if (dateRange.start && d < dateRange.start) return false;
+                if (dateRange.end && d > dateRange.end) return false;
+            }
             // Search
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase();
@@ -396,7 +404,7 @@ const PurchaseOrdersPage = () => {
             }
             return true;
         });
-    }, [purchaseOrders, searchQuery, statusFilter, supplierFilter, paymentFilter]);
+    }, [purchaseOrders, searchQuery, statusFilter, supplierFilter, paymentFilter, dateRange]);
 
     // Footer sums cover every FILTERED row (all pages), matching the Orders table.
     const footerTotals = useMemo(() => ({
@@ -509,10 +517,10 @@ const PurchaseOrdersPage = () => {
         document.addEventListener('mouseup', onUp);
     };
 
-    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (supplierFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0);
+    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (supplierFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0) + ((dateRange.start || dateRange.end) ? 1 : 0);
     // Clear resets the search too (the badge count above only covers the drawer's filters).
     const hasActiveFilters = !!searchQuery || activeFilterCount > 0;
-    const clearFilters = () => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter('All'); setPaymentFilter([]); };
+    const clearFilters = () => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter('All'); setPaymentFilter([]); setDateRange({ start: '', end: '' }); };
 
     return (
         <div className="page-container fade-in">
@@ -604,6 +612,12 @@ const PurchaseOrdersPage = () => {
                             selected={supplierFilter}
                             onSelect={setSupplierFilter}
                         />
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Order Date</div>
+                            <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                                <DateRangePicker value={dateRange} onChange={setDateRange} />
+                            </div>
+                        </div>
                     </MobileFilterDrawer>
                 </>
             )}
@@ -682,6 +696,11 @@ const PurchaseOrdersPage = () => {
                         <option value="All">All Suppliers</option>
                         {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                     </select>
+
+                    {/* Order-date range */}
+                    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
 
                     {/* Clear every filter (status, payment, supplier, search) */}
                     <button

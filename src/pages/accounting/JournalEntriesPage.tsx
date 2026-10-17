@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search } from 'lucide-react';
+import { Plus, Trash2, Search, ArrowDownToLine } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
@@ -14,6 +14,19 @@ const formatCurrency = (amount: number) => {
 };
 
 
+
+// One operational transaction ready to become a draft journal entry.
+interface ImportCandidate {
+    txId: string;
+    date: string;
+    amount: number;
+    description: string;
+    source: string;
+    debitId: string;
+    debitLabel: string;
+    creditId: string;
+    creditLabel: string;
+}
 
 // Posted (green) / Draft (amber) chip, with a Post button on drafts.
 const statusChip = (status: string) => (
@@ -43,6 +56,134 @@ const JournalEntriesPage = () => {
         { account_id: '', debit: 0, credit: 0 },
         { account_id: '', debit: 0, credit: 0 }
     ]);
+
+    // ── Import from operations: supplier payments (#SPP), wholesale receipts
+    // (#WSP) and payroll (#PAY) become draft entries, keyed TX-<id> so nothing
+    // imports twice. Income & Expense's own rows (manual entries, retail
+    // sales, deposits) deliberately stay out of the ledger. ──
+    const [importing, setImporting] = useState(false);
+    const [importPreview, setImportPreview] = useState<{ candidates: ImportCandidate[]; skipped: number } | null>(null);
+
+    const prepareImport = async () => {
+        setImporting(true);
+        try {
+            type Raw = Record<string, unknown>;
+            const txs: Raw[] = [];
+            for (let from = 0; from < 100000; from += 1000) {
+                const { data, error } = await supabase
+                    .from('transactions')
+                    .select('id, date, type, category, amount, description, pay_by')
+                    .order('date', { ascending: true })
+                    .range(from, from + 999);
+                if (error) throw error;
+                txs.push(...((data || []) as Raw[]));
+                if (!data || data.length < 1000) break;
+            }
+            const { data: existing, error: exErr } = await supabase
+                .from('journal_entries').select('reference_id').like('reference_id', 'TX-%');
+            if (exErr) throw exErr;
+            const alreadyImported = new Set((existing || []).map(r => String((r as Raw).reference_id)));
+
+            const pool = accounts.filter(a => a.is_active);
+            const byCode = (code: string) => pool.find(a => a.account_code === code);
+            const byName = (re: RegExp, type?: string) => pool.find(a => (!type || a.account_type === type) && re.test(a.account_name));
+            const inventory = byCode('1300') || byName(/inventory/i, 'Asset') || byName(/cost of goods|purchas/i, 'Expense');
+            const salesRevenue = byCode('4000') || byName(/sales revenue/i, 'Revenue') || pool.find(a => a.account_type === 'Revenue');
+            const payrollExp = byName(/payroll|salary/i, 'Expense') || byCode('6000') || pool.find(a => a.account_type === 'Expense');
+            const cashFor = (payBy: string) => {
+                const assets = pool.filter(a => a.account_type === 'Asset');
+                const p = payBy.toLowerCase();
+                const find = (re: RegExp) => assets.find(a => re.test(a.account_name.toLowerCase()));
+                if (p.includes('aba')) return find(/aba/) || find(/bank/);
+                if (p.includes('acleda')) return find(/acleda/) || find(/bank/);
+                if (/bank|transfer|card|cheque/.test(p)) return find(/bank/) || find(/cash/);
+                return find(/cash on hand/) || find(/cash/) || assets[0];
+            };
+
+            const candidates: ImportCandidate[] = [];
+            let skipped = 0;
+            for (const t of txs) {
+                const desc = String(t.description || '');
+                if (alreadyImported.has('TX-' + String(t.id))) continue;
+                let source = '';
+                let main: typeof inventory;
+                let isExpense = false;
+                if (desc.includes('#SPP-')) { source = 'Supplier payment'; main = inventory; isExpense = true; }
+                else if (desc.includes('#WSP-')) { source = 'Wholesale receipt'; main = salesRevenue; }
+                else if (desc.includes('#PAY-')) { source = 'Payroll'; main = payrollExp; isExpense = true; }
+                else continue; // an Income & Expense row — stays out of the ledger
+                const cash = cashFor(String(t.pay_by || ''));
+                const amount = Math.round((Number(t.amount) || 0) * 100) / 100;
+                if (!main || !cash || amount <= 0) { skipped++; continue; }
+                candidates.push({
+                    txId: String(t.id),
+                    date: String(t.date).slice(0, 10),
+                    amount,
+                    description: `${desc}${t.category ? ` (${String(t.category)})` : ''}`,
+                    source,
+                    debitId: isExpense ? main.id : cash.id,
+                    debitLabel: isExpense ? main.account_name : cash.account_name,
+                    creditId: isExpense ? cash.id : main.id,
+                    creditLabel: isExpense ? cash.account_name : main.account_name,
+                });
+            }
+            setImportPreview({ candidates, skipped });
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to scan transactions: ' + msg, 'error');
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const runImport = async () => {
+        if (!importPreview) return;
+        setImporting(true);
+        let ok = 0, failed = 0;
+        try {
+            for (const c of importPreview.candidates) {
+                const payload: Record<string, unknown> = { date: c.date, description: c.description, reference_id: 'TX-' + c.txId, status: 'Draft' };
+                const { data: entry, error } = await supabase.from('journal_entries').insert([payload]).select().single();
+                if (error && /status/i.test(error.message || '')) {
+                    // Never import as instantly-posted: drafts need the status column.
+                    showToast('Importing needs migrations/add_entry_status.sql on this instance, so entries arrive as drafts — nothing was imported', 'error');
+                    return;
+                }
+                if (error || !entry) { failed++; continue; }
+                const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+                    { journal_entry_id: entry.id, account_id: c.debitId, debit: c.amount, credit: 0 },
+                    { journal_entry_id: entry.id, account_id: c.creditId, debit: 0, credit: c.amount },
+                ]);
+                if (lErr) {
+                    await supabase.from('journal_entries').delete().eq('id', entry.id);
+                    failed++;
+                    continue;
+                }
+                ok++;
+            }
+            showToast(`Imported ${ok} draft ${ok === 1 ? 'entry' : 'entries'}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
+            setImportPreview(null);
+            fetchJournalEntries();
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    // Reviewing a draft can also mean rejecting it.
+    const deleteDraft = async (entryId: string) => {
+        if (!confirm('Delete this draft entry? Its lines are removed too.')) return;
+        try {
+            const { error: lErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId);
+            if (lErr) throw lErr;
+            const { error } = await supabase.from('journal_entries').delete().eq('id', entryId);
+            if (error) throw error;
+            showToast('Draft deleted', 'success');
+            fetchJournalEntries();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to delete draft: ' + msg, 'error');
+        }
+    };
 
     // Manually post a draft entry.
     const postEntry = async (entryId: string) => {
@@ -190,18 +331,34 @@ const JournalEntriesPage = () => {
                         </button>
                     )}
                 </div>
-                <button 
-                    onClick={handleOpenModal}
-                    style={{ 
-                        display: 'flex', alignItems: 'center', gap: '8px', 
-                        padding: '10px 16px', borderRadius: '8px',
-                        background: '#5469d4', color: 'white', border: 'none',
-                        fontWeight: 600, fontSize: '14px', cursor: 'pointer',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                    }}
-                >
-                    <Plus size={16} /> New Entry
-                </button>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={prepareImport}
+                        disabled={importing}
+                        title="Bring supplier payments, wholesale receipts and payroll into the ledger as drafts"
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 16px', borderRadius: '8px',
+                            background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
+                            border: '1px solid #cbd5e1', fontWeight: 600, fontSize: '14px',
+                            cursor: importing ? 'wait' : 'pointer'
+                        }}
+                    >
+                        <ArrowDownToLine size={16} /> {importing ? 'Working…' : 'Import to Ledger'}
+                    </button>
+                    <button
+                        onClick={handleOpenModal}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 16px', borderRadius: '8px',
+                            background: '#5469d4', color: 'white', border: 'none',
+                            fontWeight: 600, fontSize: '14px', cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                    >
+                        <Plus size={16} /> New Entry
+                    </button>
+                </div>
             </div>
 
             <div style={{ background: 'var(--color-surface)', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
@@ -231,7 +388,10 @@ const JournalEntriesPage = () => {
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                             {statusChip(entry.status || 'Posted')}
                                             {entry.status === 'Draft' && (
-                                                <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                <>
+                                                    <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                    <Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => deleteDraft(entry.id)} />
+                                                </>
                                             )}
                                         </span>
                                     </div>
@@ -284,7 +444,10 @@ const JournalEntriesPage = () => {
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 {statusChip(entry.status || 'Posted')}
                                                 {entry.status === 'Draft' && (
-                                                    <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                    <>
+                                                        <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                        <Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => deleteDraft(entry.id)} />
+                                                    </>
                                                 )}
                                             </span>
                                         </td>
@@ -298,9 +461,69 @@ const JournalEntriesPage = () => {
                 )}
             </div>
 
+            {/* Import-to-ledger preview */}
             <Modal
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
+                isOpen={!!importPreview}
+                onClose={() => setImportPreview(null)}
+                title="Import to Ledger"
+            >
+                {importPreview && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                            Supplier payments, wholesale receipts and payroll from operations become <b>draft</b> journal entries
+                            for you to review and post. Income &amp; Expense's own entries stay out of the ledger, and
+                            nothing imports twice.
+                        </p>
+                        {importPreview.candidates.length === 0 ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                Everything is already in the ledger — nothing new to import.
+                                {importPreview.skipped > 0 && <div style={{ marginTop: '6px', fontSize: '12px' }}>({importPreview.skipped} skipped: no matching account)</div>}
+                            </div>
+                        ) : (
+                            <>
+                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                    {importPreview.candidates.length} {importPreview.candidates.length === 1 ? 'transaction' : 'transactions'} ·{' '}
+                                    {formatCurrency(importPreview.candidates.reduce((s, c) => s + c.amount, 0))}
+                                    {importPreview.skipped > 0 && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {importPreview.skipped} skipped (no matching account)</span>}
+                                </div>
+                                <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                                    {importPreview.candidates.map(c => (
+                                        <div key={c.txId} style={{ padding: '9px 12px', borderBottom: '1px solid #f1f5f9' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' }}>
+                                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#5469d4', flexShrink: 0 }}>{c.source}</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{c.date}</span>
+                                            </div>
+                                            <div className="d2-khmer" style={{ fontSize: '12.5px', color: 'var(--color-text-main)', margin: '3px 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.description}>{c.description}</div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
+                                                <span className="d2-khmer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dr {c.debitLabel} → Cr {c.creditLabel}</span>
+                                                <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{formatCurrency(c.amount)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                            <button onClick={() => setImportPreview(null)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>
+                                {importPreview.candidates.length === 0 ? 'Close' : 'Cancel'}
+                            </button>
+                            {importPreview.candidates.length > 0 && (
+                                <button
+                                    onClick={runImport}
+                                    disabled={importing}
+                                    style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#5469d4', color: 'white', fontWeight: 600, cursor: importing ? 'wait' : 'pointer' }}
+                                >
+                                    {importing ? 'Importing…' : `Import ${importPreview.candidates.length} as Drafts`}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
                 title="New Journal Entry"
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
