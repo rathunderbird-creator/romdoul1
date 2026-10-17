@@ -367,24 +367,28 @@ export const useWholesale = () => {
     }, [showToast, fetchCustomers]);
 
     // Next sequential invoice number (WO-0001, WO-0002, …): highest numeric
-    // suffix among existing WO-… invoices, plus one. Manually typed invoices
-    // in other formats are ignored by the pattern and never disturbed.
-    const nextInvoiceNumber = useCallback(async (): Promise<string> => {
+    // suffix among existing invoices with this prefix, plus one. The prefix
+    // comes from Wholesale Setup (default WO); manually typed invoices in
+    // other formats are ignored by the pattern and never disturbed.
+    const nextInvoiceNumber = useCallback(async (prefix: string = 'WO'): Promise<string> => {
+        const p = (prefix || 'WO').trim().replace(/-+$/, '') || 'WO';
         try {
             const { data, error } = await supabase.from('wholesale_orders')
                 .select('invoice_number')
-                .like('invoice_number', 'WO-%');
+                .like('invoice_number', `${p}-%`);
             if (error) throw error;
+            const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(`^${escaped}-(\\d+)$`, 'i');
             let max = 0;
             for (const r of data || []) {
-                const m = String(r.invoice_number || '').match(/^WO-(\d+)$/i);
+                const m = String(r.invoice_number || '').match(pattern);
                 if (m) max = Math.max(max, parseInt(m[1], 10));
             }
-            return `WO-${String(max + 1).padStart(4, '0')}`;
+            return `${p}-${String(max + 1).padStart(4, '0')}`;
         } catch (e) {
             console.error('Failed to compute next invoice number:', e);
             // Timestamp fallback still yields a unique, recognizable number.
-            return `WO-${Date.now().toString().slice(-6)}`;
+            return `${p}-${Date.now().toString().slice(-6)}`;
         }
     }, []);
 

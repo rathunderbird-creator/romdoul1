@@ -33,7 +33,7 @@ const orderStatusConfig = (s?: string) => {
 const WholesaleOrdersPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
-    const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo } = useStore();
+    const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings } = useStore();
     const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
 
     const isMobile = useMobile();
@@ -42,6 +42,7 @@ const WholesaleOrdersPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Delivered' | 'Cancelled'>('All');
     const [customerFilter, setCustomerFilter] = useState<string>('All');
     const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+    const [dueRange, setDueRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
@@ -120,12 +121,28 @@ const WholesaleOrdersPage: React.FC = () => {
     useEffect(() => { fetchWholesaleOrders(); fetchCustomers(); }, [fetchWholesaleOrders, fetchCustomers]);
 
     const openCreate = () => {
-        setCustomerName(''); setCustomerPhone(''); setWarehouseId(warehouses[0]?.id || '');
-        setOrderDate(today()); setDueDate(''); setInvoiceNumber(''); setOrderStatus('Open'); setNotes('');
+        setCustomerName(''); setCustomerPhone('');
+        // Wholesale Setup defaults: warehouse, payment-terms due date, invoice prefix.
+        const defaultWh = wholesaleSettings.defaultWarehouseId && warehouses.some(w => w.id === wholesaleSettings.defaultWarehouseId)
+            ? wholesaleSettings.defaultWarehouseId
+            : (warehouses[0]?.id || '');
+        setWarehouseId(defaultWh);
+        setOrderDate(today());
+        const termsDays = Number(wholesaleSettings.paymentTermsDays);
+        if (termsDays > 0) {
+            const base = new Date(`${today()}T00:00:00`);
+            base.setDate(base.getDate() + Math.round(termsDays));
+            // toISOString() works in UTC; shift by the timezone offset so the
+            // local calendar date survives (same trick as today()).
+            setDueDate(new Date(base.getTime() - base.getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+        } else {
+            setDueDate('');
+        }
+        setInvoiceNumber(''); setOrderStatus('Open'); setNotes('');
         setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);
         setIsCreateOpen(true);
         // Prefill the next sequential invoice number (still editable).
-        nextInvoiceNumber().then(setInvoiceNumber);
+        nextInvoiceNumber(wholesaleSettings.numbering?.orders || 'WO').then(setInvoiceNumber);
     };
 
     const lineTotal = (l: Partial<WholesaleOrderItem>) => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
@@ -149,7 +166,7 @@ const WholesaleOrdersPage: React.FC = () => {
                 unit_price: Number(l.unit_price) || 0
             }));
             // If the field was cleared, still assign the next number at save time.
-            const inv = invoiceNumber.trim() || await nextInvoiceNumber();
+            const inv = invoiceNumber.trim() || await nextInvoiceNumber(wholesaleSettings.numbering?.orders || 'WO');
             await createWholesaleOrder(
                 { invoice_number: inv, customer_name: customerName.trim(), customer_phone: customerPhone.trim(), warehouse_id: warehouseId, order_date: orderDate, due_date: dueDate, status: orderStatus, notes },
                 items,
@@ -261,8 +278,13 @@ const WholesaleOrdersPage: React.FC = () => {
                 const d = String(o.order_date || '').slice(0, 10);
                 return (!dateRange.start || d >= dateRange.start) && (!dateRange.end || d <= dateRange.end);
             })
+            .filter(o => {
+                if (!dueRange.start && !dueRange.end) return true;
+                const d = String(o.due_date || '').slice(0, 10);
+                return (!dueRange.start || d >= dueRange.start) && (!dueRange.end || d <= dueRange.end);
+            })
             .filter(o => !q || o.customer_name.toLowerCase().includes(q) || (o.customer_phone || '').includes(q) || (o.invoice_number || '').toLowerCase().includes(q));
-    }, [wholesaleOrders, search, payFilter, statusFilter, customerFilter, dateRange]);
+    }, [wholesaleOrders, search, payFilter, statusFilter, customerFilter, dateRange, dueRange]);
 
     // Every customer that has a wholesale order, for the Customer filter.
     const customerNames = useMemo(() => {
@@ -315,7 +337,7 @@ const WholesaleOrdersPage: React.FC = () => {
     // --- Pagination ---
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(() => Number(localStorage.getItem('ws_orders_itemsPerPage')) || 100);
-    useEffect(() => { setCurrentPage(1); }, [search, payFilter, statusFilter, customerFilter, dateRange, itemsPerPage]);
+    useEffect(() => { setCurrentPage(1); }, [search, payFilter, statusFilter, customerFilter, dateRange, dueRange, itemsPerPage]);
     useEffect(() => { localStorage.setItem('ws_orders_itemsPerPage', String(itemsPerPage)); }, [itemsPerPage]);
     const totalPages = Math.max(1, Math.ceil(sortedOrders.length / itemsPerPage));
     const safePage = Math.min(currentPage, totalPages);
@@ -334,10 +356,10 @@ const WholesaleOrdersPage: React.FC = () => {
         return { count: sortedOrders.length, items, total, paid, balance };
     }, [sortedOrders]);
 
-    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0) + (customerFilter !== 'All' ? 1 : 0) + ((dateRange.start || dateRange.end) ? 1 : 0);
+    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0) + (customerFilter !== 'All' ? 1 : 0) + ((dateRange.start || dateRange.end) ? 1 : 0) + ((dueRange.start || dueRange.end) ? 1 : 0);
     // Clear resets the search too (the badge count above only covers the drawer's filters).
     const hasActiveFilters = !!search || activeFilterCount > 0;
-    const clearFilters = () => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); setCustomerFilter('All'); setDateRange({ start: '', end: '' }); };
+    const clearFilters = () => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); setCustomerFilter('All'); setDateRange({ start: '', end: '' }); setDueRange({ start: '', end: '' }); };
 
     return (
         <div style={{ padding: isMobile ? '12px' : '24px' }}>
@@ -403,6 +425,12 @@ const WholesaleOrdersPage: React.FC = () => {
                                 <DateRangePicker value={dateRange} onChange={setDateRange} />
                             </div>
                         </div>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Payment Date (Due)</div>
+                            <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                                <DateRangePicker value={dueRange} onChange={setDueRange} />
+                            </div>
+                        </div>
                     </MobileFilterDrawer>
                 </>
             )}
@@ -450,8 +478,13 @@ const WholesaleOrdersPage: React.FC = () => {
                     <option value="All">All Customers</option>
                     {customerNames.map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
-                <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Order</span>
                     <DateRangePicker value={dateRange} onChange={setDateRange} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Payment</span>
+                    <DateRangePicker value={dueRange} onChange={setDueRange} />
                 </div>
                 {/* Clear every filter (payment, status, search) */}
                 <button

@@ -290,6 +290,10 @@ export interface StoreContextType {
     purchaseSettings: PurchaseSettings;
     updatePurchaseSettings: (settings: PurchaseSettings) => Promise<void>;
 
+    // Wholesale module defaults (stored in the shared app config)
+    wholesaleSettings: WholesaleSettings;
+    updateWholesaleSettings: (settings: WholesaleSettings) => Promise<void>;
+
     // Warehouses
     warehouses: Warehouse[];
     warehouseStock: WarehouseStock[];
@@ -415,6 +419,27 @@ export interface PurchaseSettings {
     };
     paymentTerms?: PurchaseTermPreset[];
     apOpeningBalances?: PurchaseOpeningBalance[];
+}
+
+// ── Wholesale setup (defaults for new sell-side documents) ────────────────
+export interface WholesaleOpeningBalance {
+    customer_id: string;
+    amount: number;
+    as_of?: string; // YYYY-MM-DD
+}
+
+export interface WholesaleSettings {
+    vatRate?: number;              // percent
+    paymentTermsDays?: number;     // default days until a wholesale order's payment is due
+    defaultWarehouseId?: string;
+    defaultPaymentAccountId?: string; // chart_of_accounts id (bank or cash)
+    numbering?: {
+        orders?: string;
+        receipts?: string;
+        opening?: string;
+    };
+    paymentTerms?: PurchaseTermPreset[];
+    arOpeningBalances?: WholesaleOpeningBalance[];
 }
 
 export interface JournalEntryLine {
