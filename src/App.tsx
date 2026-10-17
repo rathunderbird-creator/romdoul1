@@ -65,6 +65,7 @@ const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialRepo
 const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExpenseEntryPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const GeneralLedgerPage = lazy(() => import('./pages/accounting/GeneralLedgerPage'));
+const PurchaseSetupPage = lazy(() => import('./pages/procurement/PurchaseSetupPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
 const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
 const AccountsReceivablePage = lazy(() => import('./pages/accounting/AccountsReceivablePage'));
@@ -210,6 +211,7 @@ const ProtectedApp = () => {
           <Route path="/procurement/suppliers/:id" element={<ProtectedRoute requiredPermission="manage_procurement"><SupplierDetailsPage /></ProtectedRoute>} />
           <Route path="/procurement/purchase-orders" element={<ProtectedRoute requiredPermission="manage_procurement"><PurchaseOrdersPage /></ProtectedRoute>} />
           <Route path="/procurement/receiving" element={<ProtectedRoute requiredPermission="manage_procurement"><ReceivingPage /></ProtectedRoute>} />
+          <Route path="/procurement/setup" element={<ProtectedRoute requiredPermission="manage_procurement"><PurchaseSetupPage /></ProtectedRoute>} />
 
           <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
           <Route path="/accounting/financial-reports" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage /></ProtectedRoute>} />
