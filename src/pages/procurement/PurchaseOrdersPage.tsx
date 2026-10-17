@@ -37,7 +37,7 @@ const PAYMENT_FILTER_OPTIONS = ['Unpaid', 'Partial', 'Paid'] as const;
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { products, addStock, currentUser, addProduct } = useStore();
+    const { products, addStock, currentUser, addProduct, purchaseSettings } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
     const [receivingId, setReceivingId] = useState<string | null>(null);
@@ -243,10 +243,19 @@ const PurchaseOrdersPage = () => {
     const handleOpenModal = () => {
         setEditingPOId(null);
         setSupplierId('');
-        setOrderDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+        const todayLocal = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
+        setOrderDate(todayLocal.toISOString().split('T')[0]);
         setExpectedDeliveryDate('');
         setInvoiceNumber('');
-        setPaymentDueDate('');
+        // Purchase Setup's default payment terms prefill the due date.
+        const termsDays = Number(purchaseSettings.paymentTermsDays);
+        if (termsDays > 0) {
+            const due = new Date(todayLocal);
+            due.setDate(due.getDate() + Math.round(termsDays));
+            setPaymentDueDate(due.toISOString().split('T')[0]);
+        } else {
+            setPaymentDueDate('');
+        }
         setStatus('Draft');
         setNotes('');
         setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);

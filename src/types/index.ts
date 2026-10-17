@@ -286,6 +286,10 @@ export interface StoreContextType {
     updateRole: (id: string, role: Partial<Role>) => Promise<void>;
     deleteRole: (id: string) => Promise<void>;
 
+    // Purchasing module defaults (stored in the shared app config)
+    purchaseSettings: PurchaseSettings;
+    updatePurchaseSettings: (settings: PurchaseSettings) => Promise<void>;
+
     // Warehouses
     warehouses: Warehouse[];
     warehouseStock: WarehouseStock[];
@@ -381,6 +385,36 @@ export interface ChartOfAccount {
     description?: string;
     is_active: boolean;
     created_at?: string;
+}
+
+// ── Purchasing setup (defaults for new buy-side documents) ────────────────
+export interface PurchaseTermPreset {
+    name: string;
+    days: number;
+}
+
+export interface PurchaseOpeningBalance {
+    supplier_id: string;
+    amount: number;
+    as_of?: string; // YYYY-MM-DD
+}
+
+export interface PurchaseSettings {
+    vatRate?: number;               // percent
+    paymentTermsDays?: number;      // default days until a PO's payment is due
+    overReceiptTolerance?: number;  // percent over the ordered quantity a delivery may contain
+    defaultWarehouseId?: string;
+    defaultPaymentAccountId?: string; // chart_of_accounts id (bank or cash)
+    numbering?: {
+        requests?: string;
+        orders?: string;
+        bills?: string;
+        payments?: string;
+        payRequests?: string;
+        opening?: string;
+    };
+    paymentTerms?: PurchaseTermPreset[];
+    apOpeningBalances?: PurchaseOpeningBalance[];
 }
 
 export interface JournalEntryLine {

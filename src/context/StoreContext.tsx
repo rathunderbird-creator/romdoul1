@@ -17,7 +17,8 @@ import type {
     TelegramConfig, 
     BlockedCustomer,
     Warehouse,
-    WarehouseStock
+    WarehouseStock,
+    PurchaseSettings
 } from '../types';
 
 interface ConfigState {
@@ -49,6 +50,7 @@ interface ConfigState {
     telegramChatId?: string;
     telegramConfigs?: TelegramConfig[];
     blockedCustomers?: BlockedCustomer[];
+    purchaseSettings?: PurchaseSettings;
 }
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -3491,6 +3493,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setUsers(prev => prev.filter(u => u.id !== id));
     };
 
+    // Purchasing module defaults — one object inside the shared config blob.
+    const purchaseSettings = config.purchaseSettings || {};
+    const updatePurchaseSettings = async (settings: PurchaseSettings) => {
+        await updateConfig({ ...config, purchaseSettings: settings });
+    };
+
     const addRole = async (roleData: Omit<Role, 'id'>) => {
         const newRole: Role = { ...roleData, id: Date.now().toString() };
         const newRoles = [...(config.roles || []), newRole];
@@ -3634,6 +3642,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addRole,
             updateRole,
             deleteRole,
+            purchaseSettings,
+            updatePurchaseSettings,
             warehouses,
             warehouseStock,
             addWarehouse,
