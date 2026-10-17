@@ -1001,5 +1001,8 @@ CREATE TABLE IF NOT EXISTS winner_ads (
 -- add_account_subtype.sql).
 ALTER TABLE chart_of_accounts ADD COLUMN IF NOT EXISTS sub_type TEXT;
 
+-- Journal entries: Posted / Draft status (see add_entry_status.sql).
+ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Posted';
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
