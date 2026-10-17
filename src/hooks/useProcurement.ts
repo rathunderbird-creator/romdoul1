@@ -287,13 +287,15 @@ export const useProcurement = () => {
             // payment can remove it again. Non-fatal: the payment itself succeeded.
             const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', supplierId).single();
             const marker = `#SPP-${String(inserted?.id || '').slice(0, 8)}`;
+            const description = `${supplier?.name || 'Supplier'} · PO-${poId.slice(0, 8).toUpperCase()} ${marker}`;
+            const txId = generateUUID();
             const { error: tErr } = await supabase.from('transactions').insert([{
-                id: generateUUID(),
+                id: txId,
                 date: new Date(payDate).toISOString(),
                 type: 'Expense',
                 category: 'ទិញឥវ៉ាន់',
                 amount: Number(amount),
-                description: `${supplier?.name || 'Supplier'} · PO-${poId.slice(0, 8).toUpperCase()} ${marker}`,
+                description,
                 // The account name (when picked) beats the generic method: Income &
                 // Expense shows where the money left, and the ledger import maps it.
                 pay_by: paidFromAccountName || paymentMethod || null,
@@ -302,6 +304,42 @@ export const useProcurement = () => {
             if (tErr) {
                 console.error('Failed to log supplier expense transaction:', tErr);
                 showToast('Payment saved, but logging to Expense failed: ' + tErr.message, 'error');
+            } else {
+                // Also post a matching Draft entry straight to the ledger: Accounting
+                // › Expense reads journal entries, not the transactions log above, so
+                // without this the payment would only show there after someone runs
+                // Import to Ledger. Same 'TX-<id>' reference as that import uses, so
+                // running it later never double-books this payment.
+                try {
+                    const { data: coa } = await supabase.from('chart_of_accounts')
+                        .select('id, account_code, account_name, account_type').eq('is_active', true);
+                    const pool = coa || [];
+                    const expenseAcc = pool.find(a => a.account_code === '5000')
+                        || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs|purchas/i.test(a.account_name))
+                        || pool.find(a => a.account_type === 'Expense');
+                    const cashAccId = paidFromAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+                    if (expenseAcc && cashAccId) {
+                        const { data: entry, error: jeErr } = await supabase.from('journal_entries')
+                            .insert([{ date: payDate, description, reference_id: 'TX-' + txId, status: 'Draft' }])
+                            .select().single();
+                        if (jeErr && /status/i.test(jeErr.message || '')) {
+                            showToast('Payment and Expense logged — run migrations/add_entry_status.sql on this instance to also post it as a journal entry', 'info');
+                        } else if (jeErr || !entry) {
+                            console.error('Failed to create journal entry for payment:', jeErr);
+                        } else {
+                            const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+                                { journal_entry_id: entry.id, account_id: expenseAcc.id, debit: Number(amount), credit: 0 },
+                                { journal_entry_id: entry.id, account_id: cashAccId, debit: 0, credit: Number(amount) },
+                            ]);
+                            if (lErr) {
+                                console.error('Failed to create journal entry lines for payment:', lErr);
+                                await supabase.from('journal_entries').delete().eq('id', entry.id);
+                            }
+                        }
+                    }
+                } catch (jeCatchErr) {
+                    console.error('Failed to post journal entry for supplier payment:', jeCatchErr);
+                }
             }
 
             showToast('Payment recorded successfully', 'success');
@@ -334,8 +372,20 @@ export const useProcurement = () => {
 
             const { error } = await supabase.from('supplier_payments').delete().eq('id', paymentId);
             if (error) throw error;
-            // Remove the Expense transaction that was logged with this payment.
-            await supabase.from('transactions').delete().like('description', `%#SPP-${paymentId.slice(0, 8)}%`);
+            // Remove the Expense transaction that was logged with this payment,
+            // and the matching ledger entry (Draft or already Posted) it created.
+            const marker = `%#SPP-${paymentId.slice(0, 8)}%`;
+            const { data: txs } = await supabase.from('transactions').select('id').like('description', marker);
+            const refIds = (txs || []).map(t => 'TX-' + t.id);
+            if (refIds.length) {
+                const { data: entries } = await supabase.from('journal_entries').select('id').in('reference_id', refIds);
+                const entryIds = (entries || []).map(e => e.id);
+                if (entryIds.length) {
+                    await supabase.from('journal_entry_lines').delete().in('journal_entry_id', entryIds);
+                    await supabase.from('journal_entries').delete().in('id', entryIds);
+                }
+            }
+            await supabase.from('transactions').delete().like('description', marker);
             showToast('Payment deleted successfully', 'success');
             await fetchPurchaseOrders(true);
         } catch (error: any) {
