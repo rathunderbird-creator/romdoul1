@@ -8,6 +8,7 @@ import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
 import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, SwipeRow } from '../../components/MobileFilterKit';
+import DateRangePicker from '../../components/DateRangePicker';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -40,6 +41,7 @@ const WholesaleOrdersPage: React.FC = () => {
     const [payFilter, setPayFilter] = useState<'All' | 'Unpaid' | 'Partial' | 'Paid'>('All');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Delivered' | 'Cancelled'>('All');
     const [customerFilter, setCustomerFilter] = useState<string>('All');
+    const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
@@ -254,8 +256,13 @@ const WholesaleOrdersPage: React.FC = () => {
             .filter(o => statusFilter === 'All' || (o.status || 'Open') === statusFilter)
             .filter(o => payFilter === 'All' || (o.payment_status || 'Unpaid') === payFilter)
             .filter(o => customerFilter === 'All' || o.customer_name === customerFilter)
+            .filter(o => {
+                if (!dateRange.start && !dateRange.end) return true;
+                const d = String(o.order_date || '').slice(0, 10);
+                return (!dateRange.start || d >= dateRange.start) && (!dateRange.end || d <= dateRange.end);
+            })
             .filter(o => !q || o.customer_name.toLowerCase().includes(q) || (o.customer_phone || '').includes(q) || (o.invoice_number || '').toLowerCase().includes(q));
-    }, [wholesaleOrders, search, payFilter, statusFilter, customerFilter]);
+    }, [wholesaleOrders, search, payFilter, statusFilter, customerFilter, dateRange]);
 
     // Every customer that has a wholesale order, for the Customer filter.
     const customerNames = useMemo(() => {
@@ -308,7 +315,7 @@ const WholesaleOrdersPage: React.FC = () => {
     // --- Pagination ---
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(() => Number(localStorage.getItem('ws_orders_itemsPerPage')) || 100);
-    useEffect(() => { setCurrentPage(1); }, [search, payFilter, statusFilter, customerFilter, itemsPerPage]);
+    useEffect(() => { setCurrentPage(1); }, [search, payFilter, statusFilter, customerFilter, dateRange, itemsPerPage]);
     useEffect(() => { localStorage.setItem('ws_orders_itemsPerPage', String(itemsPerPage)); }, [itemsPerPage]);
     const totalPages = Math.max(1, Math.ceil(sortedOrders.length / itemsPerPage));
     const safePage = Math.min(currentPage, totalPages);
@@ -327,10 +334,10 @@ const WholesaleOrdersPage: React.FC = () => {
         return { count: sortedOrders.length, items, total, paid, balance };
     }, [sortedOrders]);
 
-    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0) + (customerFilter !== 'All' ? 1 : 0);
+    const activeFilterCount = (payFilter !== 'All' ? 1 : 0) + (statusFilter !== 'All' ? 1 : 0) + (customerFilter !== 'All' ? 1 : 0) + ((dateRange.start || dateRange.end) ? 1 : 0);
     // Clear resets the search too (the badge count above only covers the drawer's filters).
     const hasActiveFilters = !!search || activeFilterCount > 0;
-    const clearFilters = () => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); setCustomerFilter('All'); };
+    const clearFilters = () => { setSearch(''); setPayFilter('All'); setStatusFilter('All'); setCustomerFilter('All'); setDateRange({ start: '', end: '' }); };
 
     return (
         <div style={{ padding: isMobile ? '12px' : '24px' }}>
@@ -390,6 +397,12 @@ const WholesaleOrdersPage: React.FC = () => {
                             selected={customerFilter}
                             onSelect={setCustomerFilter}
                         />
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Order Date</div>
+                            <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                                <DateRangePicker value={dateRange} onChange={setDateRange} />
+                            </div>
+                        </div>
                     </MobileFilterDrawer>
                 </>
             )}
@@ -437,6 +450,9 @@ const WholesaleOrdersPage: React.FC = () => {
                     <option value="All">All Customers</option>
                     {customerNames.map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
+                <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+                </div>
                 {/* Clear every filter (payment, status, search) */}
                 <button
                     onClick={clearFilters}
