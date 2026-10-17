@@ -5,6 +5,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
+import { useAccounting } from '../../hooks/useAccounting';
 import { Modal } from '../../components';
 import { supabase } from '../../lib/supabase';
 import { useMobile } from '../../hooks/useMobile';
@@ -55,8 +56,17 @@ const AccountsReceivablePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const navigate = useNavigate();
-    const { warehouses, products, currentUser } = useStore();
+    const { warehouses, products, currentUser, wholesaleSettings } = useStore();
     const { wholesaleOrders, tableMissing: woMissing, fetchWholesaleOrders, recordCustomerPayment } = useWholesale();
+    const { accounts, fetchAccounts } = useAccounting();
+
+    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+    // Cash/bank ledger accounts for the "Received into" select (wholesale receipts).
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     const [transfers, setTransfers] = useState<WarehouseTransfer[]>([]);
     const [loading, setLoading] = useState(true);
@@ -78,6 +88,7 @@ const AccountsReceivablePage: React.FC = () => {
     const [receiptAmount, setReceiptAmount] = useState<number | string>('');
     const [receiptMethod, setReceiptMethod] = useState('Cash');
     const [receiptNote, setReceiptNote] = useState('');
+    const [receiveAccountId, setReceiveAccountId] = useState('');
 
     useEffect(() => {
         setHeaderContent({
@@ -193,16 +204,27 @@ const AccountsReceivablePage: React.FC = () => {
         } finally { setSaving(false); }
     };
 
-    const openReceipt = (r: Receivable) => { setReceiptFor(r); setReceiptAmount(r.balance.toFixed(2)); setReceiptMethod('Cash'); setReceiptNote(''); };
+    const openReceipt = (r: Receivable) => {
+        setReceiptFor(r); setReceiptAmount(r.balance.toFixed(2)); setReceiptMethod('Cash'); setReceiptNote('');
+        // Wholesale Setup's default payment account prefills "Received into".
+        const def = wholesaleSettings.defaultPaymentAccountId;
+        setReceiveAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+    };
 
     const submitReceipt = async () => {
         if (!receiptFor) return;
         const amount = Number(receiptAmount);
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        // "Received into" is required for wholesale receipts whenever cash/bank accounts exist.
+        if (receiptFor.source === 'wholesale' && paymentAccounts.length > 0 && !receiveAccountId) {
+            showToast('Choose the account this payment is received into', 'error');
+            return;
+        }
         setSaving(true);
         try {
             if (receiptFor.source === 'wholesale') {
-                await recordCustomerPayment(receiptFor.id, amount, receiptMethod, receiptNote, undefined, currentUser?.name);
+                const acc = paymentAccounts.find(a => a.id === receiveAccountId);
+                await recordCustomerPayment(receiptFor.id, amount, receiptMethod, receiptNote, undefined, currentUser?.name, receiveAccountId || undefined, acc?.account_name);
             } else {
                 await supabase.from('warehouse_transfer_receipts').insert([{
                     transfer_id: receiptFor.id, amount,
@@ -397,6 +419,19 @@ const AccountsReceivablePage: React.FC = () => {
                                 <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
                             </select>
                         </div>
+                        {receiptFor.source === 'wholesale' && (
+                            <div><label style={labelStyle}>Received into *</label>
+                                <select className="search-input d2-khmer" style={{ width: '100%' }} value={receiveAccountId} onChange={e => setReceiveAccountId(e.target.value)}>
+                                    <option value="">Bank or cash account…</option>
+                                    {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                </select>
+                                {paymentAccounts.length === 0 && (
+                                    <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                        No cash or bank accounts in the Chart of Accounts yet — the receipt saves without one.
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div><label style={labelStyle}>Note (optional)</label><input type="text" className="search-input" style={{ width: '100%' }} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} /></div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                             <button className="secondary-button" onClick={() => setReceiptFor(null)}>Cancel</button>

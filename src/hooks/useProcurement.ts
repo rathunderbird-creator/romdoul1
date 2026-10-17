@@ -103,7 +103,7 @@ export const useProcurement = () => {
         try {
             const { data, error } = await supabase
                 .from('purchase_orders')
-                .select('*, supplier:suppliers(*), items:purchase_order_items(*, product:products(*))')
+                .select('*, supplier:suppliers(*), items:purchase_order_items(*, product:products(*)), payments:supplier_payments(payment_date)')
                 // order_date is a plain date, so same-day POs tie — break the tie
                 // with created_at so the newest transaction is always on top.
                 .order('order_date', { ascending: false })
@@ -236,18 +236,27 @@ export const useProcurement = () => {
     }, [showToast, fetchPurchaseOrders]);
 
     // Also logs each supplier payment to Income & Expense as an Expense.
-    const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string) => {
+    const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) => {
         try {
             const payDate = paymentDate || new Date().toISOString().split('T')[0];
-            // Log payment
-            const { data: inserted, error: paymentError } = await supabase.from('supplier_payments').insert([{
+            // Log payment ("Paid from" needs migrations/add_supplier_payment_account.sql;
+            // until an instance has run it, save the payment without the account).
+            const payload: Record<string, unknown> = {
                 purchase_order_id: poId,
                 supplier_id: supplierId,
                 amount,
                 payment_date: payDate,
                 payment_method: paymentMethod,
-                notes
-            }]).select().single();
+                notes,
+                paid_from_account_id: paidFromAccountId || null
+            };
+            let { data: inserted, error: paymentError } = await supabase.from('supplier_payments').insert([payload]).select().single();
+            if (paymentError && /paid_from_account_id/i.test(paymentError.message || '')) {
+                const withoutAccount = { ...payload };
+                delete withoutAccount.paid_from_account_id;
+                ({ data: inserted, error: paymentError } = await supabase.from('supplier_payments').insert([withoutAccount]).select().single());
+                if (!paymentError) showToast('Saved without the Paid-from account — run migrations/add_supplier_payment_account.sql to store it', 'info');
+            }
 
             if (paymentError) throw paymentError;
 
@@ -285,7 +294,9 @@ export const useProcurement = () => {
                 category: 'ទិញឥវ៉ាន់',
                 amount: Number(amount),
                 description: `${supplier?.name || 'Supplier'} · PO-${poId.slice(0, 8).toUpperCase()} ${marker}`,
-                pay_by: paymentMethod || null,
+                // The account name (when picked) beats the generic method: Income &
+                // Expense shows where the money left, and the ledger import maps it.
+                pay_by: paidFromAccountName || paymentMethod || null,
                 added_by: paidBy || 'Purchasing'
             }]);
             if (tErr) {
