@@ -1,17 +1,49 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search, ArrowDownToLine } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircle2, Download } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../../components';
-import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
-import type { JournalEntryLine } from '../../types';
+import type { JournalEntry, JournalEntryLine } from '../../types';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
+
+// The list shows amounts the reference-design way: "USD 360.00".
+const fmtUsd = (n: number) => `USD ${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtDate = (d: string) => new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB');
+
+const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const PRINT_CSS = `
+  body { font-family: 'Segoe UI', system-ui, sans-serif; color: #111; margin: 32px; font-size: 13px; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .muted { color: #666; }
+  .meta { margin: 14px 0 18px; display: grid; grid-template-columns: 110px 1fr; row-gap: 5px; }
+  .meta b { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { border: 1px solid #ccc; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mono { font-family: monospace; font-size: 11px; white-space: nowrap; }
+  tfoot td { font-weight: 700; background: #fafafa; }
+  .foot { margin-top: 22px; font-size: 11px; color: #888; }
+`;
+
+// Stacked icon-above-label action button, as in the reference design.
+const ActionBtn: React.FC<{ icon: React.ComponentType<{ size?: number }>; label: string; onClick: () => void; color?: string }> = ({ icon: Icon, label, onClick, color }) => (
+    <button
+        onClick={onClick}
+        title={label}
+        style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', color: color || 'var(--color-text-secondary)', padding: '2px 6px' }}
+    >
+        <Icon size={15} />
+        <span style={{ fontSize: '10px', fontWeight: 600 }}>{label}</span>
+    </button>
+);
 
 
 
@@ -28,13 +60,13 @@ interface ImportCandidate {
     creditLabel: string;
 }
 
-// Posted (green) / Draft (amber) chip, with a Post button on drafts.
+// Posted (soft blue) / Draft (amber) chip, as in the reference design.
 const statusChip = (status: string) => (
     <span style={{
-        padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', letterSpacing: '0.5px',
-        background: status === 'Draft' ? '#fef3c7' : '#dcfce7',
-        color: status === 'Draft' ? '#92400e' : '#166534',
-    }}>{status === 'Draft' ? 'DRAFT' : 'POSTED'}</span>
+        padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
+        background: status === 'Draft' ? '#fef3c7' : 'rgba(84, 105, 212, 0.12)',
+        color: status === 'Draft' ? '#92400e' : '#4c5fd0',
+    }}>{status === 'Draft' ? 'Draft' : 'Posted'}</span>
 );
 
 const JournalEntriesPage = () => {
@@ -46,6 +78,10 @@ const JournalEntriesPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
+    // Editing an existing draft reuses the entry modal; null = creating.
+    const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+    const [viewEntry, setViewEntry] = useState<JournalEntry | null>(null);
     
     // Form state
     const [date, setDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
@@ -205,7 +241,7 @@ const JournalEntriesPage = () => {
             title: (
                 <div style={{ marginBottom: '8px' }}>
                     <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Journal Entries</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Record and review general journal entries.</p>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Double-entry ledger with real-time validation.</p>
                 </div>
             )
         });
@@ -220,6 +256,7 @@ const JournalEntriesPage = () => {
 
 
     const handleOpenModal = () => {
+        setEditingEntryId(null);
         setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setDescription('');
         setReferenceId('');
@@ -228,6 +265,18 @@ const JournalEntriesPage = () => {
             { account_id: '', debit: 0, credit: 0 },
             { account_id: '', debit: 0, credit: 0 }
         ]);
+        setIsModalOpen(true);
+    };
+
+    // Load a draft into the modal for editing.
+    const openEdit = (entry: JournalEntry) => {
+        setEditingEntryId(entry.id);
+        setDate(String(entry.date).slice(0, 10));
+        setDescription(entry.description || '');
+        setReferenceId(entry.reference_id || '');
+        setEntryStatus(entry.status === 'Draft' ? 'Draft' : 'Posted');
+        const ls = (entry.lines || []).map(l => ({ account_id: l.account_id, debit: l.debit || 0, credit: l.credit || 0 }));
+        setLines(ls.length >= 2 ? ls : [...ls, { account_id: '', debit: 0, credit: 0 }, { account_id: '', debit: 0, credit: 0 }].slice(0, Math.max(2, ls.length)));
         setIsModalOpen(true);
     };
 
@@ -261,6 +310,33 @@ const JournalEntriesPage = () => {
 
     const handleSave = async () => {
         if (!isFormValid) return;
+        if (editingEntryId) {
+            // Update the header, then rebuild the lines with the edited values.
+            try {
+                const headerPayload: Record<string, unknown> = { date, description, reference_id: referenceId, status: entryStatus };
+                let { error } = await supabase.from('journal_entries').update(headerPayload).eq('id', editingEntryId);
+                if (error && /status/i.test(error.message || '')) {
+                    const noStatus = { ...headerPayload };
+                    delete noStatus.status;
+                    ({ error } = await supabase.from('journal_entries').update(noStatus).eq('id', editingEntryId));
+                }
+                if (error) throw error;
+                const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', editingEntryId);
+                if (delErr) throw delErr;
+                const { error: insErr } = await supabase.from('journal_entry_lines').insert(
+                    lines.map(l => ({ journal_entry_id: editingEntryId, account_id: l.account_id, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 }))
+                );
+                if (insErr) throw insErr;
+                showToast('Entry updated', 'success');
+                setIsModalOpen(false);
+                setEditingEntryId(null);
+                fetchJournalEntries();
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                showToast('Failed to update entry: ' + msg, 'error');
+            }
+            return;
+        }
         try {
             await saveJournalEntry(
                 { date, description, reference_id: referenceId, status: entryStatus },
@@ -270,6 +346,86 @@ const JournalEntriesPage = () => {
         } catch (error) {
             console.error(error);
         }
+    };
+
+    // ── View / print / export ──
+    const entryTotals = (entry: JournalEntry) => ({
+        debit: entry.lines?.reduce((s, l) => s + (l.debit || 0), 0) || 0,
+        credit: entry.lines?.reduce((s, l) => s + (l.credit || 0), 0) || 0,
+    });
+    const displayIdOf = (entry: JournalEntry) => entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
+    const accountLabelOf = (l: JournalEntryLine) => l.account ? `${l.account.account_code} · ${l.account.account_name}` : '?';
+
+    const openPrintWindow = (title: string, bodyHtml: string) => {
+        const w = window.open('', '_blank', 'width=860,height=900');
+        if (!w) { showToast('Allow popups to print', 'error'); return; }
+        w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_CSS}</style></head><body>${bodyHtml}</body></html>`);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 300);
+    };
+
+    const printEntry = (entry: JournalEntry) => {
+        const totals = entryTotals(entry);
+        const linesHtml = (entry.lines || []).map(l => `
+            <tr>
+                <td>${escapeHtml(accountLabelOf(l))}</td>
+                <td class="num">${(l.debit || 0) > 0 ? fmtUsd(l.debit || 0) : ''}</td>
+                <td class="num">${(l.credit || 0) > 0 ? fmtUsd(l.credit || 0) : ''}</td>
+            </tr>`).join('');
+        openPrintWindow(`Journal Entry ${displayIdOf(entry)}`, `
+  <h1>JBL POS — Journal Entry</h1>
+  <div class="muted">${escapeHtml(displayIdOf(entry))}</div>
+  <div class="meta">
+    <b>Date</b><span>${escapeHtml(fmtDate(entry.date))}</span>
+    <b>Status</b><span>${escapeHtml(entry.status === 'Draft' ? 'Draft' : 'Posted')}</span>
+    <b>Description</b><span>${escapeHtml(entry.description || '—')}</span>
+  </div>
+  <table>
+    <thead><tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
+    <tbody>${linesHtml}</tbody>
+    <tfoot><tr><td>Total</td><td class="num">${fmtUsd(totals.debit)}</td><td class="num">${fmtUsd(totals.credit)}</td></tr></tfoot>
+  </table>
+  <div class="foot">Printed ${new Date().toLocaleString()}</div>`);
+    };
+
+    const printList = () => {
+        const rowsHtml = filteredEntries.map(entry => {
+            const t = entryTotals(entry);
+            return `
+            <tr>
+                <td>${escapeHtml(fmtDate(entry.date))}</td>
+                <td class="mono">${escapeHtml(displayIdOf(entry))}</td>
+                <td>${escapeHtml(entry.description || '')}</td>
+                <td class="num">${fmtUsd(t.debit)}</td>
+                <td class="num">${fmtUsd(t.credit)}</td>
+                <td>${escapeHtml(entry.status === 'Draft' ? 'Draft' : 'Posted')}</td>
+            </tr>`;
+        }).join('');
+        const grand = filteredEntries.reduce((s, e) => s + entryTotals(e).debit, 0);
+        openPrintWindow('Journal Entries', `
+  <h1>JBL POS — Journal Entries</h1>
+  <div class="muted">${filteredEntries.length} ${filteredEntries.length === 1 ? 'entry' : 'entries'} · Printed ${new Date().toLocaleString()}</div>
+  <table>
+    <thead><tr><th>Date</th><th>Reference</th><th>Description</th><th class="num">Debits</th><th class="num">Credits</th><th>Status</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td colspan="3">Total</td><td class="num">${fmtUsd(grand)}</td><td class="num">${fmtUsd(grand)}</td><td></td></tr></tfoot>
+  </table>`);
+    };
+
+    const exportCsv = () => {
+        const cell = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+        const head = ['Date', 'Reference', 'Description', 'Debits', 'Credits', 'Status'];
+        const body = filteredEntries.map(entry => {
+            const t = entryTotals(entry);
+            return [String(entry.date).slice(0, 10), displayIdOf(entry), entry.description || '', t.debit.toFixed(2), t.credit.toFixed(2), entry.status === 'Draft' ? 'Draft' : 'Posted'].map(cell).join(',');
+        });
+        const blob = new Blob(['﻿' + [head.map(cell).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `journal-entries-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
     };
 
     const activeAccounts = useMemo(() => accounts.filter(a => a.is_active), [accounts]);
@@ -284,79 +440,135 @@ const JournalEntriesPage = () => {
             result = result.filter(e => e.date <= dateRange.end);
         }
 
+        if (statusFilter !== 'All') {
+            result = result.filter(e => (e.status === 'Draft' ? 'Draft' : 'Posted') === statusFilter);
+        }
+
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
-            result = result.filter(entry => 
+            result = result.filter(entry =>
                 (entry.description?.toLowerCase().includes(q)) ||
                 (entry.reference_id?.toLowerCase().includes(q)) ||
                 (entry.id.toLowerCase().includes(q))
             );
         }
-        
+
         return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [journalEntries, searchQuery, dateRange]);
+    }, [journalEntries, searchQuery, dateRange, statusFilter]);
+
+    // Summary cards: totals over ALL entries, not the filtered view.
+    const counts = useMemo(() => {
+        const draft = journalEntries.filter(e => e.status === 'Draft').length;
+        return { total: journalEntries.length, posted: journalEntries.length - draft, draft };
+    }, [journalEntries]);
 
     return (
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
-                    <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: '380px' }}>
-                        <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
-                        <input 
-                            type="text" 
-                            placeholder="Search by entry number or description..." 
-                            style={{ 
-                                width: '100%', padding: '8px 12px 8px 36px', 
-                                borderRadius: '8px', border: '1px solid #e2e8f0',
-                                fontSize: '14px', outline: 'none', background: 'var(--color-surface)'
-                            }}
+            {/* Actions (top right, like the reference design) */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <button
+                    onClick={prepareImport}
+                    disabled={importing}
+                    title="Bring supplier payments, wholesale receipts and payroll into the ledger as drafts"
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 16px', borderRadius: '8px',
+                        background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
+                        border: '1px solid #cbd5e1', fontWeight: 600, fontSize: '14px',
+                        cursor: importing ? 'wait' : 'pointer'
+                    }}
+                >
+                    <ArrowDownToLine size={16} /> {importing ? 'Working…' : 'Import to Ledger'}
+                </button>
+                <button
+                    onClick={handleOpenModal}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 16px', borderRadius: '8px',
+                        background: '#5469d4', color: 'white', border: 'none',
+                        fontWeight: 600, fontSize: '14px', cursor: 'pointer',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
+                >
+                    <Plus size={16} /> New Entry
+                </button>
+            </div>
+
+            {/* Summary cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                {([
+                    ['Total Entries', counts.total, 'var(--color-text-main)'],
+                    ['Posted', counts.posted, '#4c5fd0'],
+                    ['Draft', counts.draft, '#D97706'],
+                ] as const).map(([label, value, color]) => (
+                    <div key={label} style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
+                        <div style={{ fontSize: '26px', fontWeight: 800, color, marginTop: '4px', fontVariantNumeric: 'tabular-nums' }}>{isLoading ? '…' : value}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Filters: From / To / Status / Search — with Print list & Export CSV on the right */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                {([
+                    ['From', dateRange.start, (v: string) => setDateRange(r => ({ ...r, start: v }))],
+                    ['To', dateRange.end, (v: string) => setDateRange(r => ({ ...r, end: v }))],
+                ] as const).map(([label, value, set]) => (
+                    <div key={label}>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{label}</label>
+                        <input
+                            type="date" value={value} onChange={e => set(e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
+                        />
+                    </div>
+                ))}
+                <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Status</label>
+                    <select
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')}
+                        style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                    >
+                        <option value="All">All statuses</option>
+                        <option value="Posted">Posted</option>
+                        <option value="Draft">Draft</option>
+                    </select>
+                </div>
+                <div style={{ flex: '1 1 200px', maxWidth: '340px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Search</label>
+                    <div style={{ position: 'relative' }}>
+                        <Search size={15} color="#8792a2" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            style={{ width: '100%', padding: '8px 12px 8px 33px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', boxSizing: 'border-box' }}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
-                    
-                    <div style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '2px' }}>
-                        <DateRangePicker value={dateRange} onChange={setDateRange} />
-                    </div>
-                    
-                    {(dateRange.start || dateRange.end || searchQuery) && (
-                        <button 
-                            onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); }} 
-                            style={{ 
-                                padding: '8px 12px', borderRadius: '8px', fontSize: '13px', 
-                                color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500
-                            }}
-                        >
-                            Clear Filters
-                        </button>
-                    )}
                 </div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All') && (
                     <button
-                        onClick={prepareImport}
-                        disabled={importing}
-                        title="Bring supplier payments, wholesale receipts and payroll into the ledger as drafts"
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: '8px',
-                            padding: '10px 16px', borderRadius: '8px',
-                            background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
-                            border: '1px solid #cbd5e1', fontWeight: 600, fontSize: '14px',
-                            cursor: importing ? 'wait' : 'pointer'
-                        }}
+                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); }}
+                        style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
                     >
-                        <ArrowDownToLine size={16} /> {importing ? 'Working…' : 'Import to Ledger'}
+                        Clear
+                    </button>
+                )}
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={printList}
+                        disabled={isLoading || filteredEntries.length === 0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredEntries.length === 0) ? 0.5 : 1 }}
+                    >
+                        <Printer size={14} /> Print list
                     </button>
                     <button
-                        onClick={handleOpenModal}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: '8px',
-                            padding: '10px 16px', borderRadius: '8px',
-                            background: '#5469d4', color: 'white', border: 'none',
-                            fontWeight: 600, fontSize: '14px', cursor: 'pointer',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                        }}
+                        onClick={exportCsv}
+                        disabled={isLoading || filteredEntries.length === 0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredEntries.length === 0) ? 0.5 : 1 }}
                     >
-                        <Plus size={16} /> New Entry
+                        <Download size={14} /> Export CSV
                     </button>
                 </div>
             </div>
@@ -370,27 +582,30 @@ const JournalEntriesPage = () => {
                         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No entries found</div>
                     ) : (
                         filteredEntries.map(entry => {
-                            const totalDebits = entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0;
-                            const displayId = entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
+                            const t = entryTotals(entry);
+                            const isDraft = entry.status === 'Draft';
                             return (
                                 <div key={entry.id} style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
-                                        <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayId}</span>
-                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                                            {new Date(entry.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
-                                        </span>
+                                        <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
+                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fmtDate(entry.date)}</span>
                                     </div>
                                     <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 6px', fontWeight: 500 }}>
                                         {entry.description || 'No Description'}
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDebits)}</span>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(t.debit)}</span>
                                             {statusChip(entry.status || 'Posted')}
-                                            {entry.status === 'Draft' && (
+                                        </span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                            <ActionBtn icon={Eye} label="View" onClick={() => setViewEntry(entry)} />
+                                            <ActionBtn icon={Printer} label="Print" onClick={() => printEntry(entry)} />
+                                            {isDraft && (
                                                 <>
-                                                    <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
-                                                    <Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => deleteDraft(entry.id)} />
+                                                    <ActionBtn icon={Pencil} label="Edit" onClick={() => openEdit(entry)} />
+                                                    <ActionBtn icon={CheckCircle2} label="Post" onClick={() => postEntry(entry.id)} color="#4c5fd0" />
+                                                    <ActionBtn icon={Trash2} label="Delete" onClick={() => deleteDraft(entry.id)} color="#ef4444" />
                                                 </>
                                             )}
                                         </span>
@@ -401,52 +616,56 @@ const JournalEntriesPage = () => {
                     )
                 ) : (
                 <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '680px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '860px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Entry #</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Date</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Description</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Debit Total</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Credit Total</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Date</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Reference</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Description</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Debits</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Credits</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Status</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
+                            <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
                         ) : filteredEntries.length === 0 ? (
-                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
+                            <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
                         ) : (
                             filteredEntries.map(entry => {
-                                const totalDebits = entry.lines?.reduce((sum, l) => sum + (l.debit || 0), 0) || 0;
-                                const totalCredits = entry.lines?.reduce((sum, l) => sum + (l.credit || 0), 0) || 0;
-                                const displayId = entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
-                                
+                                const t = entryTotals(entry);
+                                const isDraft = entry.status === 'Draft';
                                 return (
                                     <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
-                                        <td style={{ padding: '16px 24px', fontWeight: '500', color: '#5469d4', cursor: 'pointer' }}>
-                                            {displayId}
+                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                                            {fmtDate(entry.date)}
                                         </td>
-                                        <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)' }}>
-                                            {new Date(entry.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
+                                            {displayIdOf(entry)}
                                         </td>
-                                        <td style={{ padding: '16px 24px', color: 'var(--color-text-main)', fontWeight: '500' }}>
+                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-main)', fontWeight: '500', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.description || ''}>
                                             {entry.description || 'No Description'}
                                         </td>
-                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: 'var(--color-text-main)' }}>
-                                            {formatCurrency(totalDebits)}
+                                        <td style={{ padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                                            {fmtUsd(t.debit)}
                                         </td>
-                                        <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: 'var(--color-text-main)' }}>
-                                            {formatCurrency(totalCredits)}
+                                        <td style={{ padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                                            {fmtUsd(t.credit)}
                                         </td>
-                                        <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                                {statusChip(entry.status || 'Posted')}
-                                                {entry.status === 'Draft' && (
+                                        <td style={{ padding: '14px 20px' }}>
+                                            {statusChip(entry.status || 'Posted')}
+                                        </td>
+                                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                                <ActionBtn icon={Eye} label="View" onClick={() => setViewEntry(entry)} />
+                                                <ActionBtn icon={Printer} label="Print" onClick={() => printEntry(entry)} />
+                                                {isDraft && (
                                                     <>
-                                                        <button onClick={() => postEntry(entry.id)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: '#5469d4', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
-                                                        <Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => deleteDraft(entry.id)} />
+                                                        <ActionBtn icon={Pencil} label="Edit" onClick={() => openEdit(entry)} />
+                                                        <ActionBtn icon={CheckCircle2} label="Post" onClick={() => postEntry(entry.id)} color="#4c5fd0" />
+                                                        <ActionBtn icon={Trash2} label="Delete" onClick={() => deleteDraft(entry.id)} color="#ef4444" />
                                                     </>
                                                 )}
                                             </span>
@@ -521,10 +740,72 @@ const JournalEntriesPage = () => {
                 )}
             </Modal>
 
+            {/* View entry */}
+            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title="Journal Entry">
+                {viewEntry && (() => {
+                    const t = entryTotals(viewEntry);
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
+                                <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace', fontSize: '12px' }}>{displayIdOf(viewEntry)}</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
+                                <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewEntry.date)}</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>
+                                <span>{statusChip(viewEntry.status || 'Posted')}</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Description</span>
+                                <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewEntry.description || '—'}</span>
+                            </div>
+                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                    <thead>
+                                        <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid #e2e8f0' }}>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Account</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Debit</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Credit</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(viewEntry.lines || []).map((l, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                <td className="d2-khmer" style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>{accountLabelOf(l)}</td>
+                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (l.debit || 0) > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{(l.debit || 0) > 0 ? fmtUsd(l.debit || 0) : '—'}</td>
+                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (l.credit || 0) > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{(l.credit || 0) > 0 ? fmtUsd(l.credit || 0) : '—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr style={{ background: 'var(--color-bg)', fontWeight: 700 }}>
+                                            <td style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(t.debit)}</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(t.credit)}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                                <button
+                                    onClick={() => printEntry(viewEntry)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#5469d4', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                    <Printer size={15} /> Print
+                                </button>
+                                <button
+                                    onClick={() => setViewEntry(null)}
+                                    style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
             <Modal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                title="New Journal Entry"
+                onClose={() => { setIsModalOpen(false); setEditingEntryId(null); }}
+                title={editingEntryId ? 'Edit Journal Entry' : 'New Journal Entry'}
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
@@ -661,13 +942,13 @@ const JournalEntriesPage = () => {
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-                        <button 
-                            onClick={handleSave} 
+                        <button onClick={() => { setIsModalOpen(false); setEditingEntryId(null); }} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+                        <button
+                            onClick={handleSave}
                             disabled={!isFormValid}
                             style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#5469d4', color: 'white', fontWeight: 500, cursor: 'pointer', opacity: (!isFormValid) ? 0.5 : 1 }}
                         >
-                            Save Entry
+                            {editingEntryId ? 'Save Changes' : 'Save Entry'}
                         </button>
                     </div>
                 </div>
