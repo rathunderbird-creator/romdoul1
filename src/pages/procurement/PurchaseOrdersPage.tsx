@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye, RefreshCw, ChevronLeft, ChevronRight, Copy, FilterX } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Copy, FilterX, Check } from 'lucide-react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -172,10 +173,16 @@ const PurchaseOrdersPage = () => {
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     // Filter by supplier name ('All' = every supplier).
-    const [supplierFilter, setSupplierFilter] = useState<string>('All');
+    // Multi-select: empty = all suppliers.
+    const [supplierFilter, setSupplierFilter] = useState<string[]>([]);
+    const [isSupplierOpen, setIsSupplierOpen] = useState(false);
+    const supplierMenuRef = useClickOutside<HTMLDivElement>(() => setIsSupplierOpen(false));
+    const toggleSupplierFilter = (name: string) =>
+        setSupplierFilter(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
     // Multi-select: empty = all payments.
     const [paymentFilter, setPaymentFilter] = useState<string[]>([]);
     const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+    const [dueRange, setDueRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
     const togglePaymentFilter = (v: string) =>
         setPaymentFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
 
@@ -394,8 +401,8 @@ const PurchaseOrdersPage = () => {
         return purchaseOrders.filter(po => {
             // Status filter
             if (statusFilter !== 'All' && po.status !== statusFilter) return false;
-            // Supplier filter (by name — the table shows names too)
-            if (supplierFilter !== 'All' && (po.supplier?.name || '') !== supplierFilter) return false;
+            // Supplier filter (multi-select by name — the table shows names too)
+            if (supplierFilter.length > 0 && !supplierFilter.includes(po.supplier?.name || '')) return false;
             // Payment filter
             if (paymentFilter.length > 0 && !paymentFilter.includes(po.payment_status || 'Unpaid')) return false;
             // Order-date range
@@ -403,6 +410,12 @@ const PurchaseOrdersPage = () => {
                 const d = String(po.order_date || '').slice(0, 10);
                 if (dateRange.start && d < dateRange.start) return false;
                 if (dateRange.end && d > dateRange.end) return false;
+            }
+            // Payment-due-date range
+            if (dueRange.start || dueRange.end) {
+                const d = String(po.payment_due_date || '').slice(0, 10);
+                if (dueRange.start && d < dueRange.start) return false;
+                if (dueRange.end && d > dueRange.end) return false;
             }
             // Search
             if (searchQuery.trim()) {
@@ -413,7 +426,7 @@ const PurchaseOrdersPage = () => {
             }
             return true;
         });
-    }, [purchaseOrders, searchQuery, statusFilter, supplierFilter, paymentFilter, dateRange]);
+    }, [purchaseOrders, searchQuery, statusFilter, supplierFilter, paymentFilter, dateRange, dueRange]);
 
     // Footer sums cover every FILTERED row (all pages), matching the Orders table.
     const footerTotals = useMemo(() => ({
@@ -526,10 +539,10 @@ const PurchaseOrdersPage = () => {
         document.addEventListener('mouseup', onUp);
     };
 
-    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (supplierFilter !== 'All' ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0) + ((dateRange.start || dateRange.end) ? 1 : 0);
+    const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (supplierFilter.length > 0 ? 1 : 0) + (paymentFilter.length > 0 ? 1 : 0) + ((dateRange.start || dateRange.end) ? 1 : 0) + ((dueRange.start || dueRange.end) ? 1 : 0);
     // Clear resets the search too (the badge count above only covers the drawer's filters).
     const hasActiveFilters = !!searchQuery || activeFilterCount > 0;
-    const clearFilters = () => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter('All'); setPaymentFilter([]); setDateRange({ start: '', end: '' }); };
+    const clearFilters = () => { setSearchQuery(''); setStatusFilter('All'); setSupplierFilter([]); setPaymentFilter([]); setDateRange({ start: '', end: '' }); setDueRange({ start: '', end: '' }); };
 
     return (
         <div className="page-container fade-in">
@@ -615,16 +628,22 @@ const PurchaseOrdersPage = () => {
                             selected={paymentFilter}
                             onToggle={togglePaymentFilter}
                         />
-                        <MobileChipGroup
+                        <MobileMultiChipGroup
                             title="Supplier"
-                            options={[{ value: 'All' }, ...suppliers.map(s => ({ value: s.name }))]}
+                            options={suppliers.map(s => ({ value: s.name }))}
                             selected={supplierFilter}
-                            onSelect={setSupplierFilter}
+                            onToggle={toggleSupplierFilter}
                         />
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Order Date</div>
                             <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
                                 <DateRangePicker value={dateRange} onChange={setDateRange} />
+                            </div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Payment Date (Due)</div>
+                            <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                                <DateRangePicker value={dueRange} onChange={setDueRange} />
                             </div>
                         </div>
                     </MobileFilterDrawer>
@@ -689,26 +708,81 @@ const PurchaseOrdersPage = () => {
                         })}
                     </div>
 
-                    {/* Supplier filter */}
-                    <select
-                        value={supplierFilter}
-                        onChange={(e) => setSupplierFilter(e.target.value)}
-                        title="Filter by supplier"
-                        style={{
-                            padding: '8px 12px', borderRadius: '10px',
-                            border: '1px solid var(--color-border)',
-                            background: supplierFilter !== 'All' ? 'var(--color-primary)' : 'var(--color-surface)',
-                            color: supplierFilter !== 'All' ? 'white' : 'var(--color-text-secondary)',
-                            fontWeight: 600, fontSize: '12px', cursor: 'pointer', maxWidth: '190px',
-                        }}
-                    >
-                        <option value="All">All Suppliers</option>
-                        {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    </select>
+                    {/* Supplier filter — multi-select dropdown (none ticked = all) */}
+                    <div ref={supplierMenuRef} style={{ position: 'relative' }}>
+                        <button
+                            onClick={() => setIsSupplierOpen(o => !o)}
+                            title="Filter by one or more suppliers"
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                padding: '8px 12px', borderRadius: '10px',
+                                border: '1px solid var(--color-border)',
+                                background: supplierFilter.length > 0 ? 'var(--color-primary)' : 'var(--color-surface)',
+                                color: supplierFilter.length > 0 ? 'white' : 'var(--color-text-secondary)',
+                                fontWeight: 600, fontSize: '12px', cursor: 'pointer', maxWidth: '220px', whiteSpace: 'nowrap',
+                            }}
+                        >
+                            <span className="d2-khmer" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {supplierFilter.length === 0 ? 'All Suppliers'
+                                    : supplierFilter.length === 1 ? supplierFilter[0]
+                                    : `${supplierFilter.length} suppliers`}
+                            </span>
+                            <ChevronDown size={14} style={{ flexShrink: 0, transform: isSupplierOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                        </button>
+                        {isSupplierOpen && (
+                            <div style={{
+                                position: 'absolute', top: '100%', left: 0, marginTop: '4px', zIndex: 60,
+                                background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                                borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                minWidth: '230px', maxHeight: '300px', overflowY: 'auto', padding: '6px',
+                            }}>
+                                <button
+                                    onClick={() => setSupplierFilter([])}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                                        padding: '8px 10px', borderRadius: '8px', border: 'none', textAlign: 'left',
+                                        background: supplierFilter.length === 0 ? 'var(--color-primary-light)' : 'transparent',
+                                        color: supplierFilter.length === 0 ? 'var(--color-primary)' : 'var(--color-text-main)',
+                                        fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                                    }}
+                                >
+                                    {supplierFilter.length === 0 ? <Check size={14} /> : <span style={{ width: 14 }} />}
+                                    All Suppliers
+                                </button>
+                                {suppliers.map(s => {
+                                    const checked = supplierFilter.includes(s.name);
+                                    return (
+                                        <label
+                                            key={s.id}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                padding: '8px 10px', borderRadius: '8px', cursor: 'pointer',
+                                                fontSize: '13px', color: 'var(--color-text-main)',
+                                                background: checked ? 'var(--color-primary-light)' : 'transparent',
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => toggleSupplierFilter(s.name)}
+                                                style={{ accentColor: 'var(--color-primary)', cursor: 'pointer', flexShrink: 0 }}
+                                            />
+                                            <span className="d2-khmer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
 
-                    {/* Order-date range */}
-                    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
+                    {/* Order-date and payment-due-date ranges */}
+                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Order</span>
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Payment</span>
+                        <DateRangePicker value={dueRange} onChange={setDueRange} />
                     </div>
 
                     {/* Clear every filter (status, payment, supplier, search) */}
@@ -773,7 +847,7 @@ const PurchaseOrdersPage = () => {
                     <FileText size={48} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
                     <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '8px' }}>No Purchase Orders Found</h3>
                     <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        {searchQuery || statusFilter !== 'All' || supplierFilter !== 'All' || paymentFilter.length > 0 ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
+                        {hasActiveFilters ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
                     </p>
                 </div>
             ) : isMobile ? (

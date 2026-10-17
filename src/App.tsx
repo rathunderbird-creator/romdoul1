@@ -66,6 +66,7 @@ const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExp
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const GeneralLedgerPage = lazy(() => import('./pages/accounting/GeneralLedgerPage'));
 const PurchaseSetupPage = lazy(() => import('./pages/procurement/PurchaseSetupPage'));
+const WholesaleSetupPage = lazy(() => import('./pages/accounting/WholesaleSetupPage'));
 const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
 const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
 const AccountsReceivablePage = lazy(() => import('./pages/accounting/AccountsReceivablePage'));
@@ -164,6 +165,7 @@ const ProtectedApp = () => {
           <Route path="/wholesale/orders" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleOrdersPage /></ProtectedRoute>} />
           <Route path="/wholesale/customers" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomersPage /></ProtectedRoute>} />
           <Route path="/wholesale/customers/:id" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomerDetailsPage /></ProtectedRoute>} />
+          <Route path="/wholesale/setup" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleSetupPage /></ProtectedRoute>} />
 
           {/* These pages seem to be work in progress or not fully guarded in Sidebar yet, 
               but better protect them or hide them if not used. 

@@ -18,7 +18,8 @@ import type {
     BlockedCustomer,
     Warehouse,
     WarehouseStock,
-    PurchaseSettings
+    PurchaseSettings,
+    WholesaleSettings
 } from '../types';
 
 interface ConfigState {
@@ -51,6 +52,7 @@ interface ConfigState {
     telegramConfigs?: TelegramConfig[];
     blockedCustomers?: BlockedCustomer[];
     purchaseSettings?: PurchaseSettings;
+    wholesaleSettings?: WholesaleSettings;
 }
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -3499,6 +3501,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await updateConfig({ ...config, purchaseSettings: settings });
     };
 
+    // Wholesale module defaults — same pattern.
+    const wholesaleSettings = config.wholesaleSettings || {};
+    const updateWholesaleSettings = async (settings: WholesaleSettings) => {
+        await updateConfig({ ...config, wholesaleSettings: settings });
+    };
+
     const addRole = async (roleData: Omit<Role, 'id'>) => {
         const newRole: Role = { ...roleData, id: Date.now().toString() };
         const newRoles = [...(config.roles || []), newRole];
@@ -3644,6 +3652,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deleteRole,
             purchaseSettings,
             updatePurchaseSettings,
+            wholesaleSettings,
+            updateWholesaleSettings,
             warehouses,
             warehouseStock,
             addWarehouse,
