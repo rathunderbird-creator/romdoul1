@@ -29,6 +29,50 @@ class ErrorBoundary extends Component<Props, State> {
 
     public render() {
         if (this.state.hasError) {
+            // A deploy replaces the old hashed chunk files; a tab left open
+            // across that deploy can crash trying to fetch a page it hasn't
+            // visited yet, since the old filename is now gone. That's not a
+            // real bug to dump a stack trace over — just prompt a reload.
+            const message = this.state.error?.message || '';
+            const isStaleChunk = /dynamically imported module|module script failed|Failed to fetch dynamically imported module/i.test(message);
+            if (isStaleChunk) {
+                return (
+                    <div style={{
+                        minHeight: 'var(--vh-full)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '14px',
+                        fontFamily: 'system-ui, sans-serif',
+                        background: '#F6F8FB',
+                        color: '#111827',
+                        textAlign: 'center',
+                        padding: '24px'
+                    }}>
+                        <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>A new version is available.</p>
+                        <p style={{ fontSize: '13px', color: '#6B7280', margin: 0, maxWidth: '360px' }}>
+                            This page was loaded before the latest update. Reload to get it.
+                        </p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            style={{
+                                marginTop: '6px',
+                                padding: '9px 20px',
+                                backgroundColor: '#3B82F6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '14px'
+                            }}
+                        >
+                            Reload
+                        </button>
+                    </div>
+                );
+            }
             return (
                 <div style={{
                     padding: '40px',

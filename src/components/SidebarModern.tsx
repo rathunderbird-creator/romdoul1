@@ -148,8 +148,8 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                     position: 'fixed',
                     left: 0,
                     top: 0,
-                    backgroundColor: 'var(--color-surface)',
-                    borderRight: '1px solid var(--color-border)',
+                    backgroundColor: 'var(--modern-sidebar-bg)',
+                    borderRight: '1px solid var(--modern-sidebar-border)',
                     display: 'flex',
                     flexDirection: 'column',
                     padding: (isMobile || !visualCollapsed) ? '14px 12px' : '14px 8px',
@@ -171,10 +171,10 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                     </div>
                     {!visualCollapsed && (
                         <div style={{ minWidth: 0, flex: 1 }}>
-                            <div className="d2-khmer" style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>
+                            <div className="d2-khmer" style={{ fontSize: '15px', fontWeight: 800, color: 'var(--modern-sidebar-text-hover)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>
                                 JBL POS
                             </div>
-                            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>POS System</div>
+                            <div style={{ fontSize: '11px', color: 'var(--modern-sidebar-text-muted)' }}>POS System</div>
                         </div>
                     )}
                     {!isMobile && !visualCollapsed && onTogglePin && (
@@ -186,13 +186,13 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                             aria-label="Pin sidebar"
                             aria-pressed={isPinned}
                             className="msidebar-item"
-                            style={{ background: 'transparent', border: '1px solid var(--color-border)', padding: '5px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+                            style={{ background: 'transparent', border: '1px solid var(--modern-sidebar-border)', padding: '5px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
                         >
                             {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
                         </button>
                     )}
                     {isMobile && !isCollapsed && (
-                        <button onClick={toggleSidebar} aria-label="Close menu" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}>
+                        <button onClick={toggleSidebar} aria-label="Close menu" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--modern-sidebar-text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}>
                             <X size={20} />
                         </button>
                     )}
@@ -207,7 +207,7 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                         aria-label="Pin sidebar"
                         aria-pressed={isPinned}
                         className="msidebar-item"
-                        style={{ background: 'transparent', border: '1px solid var(--color-border)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', opacity: canPin ? 1 : 0.5, cursor: canPin ? 'pointer' : 'not-allowed' }}
+                        style={{ background: 'transparent', border: '1px solid var(--modern-sidebar-border)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', opacity: canPin ? 1 : 0.5, cursor: canPin ? 'pointer' : 'not-allowed' }}
                     >
                         <Pin size={14} />
                     </button>
