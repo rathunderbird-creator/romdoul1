@@ -4314,10 +4314,12 @@ const Orders: React.FC = () => {
                     onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    onConfirm={({ paymentMethod, settleDate }) => {
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
+                        updates.depositAccountId = depositAccountId;
+                        updates.depositAccountName = depositAccountName;
                         updateOrder(paymentMethodTargetOrder.id, updates);
                     }}
                 />

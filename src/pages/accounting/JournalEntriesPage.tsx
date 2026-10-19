@@ -4,6 +4,7 @@ import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../../components';
+import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import type { JournalEntry, JournalEntryLine } from '../../types';
@@ -512,18 +513,7 @@ const JournalEntriesPage = () => {
 
             {/* Filters: From / To / Status / Search — with Print list & Export CSV on the right */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                {([
-                    ['From', dateRange.start, (v: string) => setDateRange(r => ({ ...r, start: v }))],
-                    ['To', dateRange.end, (v: string) => setDateRange(r => ({ ...r, end: v }))],
-                ] as const).map(([label, value, set]) => (
-                    <div key={label}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{label}</label>
-                        <input
-                            type="date" value={value} onChange={e => set(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
-                        />
-                    </div>
-                ))}
+                <DateRangePicker value={dateRange} onChange={setDateRange} />
                 <div>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Status</label>
                     <select

@@ -5,7 +5,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit, Trash2 } from 'lucide-react';
 import type { Sale } from '../types';
-import { PaymentStatusBadge, DateRangePicker, StatusBadge, SettlePaymentModal, POSInterface, BulkEditModal, DepositModal } from '../components';
+import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -1497,17 +1497,29 @@ const PaymentTracking: React.FC = () => {
                 count={selectedIds.size}
             />
 
-            {/* Settle Payment Modal */}
+            {/* Record Receipt Modal */}
             {paymentMethodTargetOrder && (
-                <SettlePaymentModal
+                <RecordReceiptModal
                     isOpen={isPaymentMethodModalOpen}
                     onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
+                    order={paymentMethodTargetOrder}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    onConfirm={({ paymentMethod, settleDate }) => {
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
-                        updates.amountReceived = paymentMethodTargetOrder.total;
+                        // updateOrder's Paid branch treats amountReceived as the order's
+                        // cumulative total-to-date (it subtracts any prior deposit back out
+                        // to find the new income to log) — the same convention Orders.tsx's
+                        // Settle Payment flow uses. The modal's own amountReceived is just
+                        // what's arriving in THIS receipt (defaults to the remainder after
+                        // any deposit), so add the deposit back in here to match.
+                        updates.amountReceived = (paymentMethodTargetOrder.depositAmount || 0) + amountReceived;
+                        updates.receiptReference = receiptReference;
+                        updates.receiptNotes = receiptNotes;
+                        updates.depositAccountId = depositAccountId;
+                        updates.depositAccountName = depositAccountName;
+                        updates.postToLedger = true;
                         updateOrder(paymentMethodTargetOrder.id, updates);
                     }}
                 />
@@ -1517,14 +1529,18 @@ const PaymentTracking: React.FC = () => {
             <DepositModal
                 order={depositTargetOrder}
                 onClose={() => setDepositTargetOrder(null)}
-                onConfirm={({ amount, method, date }) => {
+                showDepositAccount
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
                         depositAmount: amount,
                         depositMethod: method,
                         depositDate: date,
-                        amountReceived: amount
+                        amountReceived: amount,
+                        postToLedger: true,
+                        depositAccountId,
+                        depositAccountName
                     });
                     setDepositTargetOrder(null);
                 }}

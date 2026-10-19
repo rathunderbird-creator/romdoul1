@@ -4,6 +4,7 @@ export { default as ConfigModal } from './ConfigModal';
 export { default as DateRangePicker } from './DateRangePicker';
 export { default as Header } from './Header';
 export { default as Layout } from './Layout';
+export { default as RecordReceiptModal } from './RecordReceiptModal';
 export { default as SettlePaymentModal } from './SettlePaymentModal';
 export { default as POSInterface } from './POSInterface';
 export { default as POSPaymentModal } from './POSPaymentModal';

@@ -60,6 +60,11 @@ export interface Sale {
     depositAmount?: number;
     depositDate?: string;
     depositMethod?: string;
+    depositAccountId?: string; // chart-of-accounts cash/bank account the settlement is deposited into (persisted: sales.deposit_account_id)
+    depositAccountName?: string; // transient, UI-only: resolved account name passed through updateOrder() for the income transaction's "Pay by" — never persisted to the sales table itself
+    receiptReference?: string; // transient, UI-only: cheque/transfer reference passed through updateOrder() for the income transaction — never persisted to the sales table
+    receiptNotes?: string; // transient, UI-only: note passed through updateOrder() for the income transaction — never persisted to the sales table
+    postToLedger?: boolean; // transient, UI-only: when true, updateOrder() also posts a Draft journal entry for this payment — never persisted to the sales table
     lastEditedAt?: string; // ISO string
     lastEditedBy?: string;
     paymentStatus?: 'Unpaid' | 'Deposit' | 'Paid' | 'Get File' | 'Cancel';

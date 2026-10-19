@@ -3,6 +3,7 @@ import { Search, BookText } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useAccounting } from '../../hooks/useAccounting';
+import DateRangePicker from '../../components/DateRangePicker';
 import type { ChartOfAccount } from '../../types';
 
 // Same per-type accents as the Chart of Accounts page.
@@ -170,9 +171,7 @@ const GeneralLedgerPage = () => {
                         <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
                     ))}
                 </select>
-                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={inputStyle} aria-label="From date" />
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>to</span>
-                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} aria-label="To date" />
+                <DateRangePicker value={{ start: dateFrom, end: dateTo }} onChange={(r) => { setDateFrom(r.start); setDateTo(r.end); }} />
                 <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '320px' }}>
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input

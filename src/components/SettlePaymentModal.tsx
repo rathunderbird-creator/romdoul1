@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
+import { useAccounting } from '../hooks/useAccounting';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -13,7 +14,7 @@ const localYMD = (daysAgo = 0): string => {
 interface SettlePaymentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onConfirm: (data: { paymentMethod: string; settleDate: string }) => void;
+    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string }) => void;
     initialMethod?: string;
     initialDate?: string;
     title?: string;
@@ -30,8 +31,18 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     description = "Please confirm the settle date and payment method."
 }) => {
     const { paymentMethods } = useStore();
+    const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
+    const [depositAccountId, setDepositAccountId] = useState<string>('');
+
+    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+    // Cash/bank ledger accounts for the "Deposit into" select.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     useEffect(() => {
         if (isOpen) {
@@ -40,8 +51,11 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
             setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : localYMD());
+            // Bank is the default Deposit into account too, same idea as Pay By above.
+            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
+            setDepositAccountId(bankAccount?.id || paymentAccounts[0]?.id || '');
         }
-    }, [isOpen, initialMethod, initialDate, paymentMethods]);
+    }, [isOpen, initialMethod, initialDate, paymentMethods, paymentAccounts]);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -99,6 +113,29 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         ))}
                     </select>
                 </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Deposited into <span style={{ color: 'red' }}>*</span></label>
+                    <select
+                        value={depositAccountId}
+                        onChange={(e) => setDepositAccountId(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px',
+                            border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? 'red' : 'var(--color-border)'}`,
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none', boxSizing: 'border-box'
+                        }}
+                    >
+                        <option value="">Bank or cash account…</option>
+                        {paymentAccounts.map(a => (
+                            <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
+                        ))}
+                    </select>
+                    {paymentAccounts.length === 0 && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                            No cash or bank accounts in the Chart of Accounts yet — the settlement saves without one.
+                        </div>
+                    )}
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                     <button
                         onClick={onClose}
@@ -114,14 +151,18 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         onClick={() => {
                             // Ensure time is preserved, or just set to noon if we only care about the date
                             // Default behavior for <input type="date"> is YYYY-MM-DD
-                            onConfirm({ paymentMethod: selectedMethod, settleDate: new Date(settleDate).toISOString() });
+                            const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
+                            onConfirm({ paymentMethod: selectedMethod, settleDate: new Date(settleDate).toISOString(), depositAccountId: depositAccountId || undefined, depositAccountName });
                             onClose();
                         }}
+                        disabled={paymentAccounts.length > 0 && !depositAccountId}
                         className="primary-button"
                         style={{
                             padding: '10px 16px', borderRadius: '8px', border: 'none',
                             background: 'var(--color-primary)',
-                            color: 'white', cursor: 'pointer',
+                            color: 'white',
+                            cursor: (paymentAccounts.length > 0 && !depositAccountId) ? 'not-allowed' : 'pointer',
+                            opacity: (paymentAccounts.length > 0 && !depositAccountId) ? 0.6 : 1,
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
