@@ -3,6 +3,7 @@
 // Income Statement and Cash In / Out entries open this page on that statement.
 import React, { useState, useEffect } from 'react';
 import { useHeader } from '../../context/HeaderContext';
+import DateRangePicker from '../../components/DateRangePicker';
 import FinancialStatements, { type TabKey } from './FinancialStatements';
 
 const displayDate = (ymd: string): string => {
@@ -11,6 +12,8 @@ const displayDate = (ymd: string): string => {
     return `${d}/${m}/${y}`;
 };
 
+// Local calendar day as YYYY-MM-DD — timezone-safe (uses local date parts,
+// not a UTC-shifted 24h), so it can't land on the wrong date.
 const todayYmd = (): string => {
     const d = new Date();
     const p = (x: number) => String(x).padStart(2, '0');
@@ -43,25 +46,10 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
         return () => setHeaderContent(null);
     }, [setHeaderContent, range.end]);
 
-    const dateInput: React.CSSProperties = {
-        padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
-        background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', outline: 'none',
-    };
-    const dateLabel: React.CSSProperties = {
-        display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px',
-    };
-
     return (
         <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div>
-                    <label style={dateLabel}>From</label>
-                    <input type="date" value={range.start} max={range.end} onChange={e => setRange(r => ({ ...r, start: e.target.value }))} style={dateInput} />
-                </div>
-                <div>
-                    <label style={dateLabel}>As at</label>
-                    <input type="date" value={range.end} min={range.start} onChange={e => setRange(r => ({ ...r, end: e.target.value }))} style={dateInput} />
-                </div>
+                <DateRangePicker value={range} onChange={setRange} />
             </div>
             <FinancialStatements startDate={range.start} endDate={range.end} initialTab={initialTab} />
         </div>

@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil } from 'lucide-react';
 import { Modal } from '../../components';
+import DateRangePicker from '../../components/DateRangePicker';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -77,6 +78,8 @@ const StatusChip: React.FC<{ status: string }> = ({ status }) => (
     }}>{status}</span>
 );
 
+// Local calendar day as YYYY-MM-DD — timezone-safe (uses local date parts,
+// not a UTC-shifted 24h), so it can't land on the wrong date.
 const todayYmd = (): string => {
     const d = new Date();
     const p = (x: number) => String(x).padStart(2, '0');
@@ -644,9 +647,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             style={{ ...inputStyle, paddingLeft: '32px', boxSizing: 'border-box' }}
                         />
                     </div>
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle, width: 'auto' }} aria-label="From date" />
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle, width: 'auto' }} aria-label="To date" />
+                    <DateRangePicker value={{ start: dateFrom, end: dateTo }} onChange={(r) => { setDateFrom(r.start); setDateTo(r.end); }} />
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
                         <option value="All">All Statuses</option>
                         <option value="Posted">Posted</option>

@@ -65,6 +65,62 @@ const generateUUID = () => {
     });
 };
 
+// Posts a Draft journal entry straight to the ledger for a retail receipt (Dr
+// the resolved cash/bank account, Cr Sales Revenue) — shared by the Paid-branch
+// settlement and the Deposit-branch receipt in updateOrder(). Both call sites
+// gate the call on `postToLedger === true` themselves and only call it for a
+// positive amount; this only adds the ledger side, independent of (and not a
+// replacement for) the existing Income & Expense `transactions` row. When no
+// `depositAccountId` is given (the Deposit modal has no account field), the
+// cash/bank account falls back to an active Asset-type account whose name
+// matches /cash|bank/i. Silently no-ops if the chart of accounts can't resolve
+// both sides, and rolls back the header if the lines insert fails.
+async function postRetailSaleToLedger({
+    txId,
+    amount,
+    date,
+    description,
+    depositAccountId
+}: {
+    txId: string;
+    amount: number;
+    date: string;
+    description: string;
+    depositAccountId?: string;
+}) {
+    try {
+        const { data: coa } = await supabase.from('chart_of_accounts')
+            .select('id, account_code, account_name, account_type').eq('is_active', true);
+        const pool = coa || [];
+        const revenueAcc = pool.find(a => a.account_code === '4000')
+            || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
+            || pool.find(a => a.account_type === 'Revenue');
+        const cashAccId = depositAccountId
+            || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+        if (revenueAcc && cashAccId) {
+            const { data: entry, error: jeErr } = await supabase.from('journal_entries')
+                .insert([{ date, description, reference_id: 'TX-' + txId, status: 'Draft' }])
+                .select().single();
+            if (jeErr && /status/i.test(jeErr.message || '')) {
+                console.warn('Posted the payment, but this instance needs migrations/add_entry_status.sql to also post it as a journal entry');
+            } else if (jeErr || !entry) {
+                console.error('Failed to create journal entry for payment:', jeErr);
+            } else {
+                const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+                    { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0 },
+                    { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: amount },
+                ]);
+                if (lErr) {
+                    console.error('Failed to create journal entry lines for payment:', lErr);
+                    await supabase.from('journal_entries').delete().eq('id', entry.id);
+                }
+            }
+        }
+    } catch (jeCatchErr) {
+        console.error('Failed to post journal entry for retail payment:', jeCatchErr);
+    }
+}
+
 const getLocalYYYYMMDD = () => {
     const d = new Date();
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -2002,6 +2058,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (paidTxns && paidTxns.length > 0) {
                     await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
                     setTransactions(prev => prev.filter(t => t.id !== paidTxns[0].id));
+
+                    // Also remove any Draft journal entry this payment posted (Payment
+                    // Tracking's Record Receipt flow posts one; Orders' Settle Payment
+                    // flow never does, so this simply finds nothing for those). Lines
+                    // first, then the header, to satisfy the FK.
+                    const refId = 'TX-' + paidTxns[0].id;
+                    const { data: journalEntry } = await supabase.from('journal_entries')
+                        .select('id').eq('reference_id', refId).limit(1).maybeSingle();
+                    if (journalEntry) {
+                        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntry.id);
+                        await supabase.from('journal_entries').delete().eq('id', journalEntry.id);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to remove income for un-paid order:', e);
@@ -2117,14 +2185,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     addedBy: currentUser?.name || 'System',
                     shipping_co: shippingCoToRecord,
                     // The Pay By chosen in the settle modal (falls back to the order's method).
-                    pay_by: updates.paymentMethod || existingOrder.paymentMethod || null
+                    // The resolved "Deposit into" account name wins when set — it names the
+                    // actual cash/bank ledger account, which is more specific than the
+                    // payment method alone.
+                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null,
+                    reference: (updates as Partial<Sale>).receiptReference || null,
+                    notes: (updates as Partial<Sale>).receiptNotes || null
                 };
 
                 // Optimistic update
                 setTransactions(prev => [newTransaction, ...prev]);
 
-                // Async insert
-                supabase.from('transactions').insert([{
+                // Async insert — reference/notes need migrations/add_transaction_reference_notes.sql.
+                // Retry without those two columns if an instance hasn't run it yet.
+                const insertPayload = {
                     id: newTransaction.id,
                     date: newTransaction.date,
                     type: newTransaction.type,
@@ -2133,10 +2207,39 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     description: newTransaction.description,
                     added_by: newTransaction.addedBy,
                     shipping_co: newTransaction.shipping_co,
-                    pay_by: newTransaction.pay_by
-                }]).then(({ error }) => {
-                    if (error) console.error('Failed to create transaction for updated order:', error);
+                    pay_by: newTransaction.pay_by,
+                    reference: newTransaction.reference,
+                    notes: newTransaction.notes
+                };
+                supabase.from('transactions').insert([insertPayload]).then(({ error }) => {
+                    if (error && /reference|notes/i.test(error.message || '')) {
+                        const withoutNew = { ...insertPayload };
+                        delete (withoutNew as Partial<typeof insertPayload>).reference;
+                        delete (withoutNew as Partial<typeof insertPayload>).notes;
+                        supabase.from('transactions').insert([withoutNew]).then(({ error: retryError }) => {
+                            if (retryError) console.error('Failed to create transaction for updated order:', retryError);
+                            else console.warn('Logged payment without reference/notes — run migrations/add_transaction_reference_notes.sql to store them');
+                        });
+                    } else if (error) {
+                        console.error('Failed to create transaction for updated order:', error);
+                    }
                 });
+
+                // Also post a matching Draft entry straight to the ledger, but ONLY when
+                // the caller explicitly opted in (Payment Tracking's Record Receipt flow
+                // sets this; Orders' Settle Payment flow never does, by design — it keeps
+                // logging to Income & Expense only). Runs independently of the transactions
+                // insert above: no ordering dependency, since transactionId is already
+                // generated client-side before either insert happens.
+                if ((updates as Partial<Sale>).postToLedger === true) {
+                    postRetailSaleToLedger({
+                        txId: transactionId,
+                        amount: amountToRecord,
+                        date: normalizedDate,
+                        description: customerName,
+                        depositAccountId: (updates as Partial<Sale>).depositAccountId
+                    });
+                }
             }
         } else if (
             updates.settleDate &&
@@ -2209,7 +2312,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         description: customerName,
                         addedBy: currentUser?.name || 'System',
                         shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null,
-                        pay_by: updates.paymentMethod || existingOrder.paymentMethod || null
+                        // Same "Deposit into" account preference as the primary settle block above.
+                        pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null
                     };
                     setTransactions(prev => [healed, ...prev]);
                     const { error: healErr } = await supabase.from('transactions').insert([{
@@ -2255,7 +2359,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     description: `${custName} #DEP-${id.slice(0, 8)}`,
                     addedBy: currentUser?.name || 'System',
                     shipping_co: existingOrder.shipping?.company || null,
-                    pay_by: updates.depositMethod || null
+                    // Same "Deposit into" account preference as the Paid branch above.
+                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || null
                 };
                 setTransactions(prev => [depTxn, ...prev]);
                 supabase.from('transactions').insert([{
@@ -2266,11 +2371,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     amount: depTxn.amount,
                     description: depTxn.description,
                     added_by: depTxn.addedBy,
-                    pay_by: updates.depositMethod || null,
+                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || null,
                     shipping_co: depTxn.shipping_co
                 }]).then(({ error }) => {
                     if (error) console.error('Failed to log deposit income:', error);
                 });
+
+                // Also post a matching Draft entry straight to the ledger, same opt-in
+                // as the Paid branch above (Payment Tracking's Deposit modal sets this;
+                // Orders' Deposit flow never does — Income & Expense only, by design).
+                // Payment Tracking's modal can now supply an explicit "Deposited into"
+                // account (depositAccountId); when it doesn't — e.g. Orders' Deposit flow,
+                // which never sets this — the helper's cash/bank name-match fallback
+                // resolves the account instead.
+                if ((updates as Partial<Sale>).postToLedger === true) {
+                    postRetailSaleToLedger({
+                        txId: depTxn.id,
+                        amount: depAmount,
+                        date: depDateIso,
+                        description: depTxn.description,
+                        depositAccountId: (updates as Partial<Sale>).depositAccountId
+                    });
+                }
             }
         }
 
@@ -2288,6 +2410,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.depositAmount !== undefined) dbUpdates.deposit_amount = updates.depositAmount;
         if (updates.depositDate !== undefined) dbUpdates.deposit_date = updates.depositDate || null;
         if (updates.depositMethod !== undefined) dbUpdates.deposit_method = updates.depositMethod || null;
+        if (updates.depositAccountId !== undefined) dbUpdates.deposit_account_id = updates.depositAccountId || null;
         if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) {
@@ -2314,7 +2437,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             // 3. Update 'sales' table
             if (Object.keys(dbUpdates).length > 0) {
-                const { error } = await supabase.from('sales').update(dbUpdates).eq('id', id);
+                // "Deposit into" needs migrations/add_sales_deposit_account.sql; until an
+                // instance has run it, save the rest of the update without that one column
+                // (mirrors the same degrade-and-retry pattern used by recordSupplierPayment).
+                let { error } = await supabase.from('sales').update(dbUpdates).eq('id', id);
+                if (error && /deposit_account_id/i.test(error.message || '')) {
+                    const dbUpdatesWithoutAccount = { ...dbUpdates };
+                    delete dbUpdatesWithoutAccount.deposit_account_id;
+                    ({ error } = await supabase.from('sales').update(dbUpdatesWithoutAccount).eq('id', id));
+                    if (!error) console.info('Saved without the Deposit-into account — run migrations/add_sales_deposit_account.sql to store it');
+                }
                 if (error) throw error;
             }
 

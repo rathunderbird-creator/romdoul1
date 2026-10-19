@@ -1,22 +1,39 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Wallet, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { useAccounting } from '../hooks/useAccounting';
 import type { Sale } from '../types';
 
 interface DepositModalProps {
     order: Sale | null;
     onClose: () => void;
-    onConfirm: (deposit: { amount: number; method: string; date: string }) => void;
+    onConfirm: (deposit: { amount: number; method: string; date: string; depositAccountId?: string; depositAccountName?: string }) => void;
+    // Payment Tracking opts into the "Deposited into" account field (Orders'
+    // Record Deposit popup stays exactly as-is without it).
+    showDepositAccount?: boolean;
 }
 
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
 // Records the upfront deposit for a retail order (rest is collected via COD).
-const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm }) => {
+const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false }) => {
     const { paymentMethods } = useStore();
+    const { accounts, fetchAccounts } = useAccounting();
     const [amount, setAmount] = useState<number | string>('');
     const [method, setMethod] = useState('');
     const [date, setDate] = useState(today());
+    const [depositAccountId, setDepositAccountId] = useState('');
+
+    // Only fetch when the field can actually show — Orders' popup never
+    // displays it, so it shouldn't pay for the query on every mount.
+    useEffect(() => { if (showDepositAccount) fetchAccounts(); }, [showDepositAccount, fetchAccounts]);
+
+    // Cash/bank ledger accounts for the "Deposited into" select — same filter
+    // as RecordReceiptModal's "Deposited into" field.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     useEffect(() => {
         if (order) {
@@ -24,15 +41,18 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm }
             const bank = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setMethod(order.depositMethod || bank || paymentMethods[0] || 'Bank');
             setDate(order.depositDate ? order.depositDate.slice(0, 10) : today());
+            // Bank is the default Deposited into account too, same idea as Pay By above.
+            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
+            setDepositAccountId(order.depositAccountId || bankAccount?.id || paymentAccounts[0]?.id || '');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [order]);
+    }, [order, paymentAccounts]);
 
     if (!order) return null;
 
     const amt = Number(amount) || 0;
     const remaining = Math.max(0, (order.total || 0) - amt);
-    const valid = amt > 0 && amt < (order.total || 0);
+    const valid = amt > 0 && amt < (order.total || 0) && !(showDepositAccount && paymentAccounts.length > 0 && !depositAccountId);
 
     return (
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
@@ -78,6 +98,26 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm }
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
+                    {showDepositAccount && (
+                        <div>
+                            <label style={labelStyle}>Deposited into *</label>
+                            <select
+                                value={depositAccountId}
+                                onChange={e => setDepositAccountId(e.target.value)}
+                                style={{ ...inputStyle, border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}` }}
+                            >
+                                <option value="">Bank or cash account…</option>
+                                {paymentAccounts.map(a => (
+                                    <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
+                                ))}
+                            </select>
+                            {paymentAccounts.length === 0 && (
+                                <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                    No cash or bank accounts in the Chart of Accounts yet — the deposit saves without one.
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px' }}>
                         The deposit is logged as income now (កក់ប្រាក់) and is always kept, even if the order is cancelled later. When the order is marked Paid, only the COD remainder is added to income.
                     </div>
@@ -89,7 +129,15 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm }
                     <button
                         className="primary-button"
                         disabled={!valid}
-                        onClick={() => onConfirm({ amount: amt, method, date })}
+                        onClick={() => {
+                            const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
+                            onConfirm({
+                                amount: amt,
+                                method,
+                                date,
+                                ...(showDepositAccount ? { depositAccountId: depositAccountId || undefined, depositAccountName } : {})
+                            });
+                        }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#7e22ce', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
                         <CheckCircle2 size={16} /> Save Deposit

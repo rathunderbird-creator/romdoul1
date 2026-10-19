@@ -34,6 +34,7 @@ export const mapSaleEntity = (s: any): Sale => ({
     depositAmount: Number(s.deposit_amount) || 0,
     depositDate: s.deposit_date,
     depositMethod: s.deposit_method,
+    depositAccountId: s.deposit_account_id,
     paymentStatus: s.payment_status as any,
     orderStatus: s.order_status as any,
     shipping: s.shipping_status ? {

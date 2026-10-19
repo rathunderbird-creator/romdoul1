@@ -163,6 +163,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS shipping_co TEXT;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS pay_by TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reference TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS notes TEXT;
 
 -- Per-unit purchase costs (create_inventory_items.sql). The one-time
 -- backfill from products.stock is NOT repeated here — it was not
@@ -1011,6 +1013,10 @@ ALTER TABLE supplier_payments ADD COLUMN IF NOT EXISTS paid_from_account_id TEXT
 -- Customer payments: the cash/bank account received into (see
 -- add_customer_payment_account.sql).
 ALTER TABLE customer_payments ADD COLUMN IF NOT EXISTS received_in_account_id TEXT;
+
+-- Sales: the cash/bank account a settlement is deposited into (see
+-- add_sales_deposit_account.sql).
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_account_id TEXT;
 
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
