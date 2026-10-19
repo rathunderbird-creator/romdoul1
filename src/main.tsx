@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
+import UpdateBanner from './components/UpdateBanner.tsx'
 
 // Global anti-double-click / fast-click handler
 document.addEventListener('click', (e) => {
@@ -31,5 +32,8 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
+    {/* Outside the boundary: keeps polling and can still prompt a reload
+        even if App itself has crashed. */}
+    <UpdateBanner />
   </StrictMode>,
 )

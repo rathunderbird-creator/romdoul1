@@ -76,8 +76,38 @@
 
   /* Spacing & Layout */
   --header-height: 60px;
-  --sidebar-width: 235px;
+  /* Classic sidebar: fits its longest label (measured across every top-level
+     group, sub-item and both languages) with a little breathing room, rather
+     than a wide, mostly-empty column. */
+  --sidebar-width: 218px;
   --border-radius: 12px;
+
+  /* Classic sidebar color scheme (ThemeContext.sidebarColor). These default
+     to today's literal black-sidebar colors so nothing changes unless an
+     override (e.g. body.sidebar-navy-amber below) redefines them. */
+  --classic-sidebar-bg: black;
+  --classic-sidebar-border: #333;
+  --classic-sidebar-text: #9CA3AF;
+  --classic-sidebar-text-hover: #F3F4F6;
+  --classic-sidebar-hover-bg: rgba(255, 255, 255, 0.1);
+  --classic-sidebar-active-parent-bg: rgba(255, 255, 255, 0.15);
+  --classic-sidebar-active-bg: rgba(255, 102, 0, 0.2);
+  --classic-sidebar-active-text: var(--color-primary);
+  --classic-sidebar-active-sublink-bg: rgba(16, 185, 129, 0.2);
+  --classic-sidebar-active-sublink-text: #10B981;
+
+  /* Modern sidebar color scheme (same ThemeContext.sidebarColor toggle as
+     Classic above). These default to the global theme variables the Modern
+     sidebar already used, so nothing changes unless an override (e.g.
+     body.sidebar-navy-amber below) redefines them. */
+  --modern-sidebar-bg: var(--color-surface);
+  --modern-sidebar-border: var(--color-border);
+  --modern-sidebar-text: var(--color-text-secondary);
+  --modern-sidebar-text-hover: var(--color-text-main);
+  --modern-sidebar-hover-bg: var(--color-bg);
+  --modern-sidebar-text-muted: var(--color-text-muted);
+  --modern-sidebar-active-bg: var(--color-primary-light);
+  --modern-sidebar-active-text: var(--color-primary);
 
   /* Compact-UI scale factor (matches the body zoom below). Inside a zoomed
      body, viewport units render scaled — height:100vh ends short of the real
@@ -577,25 +607,25 @@ div:has(> svg) .search-input {
   transition: all 0.2s ease;
   cursor: pointer;
   text-decoration: none;
-  color: #9CA3AF; /* Light gray for black bg */
+  color: var(--classic-sidebar-text); /* Light gray for black bg */
   background-color: transparent;
   font-size: 13px;
 }
 
 .sidebar-item:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #F3F4F6;
+  background-color: var(--classic-sidebar-hover-bg);
+  color: var(--classic-sidebar-text-hover);
 }
 
 .sidebar-item.active-parent {
-  background-color: rgba(255, 255, 255, 0.15) !important;
+  background-color: var(--classic-sidebar-active-parent-bg) !important;
   color: white !important;
   font-weight: 600;
 }
 
 .sidebar-item.active-link {
-  background-color: rgba(255, 102, 0, 0.2) !important;
-  color: var(--color-primary) !important;
+  background-color: var(--classic-sidebar-active-bg) !important;
+  color: var(--classic-sidebar-active-text) !important;
   font-weight: 600;
 }
 
@@ -606,20 +636,20 @@ div:has(> svg) .search-input {
   transition: all 0.2s ease;
   cursor: pointer;
   text-decoration: none;
-  color: #9CA3AF;
+  color: var(--classic-sidebar-text);
   background-color: transparent;
   padding: 6px 10px;
   font-size: 12.5px;
 }
 
 .sidebar-subitem:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #F3F4F6;
+  background-color: var(--classic-sidebar-hover-bg);
+  color: var(--classic-sidebar-text-hover);
 }
 
 .sidebar-subitem.active-sublink {
-  background-color: rgba(16, 185, 129, 0.2) !important;
-  color: #10B981 !important;
+  background-color: var(--classic-sidebar-active-sublink-bg) !important;
+  color: var(--classic-sidebar-active-sublink-text) !important;
   font-weight: 500;
 }
 
@@ -627,8 +657,37 @@ div:has(> svg) .search-input {
    The body class restyles the chrome: a wider light sidebar and a softer
    content background. Pages keep their own styles via the CSS variables. */
 body.layout-modern {
-  --sidebar-width: 250px;
+  /* Wider than Classic's: uppercase, bold, letter-spaced group labels need a
+     bit more room per character. Still sized to the longest label rather
+     than the old fixed 250px, which left real empty space on most rows. */
+  --sidebar-width: 230px;
   --color-bg: #F6F8FB;
+}
+
+/* ── "Navy & Amber" color scheme (ThemeContext.sidebarColor) ──────────────
+   An alternate option for both sidebars' CSS variables — a dark navy
+   background with a solid amber active pill, instead of each layout's
+   default look (Classic: black/orange; Modern: light surface/blue). */
+body.sidebar-navy-amber {
+  --classic-sidebar-bg: #1B2340;
+  --classic-sidebar-border: #2A3558;
+  --classic-sidebar-text: #CBD5E1;
+  --classic-sidebar-text-hover: #FFFFFF;
+  --classic-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+  --classic-sidebar-active-parent-bg: rgba(255, 255, 255, 0.08);
+  --classic-sidebar-active-bg: #F5A623;
+  --classic-sidebar-active-text: #FFFFFF;
+  --classic-sidebar-active-sublink-bg: #F5A623;
+  --classic-sidebar-active-sublink-text: #FFFFFF;
+
+  --modern-sidebar-bg: #1B2340;
+  --modern-sidebar-border: #2A3558;
+  --modern-sidebar-text: #CBD5E1;
+  --modern-sidebar-text-hover: #FFFFFF;
+  --modern-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+  --modern-sidebar-text-muted: #CBD5E1;
+  --modern-sidebar-active-bg: #F5A623;
+  --modern-sidebar-active-text: #FFFFFF;
 }
 
 /* Modern sidebar items: pill rows on a white surface. */
@@ -639,20 +698,20 @@ body.layout-modern {
   transition: background 0.15s ease, color 0.15s ease;
   cursor: pointer;
   text-decoration: none;
-  color: var(--color-text-secondary);
+  color: var(--modern-sidebar-text);
   background-color: transparent;
   font-size: 13px;
   font-weight: 500;
 }
 
 .msidebar-item:hover {
-  background-color: var(--color-bg);
-  color: var(--color-text-main);
+  background-color: var(--modern-sidebar-hover-bg);
+  color: var(--modern-sidebar-text-hover);
 }
 
 .msidebar-item.active {
-  background-color: var(--color-primary-light) !important;
-  color: var(--color-primary) !important;
+  background-color: var(--modern-sidebar-active-bg) !important;
+  color: var(--modern-sidebar-active-text) !important;
   font-weight: 700;
 }
 
@@ -668,20 +727,20 @@ body.layout-modern {
   font-weight: 700;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: var(--color-text-muted);
+  color: var(--modern-sidebar-text-muted);
   cursor: pointer;
   user-select: none;
   transition: color 0.15s ease;
 }
 
 .msidebar-group:hover {
-  color: var(--color-text-main);
+  color: var(--modern-sidebar-text-hover);
 }
 
 /* The section that holds the current page: a bolder, darker label — text
    only, no background — so the active section reads at a glance. */
 .msidebar-group.active-section {
-  color: var(--color-text-main);
+  color: var(--modern-sidebar-text-hover);
   font-weight: 800;
 }
 

@@ -1,9 +1,27 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+// Vercel sets this for every build automatically; local dev/build has no such
+// commit context, so fall back to a timestamp (still unique per build).
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now())
+
+// Writes the same id to a static file so a tab left open across a deploy can
+// poll it and notice it's running an older build (see UpdateBanner.tsx).
+const versionFilePlugin = (): Plugin => ({
+  name: 'write-version-file',
+  writeBundle(options) {
+    writeFileSync(join(options.dir || 'dist', 'version.json'), JSON.stringify({ buildId: BUILD_ID }))
+  }
+})
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionFilePlugin()],
+  define: {
+    __BUILD_ID__: JSON.stringify(BUILD_ID)
+  },
   server: {
     host: true, // Exposes the server to the network
     // Honour PORT when set (e.g. by tooling that assigns a free port);

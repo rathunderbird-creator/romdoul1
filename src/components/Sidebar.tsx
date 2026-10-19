@@ -95,8 +95,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                     position: 'fixed',
                     left: 0,
                     top: 0,
-                    backgroundColor: 'black',
-                    borderRight: '1px solid #333',
+                    backgroundColor: 'var(--classic-sidebar-bg)',
+                    borderRight: '1px solid var(--classic-sidebar-border)',
                     display: 'flex',
                     flexDirection: 'column',
                     padding: (isMobile || !visualCollapsed) ? '12px 16px' : '12px 6px',
@@ -141,7 +141,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                             aria-label="Pin sidebar"
                             aria-pressed={isPinned}
                             className="sidebar-item"
-                            style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid #333', color: '#9CA3AF', padding: '5px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer' }}
+                            style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid var(--classic-sidebar-border)', color: 'var(--classic-sidebar-text)', padding: '5px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer' }}
                         >
                             {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
                         </button>
@@ -154,7 +154,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                                 marginLeft: 'auto',
                                 background: 'transparent',
                                 border: 'none',
-                                color: '#9CA3AF',
+                                color: 'var(--classic-sidebar-text)',
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -182,7 +182,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                         // both announcing "pressed"/"not pressed" reads as
                         // self-contradictory to a screen reader).
                         className="sidebar-item"
-                        style={{ background: 'transparent', border: '1px solid #333', color: '#9CA3AF', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', opacity: canPin ? 1 : 0.5, cursor: canPin ? 'pointer' : 'not-allowed' }}
+                        style={{ background: 'transparent', border: '1px solid var(--classic-sidebar-border)', color: 'var(--classic-sidebar-text)', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', opacity: canPin ? 1 : 0.5, cursor: canPin ? 'pointer' : 'not-allowed' }}
                     >
                         <Pin size={14} />
                     </button>

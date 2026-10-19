@@ -471,6 +471,9 @@
     "layout": "Layout",
     "layoutClassic": "Classic",
     "layoutModern": "Modern",
+    "sidebarColor": "Sidebar Color",
+    "sidebarColorDefault": "Default",
+    "sidebarColorNavyAmber": "Navy & Amber",
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark"

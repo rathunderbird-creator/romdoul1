@@ -60,7 +60,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const isMobile = useMobile();
     const navigate = useNavigate();
     const { t, language, setLanguage } = useLanguage();
-    const { fontSize, setFontSize, layout, setLayout, mode, setMode } = useTheme();
+    const { fontSize, setFontSize, layout, setLayout, mode, setMode, sidebarColor, setSidebarColor } = useTheme();
     const [isRefreshing, setIsRefreshing] = React.useState(false);
 
     const panelRef = useClickOutside<HTMLDivElement>(() => {
@@ -635,6 +635,28 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                                     border: '1px solid ' + (layout === key ? 'var(--color-primary)' : 'var(--color-border)'),
                                                     background: layout === key ? 'var(--color-primary-light)' : 'var(--color-bg)',
                                                     color: layout === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                                }}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Sidebar Color: meaningful for both Classic and Modern */}
+                                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{t('header.sidebarColor')}</div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        {([['default', t('header.sidebarColorDefault')], ['navy-amber', t('header.sidebarColorNavyAmber')]] as const).map(([key, label]) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setSidebarColor(key)}
+                                                className="d2-khmer"
+                                                style={{
+                                                    flex: 1, padding: '7px 10px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                                                    border: '1px solid ' + (sidebarColor === key ? 'var(--color-primary)' : 'var(--color-border)'),
+                                                    background: sidebarColor === key ? 'var(--color-primary-light)' : 'var(--color-bg)',
+                                                    color: sidebarColor === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
                                                 }}
                                             >
                                                 {label}
