@@ -19,7 +19,7 @@ export const useNavItems = (): NavItem[] => {
         // One dashboard entry: / is the merged dashboard (Dashboard 2 + every
         // classic card section); /dashboard-classic stays reachable by URL.
         navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
-        navItems.push({ icon: Tags, label: t('nav.priceList'), path: '/price-list' });
+        // Price List is hidden from the menu; /price-list stays reachable by URL.
         navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
     }
 
