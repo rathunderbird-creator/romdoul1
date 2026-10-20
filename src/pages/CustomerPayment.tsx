@@ -339,6 +339,10 @@ const CustomerPaymentPage: React.FC = () => {
     // Rows posted in this session, so they flip to Posted immediately.
     const [postedIds, setPostedIds] = useState<Set<string>>(new Set());
     const [postingIds, setPostingIds] = useState<Set<string>>(new Set());
+    // Row checkboxes for bulk Post Now. Raw picks; the effective selection is
+    // derived below so rows that got posted or filtered away drop out on their own.
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isBulkPosting, setIsBulkPosting] = useState(false);
 
     // No matching entry at all is treated the same as an unposted (Draft) one.
     const statusOf = useCallback(
@@ -496,6 +500,85 @@ const CustomerPaymentPage: React.FC = () => {
     const page = Math.min(currentPage, totalPages);
     const pageRows = filteredPayments.slice((page - 1) * pageSize, page * pageSize);
 
+    // ── Bulk Post Now ──
+    const canPostRow = useCallback(
+        (id: string) => ledgerReady && statusOf(id) === 'Draft' && !postingIds.has(id),
+        [ledgerReady, statusOf, postingIds]
+    );
+    // Effective selection: only rows that are still listed and still postable.
+    const selectedRows = useMemo(
+        () => selectedIds.size === 0 ? [] : filteredPayments.filter(r => selectedIds.has(r.id) && canPostRow(r.id)),
+        [selectedIds, filteredPayments, canPostRow]
+    );
+    const selectedTotal = useMemo(() => selectedRows.reduce((s, r) => s + Number(r.amount || 0), 0), [selectedRows]);
+    const pagePostableIds = useMemo(() => pageRows.filter(r => canPostRow(r.id)).map(r => r.id), [pageRows, canPostRow]);
+    const allPageSelected = pagePostableIds.length > 0 && pagePostableIds.every(id => selectedIds.has(id));
+    const somePageSelected = pagePostableIds.some(id => selectedIds.has(id));
+
+    const toggleSelect = (id: string) => setSelectedIds(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+    });
+    const togglePage = () => setSelectedIds(prev => {
+        const n = new Set(prev);
+        if (allPageSelected) pagePostableIds.forEach(id => n.delete(id));
+        else pagePostableIds.forEach(id => n.add(id));
+        return n;
+    });
+
+    // Posts every selected Draft with its own date, amount and account — the same
+    // defaults the single-row popup pre-fills (the entry's existing debit account,
+    // else an account matching the payment's method, else the server's cash/bank
+    // fallback). The server refuses non-Draft entries, so a stale row can't repost.
+    const handleBulkPost = async () => {
+        const rows = selectedRows;
+        if (rows.length === 0 || isBulkPosting) return;
+        if (!window.confirm(`Post ${rows.length} draft payment${rows.length === 1 ? '' : 's'} (${formatAmount(selectedTotal)}) to the ledger?\nEach is posted with its own payment date, amount and deposit account.`)) return;
+        setIsBulkPosting(true);
+        setPostingIds(prev => new Set([...prev, ...rows.map(r => r.id)]));
+        let paymentAccounts: { id: string; account_name: string }[] = [];
+        try {
+            const { data } = await supabase.from('chart_of_accounts').select('id, account_name, account_type, is_active');
+            paymentAccounts = ((data || []) as { id: string; account_name: string; account_type: string; is_active: boolean }[])
+                .filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name));
+        } catch { /* postOrFinalizeTransactionReceipt resolves a fallback account itself */ }
+        const accountFor = (r: CustomerPaymentRow): string | undefined => {
+            const existing = ledger.debitAccountByTx.get(r.id);
+            if (existing) return existing;
+            const hint = (r.pay_by || '').trim().toLowerCase();
+            if (!hint || paymentAccounts.length === 0) return undefined;
+            return paymentAccounts.find(a => a.account_name.toLowerCase() === hint)?.id
+                || (hint.includes('cash') ? paymentAccounts.find(a => /cash/i.test(a.account_name))?.id : undefined);
+        };
+        let ok = 0;
+        const failed: string[] = [];
+        for (const r of rows) {
+            try {
+                await postOrFinalizeTransactionReceipt({
+                    txId: r.id,
+                    amount: Number(r.amount || 0),
+                    date: localYMD(r.date),
+                    description: r.description || 'Customer',
+                    depositAccountId: accountFor(r),
+                    type: isDepositRow(r) ? 'DEP' : 'RCP',
+                });
+                ok++;
+                setPostedIds(prev => new Set(prev).add(r.id));
+                setSelectedIds(prev => { const n = new Set(prev); n.delete(r.id); return n; });
+            } catch (err) {
+                console.error('Bulk post failed for', r.id, err);
+                failed.push(r.description || r.id);
+            } finally {
+                setPostingIds(prev => { const n = new Set(prev); n.delete(r.id); return n; });
+            }
+        }
+        setIsBulkPosting(false);
+        setLedgerNonce(n => n + 1);
+        if (failed.length === 0) showToast(`Posted ${ok} payment${ok === 1 ? '' : 's'} to the ledger`, 'success');
+        else showToast(`Posted ${ok} of ${rows.length} — failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`, 'error');
+    };
+
     const hasActiveFilters = searchTerm !== '' || dateRange.start !== '' || dateRange.end !== ''
         || typeFilter !== 'All' || statusFilter !== 'All' || shippingFilter !== 'All';
     const clearFilters = () => {
@@ -536,7 +619,7 @@ const CustomerPaymentPage: React.FC = () => {
         XLSX.writeFile(wb, `Customer_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
-    const colCount = 8 + (hasReferenceData ? 1 : 0) + (hasNotesData ? 1 : 0);
+    const colCount = 9 + (hasReferenceData ? 1 : 0) + (hasNotesData ? 1 : 0);
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
     const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
@@ -717,12 +800,60 @@ const CustomerPaymentPage: React.FC = () => {
                 </Notice>
             )}
 
+            {/* Bulk Post Now bar */}
+            {selectedRows.length > 0 && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+                    padding: '10px 16px', borderRadius: '10px',
+                    background: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+                    border: '1px solid var(--color-primary)'
+                }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', flex: 1, minWidth: '180px' }}>
+                        {selectedRows.length} draft payment{selectedRows.length === 1 ? '' : 's'} selected · {formatAmount(selectedTotal)}
+                    </span>
+                    <button
+                        onClick={handleBulkPost}
+                        disabled={isBulkPosting}
+                        style={{
+                            padding: '8px 16px', borderRadius: '8px', border: 'none',
+                            background: 'var(--color-primary)', color: '#fff',
+                            fontSize: '13px', fontWeight: 600, cursor: isBulkPosting ? 'not-allowed' : 'pointer',
+                            opacity: isBulkPosting ? 0.7 : 1
+                        }}
+                    >
+                        {isBulkPosting ? 'Posting…' : `Post Now (${selectedRows.length})`}
+                    </button>
+                    <button
+                        onClick={() => setSelectedIds(new Set())}
+                        disabled={isBulkPosting}
+                        style={{
+                            padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
+                            fontSize: '13px', fontWeight: 600, cursor: isBulkPosting ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        Clear
+                    </button>
+                </div>
+            )}
+
             {/* Table */}
             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', whiteSpace: 'nowrap' }}>
                         <thead>
                             <tr style={{ background: 'var(--color-bg)' }}>
+                                <th style={{ ...thStyle, width: '34px', padding: '10px 8px 10px 12px' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={allPageSelected}
+                                        ref={el => { if (el) el.indeterminate = !allPageSelected && somePageSelected; }}
+                                        onChange={togglePage}
+                                        disabled={pagePostableIds.length === 0}
+                                        title="Select the draft payments on this page"
+                                        style={{ cursor: pagePostableIds.length === 0 ? 'not-allowed' : 'pointer' }}
+                                    />
+                                </th>
                                 <th style={thStyle}>Date</th>
                                 <th style={thStyle}>Customer</th>
                                 <th style={thStyle}>Payment Type</th>
@@ -776,6 +907,16 @@ const CustomerPaymentPage: React.FC = () => {
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
                                     return (
                                         <tr key={r.id} style={{ background: idx % 2 === 1 ? 'var(--color-bg)' : 'transparent' }}>
+                                            <td style={{ ...tdStyle, padding: '10px 8px 10px 12px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.has(r.id) && canPost}
+                                                    onChange={() => toggleSelect(r.id)}
+                                                    disabled={!canPost}
+                                                    title={canPost ? 'Select for bulk Post Now' : 'Only draft payments can be posted'}
+                                                    style={{ cursor: canPost ? 'pointer' : 'not-allowed' }}
+                                                />
+                                            </td>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
                                             <td style={{ ...tdStyle, fontWeight: 600 }}>{customerLabel}</td>
                                             <td style={tdStyle}><TypeBadge category={r.category} /></td>
