@@ -1,22 +1,23 @@
-// Customer Payment — a read-only log of individual retail customer payment
-// records (Record Receipt / Deposit entries posted from Payment Tracking).
-// Pure display: no create/edit/delete here. This is a dedicated full-history
-// listing page, so — like IncomeExpense.tsx's own fetchTransactions — it runs
-// its own Supabase query (filtered server-side to the two retail categories
-// written by StoreContext's updateOrder) rather than reading the shared,
-// globally-capped useStore().transactions (only the 50 most recent rows
-// across every category, meant for lightweight overview use elsewhere):
+// Customer Payment — every retail customer payment record (Record Receipt /
+// Deposit entries posted from Payment Tracking and Orders) with its ledger
+// status; Draft rows can be finalized with Post Now. This is a dedicated
+// full-history listing page, so it runs its own Supabase queries (filtered
+// server-side to the two retail categories written by StoreContext's
+// updateOrder) rather than reading the shared, globally-capped
+// useStore().transactions (only the 50 most recent rows across every category):
 //   'លក់រាយ'   (Retail)  -> a Paid/receipt transaction
 //   'កក់ប្រាក់' (Deposit) -> a deposit transaction
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, Receipt, Hash, Wallet, X, ExternalLink } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Receipt, Hash, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle } from 'lucide-react';
 import { postOrFinalizeTransactionReceipt } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
-import { useAccounting } from '../hooks/useAccounting';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
+import { addDays, dayKeyFromDate, parseDay } from '../utils/dateRange';
+import { getShippingCoColor } from '../utils/orderUtils';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import type { Transaction, Customer } from '../types';
 
@@ -39,11 +40,13 @@ const DEP_ORDER_FRAGMENT_REGEX = /#DEP-([0-9A-Za-z]{8})$/;
 const RETAIL_PAYMENT_CATEGORY = 'លក់រាយ';
 const RETAIL_DEPOSIT_CATEGORY = 'កក់ប្រាក់';
 
-// Order-existence resolution runs as a SEPARATE, targeted query against `sales`
-// (never the shared, paginated useStore().sales — see orderResolution below) so
+// Rows per request — at PostgREST's max-rows cap, so pages are fetched in parallel.
+const PAGE_ROWS = 1000;
+
+// The View-button lookup for legacy Deposit rows queries `sales` directly
+// (never the shared, paginated useStore().sales — see fragmentMatches below) so
 // it stays accurate no matter how much of `sales` Orders.tsx has paginated into
-// memory. Chunk sizes mirror the same pattern in utils/stockMovementSalesmen.ts.
-const ID_CHUNK = 400;     // explicit order_ids per .in() — keeps the URL well under gateway limits
+// memory.
 const PREFIX_CHUNK = 50;  // #DEP-<fragment> patterns per .or()
 
 const chunk = <T,>(items: T[], size: number): T[][] => {
@@ -56,8 +59,7 @@ const chunk = <T,>(items: T[], size: number): T[][] => {
 const parseDate = (dateStr?: string): Date => {
     if (!dateStr) return new Date(NaN);
     const safeStr = dateStr.includes(' ') ? dateStr.replace(' ', 'T') : dateStr;
-    const d = new Date(safeStr);
-    return d;
+    return new Date(safeStr);
 };
 
 const formatDate = (dateStr?: string): string => {
@@ -69,16 +71,20 @@ const formatDate = (dateStr?: string): string => {
 const formatAmount = (amount: number): string =>
     `$${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Local calendar day as YYYY-MM-DD — mirrors StoreContext's localDayOf. Never
-// toISOString() a date-only value directly, it UTC-shifts; this adjusts for
-// the timezone offset first so the calendar day never moves.
+// Local calendar day as YYYY-MM-DD — never toISOString() a date directly, it UTC-shifts.
 const localYMD = (dateStr?: string): string => {
     if (!dateStr) return '';
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
     const d = parseDate(dateStr);
     if (isNaN(d.getTime())) return dateStr.slice(0, 10);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    return dayKeyFromDate(d);
 };
+
+type PayTypeFilter = 'All' | 'Paid' | 'Deposit';
+type StatusFilter = 'All' | 'Draft' | 'Posted';
+type LedgerStatus = 'Posted' | 'Draft';
+
+const isDepositRow = (r: CustomerPaymentRow) => r.category === RETAIL_DEPOSIT_CATEGORY;
 
 const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
     const isDeposit = category === RETAIL_DEPOSIT_CATEGORY;
@@ -96,16 +102,31 @@ const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
 
 // Posted (soft blue) / Draft (amber) — same convention as JournalEntriesPage's
 // own status chip, so this column reads consistently with the rest of the
-// accounting section.
-const StatusChip: React.FC<{ status: 'Posted' | 'Draft' }> = ({ status }) => (
+// accounting section. 'Unknown' while the ledger lookup is loading or failed.
+const StatusChip: React.FC<{ status: LedgerStatus | 'Unknown' }> = ({ status }) => (
     <span style={{
         display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: '12px',
         fontSize: '11px', fontWeight: 700,
-        background: status === 'Draft' ? '#fef3c7' : 'rgba(84, 105, 212, 0.12)',
-        color: status === 'Draft' ? '#92400e' : '#4c5fd0',
+        background: status === 'Draft' ? '#fef3c7' : status === 'Posted' ? 'rgba(84, 105, 212, 0.12)' : 'var(--color-bg)',
+        color: status === 'Draft' ? '#92400e' : status === 'Posted' ? '#4c5fd0' : 'var(--color-text-secondary)',
     }}>
-        {status}
+        {status === 'Unknown' ? '…' : status}
     </span>
+);
+
+const Notice: React.FC<{ children: React.ReactNode; onRetry?: () => void }> = ({ children, onRetry }) => (
+    <div role="alert" style={{
+        display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '10px',
+        background: '#fef3c7', color: '#92400e', fontSize: '13px'
+    }}>
+        <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1 }}>{children}</span>
+        {onRetry && (
+            <button onClick={onRetry} style={{ padding: '4px 12px', borderRadius: '8px', border: '1px solid #92400e', background: 'transparent', color: '#92400e', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                Retry
+            </button>
+        )}
+    </div>
 );
 
 const CustomerPaymentPage: React.FC = () => {
@@ -113,18 +134,13 @@ const CustomerPaymentPage: React.FC = () => {
     const { t } = useLanguage();
     const { showToast } = useToast();
     const isMobile = useMobile();
-    const { journalEntries, fetchJournalEntries } = useAccounting();
-
-    useEffect(() => {
-        fetchJournalEntries();
-    }, [fetchJournalEntries]);
 
     React.useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
                     <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.customerPayment')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Read-only log of retail customer payments and deposits</p>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Retail customer payments and deposits — post Draft rows to the ledger</p>
                 </div>
             ),
         });
@@ -133,48 +149,62 @@ const CustomerPaymentPage: React.FC = () => {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+    const [typeFilter, setTypeFilter] = useState<PayTypeFilter>('All');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+    const [shippingFilter, setShippingFilter] = useState('All');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
-    // This page's own dedicated data: every retail Payment/Deposit transaction
-    // (not the shared, globally-capped useStore().transactions — see the header
-    // comment). Strictly the two retail categories written on Paid/Deposit —
-    // nothing else (supplier payments, wholesale, manual Income/Expense/Revenue
-    // entries) belongs here; that filtering now happens server-side.
+    // This page's own dedicated data: every retail Payment/Deposit transaction in
+    // the range, fetched completely (paged past the API row cap) so the totals
+    // and search cover the whole history, not just the newest rows.
     const [allRetailPayments, setAllRetailPayments] = useState<CustomerPaymentRow[]>([]);
-    const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+    const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const fetchSeqRef = useRef(0);
 
     const fetchRetailPayments = useCallback(async () => {
+        const seq = ++fetchSeqRef.current;
         setIsLoadingTransactions(true);
-        try {
-            let query = supabase.from('transactions')
-                .select('*')
+        setLoadError(null);
+        const build = (withCount: boolean) => {
+            let q = supabase.from('transactions')
+                .select('*', withCount ? { count: 'exact' } : undefined)
                 .eq('type', 'Income')
                 .in('category', [RETAIL_PAYMENT_CATEGORY, RETAIL_DEPOSIT_CATEGORY]);
-
-            if (dateRange.start) {
-                const start = new Date(dateRange.start);
-                start.setHours(0, 0, 0, 0);
-                query = query.gte('date', start.toISOString());
+            // Local-midnight bounds: the From day from 00:00, through the end of the To day.
+            if (dateRange.start) q = q.gte('date', parseDay(dateRange.start).toISOString());
+            if (dateRange.end) q = q.lt('date', parseDay(addDays(dateRange.end, 1)).toISOString());
+            return q.order('date', { ascending: false }).order('id', { ascending: false });
+        };
+        try {
+            const first = await build(true).range(0, PAGE_ROWS - 1);
+            if (first.error) throw first.error;
+            const rows = (first.data || []) as CustomerPaymentRow[];
+            const total = first.count ?? rows.length;
+            if (rows.length > 0 && rows.length < total) {
+                // Step by what the server actually returned, in case its cap is below PAGE_ROWS.
+                const step = rows.length;
+                const rest = await Promise.all(
+                    Array.from({ length: Math.ceil(total / step) - 1 }, (_, i) => build(false).range((i + 1) * step, (i + 2) * step - 1))
+                );
+                const seen = new Set(rows.map(r => r.id));
+                for (const page of rest) {
+                    if (page.error) throw page.error;
+                    for (const row of (page.data || []) as CustomerPaymentRow[]) {
+                        if (!seen.has(row.id)) { seen.add(row.id); rows.push(row); }
+                    }
+                }
             }
-            if (dateRange.end) {
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                query = query.lte('date', end.toISOString());
-            }
-
-            // Same convention as IncomeExpense.tsx's fetchTransactions: only cap the
-            // unbounded "All dates" case, never a date-filtered one.
-            if (!dateRange.start && !dateRange.end) {
-                query = query.limit(1000);
-            }
-
-            const { data, error } = await query.order('date', { ascending: false });
-            if (error) throw error;
-
-            setAllRetailPayments((data || []) as CustomerPaymentRow[]);
+            if (seq !== fetchSeqRef.current) return;
+            setAllRetailPayments(rows);
         } catch (error) {
+            if (seq !== fetchSeqRef.current) return;
             console.error('Failed to fetch customer payments:', error);
+            setAllRetailPayments([]);
+            setLoadError((error as { message?: string })?.message || 'Unknown error');
         } finally {
-            setIsLoadingTransactions(false);
+            if (seq === fetchSeqRef.current) setIsLoadingTransactions(false);
         }
     }, [dateRange]);
 
@@ -182,136 +212,140 @@ const CustomerPaymentPage: React.FC = () => {
         fetchRetailPayments();
     }, [fetchRetailPayments]);
 
-    // Order-existence resolution: a SEPARATE, targeted query against `sales` —
-    // never the shared, paginated useStore().sales, which only holds whatever
-    // page Orders.tsx's infinite-scroll has loaded so far. Looking up existence
-    // there would read "not yet paginated" as "deleted" (a false positive on a
-    // perfectly valid, older order). Instead, resolve exactly the order_ids and
-    // #DEP-<fragment>s this page's own rows reference.
-    const [orderResolution, setOrderResolution] = useState<{
-        liveSaleIds: Set<string>;
-        fragmentMatches: Map<string, string[]>; // #DEP-<fragment> -> matching live sale ids
-    } | null>(null);
+    // Deleted-order detection: orders are soft-deleted (archived to
+    // deleted_orders, restorable from there) and the transactions table is
+    // never touched when that happens, so a payment row can outlive its order.
+    // Hide a payment only when its order POSITIVELY shows up in deleted_orders
+    // — never a row with no link at all (predates tracking, can't tell either
+    // way), and never when the lookup itself failed. deleted_orders is tiny
+    // (~hundreds of ids), so ONE small query — independent of the payment rows
+    // and fired in parallel with them — replaces the old per-order existence
+    // scan of `sales` (thousands of ids in chunked queries that blocked the
+    // table for seconds).
+    const [deletedOrders, setDeletedOrders] = useState<{ ids: string[]; failed: boolean } | null>(null);
+    const [deletedNonce, setDeletedNonce] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
-
-        const explicitOrderIds = Array.from(new Set(
-            allRetailPayments.map(r => r.order_id).filter((id): id is string => !!id)
-        ));
-        const fragments = Array.from(new Set(
-            allRetailPayments
-                .filter(r => !r.order_id && r.category === RETAIL_DEPOSIT_CATEGORY)
-                .map(r => DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '')?.[1])
-                .filter((f): f is string => !!f)
-        ));
-
-        if (explicitOrderIds.length === 0 && fragments.length === 0) {
-            setOrderResolution({ liveSaleIds: new Set(), fragmentMatches: new Map() });
-            return;
-        }
-
-        const resolve = async () => {
-            const liveSaleIds = new Set<string>();
+        (async () => {
             try {
-                await Promise.all(chunk(explicitOrderIds, ID_CHUNK).map(async ids => {
-                    if (ids.length === 0) return;
-                    const { data, error } = await supabase.from('sales').select('id').in('id', ids);
-                    if (error) throw error;
-                    for (const s of (data || []) as { id: string }[]) liveSaleIds.add(s.id);
-                }));
+                const rows = await fetchAll<{ id: string }>((from, to) => supabase
+                    .from('deleted_orders').select('id').order('id', { ascending: true }).range(from, to));
+                if (!cancelled) setDeletedOrders({ ids: rows.map(r => r.id), failed: false });
             } catch (err) {
-                console.error('Failed to resolve customer payment order ids:', err);
+                console.error('Failed to load deleted orders:', err);
+                // A stale list from a previous success beats hiding nothing.
+                if (!cancelled) setDeletedOrders(prev => prev && !prev.failed ? prev : { ids: [], failed: true });
             }
-
-            const fragmentMatches = new Map<string, string[]>();
-            try {
-                await Promise.all(chunk(fragments, PREFIX_CHUNK).map(async batch => {
-                    if (batch.length === 0) return;
-                    const { data, error } = await supabase
-                        .from('sales')
-                        .select('id')
-                        .or(batch.map(p => `id.like.${p}%`).join(','));
-                    if (error) throw error;
-                    for (const s of (data || []) as { id: string }[]) {
-                        for (const p of batch) {
-                            if (!s.id.startsWith(p)) continue;
-                            const list = fragmentMatches.get(p);
-                            if (list) list.push(s.id); else fragmentMatches.set(p, [s.id]);
-                        }
-                    }
-                }));
-            } catch (err) {
-                console.error('Failed to resolve customer payment deposit fragments:', err);
-            }
-
-            if (!cancelled) setOrderResolution({ liveSaleIds, fragmentMatches });
-        };
-        resolve();
-
+        })();
         return () => { cancelled = true; };
-    }, [allRetailPayments]);
+    }, [deletedNonce]);
 
-    // Orders are soft-deleted (archived to deleted_orders, restorable from
-    // there) and the transactions table is never touched when that happens,
-    // so a payment row can outlive its order. Drop a row here only when we
-    // can POSITIVELY tell its order was deleted — order_id set but no
-    // matching live sale, or (for Deposit rows) the #DEP-<id8> marker
-    // embedded in the description at creation time matching zero live sales
-    // — never for a row that simply has no link at all (predates tracking,
-    // can't tell either way). Recomputed from the targeted orderResolution
-    // query above, so a restored order makes its payment reappear automatically
-    // without depending on what Orders.tsx happens to have paginated.
+    const resolutionReady = deletedOrders !== null;
+    const resolutionFailed = !!deletedOrders?.failed;
+
     const deletedOrderTxIds = useMemo(() => {
-        if (!orderResolution) return new Set<string>();
-        const { liveSaleIds, fragmentMatches } = orderResolution;
         const ids = new Set<string>();
+        if (!deletedOrders || deletedOrders.failed || deletedOrders.ids.length === 0) return ids;
+        const deletedSet = new Set(deletedOrders.ids);
         for (const r of allRetailPayments) {
             if (r.order_id) {
-                if (!liveSaleIds.has(r.order_id)) ids.add(r.id);
+                if (deletedSet.has(r.order_id)) ids.add(r.id);
                 continue;
             }
-            if (r.category === RETAIL_DEPOSIT_CATEGORY) {
+            // Legacy Deposit rows carry only the #DEP-<id8> marker.
+            if (isDepositRow(r)) {
                 const match = DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '');
-                if (match) {
-                    const fragment = match[1];
-                    const candidates = fragmentMatches.get(fragment) || [];
-                    if (candidates.length === 0) ids.add(r.id);
-                }
+                if (match && deletedOrders.ids.some(id => id.startsWith(match[1]))) ids.add(r.id);
             }
         }
         return ids;
-    }, [allRetailPayments, orderResolution]);
+    }, [allRetailPayments, deletedOrders]);
 
     const retailPayments = useMemo(
         () => allRetailPayments.filter(r => !deletedOrderTxIds.has(r.id)),
         [allRetailPayments, deletedOrderTxIds]
     );
 
+    // Newest first; sorted once per data load, not on every search keystroke.
+    const sortedPayments = useMemo(() => retailPayments
+        .map(r => ({ r, d: parseDate(r.date).getTime() || 0, c: r.created_at ? new Date(r.created_at).getTime() || 0 : 0 }))
+        .sort((a, b) => (b.d - a.d) || (b.c - a.c))
+        .map(x => x.r), [retailPayments]);
+
     // Only show the Reference / Notes columns when this database instance actually
     // has data in them — they may not exist on every instance yet.
     const hasReferenceData = useMemo(() => retailPayments.some(r => (r.reference || '').trim() !== ''), [retailPayments]);
     const hasNotesData = useMemo(() => retailPayments.some(r => (r.notes || '').trim() !== ''), [retailPayments]);
 
-    // These transactions don't carry a posting status themselves — it lives on
-    // the separate journal_entries row linked by reference_id === 'TX-' + id
-    // (the same convention used everywhere else in this codebase).
-    const journalEntryByTxId = useMemo(() => {
-        const map = new Map<string, 'Posted' | 'Draft'>(); // txId -> status
-        for (const je of journalEntries) {
-            const refId = je.reference_id || '';
-            if (refId.startsWith('TX-')) {
-                // Fall back to 'Posted' if the status field is absent — same
-                // missing-migration-column convention used elsewhere (e.g.
-                // JournalEntriesPage's own status chip).
-                map.set(refId.slice(3), je.status === 'Draft' ? 'Draft' : 'Posted');
+    const shippingOptions = useMemo(
+        () => Array.from(new Set(retailPayments.map(r => r.shipping_co).filter((s): s is string => !!s))).sort(),
+        [retailPayments]
+    );
+
+    // Ledger status lives on the journal_entries row linked by reference_id ===
+    // 'TX-' + transaction id. Loaded directly (every TX- entry, paged past the API
+    // row cap) rather than through the shared full-ledger fetch. Until the first
+    // load succeeds the status is unknown and Post Now stays disabled; later
+    // reloads run in the background on top of the last good result (the server
+    // refuses to rewrite a Posted entry, so a slightly stale Draft is safe).
+    const [ledger, setLedger] = useState<{
+        state: 'loading' | 'ready' | 'error';
+        byTx: Map<string, LedgerStatus>;
+        debitAccountByTx: Map<string, string>; // existing entry's cash/bank account
+        refreshError: boolean;
+    }>({ state: 'loading', byTx: new Map(), debitAccountByTx: new Map(), refreshError: false });
+    const [ledgerNonce, setLedgerNonce] = useState(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLedger(prev => prev.state === 'ready' ? prev : { ...prev, state: 'loading' });
+        type JeRow = { reference_id: string | null; status?: string | null; lines?: { account_id: string; debit: number | string | null }[] | null };
+        const load = (cols: string) => fetchAll<JeRow>((from, to) => supabase
+            .from('journal_entries')
+            .select(cols)
+            .like('reference_id', 'TX-%')
+            .order('id', { ascending: true })
+            .range(from, to) as unknown as PromiseLike<{ data: JeRow[] | null; error: unknown }>);
+        (async () => {
+            try {
+                let rows: JeRow[];
+                try {
+                    rows = await load('reference_id, status, lines:journal_entry_lines(account_id, debit)');
+                } catch (err) {
+                    // Instances without migrations/add_entry_status.sql: every entry counts as Posted.
+                    if (!/status/i.test((err as { message?: string })?.message || '')) throw err;
+                    rows = await load('reference_id, lines:journal_entry_lines(account_id, debit)');
+                }
+                const byTx = new Map<string, LedgerStatus>();
+                const debitAccountByTx = new Map<string, string>();
+                for (const je of rows) {
+                    const ref = je.reference_id || '';
+                    if (!ref.startsWith('TX-')) continue;
+                    const txId = ref.slice(3);
+                    if (byTx.get(txId) !== 'Posted') byTx.set(txId, je.status === 'Draft' ? 'Draft' : 'Posted');
+                    const debit = (je.lines || []).find(l => Number(l.debit) > 0);
+                    if (debit && !debitAccountByTx.has(txId)) debitAccountByTx.set(txId, debit.account_id);
+                }
+                if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, refreshError: false });
+            } catch (err) {
+                console.error('Failed to load ledger status for customer payments:', err);
+                if (!cancelled) setLedger(prev => prev.state === 'ready' ? { ...prev, refreshError: true } : { ...prev, state: 'error' });
             }
-        }
-        return map;
-    }, [journalEntries]);
+        })();
+        return () => { cancelled = true; };
+    }, [ledgerNonce]);
+
+    // Rows posted in this session, so they flip to Posted immediately.
+    const [postedIds, setPostedIds] = useState<Set<string>>(new Set());
+    const [postingIds, setPostingIds] = useState<Set<string>>(new Set());
 
     // No matching entry at all is treated the same as an unposted (Draft) one.
-    const statusOf = (txId: string): 'Posted' | 'Draft' => journalEntryByTxId.get(txId) || 'Draft';
+    const statusOf = useCallback(
+        (txId: string): LedgerStatus => postedIds.has(txId) ? 'Posted' : (ledger.byTx.get(txId) || 'Draft'),
+        [postedIds, ledger.byTx]
+    );
+    const ledgerReady = ledger.state === 'ready';
 
     // Resolve each row's originating order id (for the "View" action):
     //   1. transaction.order_id, when this instance has run
@@ -320,28 +354,57 @@ const CustomerPaymentPage: React.FC = () => {
     //      description and look for exactly one sale whose id starts with it — zero or
     //      more than one match is treated as unresolved, never guessed.
     //   3. Else (Payment-type rows with no marker): unresolved — no View button.
+    // The fragment lookup against `sales` is NON-blocking: it only adds View
+    // buttons on legacy rows, so the table never waits for it.
+    const [fragmentMatches, setFragmentMatches] = useState<Map<string, string[]>>(new Map());
+
+    useEffect(() => {
+        let cancelled = false;
+        const fragments = Array.from(new Set(
+            allRetailPayments
+                .filter(r => !r.order_id && isDepositRow(r))
+                .map(r => DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '')?.[1])
+                .filter((f): f is string => !!f)
+        ));
+        if (fragments.length === 0) { setFragmentMatches(new Map()); return; }
+        (async () => {
+            const matches = new Map<string, string[]>();
+            const results = await Promise.allSettled(chunk(fragments, PREFIX_CHUNK).map(async batch => {
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('id')
+                    .or(batch.map(p => `id.like.${p}%`).join(','));
+                if (error) throw error;
+                for (const s of (data || []) as { id: string }[]) {
+                    for (const p of batch) {
+                        if (!s.id.startsWith(p)) continue;
+                        const list = matches.get(p);
+                        if (list) list.push(s.id); else matches.set(p, [s.id]);
+                    }
+                }
+            }));
+            results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+                .forEach(f => console.error('Failed to resolve deposit order links:', f.reason));
+            if (!cancelled) setFragmentMatches(matches);
+        })();
+        return () => { cancelled = true; };
+    }, [allRetailPayments]);
+
     const orderIdByTxId = useMemo(() => {
         const map = new Map<string, string>(); // txId -> resolved order id
-        if (!orderResolution) return map;
-        const { fragmentMatches } = orderResolution;
         for (const r of retailPayments) {
             if (r.order_id) {
                 map.set(r.id, r.order_id);
                 continue;
             }
-            if (r.category === RETAIL_DEPOSIT_CATEGORY) {
+            if (isDepositRow(r)) {
                 const match = DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '');
-                if (match) {
-                    const fragment = match[1];
-                    const candidates = fragmentMatches.get(fragment) || [];
-                    if (candidates.length === 1) {
-                        map.set(r.id, candidates[0]);
-                    }
-                }
+                const candidates = match ? (fragmentMatches.get(match[1]) || []) : [];
+                if (candidates.length === 1) map.set(r.id, candidates[0]);
             }
         }
         return map;
-    }, [retailPayments, orderResolution]);
+    }, [retailPayments, fragmentMatches]);
 
     // Order id currently shown in the View popup (OrderDetailsModal), null when closed.
     const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
@@ -351,10 +414,7 @@ const CustomerPaymentPage: React.FC = () => {
     const postTargetOrder = useMemo(() => {
         if (!postTarget) return null;
         // Synthetic order-like object for RecordReceiptModal's minimal `order`
-        // prop — not a real Sale/order, no internal order-id lookups. amountReceived
-        // and depositAmount are 0 so the modal defaults "Amount received" to the
-        // full transaction amount and "Remaining balance" to $0 (this transaction
-        // already represents a completed payment being finalized, not a partial one).
+        // prop — not a real Sale/order. finalizeMode fixes the amount to this total.
         const syntheticCustomer: Customer = { id: postTarget.id, name: postTarget.description || 'Customer', phone: '' };
         return { total: Number(postTarget.amount || 0), amountReceived: 0, depositAmount: 0, customer: syntheticCustomer };
     }, [postTarget]);
@@ -362,7 +422,6 @@ const CustomerPaymentPage: React.FC = () => {
     const handlePostNowConfirm = ({
         settleDate,
         depositAccountId,
-        amountReceived,
         receiptReference,
         receiptNotes
     }: {
@@ -376,126 +435,287 @@ const CustomerPaymentPage: React.FC = () => {
     }) => {
         if (!postTarget) return;
         const tx = postTarget;
-        const type = tx.category === RETAIL_DEPOSIT_CATEGORY ? 'DEP' : 'RCP';
+        if (postingIds.has(tx.id)) return;
+        setPostingIds(s => new Set(s).add(tx.id));
         postOrFinalizeTransactionReceipt({
             txId: tx.id,
-            amount: amountReceived,
+            // Always the payment's own amount, so the ledger matches this row and Income & Expense.
+            amount: Number(tx.amount || 0),
             date: settleDate,
             description: tx.description || 'Customer',
             depositAccountId,
-            type,
+            type: isDepositRow(tx) ? 'DEP' : 'RCP',
             reference: receiptReference,
             notes: receiptNotes
         }).then(() => {
+            setPostedIds(s => new Set(s).add(tx.id));
             showToast('Payment posted to the ledger', 'success');
-            // Re-fetch so the row's Status flips to Posted and its Post Now
-            // button disappears without a full page reload.
-            fetchJournalEntries();
         }).catch((err: unknown) => {
             console.error('Failed to post payment to the ledger:', err);
             const message = err instanceof Error ? err.message : 'Unknown error';
             showToast('Failed to post payment: ' + message, 'error');
+        }).finally(() => {
+            setPostingIds(s => { const n = new Set(s); n.delete(tx.id); return n; });
+            setLedgerNonce(n => n + 1);
         });
     };
 
     const filteredPayments = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();
-        return retailPayments.filter(r => {
-            const matchesSearch = !term
-                || (r.description || '').toLowerCase().includes(term)
-                || (r.customer_phone || '').toLowerCase().includes(term);
-
-            let matchesDate = true;
-            const itemDate = parseDate(r.date);
-            if (dateRange.start) {
-                const start = parseDate(dateRange.start);
-                start.setHours(0, 0, 0, 0);
-                matchesDate = matchesDate && itemDate >= start;
-            }
-            if (dateRange.end) {
-                const end = parseDate(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                matchesDate = matchesDate && itemDate <= end;
-            }
-
-            return matchesSearch && matchesDate;
-        }).sort((a, b) => {
-            const diff = parseDate(b.date).getTime() - parseDate(a.date).getTime();
-            if (diff !== 0) return diff;
-            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return timeB - timeA;
+        return sortedPayments.filter(r => {
+            if (typeFilter === 'Paid' && isDepositRow(r)) return false;
+            if (typeFilter === 'Deposit' && !isDepositRow(r)) return false;
+            if (shippingFilter !== 'All' && (r.shipping_co || '') !== shippingFilter) return false;
+            if (statusFilter !== 'All' && statusOf(r.id) !== statusFilter) return false;
+            if (!term) return true;
+            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, r.reference, r.notes]
+                .some(v => (v || '').toLowerCase().includes(term));
         });
-    }, [retailPayments, searchTerm, dateRange]);
+    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf]);
 
     const stats = useMemo(() => {
-        const totalAmount = filteredPayments.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-        return { count: filteredPayments.length, totalAmount };
-    }, [filteredPayments]);
+        const s = { total: 0, count: 0, paid: 0, paidCount: 0, deposit: 0, depositCount: 0, draft: 0, draftCount: 0 };
+        for (const r of filteredPayments) {
+            const amt = Number(r.amount || 0);
+            s.total += amt; s.count++;
+            if (isDepositRow(r)) { s.deposit += amt; s.depositCount++; } else { s.paid += amt; s.paidCount++; }
+            if (statusOf(r.id) === 'Draft') { s.draft += amt; s.draftCount++; }
+        }
+        return s;
+    }, [filteredPayments, statusOf]);
 
-    const hasActiveFilters = searchTerm !== '' || dateRange.start !== '' || dateRange.end !== '';
+    // Busy until the rows, the deleted-order check and (when filtering by it) the
+    // ledger status are all in, so stale or unfiltered totals never flash.
+    const isBusy = isLoadingTransactions || !resolutionReady || (statusFilter !== 'All' && ledger.state === 'loading');
+    // A Status filter can't be applied when the status never loaded.
+    const statusFilterBlocked = statusFilter !== 'All' && ledger.state === 'error';
+    const showStats = !isBusy && !loadError && !statusFilterBlocked;
+
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, dateRange, typeFilter, statusFilter, shippingFilter, pageSize]);
+    const totalPages = Math.max(1, Math.ceil(filteredPayments.length / pageSize));
+    const page = Math.min(currentPage, totalPages);
+    const pageRows = filteredPayments.slice((page - 1) * pageSize, page * pageSize);
+
+    const hasActiveFilters = searchTerm !== '' || dateRange.start !== '' || dateRange.end !== ''
+        || typeFilter !== 'All' || statusFilter !== 'All' || shippingFilter !== 'All';
     const clearFilters = () => {
         setSearchTerm('');
         setDateRange({ start: '', end: '' });
+        setTypeFilter('All');
+        setStatusFilter('All');
+        setShippingFilter('All');
+    };
+
+    const refreshAll = () => {
+        fetchRetailPayments();
+        setLedgerNonce(n => n + 1);
+        setDeletedNonce(n => n + 1);
+    };
+
+    const exportToExcel = async () => {
+        if (filteredPayments.length === 0) return;
+        const XLSX = await import('xlsx');
+        const rows: Record<string, string | number>[] = filteredPayments.map(r => ({
+            Date: parseDate(r.date).toLocaleDateString('en-GB'),
+            Customer: r.description || '',
+            Phone: r.customer_phone || '',
+            'Shipping Co': r.shipping_co || '',
+            'Payment Type': isDepositRow(r) ? 'Deposit' : 'Paid',
+            Amount: Number(r.amount || 0),
+            Method: r.pay_by || '',
+            Reference: r.reference || '',
+            Notes: r.notes || '',
+            'Added by': r.added_by || '',
+            Status: ledgerReady || postedIds.has(r.id) ? statusOf(r.id) : '',
+        }));
+        rows.push({});
+        rows.push({ Customer: 'Total', Amount: stats.total });
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Customer Payments');
+        XLSX.writeFile(wb, `Customer_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     const colCount = 8 + (hasReferenceData ? 1 : 0) + (hasNotesData ? 1 : 0);
+    const hiddenCount = deletedOrderTxIds.size;
+    const statValue = (v: React.ReactNode) => showStats ? v : '—';
+    const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
+
+    const selectStyle: React.CSSProperties = {
+        width: '100%', padding: '10px 32px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)',
+        background: 'var(--color-background)', color: 'var(--color-text-main)', fontSize: '13px',
+        appearance: 'none', cursor: 'pointer', outline: 'none'
+    };
+    const iconButtonStyle: React.CSSProperties = {
+        padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '38px', width: '38px', borderRadius: '10px', flexShrink: 0
+    };
+    const pagerButtonStyle = (disabled: boolean): React.CSSProperties => ({
+        padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, minWidth: '36px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        opacity: disabled ? 0.4 : 1, cursor: disabled ? 'not-allowed' : 'pointer'
+    });
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
-            {/* Summary stat cards */}
+            {/* Summary stat cards — Paid / Deposit / Unposted also toggle their filter */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(200px, 1fr))',
+                gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))',
                 gap: isMobile ? '8px' : '16px'
             }}>
                 <StatsCard
-                    title="Total Records"
-                    value={stats.count.toLocaleString()}
-                    icon={Receipt}
+                    title="Total"
+                    value={statValue(formatAmount(stats.total))}
+                    trend={countLabel(stats.count)}
+                    icon={Wallet}
                     color="var(--color-primary)"
                 />
                 <StatsCard
-                    title="Total Amount"
-                    value={formatAmount(stats.totalAmount)}
-                    icon={Wallet}
+                    title="Paid"
+                    value={statValue(formatAmount(stats.paid))}
+                    trend={countLabel(stats.paidCount)}
+                    icon={CircleDollarSign}
                     color="#059669"
+                    onClick={() => setTypeFilter(f => f === 'Paid' ? 'All' : 'Paid')}
+                    style={typeFilter === 'Paid' ? { outline: '2px solid #059669' } : undefined}
+                />
+                <StatsCard
+                    title="Deposit"
+                    value={statValue(formatAmount(stats.deposit))}
+                    trend={countLabel(stats.depositCount)}
+                    icon={Banknote}
+                    color="#7C3AED"
+                    onClick={() => setTypeFilter(f => f === 'Deposit' ? 'All' : 'Deposit')}
+                    style={typeFilter === 'Deposit' ? { outline: '2px solid #7C3AED' } : undefined}
+                />
+                <StatsCard
+                    title="Unposted (Draft)"
+                    value={ledgerReady ? statValue(formatAmount(stats.draft)) : '—'}
+                    trend={ledgerReady ? countLabel(stats.draftCount) : undefined}
+                    icon={Receipt}
+                    color="#D97706"
+                    onClick={() => setStatusFilter(f => f === 'Draft' ? 'All' : 'Draft')}
+                    style={statusFilter === 'Draft' ? { outline: '2px solid #D97706' } : undefined}
                 />
             </div>
 
             {/* Filters */}
-            <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-                <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                    <input
-                        type="text"
-                        placeholder="Search customer name or phone..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="search-input"
-                        style={{ paddingLeft: '36px', width: '100%' }}
-                    />
+            <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                        <input
+                            type="text"
+                            placeholder="Search customer, phone, shipping co, reference..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="search-input"
+                            style={{ paddingLeft: '36px', width: '100%' }}
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Date:</span>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                            onClick={exportToExcel}
+                            disabled={filteredPayments.length === 0 || !showStats}
+                            className="secondary-button"
+                            style={{ ...iconButtonStyle, opacity: filteredPayments.length === 0 || !showStats ? 0.5 : 1 }}
+                            title="Export to Excel"
+                        >
+                            <Download size={18} />
+                        </button>
+                        <button
+                            onClick={refreshAll}
+                            disabled={isLoadingTransactions}
+                            className="secondary-button"
+                            style={iconButtonStyle}
+                            title="Refresh"
+                        >
+                            <RefreshCw size={18} style={{ animation: isLoadingTransactions ? 'spin 1s linear infinite' : 'none' }} />
+                        </button>
+                        {hasActiveFilters && (
+                            <button
+                                onClick={clearFilters}
+                                style={{
+                                    padding: '10px 16px', borderRadius: '8px', border: 'none',
+                                    background: '#EF4444', color: '#ffffff', cursor: 'pointer',
+                                    fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                                title="Clear Filters"
+                            >
+                                <X size={16} /> Clear
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Date:</span>
-                    <DateRangePicker value={dateRange} onChange={setDateRange} />
-                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                        {(['All', 'Paid', 'Deposit'] as PayTypeFilter[]).map(opt => {
+                            const active = typeFilter === opt;
+                            const color = opt === 'Paid' ? '#059669' : opt === 'Deposit' ? '#7C3AED' : 'var(--color-text-main)';
+                            return (
+                                <button
+                                    key={opt}
+                                    onClick={() => setTypeFilter(opt)}
+                                    style={{
+                                        padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', flex: 1, cursor: 'pointer',
+                                        background: active ? 'var(--color-surface)' : 'transparent',
+                                        color: active ? color : 'var(--color-text-secondary)',
+                                        fontWeight: active ? 600 : 500, boxShadow: active ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                                    }}
+                                >
+                                    {opt === 'All' ? 'All Types' : opt}
+                                </button>
+                            );
+                        })}
+                    </div>
 
-                {hasActiveFilters && (
-                    <button
-                        onClick={clearFilters}
-                        style={{
-                            padding: '10px 16px', borderRadius: '8px', border: 'none',
-                            background: '#EF4444', color: '#ffffff', cursor: 'pointer',
-                            fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
-                        }}
-                        title="Clear Filters"
-                    >
-                        <X size={16} /> Clear
-                    </button>
-                )}
+                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
+                        <Receipt size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} style={selectStyle}>
+                            <option value="All">All Statuses</option>
+                            <option value="Draft">Draft</option>
+                            <option value="Posted">Posted</option>
+                        </select>
+                        <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    </div>
+
+                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
+                        <Truck size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                        <select value={shippingFilter} onChange={e => setShippingFilter(e.target.value)} style={selectStyle}>
+                            <option value="All">All Shipping Co</option>
+                            {/* Keep the active pick listed even when the current range has none of it. */}
+                            {(shippingFilter !== 'All' && !shippingOptions.includes(shippingFilter) ? [shippingFilter, ...shippingOptions] : shippingOptions).map(co => (
+                                <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    </div>
+                </div>
             </div>
+
+            {resolutionFailed && (
+                <Notice onRetry={() => setDeletedNonce(n => n + 1)}>
+                    Couldn't check which orders were deleted — payments of deleted orders may be included.
+                </Notice>
+            )}
+            {ledger.state === 'error' && (
+                <Notice onRetry={() => setLedgerNonce(n => n + 1)}>
+                    Couldn't load the ledger status — Post Now is disabled until it loads.
+                </Notice>
+            )}
+            {ledger.refreshError && (
+                <Notice onRetry={() => setLedgerNonce(n => n + 1)}>
+                    Couldn't refresh the ledger status — showing the last loaded status.
+                </Notice>
+            )}
 
             {/* Table */}
             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -516,10 +736,28 @@ const CustomerPaymentPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {isLoadingTransactions ? (
+                            {loadError ? (
+                                <tr>
+                                    <td colSpan={colCount} role="alert" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                        <div style={{ marginBottom: '12px' }}>Couldn't load customer payments. {loadError}</div>
+                                        <button onClick={fetchRetailPayments} disabled={isLoadingTransactions} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px' }}>
+                                            Retry
+                                        </button>
+                                    </td>
+                                </tr>
+                            ) : isBusy ? (
                                 <tr>
                                     <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                         Loading customer payments...
+                                    </td>
+                                </tr>
+                            ) : statusFilterBlocked ? (
+                                <tr>
+                                    <td colSpan={colCount} role="alert" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                        <div style={{ marginBottom: '12px' }}>Couldn't load the ledger status, so the Status filter can't be applied.</div>
+                                        <button onClick={() => setLedgerNonce(n => n + 1)} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px' }}>
+                                            Retry
+                                        </button>
                                     </td>
                                 </tr>
                             ) : filteredPayments.length === 0 ? (
@@ -529,8 +767,11 @@ const CustomerPaymentPage: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredPayments.map((r, idx) => {
+                                pageRows.map((r, idx) => {
+                                    const known = ledgerReady || postedIds.has(r.id);
                                     const status = statusOf(r.id);
+                                    const posting = postingIds.has(r.id);
+                                    const canPost = known && status === 'Draft' && !posting;
                                     const orderId = orderIdByTxId.get(r.id);
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
                                     return (
@@ -553,21 +794,21 @@ const CustomerPaymentPage: React.FC = () => {
                                                 <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '240px' }}>{r.notes || '—'}</td>
                                             )}
                                             <td style={tdStyle}>{r.added_by || '—'}</td>
-                                            <td style={tdStyle}><StatusChip status={status} /></td>
+                                            <td style={tdStyle}><StatusChip status={known ? status : 'Unknown'} /></td>
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                                     <button
                                                         onClick={() => setPostTarget(r)}
-                                                        disabled={status !== 'Draft'}
+                                                        disabled={!canPost}
                                                         style={{
                                                             padding: '6px 12px', borderRadius: '8px', border: 'none',
-                                                            background: status === 'Draft' ? 'var(--color-primary)' : 'var(--color-border)',
-                                                            color: status === 'Draft' ? '#fff' : 'var(--color-text-secondary)',
-                                                            cursor: status === 'Draft' ? 'pointer' : 'not-allowed',
+                                                            background: canPost ? 'var(--color-primary)' : 'var(--color-border)',
+                                                            color: canPost ? '#fff' : 'var(--color-text-secondary)',
+                                                            cursor: canPost ? 'pointer' : 'not-allowed',
                                                             fontSize: '12px', fontWeight: 600
                                                         }}
                                                     >
-                                                        Post Now
+                                                        {posting ? 'Posting…' : 'Post Now'}
                                                     </button>
                                                     {orderId && (
                                                         <button
@@ -593,6 +834,41 @@ const CustomerPaymentPage: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
+
+                {showStats && filteredPayments.length > 0 && (
+                    <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
+                        padding: '12px 16px', borderTop: '1px solid var(--color-border)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                                Showing {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, filteredPayments.length)} of {filteredPayments.length.toLocaleString()} payment{filteredPayments.length === 1 ? '' : 's'}
+                                {hiddenCount > 0 && ` · ${hiddenCount.toLocaleString()} hidden (order deleted)`}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}>
+                                    {[50, 100, 200].map(n => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        {totalPages > 1 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button disabled={page === 1} onClick={() => setCurrentPage(1)} className="secondary-button" style={pagerButtonStyle(page === 1)} title="First page">««</button>
+                                <button disabled={page === 1} onClick={() => setCurrentPage(Math.max(1, page - 1))} className="secondary-button" style={pagerButtonStyle(page === 1)} title="Previous page">
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-main)', padding: '0 6px', whiteSpace: 'nowrap' }}>
+                                    Page {page} of {totalPages}
+                                </span>
+                                <button disabled={page === totalPages} onClick={() => setCurrentPage(Math.min(totalPages, page + 1))} className="secondary-button" style={pagerButtonStyle(page === totalPages)} title="Next page">
+                                    <ChevronRight size={16} />
+                                </button>
+                                <button disabled={page === totalPages} onClick={() => setCurrentPage(totalPages)} className="secondary-button" style={pagerButtonStyle(page === totalPages)} title="Last page">»»</button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {postTarget && postTargetOrder && (
@@ -600,10 +876,13 @@ const CustomerPaymentPage: React.FC = () => {
                     isOpen={!!postTarget}
                     onClose={() => setPostTarget(null)}
                     order={postTargetOrder}
+                    finalizeMode
                     initialMethod={postTarget.pay_by || undefined}
                     initialDate={localYMD(postTarget.date)}
+                    initialDepositAccountId={ledger.debitAccountByTx.get(postTarget.id)}
+                    depositAccountHint={postTarget.pay_by || undefined}
                     title="Record Receipt"
-                    description="Please confirm the settle date and payment method to post this payment to the ledger."
+                    description="Confirm the payment date and the account it was deposited into to post this payment to the ledger."
                     onConfirm={handlePostNowConfirm}
                 />
             )}
