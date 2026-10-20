@@ -661,7 +661,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         </span>
                     </div>
                 ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'end' }}>
+                    // 260px floor: the widest account option (~250px) must fit without clipping.
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'end' }}>
                         <div>
                             <label style={labelStyle}>Date</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
@@ -776,7 +777,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         />
                     </div>
                     <DateRangePicker value={{ start: dateFrom, end: dateTo }} onChange={(r) => { setDateFrom(r.start); setDateTo(r.end); }} />
-                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')} style={{ ...inputStyle, width: 'auto', minWidth: '122px', cursor: 'pointer' }}>
                         <option value="All">All Statuses</option>
                         <option value="Posted">Posted</option>
                         <option value="Draft">Draft</option>
