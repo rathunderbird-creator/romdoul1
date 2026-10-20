@@ -39,7 +39,7 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
             title: (
                 <div style={{ marginBottom: '8px' }}>
                     <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Financial Reports</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>As at {displayDate(range.end)}</p>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>As at {displayDate(range.end || todayYmd())}</p>
                 </div>
             )
         });

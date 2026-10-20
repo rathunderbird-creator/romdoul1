@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { SPECIAL_HINTS, SPECIAL_ORDER, movedOf, netOf, summarizeByProduct, summarizeBySalesman, type MovementRow, type SalesmanSummaryRow } from '../utils/stockMovementSummary';
 import { fetchSalesmanLookups } from '../utils/stockMovementSalesmen';
+import { dayKeyFromDate } from '../utils/dateRange';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
@@ -299,7 +300,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'By Salesman');
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), 'By Salesman & Model');
-        XLSX.writeFile(wb, `Movement_Summary_By_Salesman_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `Movement_Summary_By_Salesman_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     const exportSummary = () => {
@@ -313,7 +314,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Movement Summary');
-        XLSX.writeFile(wb, `Movement_Summary_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `Movement_Summary_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     if (!isOpen) return null;

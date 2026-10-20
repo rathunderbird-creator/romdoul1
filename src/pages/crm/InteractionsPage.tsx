@@ -5,6 +5,7 @@ import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import { useCrm } from '../../hooks/useCrm';
 import type { Interaction } from '../../types';
+import { dayKeyFromDate, parseDay } from '../../utils/dateRange';
 
 const TYPES: Interaction['type'][] = ['Call', 'Email', 'Meeting'];
 
@@ -56,7 +57,7 @@ const InteractionsPage: React.FC = () => {
     }, [interactions, search, typeFilter]);
 
     const openModal = (it?: Interaction) => {
-        if (it) { setEditing(it); setForm({ ...it, date: it.date?.slice(0, 10) }); }
+        if (it) { setEditing(it); setForm({ ...it, date: it.date ? dayKeyFromDate(new Date(it.date)) : it.date }); }
         else {
             setEditing(null);
             setForm({ lead_id: leads[0]?.id || '', type: 'Call', date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), notes: '', performed_by: currentUser?.name || '' });
@@ -68,7 +69,7 @@ const InteractionsPage: React.FC = () => {
         if (!form.lead_id) return;
         setSaving(true);
         try {
-            await saveInteraction({ ...form, date: form.date ? new Date(form.date).toISOString() : new Date().toISOString() });
+            await saveInteraction({ ...form, date: form.date ? parseDay(form.date).toISOString() : new Date().toISOString() });
             setIsModalOpen(false);
         } catch { /* hook toasts */ } finally { setSaving(false); }
     };

@@ -7,6 +7,7 @@ import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } fr
 import { Modal, StatusBadge } from '../../components';
 import { useProcurement } from '../../hooks/useProcurement';
 import type { Supplier } from '../../types';
+import { dayKeyFromDate, daysBetween } from '../../utils/dateRange';
 
 // Helper for generating avatar color based on name
 const stringToColor = (str: string) => {
@@ -72,7 +73,8 @@ const SuppliersPage = () => {
     // Calculate balances
     const supplierBalances = useMemo(() => {
         const balances: Record<string, { totalAmount: number, amountPaid: number, balance: number, overdue: boolean, overdueDays: number, poCount: number }> = {};
-        
+        const todayKey = dayKeyFromDate(new Date());
+
         suppliers.forEach(s => {
             balances[s.id] = { totalAmount: 0, amountPaid: 0, balance: 0, overdue: false, overdueDays: 0, poCount: 0 };
         });
@@ -84,11 +86,11 @@ const SuppliersPage = () => {
                 balances[po.supplier_id].poCount += 1;
                 
                 if (po.payment_status !== 'Paid' && po.payment_due_date) {
-                    const dueDate = new Date(po.payment_due_date);
-                    const now = new Date();
-                    if (dueDate < now) {
+                    // payment_due_date is a DATE: overdue only once the whole local due day has passed.
+                    const dueKey = String(po.payment_due_date).slice(0, 10);
+                    if (dueKey < todayKey) {
                         balances[po.supplier_id].overdue = true;
-                        const daysDiff = Math.ceil((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+                        const daysDiff = daysBetween(dueKey, todayKey);
                         if (daysDiff > balances[po.supplier_id].overdueDays) {
                             balances[po.supplier_id].overdueDays = daysDiff;
                         }

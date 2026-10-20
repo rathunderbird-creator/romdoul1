@@ -3,6 +3,7 @@ import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import type { Sale } from '../types';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -66,7 +67,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
             // transfer from the shipping company (still changeable in the dropdown).
             const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
-            setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : localYMD());
+            setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
             // Bank is the default Deposit into account too, same idea as Pay By above.
             const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
             setDepositAccountId(bankAccount?.id || paymentAccounts[0]?.id || '');

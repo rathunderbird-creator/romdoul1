@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
+import { parseDay } from '../../utils/dateRange';
 
 const StaffPerformance: React.FC = () => {
     const { users, updateUser, salesmen, currentUser } = useStore();
@@ -33,7 +34,7 @@ const StaffPerformance: React.FC = () => {
         const fetchSalesForTargets = async () => {
             setIsLoadingTargets(true);
             try {
-                const now = endDate ? new Date(endDate) : new Date();
+                const now = endDate ? parseDay(endDate) : new Date();
                 const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
                 // Chunk-fetched so a >1000-order month isn't silently truncated.
@@ -60,7 +61,9 @@ const StaffPerformance: React.FC = () => {
 
     // Calculate actual sales for the reference day, week, and month (based on endDate)
     const targetActuals = useMemo(() => {
-        const now = endDate ? new Date(endDate) : new Date();
+        // End of the selected local day (new Date('YYYY-MM-DD') is 07:00 local in UTC+7).
+        const now = endDate ? parseDay(endDate) : new Date();
+        if (endDate) now.setHours(23, 59, 59, 999);
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         
         const currentDay = now.getDay();

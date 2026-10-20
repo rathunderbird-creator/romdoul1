@@ -11,6 +11,7 @@ import { StatsCard } from '../../components';
 import StockMovementSummaryModal from '../../components/StockMovementSummaryModal';
 import { attributeMovement, SPECIAL_LABELS, SPECIAL_ORDER, type Portion, type SpecialRow } from '../../utils/stockMovementSummary';
 import { fetchSalesmanLookups } from '../../utils/stockMovementSalesmen';
+import { dayKeyFromDate } from '../../utils/dateRange';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -438,7 +439,7 @@ const StockMovementsPage: React.FC = () => {
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Stock Movements');
-        XLSX.writeFile(wb, `Stock_Movements_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `Stock_Movements_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     // --- "Show Movements" summary (extracted to StockMovementSummaryModal,

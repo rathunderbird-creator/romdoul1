@@ -5,6 +5,7 @@ import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import { useCrm } from '../../hooks/useCrm';
 import type { Quotation, QuotationItem } from '../../types';
+import { dayKeyFromDate } from '../../utils/dateRange';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const QUOTE_STATUSES: Quotation['status'][] = ['Draft', 'Sent', 'Accepted', 'Rejected'];
@@ -168,7 +169,8 @@ const QuotationsPage: React.FC = () => {
                                 </td></tr>
                             ) : filtered.map((q, idx) => {
                                 const sc = statusConfig(q.status);
-                                const expired = q.valid_until && new Date(q.valid_until) < new Date() && (q.status === 'Draft' || q.status === 'Sent');
+                                // valid_until is a DATE: the quote stays valid through the whole local day.
+                                const expired = !!q.valid_until && q.valid_until.slice(0, 10) < dayKeyFromDate(new Date()) && (q.status === 'Draft' || q.status === 'Sent');
                                 return (
                                     <tr key={q.id} className="hover-highlight" style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined }}>
                                         <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: 700 }}>QT-{q.id.slice(0, 8).toUpperCase()}</td>

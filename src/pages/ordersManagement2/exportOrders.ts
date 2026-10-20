@@ -4,6 +4,7 @@
 // on demand so it never weighs on the page's own chunk.
 import type { Order } from './metrics';
 import { orderBalance, receivedAmountOf } from './metrics';
+import { dayKeyFromDate } from '../../utils/dateRange';
 
 // Pure and unit-testable: one flat record per order.
 export const buildExportRows = (orders: Order[]): Record<string, string | number>[] =>
@@ -38,6 +39,6 @@ export const exportOrdersXlsx = async (orders: Order[], label: string): Promise<
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(buildExportRows(orders));
     XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = dayKeyFromDate(new Date());
     XLSX.writeFile(wb, `Orders_${label}_${dateStr}.xlsx`);
 };
