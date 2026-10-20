@@ -46,7 +46,9 @@ interface EntryRow {
     date: string;
     description: string;
     accountName: string;
+    accountIds: string[];
     counterName: string;
+    counterIds: string[];
     amount: number;
     status: string;
     ref: string;
@@ -127,24 +129,31 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
                 if (accErr) throw accErr;
 
-                const loadPage = (from: number, withStatus: boolean) => supabase
+                const loadPage = (from: number, withStatus: boolean, withEntryNumber: boolean) => supabase
                     .from('journal_entry_lines')
-                    .select(`account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description, reference_id${withStatus ? ', status' : ''})`)
+                    .select(`account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''})`)
                     .order('id', { ascending: true })
                     .range(from, from + 999);
 
                 const all: RawLine[] = [];
                 let withStatus = true;
+                // entry_number arrives with migrations/add_journal_entry_number.sql;
+                // instances that haven't run it yet fall back to reference_id.
+                let withEntryNumber = true;
                 for (let from = 0; from < 100000; from += 1000) {
-                    let { data, error } = await loadPage(from, withStatus);
+                    let { data, error } = await loadPage(from, withStatus, withEntryNumber);
+                    if (error && withEntryNumber && /entry_number/i.test(error.message || '')) {
+                        withEntryNumber = false;
+                        ({ data, error } = await loadPage(from, withStatus, withEntryNumber));
+                    }
                     // Instances that haven't run add_entry_status.sql have no
                     // status column — reload without it; everything is Posted.
                     if (error && withStatus && /status/i.test(error.message || '')) {
                         withStatus = false;
-                        ({ data, error } = await loadPage(from, withStatus));
+                        ({ data, error } = await loadPage(from, withStatus, withEntryNumber));
                     }
                     if (error) throw error;
-                    type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown } | null };
+                    type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown } | null };
                     for (const l of (data || []) as Row[]) {
                         all.push({
                             entryId: String(l.journal_entry_id),
@@ -154,7 +163,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             date: String(l.entry?.date || '').slice(0, 10),
                             description: String(l.entry?.description || ''),
                             status: String(l.entry?.status || 'Posted'),
-                            ref: String(l.entry?.reference_id || ''),
+                            // Prefer the human-readable entry_number (see
+                            // utils/journalEntryNumber.ts); older rows keep
+                            // showing their reference_id.
+                            ref: String(l.entry?.entry_number || l.entry?.reference_id || ''),
                         });
                     }
                     if (!data || data.length < 1000) break;
@@ -341,7 +353,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 date: entryLines[0].date,
                 description: entryLines[0].description,
                 accountName: mains.map(l => accountById.get(l.accountId)?.account_name || '?').join(', '),
+                accountIds: mains.map(l => l.accountId),
                 counterName: counters.map(l => accountById.get(l.accountId)?.account_name || '?').join(', ') || '—',
+                counterIds: counters.map(l => l.accountId),
                 amount,
                 status: entryLines[0].status,
                 ref: entryLines[0].ref,
@@ -386,6 +400,20 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         const a = accountById.get(accountId);
         return a ? `${a.account_code} · ${a.account_name}` : '?';
     };
+
+    // The list's account-reference columns link to the ledger only when the
+    // entry resolves to exactly one account — a simple two-line entry always
+    // does; an imported entry with several lines on the same side shows the
+    // joined names as plain text instead of guessing which one to open.
+    const accountLink = (name: string, ids: string[]): React.ReactNode =>
+        ids.length === 1 ? (
+            <span
+                className="hover-highlight"
+                onClick={() => navigate(`/accounting/general-ledger?account=${ids[0]}`)}
+                title="View in General Ledger"
+                style={{ cursor: 'pointer' }}
+            >{name}</span>
+        ) : <span>{name}</span>;
 
     const openPrintWindow = (title: string, bodyHtml: string) => {
         const w = window.open('', '_blank', 'width=860,height=900');
@@ -704,7 +732,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 {r.description && <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 2px' }}>{r.description}</div>}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                                     <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        {mode === 'revenue' ? `${r.accountName} → ${r.counterName}` : `${r.accountName} ← ${r.counterName}`}
+                                        {mode === 'revenue'
+                                            ? <>{accountLink(r.accountName, r.accountIds)} → {accountLink(r.counterName, r.counterIds)}</>
+                                            : <>{accountLink(r.accountName, r.accountIds)} ← {accountLink(r.counterName, r.counterIds)}</>}
                                     </div>
                                     {r.status === 'Draft' && statusSupported && (
                                         <button onClick={() => postEntry(r)} style={{ padding: '4px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Post</button>
@@ -733,8 +763,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>{r.ref || '—'}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
-                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.accountName}</td>
-                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.counterName}</td>
+                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{accountLink(r.accountName, r.accountIds)}</td>
+                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{accountLink(r.counterName, r.counterIds)}</td>
                                         <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmt(r.amount)}</td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
@@ -797,7 +827,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     <tbody>
                                         {ls.map((l, i) => (
                                             <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <td className="d2-khmer" style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>{accountLabelOf(l.accountId)}</td>
+                                                <td
+                                                    className="d2-khmer hover-highlight"
+                                                    onClick={() => navigate(`/accounting/general-ledger?account=${l.accountId}`)}
+                                                    title="View in General Ledger"
+                                                    style={{ padding: '8px 12px', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                                                >{accountLabelOf(l.accountId)}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: l.debit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.debit > 0 ? fmt(l.debit) : '—'}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: l.credit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.credit > 0 ? fmt(l.credit) : '—'}</td>
                                             </tr>

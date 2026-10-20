@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -58,6 +59,7 @@ const subLabelStyle: React.CSSProperties = {
 
 const ChartOfAccountsPage = () => {
     const isMobile = useMobile();
+    const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { accounts, isLoading, fetchAccounts, saveAccount, deleteAccount } = useAccounting();
 
@@ -275,6 +277,10 @@ const ChartOfAccountsPage = () => {
         return total;
     };
 
+    // Navigate to this account's activity in the General Ledger — used by the
+    // read-only code/name references below (never inside the edit form).
+    const goToLedger = (accountId: string) => navigate(`/accounting/general-ledger?account=${accountId}`);
+
     // Phone row: name + code/type on the left, balance + actions on the right.
     const mobileAccountRow = (acc: ChartOfAccount, opts: { indent?: boolean; bold?: boolean; chevron?: boolean | undefined; onPress?: () => void; subLabel?: string } = {}) => {
         const bal = balanceCell(acc);
@@ -287,7 +293,12 @@ const ChartOfAccountsPage = () => {
                 {opts.chevron !== undefined && (opts.chevron ? <ChevronDown size={15} color="#94a3b8" style={{ flexShrink: 0 }} /> : <ChevronRight size={15} color="#94a3b8" style={{ flexShrink: 0 }} />)}
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: opts.bold ? 700 : 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.account_name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{acc.account_code} · {opts.subLabel || acc.account_type.toUpperCase()}</div>
+                    <div
+                        className="hover-highlight"
+                        onClick={(e) => { e.stopPropagation(); goToLedger(acc.id); }}
+                        title="View in General Ledger"
+                        style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px', cursor: 'pointer', display: 'inline-block' }}
+                    >{acc.account_code} · {opts.subLabel || acc.account_type.toUpperCase()}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: bal.negative ? '#DC2626' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{bal.text}</div>
@@ -458,7 +469,12 @@ const ChartOfAccountsPage = () => {
                                     return (
                                         <React.Fragment key={parent.id}>
                                             <tr style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
-                                                <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)' }}>{parent.account_code}</td>
+                                                <td
+                                                    className="hover-highlight"
+                                                    onClick={() => goToLedger(parent.id)}
+                                                    title="View in General Ledger"
+                                                    style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                                                >{parent.account_code}</td>
                                                 <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)' }}>
                                                     <div 
                                                         style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: hasChildren ? 'pointer' : 'default' }}
@@ -482,7 +498,12 @@ const ChartOfAccountsPage = () => {
                                                 const childBalance = balanceCell(child);
                                                 return (
                                                     <tr key={child.id} style={{ borderBottom: '1px solid #f8fafc', background: 'var(--color-bg)' }}>
-                                                        <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)', fontWeight: '500' }}>{child.account_code}</td>
+                                                        <td
+                                                            className="hover-highlight"
+                                                            onClick={() => goToLedger(child.id)}
+                                                            title="View in General Ledger"
+                                                            style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)', fontWeight: '500', cursor: 'pointer' }}
+                                                        >{child.account_code}</td>
                                                         <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)' }}>
                                                             {child.account_name}
                                                             {subLabelOf(child, parent.account_name) && <span style={subLabelStyle}>{subLabelOf(child, parent.account_name)}</span>}
@@ -505,7 +526,12 @@ const ChartOfAccountsPage = () => {
                                     const orphanBalance = balanceCell(orphan);
                                     return (
                                         <tr key={orphan.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '16px 24px', fontWeight: '500', color: 'var(--color-text-main)' }}>{orphan.account_code}</td>
+                                            <td
+                                                className="hover-highlight"
+                                                onClick={() => goToLedger(orphan.id)}
+                                                title="View in General Ledger"
+                                                style={{ padding: '16px 24px', fontWeight: '500', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                                            >{orphan.account_code}</td>
                                             <td style={{ padding: '16px 24px', color: 'var(--color-text-main)' }}>
                                                 {orphan.account_name}
                                                 {subLabelOf(orphan) && <span style={subLabelStyle}>{subLabelOf(orphan)}</span>}

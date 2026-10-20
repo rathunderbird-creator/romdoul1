@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, BookText } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -35,7 +36,12 @@ const GeneralLedgerPage = () => {
     const { setHeaderContent } = useHeader();
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
 
-    const [accountFilter, setAccountFilter] = useState<string>('all');
+    // A deep link (e.g. from Chart of Accounts or a Financial Report line) can
+    // pre-filter the ledger to one account via ?account=<id>. This only seeds
+    // the initial state — once loaded, the dropdown below drives the filter
+    // exactly as before.
+    const [searchParams] = useSearchParams();
+    const [accountFilter, setAccountFilter] = useState<string>(() => searchParams.get('account') || 'all');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
@@ -67,7 +73,10 @@ const GeneralLedgerPage = () => {
                     key: line.id || `${entry.id}-${line.account_id}-${rows.length}`,
                     date: entry.date,
                     sortKey: `${entry.date}|${entry.created_at || ''}`,
-                    entryRef: entry.reference_id || `#${entry.id.slice(0, 8)}`,
+                    // Prefer the human-readable entry_number (see
+                    // utils/journalEntryNumber.ts); older rows fall back to
+                    // reference_id, then a slice of the entry's own uuid.
+                    entryRef: entry.entry_number || entry.reference_id || `#${entry.id.slice(0, 8)}`,
                     description: entry.description || '—',
                     account: line.account,
                     debit: Number(line.debit) || 0,

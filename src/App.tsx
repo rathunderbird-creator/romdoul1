@@ -22,6 +22,7 @@ const Orders = lazy(() => import('./pages/Orders'));
 const DeletedOrders = lazy(() => import('./pages/DeletedOrders'));
 const Scammers = lazy(() => import('./pages/Scammers'));
 const PaymentTracking = lazy(() => import('./pages/PaymentTracking'));
+const CustomerPayment = lazy(() => import('./pages/CustomerPayment'));
 const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
@@ -171,6 +172,7 @@ const ProtectedApp = () => {
               but better protect them or hide them if not used. 
               For now, I'll protect them with 'manage_orders' as they relate to order tracking. */}
           <Route path="/payment-tracking" element={<ProtectedRoute requiredPermission="manage_orders"><PaymentTracking /></ProtectedRoute>} />
+          <Route path="/customer-payment" element={<ProtectedRoute requiredPermission="manage_orders"><CustomerPayment /></ProtectedRoute>} />
 
           <Route path="/shipping-point" element={<ProtectedRoute requiredPermission="view_dashboard"><ShippingPoint /></ProtectedRoute>} />
           <Route path="/activity-log" element={<ProtectedRoute requiredPermission="view_dashboard"><ActivityLogPage /></ProtectedRoute>} />

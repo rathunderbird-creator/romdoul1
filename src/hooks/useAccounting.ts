@@ -92,7 +92,7 @@ export const useAccounting = () => {
 
     const saveJournalEntry = useCallback(async (entry: Partial<JournalEntry>, lines: Partial<JournalEntryLine>[]) => {
         try {
-            // Very simple transaction equivalent (Supabase JS doesn't do real multi-table transactions easily without an RPC, 
+            // Very simple transaction equivalent (Supabase JS doesn't do real multi-table transactions easily without an RPC,
             // so we do two inserts. For production ERP, you'd write a PostgreSQL RPC for atomic inserts).
             const entryPayload: Record<string, unknown> = {
                 date: entry.date,
@@ -100,25 +100,35 @@ export const useAccounting = () => {
                 reference_id: entry.reference_id,
                 status: entry.status || 'Posted'
             };
-            // The status column arrives with migrations/add_entry_status.sql;
-            // until an instance has run it, save the entry without it.
-            let { data: insertedEntry, error: entryError } = await supabase
-                .from('journal_entries')
-                .insert([entryPayload])
-                .select()
-                .single();
-            if (entryError && /status/i.test(entryError.message || '')) {
-                const withoutStatus = { ...entryPayload };
-                delete withoutStatus.status;
+            // entry_number (caller-computed — see src/utils/journalEntryNumber.ts)
+            // is purely additive; omit it entirely when the caller has none.
+            if (entry.entry_number) entryPayload.entry_number = entry.entry_number;
+            // entry_number and status each arrive with their own migration
+            // (add_journal_entry_number.sql / add_entry_status.sql). An instance
+            // may have run neither, either, or both — retry dropping only the
+            // column(s) the error actually names, so one missing column never
+            // drops the other, still-valid one.
+            const attemptPayload: Record<string, unknown> = { ...entryPayload };
+            let insertedEntry: JournalEntry | null | undefined;
+            let entryError: { message?: string } | null | undefined;
+            for (let attempt = 0; attempt < 3; attempt++) {
                 ({ data: insertedEntry, error: entryError } = await supabase
                     .from('journal_entries')
-                    .insert([withoutStatus])
+                    .insert([attemptPayload])
                     .select()
                     .single());
-                if (!entryError) showToast('Saved as Posted — run migrations/add_entry_status.sql to enable drafts', 'info');
+                if (!entryError) break;
+                const msg = entryError.message || '';
+                let stripped = false;
+                if (/entry_number/i.test(msg) && 'entry_number' in attemptPayload) { delete attemptPayload.entry_number; stripped = true; }
+                if (/status/i.test(msg) && 'status' in attemptPayload) { delete attemptPayload.status; stripped = true; }
+                if (!stripped) break;
+            }
+            if (!entryError && !('status' in attemptPayload) && entryPayload.status !== undefined) {
+                showToast('Saved as Posted — run migrations/add_entry_status.sql to enable drafts', 'info');
             }
 
-            if (entryError) throw entryError;
+            if (entryError || !insertedEntry) throw entryError || new Error('Failed to create journal entry');
 
             const linesToInsert = lines.map(line => ({
                 journal_entry_id: insertedEntry.id,
