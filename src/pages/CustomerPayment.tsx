@@ -532,7 +532,7 @@ const CustomerPaymentPage: React.FC = () => {
                                 filteredPayments.map((r, idx) => {
                                     const status = statusOf(r.id);
                                     const orderId = orderIdByTxId.get(r.id);
-                                    const customerLabel = r.customer_phone ? `${r.description || '—'} - ${r.customer_phone}` : (r.description || '—');
+                                    const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
                                     return (
                                         <tr key={r.id} style={{ background: idx % 2 === 1 ? 'var(--color-bg)' : 'transparent' }}>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
