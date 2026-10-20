@@ -436,7 +436,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         const totalDebit = ls.reduce((s, l) => s + l.debit, 0);
         const totalCredit = ls.reduce((s, l) => s + l.credit, 0);
         openPrintWindow(`${cfg.title} Voucher ${row.ref || ''}`, `
-  <h1>JBL POS — ${escapeHtml(cfg.title)} Voucher</h1>
+  <h1>Romdoul ERP System Solution — ${escapeHtml(cfg.title)} Voucher</h1>
   <div class="muted">${escapeHtml(row.ref || row.entryId)}</div>
   <div class="meta">
     <b>Date</b><span>${escapeHtml(row.date)}</span>
@@ -464,7 +464,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 <td>${escapeHtml(r.status)}</td>
             </tr>`).join('');
         openPrintWindow(`${cfg.title} Entries`, `
-  <h1>JBL POS — ${escapeHtml(cfg.title)} Entries</h1>
+  <h1>Romdoul ERP System Solution — ${escapeHtml(cfg.title)} Entries</h1>
   <div class="muted">${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''} · Printed ${new Date().toLocaleString()}</div>
   <table>
     <thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>${escapeHtml(cfg.accountLabel)}</th><th>${escapeHtml(cfg.counterLabel)}</th><th class="num">Amount</th><th>Status</th></tr></thead>

@@ -167,14 +167,14 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: 'white', fontWeight: 800, fontSize: '14px',
                     }}>
-                        {logo ? <img src={logo} alt="Store Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : 'JBL'}
+                        {logo ? <img src={logo} alt="Store Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : 'ERP'}
                     </div>
                     {!visualCollapsed && (
                         <div style={{ minWidth: 0, flex: 1 }}>
                             <div className="d2-khmer" style={{ fontSize: '15px', fontWeight: 800, color: 'var(--modern-sidebar-text-hover)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>
-                                JBL POS
+                                Romdoul ERP
                             </div>
-                            <div style={{ fontSize: '11px', color: 'var(--modern-sidebar-text-muted)' }}>POS System</div>
+                            <div style={{ fontSize: '11px', color: 'var(--modern-sidebar-text-muted)' }}>System Solution</div>
                         </div>
                     )}
                     {!isMobile && !visualCollapsed && onTogglePin && (

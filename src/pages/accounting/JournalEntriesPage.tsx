@@ -399,7 +399,7 @@ const JournalEntriesPage = () => {
                 <td class="num">${(l.credit || 0) > 0 ? fmtUsd(l.credit || 0) : ''}</td>
             </tr>`).join('');
         openPrintWindow(`Journal Entry ${displayIdOf(entry)}`, `
-  <h1>JBL POS — Journal Entry</h1>
+  <h1>Romdoul ERP System Solution — Journal Entry</h1>
   <div class="muted">${escapeHtml(displayIdOf(entry))}</div>
   <div class="meta">
     <b>Date</b><span>${escapeHtml(fmtDate(entry.date))}</span>
@@ -429,7 +429,7 @@ const JournalEntriesPage = () => {
         }).join('');
         const grand = filteredEntries.reduce((s, e) => s + entryTotals(e).debit, 0);
         openPrintWindow('Journal Entries', `
-  <h1>JBL POS — Journal Entries</h1>
+  <h1>Romdoul ERP System Solution — Journal Entries</h1>
   <div class="muted">${filteredEntries.length} ${filteredEntries.length === 1 ? 'entry' : 'entries'} · Printed ${new Date().toLocaleString()}</div>
   <table>
     <thead><tr><th>Date</th><th>Reference</th><th>Description</th><th class="num">Debits</th><th class="num">Credits</th><th>Status</th></tr></thead>

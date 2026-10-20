@@ -123,10 +123,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                         {logo ? (
                             <img src={logo} alt="Store Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                         ) : (
-                            'JBL'
+                            'ERP'
                         )}
                     </div>
-                    {!visualCollapsed && <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, background: 'none', WebkitTextFillColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>POS</h1>}
+                    {!visualCollapsed && <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, background: 'none', WebkitTextFillColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>Romdoul ERP</h1>}
 
                     {/* Desktop, expanded (pinned, or just hover-revealed): toggle
                         pin state. Hover-revealed-but-unpinned still needs this —
