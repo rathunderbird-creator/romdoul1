@@ -32,7 +32,8 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
                 // Orders Management 2 is hidden from the menu; /orders-management-2 stays reachable by URL.
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
-                { label: t('nav.allPayStatus'), path: '/payment-tracking', icon: CircleDollarSign },
+                // Payment Tracking is hidden from the menu; /payment-tracking stays
+                // reachable by URL and its Record Receipt ledger-posting flow is unchanged.
                 { label: t('nav.customerPayment'), path: '/customer-payment', icon: Receipt },
                 { label: t('nav.scammers'), path: '/orders/scammers', icon: AlertTriangle },
                 { label: t('nav.deletedOrders'), path: '/orders/deleted', icon: Trash2 }
