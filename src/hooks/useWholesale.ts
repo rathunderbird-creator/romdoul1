@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer } from '../types';
 import { useToast } from '../context/ToastContext';
+import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -291,9 +292,21 @@ export const useWholesale = () => {
                         || pool.find(a => a.account_type === 'Revenue');
                     const cashAccId = receivedInAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
                     if (revenueAcc && cashAccId) {
-                        const { data: entry, error: jeErr } = await supabase.from('journal_entries')
-                            .insert([{ date: payDate, description, reference_id: 'TX-' + txId, status: 'Draft' }])
+                        const entryNumber = await nextJournalEntryNumber('WSP', payDate);
+                        const entryPayload: Record<string, unknown> = { date: payDate, description, reference_id: 'TX-' + txId, status: 'Draft' };
+                        if (entryNumber) entryPayload.entry_number = entryNumber;
+                        let { data: entry, error: jeErr } = await supabase.from('journal_entries')
+                            .insert([entryPayload])
                             .select().single();
+                        // entry_number arrives with migrations/add_journal_entry_number.sql;
+                        // until an instance has run it, post the entry without it.
+                        if (jeErr && /entry_number/i.test(jeErr.message || '')) {
+                            const withoutEntryNumber = { ...entryPayload };
+                            delete withoutEntryNumber.entry_number;
+                            ({ data: entry, error: jeErr } = await supabase.from('journal_entries')
+                                .insert([withoutEntryNumber])
+                                .select().single());
+                        }
                         if (jeErr && /status/i.test(jeErr.message || '')) {
                             showToast('Payment and Income logged — run migrations/add_entry_status.sql on this instance to also post it as a journal entry', 'info');
                         } else if (jeErr || !entry) {

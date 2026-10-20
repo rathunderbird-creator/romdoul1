@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircle2, Download } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -7,6 +8,7 @@ import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
+import { nextJournalEntryNumber, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
 import type { JournalEntry, JournalEntryLine } from '../../types';
 
 const formatCurrency = (amount: number) => {
@@ -72,6 +74,7 @@ const statusChip = (status: string) => (
 
 const JournalEntriesPage = () => {
     const isMobile = useMobile();
+    const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { journalEntries, accounts, isLoading, fetchJournalEntries, fetchAccounts, saveJournalEntry } = useAccounting();
@@ -175,14 +178,28 @@ const JournalEntriesPage = () => {
         }
     };
 
+    // Maps an import candidate's `source` label (set in prepareImport above)
+    // to its entry_number type code.
+    const typeCodeForSource = (source: string): JournalEntryTypeCode =>
+        source === 'Supplier payment' ? 'SPP' : source === 'Wholesale receipt' ? 'WSP' : 'PAY';
+
     const runImport = async () => {
         if (!importPreview) return;
         setImporting(true);
         let ok = 0, failed = 0;
         try {
             for (const c of importPreview.candidates) {
+                const entryNumber = await nextJournalEntryNumber(typeCodeForSource(c.source), c.date);
                 const payload: Record<string, unknown> = { date: c.date, description: c.description, reference_id: 'TX-' + c.txId, status: 'Draft' };
-                const { data: entry, error } = await supabase.from('journal_entries').insert([payload]).select().single();
+                if (entryNumber) payload.entry_number = entryNumber;
+                let { data: entry, error } = await supabase.from('journal_entries').insert([payload]).select().single();
+                // entry_number arrives with migrations/add_journal_entry_number.sql;
+                // until an instance has run it, import the entry without it.
+                if (error && /entry_number/i.test(error.message || '')) {
+                    const withoutEntryNumber = { ...payload };
+                    delete withoutEntryNumber.entry_number;
+                    ({ data: entry, error } = await supabase.from('journal_entries').insert([withoutEntryNumber]).select().single());
+                }
                 if (error && /status/i.test(error.message || '')) {
                     // Never import as instantly-posted: drafts need the status column.
                     showToast('Importing needs migrations/add_entry_status.sql on this instance, so entries arrive as drafts — nothing was imported', 'error');
@@ -341,8 +358,9 @@ const JournalEntriesPage = () => {
             return;
         }
         try {
+            const entryNumber = await nextJournalEntryNumber('MAN', date);
             await saveJournalEntry(
-                { date, description, reference_id: referenceId, status: entryStatus },
+                { date, description, reference_id: referenceId, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
                 lines
             );
             setIsModalOpen(false);
@@ -356,7 +374,11 @@ const JournalEntriesPage = () => {
         debit: entry.lines?.reduce((s, l) => s + (l.debit || 0), 0) || 0,
         credit: entry.lines?.reduce((s, l) => s + (l.credit || 0), 0) || 0,
     });
-    const displayIdOf = (entry: JournalEntry) => entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
+    // Prefer the human-readable entry_number (JE-<n>-<type>-<date>-<seq>, see
+    // utils/journalEntryNumber.ts) when this instance has it; older rows and
+    // ones from before migrations/add_journal_entry_number.sql fall back to
+    // the raw reference_id, then a slice of the entry's own uuid.
+    const displayIdOf = (entry: JournalEntry) => entry.entry_number || entry.reference_id || `JE-${entry.id.substring(0, 8).toUpperCase()}`;
     const accountLabelOf = (l: JournalEntryLine) => l.account ? `${l.account.account_code} · ${l.account.account_name}` : '?';
 
     const openPrintWindow = (title: string, bodyHtml: string) => {
@@ -452,6 +474,7 @@ const JournalEntriesPage = () => {
             result = result.filter(entry =>
                 (entry.description?.toLowerCase().includes(q)) ||
                 (entry.reference_id?.toLowerCase().includes(q)) ||
+                (entry.entry_number?.toLowerCase().includes(q)) ||
                 (entry.id.toLowerCase().includes(q))
             );
         }
@@ -760,7 +783,12 @@ const JournalEntriesPage = () => {
                                     <tbody>
                                         {(viewEntry.lines || []).map((l, i) => (
                                             <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                                <td className="d2-khmer" style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>{accountLabelOf(l)}</td>
+                                                <td
+                                                    className={l.account ? 'd2-khmer hover-highlight' : 'd2-khmer'}
+                                                    onClick={l.account ? () => navigate(`/accounting/general-ledger?account=${l.account_id}`) : undefined}
+                                                    title={l.account ? 'View in General Ledger' : undefined}
+                                                    style={{ padding: '8px 12px', color: 'var(--color-text-main)', cursor: l.account ? 'pointer' : 'default' }}
+                                                >{accountLabelOf(l)}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (l.debit || 0) > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{(l.debit || 0) > 0 ? fmtUsd(l.debit || 0) : '—'}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (l.credit || 0) > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{(l.credit || 0) > 0 ? fmtUsd(l.credit || 0) : '—'}</td>
                                             </tr>

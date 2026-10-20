@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, useRef, type R
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
+import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product, 
@@ -65,46 +66,94 @@ const generateUUID = () => {
     });
 };
 
-// Posts a Draft journal entry straight to the ledger for a retail receipt (Dr
-// the resolved cash/bank account, Cr Sales Revenue) — shared by the Paid-branch
-// settlement and the Deposit-branch receipt in updateOrder(). Both call sites
-// gate the call on `postToLedger === true` themselves and only call it for a
-// positive amount; this only adds the ledger side, independent of (and not a
-// replacement for) the existing Income & Expense `transactions` row. When no
-// `depositAccountId` is given (the Deposit modal has no account field), the
-// cash/bank account falls back to an active Asset-type account whose name
-// matches /cash|bank/i. Silently no-ops if the chart of accounts can't resolve
-// both sides, and rolls back the header if the lines insert fails.
-async function postRetailSaleToLedger({
+// Shared account resolution for the retail-receipt ledger postings below: the
+// Sales Revenue account, plus the cash/bank account for a given (optional)
+// `depositAccountId`. When no id is given, falls back to an active Asset-type
+// account whose name matches /cash|bank/i.
+async function resolveRetailLedgerAccounts(depositAccountId?: string): Promise<{
+    revenueAcc: { id: string; account_code: string; account_name: string; account_type: string } | undefined;
+    cashAccId: string | undefined;
+}> {
+    const { data: coa } = await supabase.from('chart_of_accounts')
+        .select('id, account_code, account_name, account_type').eq('is_active', true);
+    const pool = coa || [];
+    const revenueAcc = pool.find(a => a.account_code === '4000')
+        || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
+        || pool.find(a => a.account_type === 'Revenue');
+    const cashAccId = depositAccountId
+        || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+    return { revenueAcc, cashAccId };
+}
+
+// Posts a journal entry (Draft by default) straight to the ledger for a
+// retail receipt (Dr the resolved cash/bank account, Cr Sales Revenue) —
+// shared by the Paid-branch settlement and the Deposit-branch receipt in
+// updateOrder(), and (with `status: 'Posted'`) by postOrFinalizeTransactionReceipt
+// below when no entry exists yet for a transaction. Both updateOrder call
+// sites gate the call on `postToLedger === true` themselves and only call it
+// for a positive amount; this only adds the ledger side, independent of (and
+// not a replacement for) the existing Income & Expense `transactions` row.
+// Silently no-ops if the chart of accounts can't resolve both sides, and
+// rolls back the header if the lines insert fails. Returns whether the
+// posting succeeded — ignored by the two updateOrder call sites (which fire
+// this without awaiting, same as before), read by postOrFinalizeTransactionReceipt
+// so it can surface a failure to its caller.
+// eslint-disable-next-line react-refresh/only-export-components -- plain data helper, not a component; same pattern already accepted for normalizePhone/isRpcMissingError below.
+export async function postRetailSaleToLedger({
     txId,
     amount,
     date,
     description,
-    depositAccountId
+    depositAccountId,
+    type,
+    status = 'Draft',
+    reference,
+    notes
 }: {
     txId: string;
     amount: number;
     date: string;
     description: string;
     depositAccountId?: string;
-}) {
+    // RCP = Paid-transition receipt, DEP = Deposit receipt — see the two
+    // callers below and src/utils/journalEntryNumber.ts.
+    type: 'RCP' | 'DEP';
+    status?: 'Draft' | 'Posted';
+    reference?: string;
+    notes?: string;
+}): Promise<boolean> {
     try {
-        const { data: coa } = await supabase.from('chart_of_accounts')
-            .select('id, account_code, account_name, account_type').eq('is_active', true);
-        const pool = coa || [];
-        const revenueAcc = pool.find(a => a.account_code === '4000')
-            || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
-            || pool.find(a => a.account_type === 'Revenue');
-        const cashAccId = depositAccountId
-            || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+        const { revenueAcc, cashAccId } = await resolveRetailLedgerAccounts(depositAccountId);
         if (revenueAcc && cashAccId) {
-            const { data: entry, error: jeErr } = await supabase.from('journal_entries')
-                .insert([{ date, description, reference_id: 'TX-' + txId, status: 'Draft' }])
-                .select().single();
+            const entryNumber = await nextJournalEntryNumber(type, date);
+            const entryPayload: Record<string, unknown> = { date, description, reference_id: 'TX-' + txId, status };
+            if (entryNumber) entryPayload.entry_number = entryNumber;
+            if (reference !== undefined) entryPayload.reference = reference;
+            if (notes !== undefined) entryPayload.notes = notes;
+            // entry_number and reference/notes each arrive with their own
+            // migration — an instance may be missing one, both, or neither.
+            // Strip only the column(s) the error actually names and retry, so
+            // a missing entry_number never also drops a valid reference/notes
+            // (and vice versa).
+            let entry: { id: string } | null | undefined;
+            let jeErr: { message?: string } | null | undefined;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                ({ data: entry, error: jeErr } = await supabase.from('journal_entries')
+                    .insert([entryPayload])
+                    .select().single());
+                if (!jeErr) break;
+                const msg = jeErr.message || '';
+                let stripped = false;
+                if (/entry_number/i.test(msg) && 'entry_number' in entryPayload) { delete entryPayload.entry_number; stripped = true; }
+                if (/reference|notes/i.test(msg) && ('reference' in entryPayload || 'notes' in entryPayload)) { delete entryPayload.reference; delete entryPayload.notes; stripped = true; }
+                if (!stripped) break;
+            }
             if (jeErr && /status/i.test(jeErr.message || '')) {
                 console.warn('Posted the payment, but this instance needs migrations/add_entry_status.sql to also post it as a journal entry');
+                return false;
             } else if (jeErr || !entry) {
                 console.error('Failed to create journal entry for payment:', jeErr);
+                return false;
             } else {
                 const { error: lErr } = await supabase.from('journal_entry_lines').insert([
                     { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0 },
@@ -113,11 +162,105 @@ async function postRetailSaleToLedger({
                 if (lErr) {
                     console.error('Failed to create journal entry lines for payment:', lErr);
                     await supabase.from('journal_entries').delete().eq('id', entry.id);
+                    return false;
                 }
+                return true;
             }
         }
+        return false;
     } catch (jeCatchErr) {
         console.error('Failed to post journal entry for retail payment:', jeCatchErr);
+        return false;
+    }
+}
+
+// Finalizes a specific transaction's journal entry as Posted — used by the
+// Customer Payment page's "Post Now" action. Unlike postRetailSaleToLedger
+// (always called from updateOrder, always a brand-new entry), this first
+// checks whether a journal entry already exists for the transaction
+// (reference_id === 'TX-' + txId):
+//   - If one exists, its lines are replaced and its date/description/status
+//     (and reference/notes, where those columns exist) are updated to
+//     'Posted' — its entry_number is left untouched.
+//   - If none exists, a fresh already-Posted entry is created via
+//     postRetailSaleToLedger (status: 'Posted'), same as a brand-new receipt.
+// This only touches journal_entries/journal_entry_lines — it never calls
+// updateOrder and never inserts into `transactions`. Throws on failure (the
+// caller — CustomerPayment.tsx — is expected to catch it and show a toast;
+// unlike postRetailSaleToLedger, this is a user-initiated action with a
+// visible result, so a silent console-only failure would leave the UI
+// looking like nothing happened).
+// eslint-disable-next-line react-refresh/only-export-components -- plain data helper, not a component; same pattern already accepted for normalizePhone/isRpcMissingError below.
+export async function postOrFinalizeTransactionReceipt({
+    txId,
+    amount,
+    date,
+    description,
+    depositAccountId,
+    type,
+    reference,
+    notes
+}: {
+    txId: string;
+    amount: number;
+    date: string;
+    description: string;
+    depositAccountId?: string;
+    type: 'RCP' | 'DEP';
+    reference?: string;
+    notes?: string;
+}): Promise<void> {
+    const { data: existing, error: findErr } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('reference_id', 'TX-' + txId)
+        .limit(1)
+        .maybeSingle();
+    if (findErr) throw findErr;
+
+    if (existing) {
+        // Resolve the accounts BEFORE touching any existing lines — if this
+        // fails, the entry's current (valid) lines must be left untouched
+        // rather than deleted with nothing to replace them.
+        const { revenueAcc, cashAccId } = await resolveRetailLedgerAccounts(depositAccountId);
+        if (!revenueAcc || !cashAccId) {
+            throw new Error('Could not resolve a Sales Revenue account and a cash/bank account in the Chart of Accounts.');
+        }
+
+        const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
+        if (delErr) throw delErr;
+
+        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+            { journal_entry_id: existing.id, account_id: cashAccId, debit: amount, credit: 0 },
+            { journal_entry_id: existing.id, account_id: revenueAcc.id, debit: 0, credit: amount },
+        ]);
+        if (lErr) throw lErr;
+
+        // reference/notes and status each need their own migration and may be
+        // missing independently — strip only the column(s) the error actually
+        // names and retry, so one missing column never also drops another,
+        // still-valid one.
+        const attemptPayload: Record<string, unknown> = { date, description, status: 'Posted' };
+        if (reference !== undefined) attemptPayload.reference = reference;
+        if (notes !== undefined) attemptPayload.notes = notes;
+        let updErr: { message?: string } | null | undefined;
+        let statusDropped = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            ({ error: updErr } = await supabase.from('journal_entries').update(attemptPayload).eq('id', existing.id));
+            if (!updErr) break;
+            const msg = updErr.message || '';
+            let stripped = false;
+            if (/reference|notes/i.test(msg) && ('reference' in attemptPayload || 'notes' in attemptPayload)) { delete attemptPayload.reference; delete attemptPayload.notes; stripped = true; }
+            if (/status/i.test(msg) && 'status' in attemptPayload) { delete attemptPayload.status; statusDropped = true; stripped = true; }
+            if (!stripped) break;
+        }
+        if (updErr) throw updErr;
+        if (statusDropped) console.warn('Finalized the receipt, but this instance needs migrations/add_entry_status.sql to mark it Posted');
+    } else {
+        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes });
+        if (!ok) {
+            throw new Error('Could not create a Posted journal entry — check that the Chart of Accounts has an active Sales Revenue account and a cash/bank account.');
+        }
     }
 }
 
@@ -1248,24 +1391,41 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 category: 'លក់រាយ',
                 amount: newSale.amountReceived || newSale.total,
                 description: newSale.customer?.name || 'Customer',
-                addedBy: currentUser?.name || 'System'
+                addedBy: currentUser?.name || 'System',
+                order_id: newSale.id,
+                customer_phone: newSale.customer?.phone || null
             };
 
             // Optimistic update
             setTransactions(prev => [newTransaction, ...prev]);
 
-            // Async insert
-            supabase.from('transactions').insert([{
+            // Async insert — order_id/customer_phone need migrations/add_transaction_order_link.sql.
+            // Strip only the column(s) an older instance's error actually names and retry, so one
+            // missing column never also drops another, still-valid one.
+            const insertPayload: Record<string, unknown> = {
                 id: newTransaction.id,
                 date: newTransaction.date,
                 type: newTransaction.type,
                 category: newTransaction.category,
                 amount: newTransaction.amount,
                 description: newTransaction.description,
-                added_by: newTransaction.addedBy
-            }]).then(({ error }) => {
+                added_by: newTransaction.addedBy,
+                order_id: newTransaction.order_id,
+                customer_phone: newTransaction.customer_phone
+            };
+            (async () => {
+                let error: { message?: string } | null | undefined;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    ({ error } = await supabase.from('transactions').insert([insertPayload]));
+                    if (!error) break;
+                    const msg = error.message || '';
+                    let stripped = false;
+                    if (/order_id/i.test(msg) && 'order_id' in insertPayload) { delete insertPayload.order_id; stripped = true; }
+                    if (/customer_phone/i.test(msg) && 'customer_phone' in insertPayload) { delete insertPayload.customer_phone; stripped = true; }
+                    if (!stripped) break;
+                }
                 if (error) console.error('Failed to create transaction for POS sale:', error);
-            });
+            })();
         }
 
         // Update Sales Local
@@ -1583,24 +1743,41 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 category: 'លក់រាយ',
                 amount: newSale.amountReceived || newSale.total,
                 description: newSale.customer?.name || 'Customer',
-                addedBy: currentUser?.name || 'System'
+                addedBy: currentUser?.name || 'System',
+                order_id: newSale.id,
+                customer_phone: newSale.customer?.phone || null
             };
 
             // Optimistic update
             setTransactions(prev => [newTransaction, ...prev]);
 
-            // Async insert
-            supabase.from('transactions').insert([{
+            // Async insert — order_id/customer_phone need migrations/add_transaction_order_link.sql.
+            // Strip only the column(s) an older instance's error actually names and retry, so one
+            // missing column never also drops another, still-valid one.
+            const insertPayload: Record<string, unknown> = {
                 id: newTransaction.id,
                 date: newTransaction.date,
                 type: newTransaction.type,
                 category: newTransaction.category,
                 amount: newTransaction.amount,
                 description: newTransaction.description,
-                added_by: newTransaction.addedBy
-            }]).then(({ error }) => {
+                added_by: newTransaction.addedBy,
+                order_id: newTransaction.order_id,
+                customer_phone: newTransaction.customer_phone
+            };
+            (async () => {
+                let error: { message?: string } | null | undefined;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    ({ error } = await supabase.from('transactions').insert([insertPayload]));
+                    if (!error) break;
+                    const msg = error.message || '';
+                    let stripped = false;
+                    if (/order_id/i.test(msg) && 'order_id' in insertPayload) { delete insertPayload.order_id; stripped = true; }
+                    if (/customer_phone/i.test(msg) && 'customer_phone' in insertPayload) { delete insertPayload.customer_phone; stripped = true; }
+                    if (!stripped) break;
+                }
                 if (error) console.error('Failed to create transaction for online order:', error);
-            });
+            })();
         } else if (newSale.paymentStatus === 'Deposit' && (newSale.depositAmount || 0) > 0) {
             // Order created straight from checkout with a partial payment:
             // log the deposit as income right away (mirror of the updateOrder
@@ -1617,10 +1794,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 description: `${newSale.customer?.name || 'Customer'} #DEP-${newSale.id.slice(0, 8)}`,
                 addedBy: currentUser?.name || 'System',
                 shipping_co: newSale.shipping?.company || null,
-                pay_by: newSale.depositMethod || null
+                pay_by: newSale.depositMethod || null,
+                order_id: newSale.id,
+                customer_phone: newSale.customer?.phone || null
             };
             setTransactions(prev => [depTxn, ...prev]);
-            supabase.from('transactions').insert([{
+            // order_id/customer_phone need migrations/add_transaction_order_link.sql. Strip only the
+            // column(s) an older instance's error actually names and retry, so one missing column
+            // never also drops another, still-valid one.
+            const depInsertPayload: Record<string, unknown> = {
                 id: depTxn.id,
                 date: depTxn.date,
                 type: depTxn.type,
@@ -1629,10 +1811,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 description: depTxn.description,
                 added_by: depTxn.addedBy,
                 pay_by: depTxn.pay_by,
-                shipping_co: depTxn.shipping_co
-            }]).then(({ error }) => {
+                shipping_co: depTxn.shipping_co,
+                order_id: depTxn.order_id,
+                customer_phone: depTxn.customer_phone
+            };
+            (async () => {
+                let error: { message?: string } | null | undefined;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    ({ error } = await supabase.from('transactions').insert([depInsertPayload]));
+                    if (!error) break;
+                    const msg = error.message || '';
+                    let stripped = false;
+                    if (/order_id/i.test(msg) && 'order_id' in depInsertPayload) { delete depInsertPayload.order_id; stripped = true; }
+                    if (/customer_phone/i.test(msg) && 'customer_phone' in depInsertPayload) { delete depInsertPayload.customer_phone; stripped = true; }
+                    if (!stripped) break;
+                }
                 if (error) console.error('Failed to log deposit income for new order:', error);
-            });
+            })();
         }
 
         setSales(prev => [newSale, ...prev]);
@@ -2190,15 +2385,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     // payment method alone.
                     pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null,
                     reference: (updates as Partial<Sale>).receiptReference || null,
-                    notes: (updates as Partial<Sale>).receiptNotes || null
+                    notes: (updates as Partial<Sale>).receiptNotes || null,
+                    order_id: id,
+                    customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
                 };
 
                 // Optimistic update
                 setTransactions(prev => [newTransaction, ...prev]);
 
-                // Async insert — reference/notes need migrations/add_transaction_reference_notes.sql.
-                // Retry without those two columns if an instance hasn't run it yet.
-                const insertPayload = {
+                // Async insert — reference/notes need migrations/add_transaction_reference_notes.sql,
+                // order_id/customer_phone need migrations/add_transaction_order_link.sql. Each pair
+                // arrives with its own migration, so strip only the column(s) the error actually
+                // names and retry — one missing pair must never also drop the other, still-valid one.
+                const insertPayload: Record<string, unknown> = {
                     id: newTransaction.id,
                     date: newTransaction.date,
                     type: newTransaction.type,
@@ -2209,21 +2408,34 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     shipping_co: newTransaction.shipping_co,
                     pay_by: newTransaction.pay_by,
                     reference: newTransaction.reference,
-                    notes: newTransaction.notes
+                    notes: newTransaction.notes,
+                    order_id: newTransaction.order_id,
+                    customer_phone: newTransaction.customer_phone
                 };
-                supabase.from('transactions').insert([insertPayload]).then(({ error }) => {
-                    if (error && /reference|notes/i.test(error.message || '')) {
-                        const withoutNew = { ...insertPayload };
-                        delete (withoutNew as Partial<typeof insertPayload>).reference;
-                        delete (withoutNew as Partial<typeof insertPayload>).notes;
-                        supabase.from('transactions').insert([withoutNew]).then(({ error: retryError }) => {
-                            if (retryError) console.error('Failed to create transaction for updated order:', retryError);
-                            else console.warn('Logged payment without reference/notes — run migrations/add_transaction_reference_notes.sql to store them');
-                        });
-                    } else if (error) {
-                        console.error('Failed to create transaction for updated order:', error);
+                (async () => {
+                    let error: { message?: string } | null | undefined;
+                    let refNotesDropped = false;
+                    let orderLinkDropped = false;
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        ({ error } = await supabase.from('transactions').insert([insertPayload]));
+                        if (!error) break;
+                        const msg = error.message || '';
+                        let stripped = false;
+                        if (/reference|notes/i.test(msg) && ('reference' in insertPayload || 'notes' in insertPayload)) {
+                            delete insertPayload.reference; delete insertPayload.notes; refNotesDropped = true; stripped = true;
+                        }
+                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in insertPayload || 'customer_phone' in insertPayload)) {
+                            delete insertPayload.order_id; delete insertPayload.customer_phone; orderLinkDropped = true; stripped = true;
+                        }
+                        if (!stripped) break;
                     }
-                });
+                    if (error) {
+                        console.error('Failed to create transaction for updated order:', error);
+                    } else {
+                        if (refNotesDropped) console.warn('Logged payment without reference/notes — run migrations/add_transaction_reference_notes.sql to store them');
+                        if (orderLinkDropped) console.warn('Logged payment without order_id/customer_phone — run migrations/add_transaction_order_link.sql to store them');
+                    }
+                })();
 
                 // Also post a matching Draft entry straight to the ledger, but ONLY when
                 // the caller explicitly opted in (Payment Tracking's Record Receipt flow
@@ -2237,7 +2449,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         amount: amountToRecord,
                         date: normalizedDate,
                         description: customerName,
-                        depositAccountId: (updates as Partial<Sale>).depositAccountId
+                        depositAccountId: (updates as Partial<Sale>).depositAccountId,
+                        type: 'RCP'
                     });
                 }
             }
@@ -2313,10 +2526,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         addedBy: currentUser?.name || 'System',
                         shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null,
                         // Same "Deposit into" account preference as the primary settle block above.
-                        pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null
+                        pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null,
+                        order_id: id,
+                        customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
                     };
                     setTransactions(prev => [healed, ...prev]);
-                    const { error: healErr } = await supabase.from('transactions').insert([{
+                    // order_id/customer_phone need migrations/add_transaction_order_link.sql. Strip
+                    // only the column(s) an older instance's error actually names and retry.
+                    const healInsertPayload: Record<string, unknown> = {
                         id: healed.id,
                         date: healed.date,
                         type: healed.type,
@@ -2325,8 +2542,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         description: healed.description,
                         added_by: healed.addedBy,
                         shipping_co: healed.shipping_co,
-                        pay_by: healed.pay_by
-                    }]);
+                        pay_by: healed.pay_by,
+                        order_id: healed.order_id,
+                        customer_phone: healed.customer_phone
+                    };
+                    let healErr: { message?: string } | null | undefined;
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        ({ error: healErr } = await supabase.from('transactions').insert([healInsertPayload]));
+                        if (!healErr) break;
+                        const msg = healErr.message || '';
+                        let stripped = false;
+                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in healInsertPayload || 'customer_phone' in healInsertPayload)) {
+                            delete healInsertPayload.order_id; delete healInsertPayload.customer_phone; stripped = true;
+                        }
+                        if (!stripped) break;
+                    }
                     if (healErr) console.error('Failed to create missing income transaction:', healErr);
                 }
             } catch (e) {
@@ -2360,10 +2590,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     addedBy: currentUser?.name || 'System',
                     shipping_co: existingOrder.shipping?.company || null,
                     // Same "Deposit into" account preference as the Paid branch above.
-                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || null
+                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || null,
+                    order_id: id,
+                    customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
                 };
                 setTransactions(prev => [depTxn, ...prev]);
-                supabase.from('transactions').insert([{
+                // order_id/customer_phone need migrations/add_transaction_order_link.sql. Strip only
+                // the column(s) an older instance's error actually names and retry.
+                const depInsertPayload: Record<string, unknown> = {
                     id: depTxn.id,
                     date: depTxn.date,
                     type: depTxn.type,
@@ -2371,11 +2605,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     amount: depTxn.amount,
                     description: depTxn.description,
                     added_by: depTxn.addedBy,
-                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || null,
-                    shipping_co: depTxn.shipping_co
-                }]).then(({ error }) => {
+                    pay_by: depTxn.pay_by,
+                    shipping_co: depTxn.shipping_co,
+                    order_id: depTxn.order_id,
+                    customer_phone: depTxn.customer_phone
+                };
+                (async () => {
+                    let error: { message?: string } | null | undefined;
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        ({ error } = await supabase.from('transactions').insert([depInsertPayload]));
+                        if (!error) break;
+                        const msg = error.message || '';
+                        let stripped = false;
+                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in depInsertPayload || 'customer_phone' in depInsertPayload)) {
+                            delete depInsertPayload.order_id; delete depInsertPayload.customer_phone; stripped = true;
+                        }
+                        if (!stripped) break;
+                    }
                     if (error) console.error('Failed to log deposit income:', error);
-                });
+                })();
 
                 // Also post a matching Draft entry straight to the ledger, same opt-in
                 // as the Paid branch above (Payment Tracking's Deposit modal sets this;
@@ -2390,7 +2638,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         amount: depAmount,
                         date: depDateIso,
                         description: depTxn.description,
-                        depositAccountId: (updates as Partial<Sale>).depositAccountId
+                        depositAccountId: (updates as Partial<Sale>).depositAccountId,
+                        type: 'DEP'
                     });
                 }
             }

@@ -7,6 +7,7 @@
 // and the standalone /accounting pages (FinancialReportsPage, with its own
 // From / As-at pickers).
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Scale, TrendingUp, ArrowDownUp, ClipboardList, CheckCircle2, AlertTriangle, Printer, Download, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useMobile } from '../../hooks/useMobile';
@@ -40,7 +41,9 @@ export type TabKey = typeof TABS[number]['key'];
 
 const BLUE = '#3B82F6', RED = '#EF4444', PURPLE = '#8B5CF6', GREEN = '#10B981', AMBER = '#F59E0B';
 
-interface StatementRow { code: string; name: string; amount: number; prev?: number }
+// `id` is the chart-of-accounts row's own id, used to deep-link to the
+// General Ledger — absent on synthetic lines like "Retained Earnings" below.
+interface StatementRow { id?: string; code: string; name: string; amount: number; prev?: number }
 
 export interface FinancialStatementsProps {
     startDate: string;
@@ -51,6 +54,8 @@ export interface FinancialStatementsProps {
 
 const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, endDate, initialTab }) => {
     const isMobile = useMobile();
+    const navigate = useNavigate();
+    const goToLedger = (accountId: string) => navigate(`/accounting/general-ledger?account=${accountId}`);
     const [tab, setTab] = useState<TabKey>(initialTab || 'balance');
     const [compare, setCompare] = useState(false);
 
@@ -127,7 +132,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         accounts
             .filter(a => a.account_type === type)
             .filter(a => a.is_active || (bal.get(a.id) || 0) !== 0 || (prev?.get(a.id) || 0) !== 0)
-            .map(a => ({ code: a.account_code, name: a.account_name, amount: bal.get(a.id) || 0, ...(prev ? { prev: prev.get(a.id) || 0 } : {}) }));
+            .map(a => ({ id: a.id, code: a.account_code, name: a.account_name, amount: bal.get(a.id) || 0, ...(prev ? { prev: prev.get(a.id) || 0 } : {}) }));
 
     const sumOf = (rows: StatementRow[]) => rows.reduce((s, r) => s + r.amount, 0);
     const sumPrev = (rows: StatementRow[]) => rows.reduce((s, r) => s + (r.prev || 0), 0);
@@ -226,7 +231,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         const rows = accounts.map(a => {
             const s = raw.get(a.id);
             const net = s ? s.d - s.c : 0;
-            return { code: a.account_code, name: a.account_name, type: a.account_type, debit: net > 0 ? net : 0, credit: net < 0 ? -net : 0 };
+            return { id: a.id, code: a.account_code, name: a.account_name, type: a.account_type, debit: net > 0 ? net : 0, credit: net < 0 ? -net : 0 };
         });
         const totals = { debit: rows.reduce((s, r) => s + r.debit, 0), credit: rows.reduce((s, r) => s + r.credit, 0) };
         return { rows, totals, balanced: Math.abs(totals.debit - totals.credit) < 0.005 };
@@ -352,7 +357,13 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 {rows.length === 0 ? (
                     <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>No accounts of this type.</div>
                 ) : rows.map((r, i) => (
-                    <div key={`${r.code}|${r.name}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: i === rows.length - 1 ? 'none' : '1px solid var(--color-border)', fontSize: '14px' }}>
+                    <div
+                        key={`${r.code}|${r.name}`}
+                        className={r.id ? 'hover-highlight' : undefined}
+                        onClick={r.id ? () => goToLedger(r.id!) : undefined}
+                        title={r.id ? 'View in General Ledger' : undefined}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: i === rows.length - 1 ? 'none' : '1px solid var(--color-border)', fontSize: '14px', cursor: r.id ? 'pointer' : 'default' }}
+                    >
                         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-secondary)', width: '44px', flexShrink: 0 }}>{r.code}</span>
                         <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
                         {compare && <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{loading ? '…' : fmt(r.prev || 0)}</span>}
@@ -534,7 +545,13 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 <div style={{ ...cardStyle, overflow: 'hidden' }}>
                     {/* Phones: one row per account — no sideways scrolling. */}
                     {trialBalance.rows.map(r => (
-                        <div key={`${r.code}|${r.name}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                        <div
+                            key={`${r.code}|${r.name}`}
+                            className="hover-highlight"
+                            onClick={() => goToLedger(r.id)}
+                            title="View in General Ledger"
+                            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
+                        >
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
                                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '1px' }}>{r.code} · {r.type.toUpperCase()}</div>
@@ -566,7 +583,13 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                             </thead>
                             <tbody>
                                 {trialBalance.rows.map((r, i) => (
-                                    <tr key={`${r.code}|${r.name}`} style={{ borderBottom: '1px solid var(--color-border)', background: i % 2 ? 'rgba(0,0,0,0.015)' : 'transparent' }}>
+                                    <tr
+                                        key={`${r.code}|${r.name}`}
+                                        className="hover-highlight"
+                                        onClick={() => goToLedger(r.id)}
+                                        title="View in General Ledger"
+                                        style={{ borderBottom: '1px solid var(--color-border)', background: i % 2 ? 'rgba(0,0,0,0.015)' : 'transparent', cursor: 'pointer' }}
+                                    >
                                         <td style={{ padding: '10px 20px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.code}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{r.name}</td>
                                         <td style={{ padding: '10px 20px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.type}</td>

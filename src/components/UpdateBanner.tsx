@@ -4,19 +4,28 @@
 // static file written at build time (see vite.config.ts) and prompts a
 // reload instead of letting that happen silently.
 import React, { useEffect, useState, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
+// Vercel's commit SHA is 40 hex chars; a local/dev build falls back to a
+// plain timestamp (see vite.config.ts) — only the former reads well
+// shortened, so the banner's message adapts to whichever it got.
+const isCommitSha = (id: string) => /^[0-9a-f]{40}$/i.test(id);
+
 const UpdateBanner: React.FC = () => {
-    const [available, setAvailable] = useState(false);
+    // The newest buildId seen on the server (null = none detected yet), and
+    // the buildId the user has already dismissed a notice for — dismissing
+    // only silences *this* detected version, a later one still notifies.
+    const [latestBuildId, setLatestBuildId] = useState<string | null>(null);
+    const [dismissedBuildId, setDismissedBuildId] = useState<string | null>(null);
 
     const checkForUpdate = useCallback(async () => {
         try {
             const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
             if (!res.ok) return;
             const data = await res.json();
-            if (data?.buildId && data.buildId !== __BUILD_ID__) setAvailable(true);
+            if (data?.buildId && data.buildId !== __BUILD_ID__) setLatestBuildId(data.buildId);
         } catch {
             // Offline, or a local dev server with no build to poll — either
             // way, nothing to report.
@@ -39,7 +48,11 @@ const UpdateBanner: React.FC = () => {
         };
     }, [checkForUpdate]);
 
-    if (!available) return null;
+    if (!latestBuildId || latestBuildId === dismissedBuildId) return null;
+
+    const message = isCommitSha(latestBuildId)
+        ? `JBL POS has a new version (${latestBuildId.slice(0, 7)}).`
+        : 'JBL POS has a new version.';
 
     return (
         <>
@@ -66,7 +79,7 @@ const UpdateBanner: React.FC = () => {
                 color: 'var(--color-text-main)',
                 animation: 'updateBannerSlideIn 0.3s ease'
             }}>
-                <span>A new version is available.</span>
+                <span>{message}</span>
                 <button
                     onClick={() => window.location.reload()}
                     style={{
@@ -84,7 +97,25 @@ const UpdateBanner: React.FC = () => {
                         whiteSpace: 'nowrap'
                     }}
                 >
-                    <RefreshCw size={14} /> Reload
+                    <RefreshCw size={14} /> Update
+                </button>
+                <button
+                    onClick={() => setDismissedBuildId(latestBuildId)}
+                    title="Dismiss"
+                    aria-label="Dismiss update notice"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--color-text-secondary)',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        marginLeft: '-4px'
+                    }}
+                >
+                    <X size={16} />
                 </button>
             </div>
         </>

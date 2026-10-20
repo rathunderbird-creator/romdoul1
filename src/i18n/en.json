@@ -2,11 +2,12 @@
   "nav": {
     "dashboard": "Dashboard",
     "dashboard2": "Dashboard 2",
-    "orders": "Ordering",
+    "orders": "Sales",
     "allOrders": "All Orders",
     "ordersManagement2": "Orders Management 2",
     "shippingDelivery": "Delivery Tracking",
     "allPayStatus": "Payment Tracking",
+    "customerPayment": "Customer Payment",
     "inventory": "Inventory",
     "allProducts": "All Products",
     "stockIn": "Stock-In",

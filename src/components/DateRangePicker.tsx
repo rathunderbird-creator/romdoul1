@@ -68,18 +68,18 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
     const presets: { label: Preset; getValue: () => { start: Date | null; end: Date | null } }[] = [
         { label: 'Lifetime', getValue: () => ({ start: null, end: null }) },
         {
+            label: 'Today',
+            getValue: () => {
+                const now = getToday();
+                return { start: now, end: now };
+            }
+        },
+        {
             label: 'Yesterday',
             getValue: () => {
                 const d = getToday();
                 d.setDate(d.getDate() - 1);
                 return { start: d, end: d };
-            }
-        },
-        {
-            label: 'Today',
-            getValue: () => {
-                const now = getToday();
-                return { start: now, end: now };
             }
         },
         {

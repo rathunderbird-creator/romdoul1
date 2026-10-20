@@ -463,6 +463,10 @@ export interface JournalEntry {
     date: string; // YYYY-MM-DD
     description?: string;
     reference_id?: string;
+    // Human-readable display ID (JE-{globalSeq}-{TYPE}-{YYYYMMDD}-{dailySeq});
+    // additive to reference_id, needs migrations/add_journal_entry_number.sql.
+    // Older rows simply don't have one — see src/utils/journalEntryNumber.ts.
+    entry_number?: string;
     // Posted (final) or Draft; needs migrations/add_entry_status.sql.
     status?: string;
     created_at?: string;
