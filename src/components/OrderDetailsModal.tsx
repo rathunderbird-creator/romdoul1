@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Copy, Edit, ArrowLeft } from 'lucide-react';
 import Modal from './Modal';
@@ -6,6 +6,9 @@ import OrderDetailsContent from './OrderDetailsContent';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { generateOrderCopyText } from '../utils/orderUtils';
+import { supabase } from '../lib/supabase';
+import { mapSaleEntity } from '../utils/mapper';
+import type { Sale } from '../types';
 
 interface OrderDetailsModalProps {
     isOpen: boolean;
@@ -21,7 +24,34 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
     const { showToast } = useToast();
     const navigate = useNavigate();
 
-    const order = useMemo(() => sales.find(s => s.id === orderId), [sales, orderId]);
+    // `sales` is only a recent, paginated slice of the real orders table (see
+    // StoreContext.tsx's fetchAllSales .limit(50) + Orders.tsx's infinite
+    // scroll) — an order Customer Payment correctly surfaces (via its own
+    // targeted existence check) can still be missing from this shared cache.
+    // Fall back to a direct, single-order fetch, mirroring the same pattern
+    // StoreContext.tsx's updateOrders already uses for the same reason.
+    const [fetchedOrder, setFetchedOrder] = useState<Sale | null>(null);
+    const [isFetchingOrder, setIsFetchingOrder] = useState(false);
+    const cachedOrder = useMemo(() => sales.find(s => s.id === orderId), [sales, orderId]);
+    const order = cachedOrder || fetchedOrder || undefined;
+
+    useEffect(() => {
+        setFetchedOrder(null);
+        if (!isOpen || !orderId || cachedOrder) return;
+        let cancelled = false;
+        setIsFetchingOrder(true);
+        supabase.from('sales')
+            .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+            .eq('id', orderId)
+            .maybeSingle()
+            .then(({ data }) => {
+                if (cancelled) return;
+                if (data) setFetchedOrder(mapSaleEntity(data));
+                setIsFetchingOrder(false);
+            });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- cachedOrder intentionally excluded: once sales catches up, the `order` memo above already prefers it over fetchedOrder without needing to refire this fetch.
+    }, [isOpen, orderId]);
 
     const handleCopyInfo = () => {
         if (!order) return;
@@ -44,7 +74,11 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
             title={order ? `Order #${order.id.substring(0, 8)}` : 'Order Details'}
             width="800px"
         >
-            {!order ? (
+            {!order && isFetchingOrder ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                    Loading order…
+                </div>
+            ) : !order ? (
                 <div style={{ padding: '40px', textAlign: 'center' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>Order Not Found</h2>
                     <button

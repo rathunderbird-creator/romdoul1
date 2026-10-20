@@ -1,18 +1,22 @@
 // Customer Payment — a read-only log of individual retail customer payment
 // records (Record Receipt / Deposit entries posted from Payment Tracking).
-// Pure display: no create/edit/delete here. Data comes straight from
-// useStore().transactions — no separate Supabase query — filtered to the two
-// retail categories written by StoreContext's updateOrder:
+// Pure display: no create/edit/delete here. This is a dedicated full-history
+// listing page, so — like IncomeExpense.tsx's own fetchTransactions — it runs
+// its own Supabase query (filtered server-side to the two retail categories
+// written by StoreContext's updateOrder) rather than reading the shared,
+// globally-capped useStore().transactions (only the 50 most recent rows
+// across every category, meant for lightweight overview use elsewhere):
 //   'លក់រាយ'   (Retail)  -> a Paid/receipt transaction
 //   'កក់ប្រាក់' (Deposit) -> a deposit transaction
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Receipt, Hash, Wallet, X, ExternalLink } from 'lucide-react';
-import { useStore, postOrFinalizeTransactionReceipt } from '../context/StoreContext';
+import { postOrFinalizeTransactionReceipt } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import { useAccounting } from '../hooks/useAccounting';
+import { supabase } from '../lib/supabase';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import type { Transaction, Customer } from '../types';
 
@@ -34,6 +38,19 @@ const DEP_ORDER_FRAGMENT_REGEX = /#DEP-([0-9A-Za-z]{8})$/;
 
 const RETAIL_PAYMENT_CATEGORY = 'លក់រាយ';
 const RETAIL_DEPOSIT_CATEGORY = 'កក់ប្រាក់';
+
+// Order-existence resolution runs as a SEPARATE, targeted query against `sales`
+// (never the shared, paginated useStore().sales — see orderResolution below) so
+// it stays accurate no matter how much of `sales` Orders.tsx has paginated into
+// memory. Chunk sizes mirror the same pattern in utils/stockMovementSalesmen.ts.
+const ID_CHUNK = 400;     // explicit order_ids per .in() — keeps the URL well under gateway limits
+const PREFIX_CHUNK = 50;  // #DEP-<fragment> patterns per .or()
+
+const chunk = <T,>(items: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+    return out;
+};
 
 // Safari chokes on "YYYY-MM-DD HH:MM:SS" (needs a "T"), same guard as IncomeExpense.
 const parseDate = (dateStr?: string): Date => {
@@ -92,7 +109,6 @@ const StatusChip: React.FC<{ status: 'Posted' | 'Draft' }> = ({ status }) => (
 );
 
 const CustomerPaymentPage: React.FC = () => {
-    const { transactions, sales } = useStore();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
     const { showToast } = useToast();
@@ -118,14 +134,123 @@ const CustomerPaymentPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
 
-    // Strictly the two retail categories written on Paid/Deposit — nothing else
-    // (supplier payments, wholesale, manual Income/Expense/Revenue entries) belongs here.
-    const allRetailPayments = useMemo<CustomerPaymentRow[]>(() => {
-        return (transactions || []).filter(t =>
-            t.type === 'Income' &&
-            (t.category === RETAIL_PAYMENT_CATEGORY || t.category === RETAIL_DEPOSIT_CATEGORY)
-        ) as CustomerPaymentRow[];
-    }, [transactions]);
+    // This page's own dedicated data: every retail Payment/Deposit transaction
+    // (not the shared, globally-capped useStore().transactions — see the header
+    // comment). Strictly the two retail categories written on Paid/Deposit —
+    // nothing else (supplier payments, wholesale, manual Income/Expense/Revenue
+    // entries) belongs here; that filtering now happens server-side.
+    const [allRetailPayments, setAllRetailPayments] = useState<CustomerPaymentRow[]>([]);
+    const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+
+    const fetchRetailPayments = useCallback(async () => {
+        setIsLoadingTransactions(true);
+        try {
+            let query = supabase.from('transactions')
+                .select('*')
+                .eq('type', 'Income')
+                .in('category', [RETAIL_PAYMENT_CATEGORY, RETAIL_DEPOSIT_CATEGORY]);
+
+            if (dateRange.start) {
+                const start = new Date(dateRange.start);
+                start.setHours(0, 0, 0, 0);
+                query = query.gte('date', start.toISOString());
+            }
+            if (dateRange.end) {
+                const end = new Date(dateRange.end);
+                end.setHours(23, 59, 59, 999);
+                query = query.lte('date', end.toISOString());
+            }
+
+            // Same convention as IncomeExpense.tsx's fetchTransactions: only cap the
+            // unbounded "All dates" case, never a date-filtered one.
+            if (!dateRange.start && !dateRange.end) {
+                query = query.limit(1000);
+            }
+
+            const { data, error } = await query.order('date', { ascending: false });
+            if (error) throw error;
+
+            setAllRetailPayments((data || []) as CustomerPaymentRow[]);
+        } catch (error) {
+            console.error('Failed to fetch customer payments:', error);
+        } finally {
+            setIsLoadingTransactions(false);
+        }
+    }, [dateRange]);
+
+    useEffect(() => {
+        fetchRetailPayments();
+    }, [fetchRetailPayments]);
+
+    // Order-existence resolution: a SEPARATE, targeted query against `sales` —
+    // never the shared, paginated useStore().sales, which only holds whatever
+    // page Orders.tsx's infinite-scroll has loaded so far. Looking up existence
+    // there would read "not yet paginated" as "deleted" (a false positive on a
+    // perfectly valid, older order). Instead, resolve exactly the order_ids and
+    // #DEP-<fragment>s this page's own rows reference.
+    const [orderResolution, setOrderResolution] = useState<{
+        liveSaleIds: Set<string>;
+        fragmentMatches: Map<string, string[]>; // #DEP-<fragment> -> matching live sale ids
+    } | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const explicitOrderIds = Array.from(new Set(
+            allRetailPayments.map(r => r.order_id).filter((id): id is string => !!id)
+        ));
+        const fragments = Array.from(new Set(
+            allRetailPayments
+                .filter(r => !r.order_id && r.category === RETAIL_DEPOSIT_CATEGORY)
+                .map(r => DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '')?.[1])
+                .filter((f): f is string => !!f)
+        ));
+
+        if (explicitOrderIds.length === 0 && fragments.length === 0) {
+            setOrderResolution({ liveSaleIds: new Set(), fragmentMatches: new Map() });
+            return;
+        }
+
+        const resolve = async () => {
+            const liveSaleIds = new Set<string>();
+            try {
+                await Promise.all(chunk(explicitOrderIds, ID_CHUNK).map(async ids => {
+                    if (ids.length === 0) return;
+                    const { data, error } = await supabase.from('sales').select('id').in('id', ids);
+                    if (error) throw error;
+                    for (const s of (data || []) as { id: string }[]) liveSaleIds.add(s.id);
+                }));
+            } catch (err) {
+                console.error('Failed to resolve customer payment order ids:', err);
+            }
+
+            const fragmentMatches = new Map<string, string[]>();
+            try {
+                await Promise.all(chunk(fragments, PREFIX_CHUNK).map(async batch => {
+                    if (batch.length === 0) return;
+                    const { data, error } = await supabase
+                        .from('sales')
+                        .select('id')
+                        .or(batch.map(p => `id.like.${p}%`).join(','));
+                    if (error) throw error;
+                    for (const s of (data || []) as { id: string }[]) {
+                        for (const p of batch) {
+                            if (!s.id.startsWith(p)) continue;
+                            const list = fragmentMatches.get(p);
+                            if (list) list.push(s.id); else fragmentMatches.set(p, [s.id]);
+                        }
+                    }
+                }));
+            } catch (err) {
+                console.error('Failed to resolve customer payment deposit fragments:', err);
+            }
+
+            if (!cancelled) setOrderResolution({ liveSaleIds, fragmentMatches });
+        };
+        resolve();
+
+        return () => { cancelled = true; };
+    }, [allRetailPayments]);
 
     // Orders are soft-deleted (archived to deleted_orders, restorable from
     // there) and the transactions table is never touched when that happens,
@@ -134,10 +259,12 @@ const CustomerPaymentPage: React.FC = () => {
     // matching live sale, or (for Deposit rows) the #DEP-<id8> marker
     // embedded in the description at creation time matching zero live sales
     // — never for a row that simply has no link at all (predates tracking,
-    // can't tell either way). Recomputed from live `sales` on every render,
-    // so a restored order makes its payment reappear automatically.
+    // can't tell either way). Recomputed from the targeted orderResolution
+    // query above, so a restored order makes its payment reappear automatically
+    // without depending on what Orders.tsx happens to have paginated.
     const deletedOrderTxIds = useMemo(() => {
-        const liveSaleIds = new Set((sales || []).map(s => s.id));
+        if (!orderResolution) return new Set<string>();
+        const { liveSaleIds, fragmentMatches } = orderResolution;
         const ids = new Set<string>();
         for (const r of allRetailPayments) {
             if (r.order_id) {
@@ -148,13 +275,13 @@ const CustomerPaymentPage: React.FC = () => {
                 const match = DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '');
                 if (match) {
                     const fragment = match[1];
-                    const candidates = (sales || []).filter(s => s.id && s.id.startsWith(fragment));
+                    const candidates = fragmentMatches.get(fragment) || [];
                     if (candidates.length === 0) ids.add(r.id);
                 }
             }
         }
         return ids;
-    }, [allRetailPayments, sales]);
+    }, [allRetailPayments, orderResolution]);
 
     const retailPayments = useMemo(
         () => allRetailPayments.filter(r => !deletedOrderTxIds.has(r.id)),
@@ -195,6 +322,8 @@ const CustomerPaymentPage: React.FC = () => {
     //   3. Else (Payment-type rows with no marker): unresolved — no View button.
     const orderIdByTxId = useMemo(() => {
         const map = new Map<string, string>(); // txId -> resolved order id
+        if (!orderResolution) return map;
+        const { fragmentMatches } = orderResolution;
         for (const r of retailPayments) {
             if (r.order_id) {
                 map.set(r.id, r.order_id);
@@ -204,15 +333,15 @@ const CustomerPaymentPage: React.FC = () => {
                 const match = DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '');
                 if (match) {
                     const fragment = match[1];
-                    const candidates = (sales || []).filter(s => s.id && s.id.startsWith(fragment));
+                    const candidates = fragmentMatches.get(fragment) || [];
                     if (candidates.length === 1) {
-                        map.set(r.id, candidates[0].id);
+                        map.set(r.id, candidates[0]);
                     }
                 }
             }
         }
         return map;
-    }, [retailPayments, sales]);
+    }, [retailPayments, orderResolution]);
 
     // Order id currently shown in the View popup (OrderDetailsModal), null when closed.
     const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
@@ -387,7 +516,13 @@ const CustomerPaymentPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredPayments.length === 0 ? (
+                            {isLoadingTransactions ? (
+                                <tr>
+                                    <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                                        Loading customer payments...
+                                    </td>
+                                </tr>
+                            ) : filteredPayments.length === 0 ? (
                                 <tr>
                                     <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                         No customer payments found for these filters.
