@@ -120,12 +120,46 @@ const CustomerPaymentPage: React.FC = () => {
 
     // Strictly the two retail categories written on Paid/Deposit — nothing else
     // (supplier payments, wholesale, manual Income/Expense/Revenue entries) belongs here.
-    const retailPayments = useMemo<CustomerPaymentRow[]>(() => {
+    const allRetailPayments = useMemo<CustomerPaymentRow[]>(() => {
         return (transactions || []).filter(t =>
             t.type === 'Income' &&
             (t.category === RETAIL_PAYMENT_CATEGORY || t.category === RETAIL_DEPOSIT_CATEGORY)
         ) as CustomerPaymentRow[];
     }, [transactions]);
+
+    // Orders are soft-deleted (archived to deleted_orders, restorable from
+    // there) and the transactions table is never touched when that happens,
+    // so a payment row can outlive its order. Drop a row here only when we
+    // can POSITIVELY tell its order was deleted — order_id set but no
+    // matching live sale, or (for Deposit rows) the #DEP-<id8> marker
+    // embedded in the description at creation time matching zero live sales
+    // — never for a row that simply has no link at all (predates tracking,
+    // can't tell either way). Recomputed from live `sales` on every render,
+    // so a restored order makes its payment reappear automatically.
+    const deletedOrderTxIds = useMemo(() => {
+        const liveSaleIds = new Set((sales || []).map(s => s.id));
+        const ids = new Set<string>();
+        for (const r of allRetailPayments) {
+            if (r.order_id) {
+                if (!liveSaleIds.has(r.order_id)) ids.add(r.id);
+                continue;
+            }
+            if (r.category === RETAIL_DEPOSIT_CATEGORY) {
+                const match = DEP_ORDER_FRAGMENT_REGEX.exec(r.description || '');
+                if (match) {
+                    const fragment = match[1];
+                    const candidates = (sales || []).filter(s => s.id && s.id.startsWith(fragment));
+                    if (candidates.length === 0) ids.add(r.id);
+                }
+            }
+        }
+        return ids;
+    }, [allRetailPayments, sales]);
+
+    const retailPayments = useMemo(
+        () => allRetailPayments.filter(r => !deletedOrderTxIds.has(r.id)),
+        [allRetailPayments, deletedOrderTxIds]
+    );
 
     // Only show the Reference / Notes columns when this database instance actually
     // has data in them — they may not exist on every instance yet.
