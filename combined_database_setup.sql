@@ -1,4 +1,4 @@
--- COMBINED SUPABASE SETUP SCRIPT FOR JBL POS
+-- COMBINED SUPABASE SETUP SCRIPT FOR Romdoul ERP System Solution
 -- This script contains all schemas, views, custom tables, policies, and initial data needed to deploy the database.
 
 -- ==========================================
@@ -141,8 +141,8 @@ VALUES (1, '{
             "permissions": ["view_dashboard", "manage_inventory", "process_sales", "view_reports", "manage_settings", "manage_users", "manage_orders", "create_orders", "view_orders", "view_inventory_stock", "manage_income_expense", "manage_hr", "manage_crm", "manage_procurement", "manage_accounting"]
         }
     ],
-    "storeName": "JBL Store Main",
-    "email": "contact@jblstore.com",
+    "storeName": "Romdoul Store Main",
+    "email": "contact@romdoulstore.com",
     "phone": "+1 (555) 123-4567",
     "storeAddress": "123 Speaker Ave, Audio City"
 }')

@@ -51,8 +51,8 @@ const UpdateBanner: React.FC = () => {
     if (!latestBuildId || latestBuildId === dismissedBuildId) return null;
 
     const message = isCommitSha(latestBuildId)
-        ? `JBL POS has a new version (${latestBuildId.slice(0, 7)}).`
-        : 'JBL POS has a new version.';
+        ? `Romdoul ERP System Solution has a new version (${latestBuildId.slice(0, 7)}).`
+        : 'Romdoul ERP System Solution has a new version.';
 
     return (
         <>
