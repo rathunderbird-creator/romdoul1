@@ -65,7 +65,7 @@ const localYMD = (dateStr?: string): string => {
 
 const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
     const isDeposit = category === RETAIL_DEPOSIT_CATEGORY;
-    const label = isDeposit ? 'Deposit' : 'Payment';
+    const label = isDeposit ? 'Deposit' : 'Paid';
     const color = isDeposit ? '#7C3AED' : '#059669';
     return (
         <span style={{
@@ -376,7 +376,7 @@ const CustomerPaymentPage: React.FC = () => {
                             <tr style={{ background: 'var(--color-bg)' }}>
                                 <th style={thStyle}>Date</th>
                                 <th style={thStyle}>Customer</th>
-                                <th style={thStyle}>Type</th>
+                                <th style={thStyle}>Payment Type</th>
                                 <th style={thStyle}>Amount</th>
                                 <th style={thStyle}>Method</th>
                                 {hasReferenceData && <th style={thStyle}>Reference</th>}
