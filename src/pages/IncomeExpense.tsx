@@ -13,6 +13,7 @@ import { getShippingLogo } from '../utils/shipping';
 import { getPaymentLogo, getPaymentColor } from '../utils/payment';
 import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 // Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
 const parseDate = (dateStr: string) => {
@@ -480,7 +481,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         const ws = XLSX.utils.json_to_sheet(rows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
-        XLSX.writeFile(wb, `Income_Expense_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `Income_Expense_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     const uniqueCategories = useMemo(() => {

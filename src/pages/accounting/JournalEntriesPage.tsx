@@ -9,6 +9,7 @@ import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
+import { dayKeyFromDate } from '../../utils/dateRange';
 import type { JournalEntry, JournalEntryLine } from '../../types';
 
 const formatCurrency = (amount: number) => {
@@ -448,7 +449,7 @@ const JournalEntriesPage = () => {
         const blob = new Blob(['﻿' + [head.map(cell).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `journal-entries-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `journal-entries-${dayKeyFromDate(new Date())}.csv`;
         a.click();
         URL.revokeObjectURL(a.href);
     };

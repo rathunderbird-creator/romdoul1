@@ -11,6 +11,7 @@ import { useMobile } from '../../hooks/useMobile';
 import { useAccounting } from '../../hooks/useAccounting';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, MobileMultiChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 import DateRangePicker from '../../components/DateRangePicker';
+import { dayKeyFromDate } from '../../utils/dateRange';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -33,6 +34,10 @@ const getPaymentConfig = (status: string) => {
         default: return { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)' };
     }
 };
+
+// payment_due_date is a DATE: a PO is overdue only once its whole local due day has passed.
+const isPOOverdue = (po: Pick<PurchaseOrder, 'payment_status' | 'payment_due_date'>): boolean =>
+    po.payment_status !== 'Paid' && !!po.payment_due_date && String(po.payment_due_date).slice(0, 10) < dayKeyFromDate(new Date());
 
 type StatusFilter = 'All' | 'Draft' | 'Sent' | 'Received' | 'Cancelled';
 const PAYMENT_FILTER_OPTIONS = ['Unpaid', 'Partial', 'Paid'] as const;
@@ -245,9 +250,7 @@ const PurchaseOrdersPage = () => {
         const totalValue = purchaseOrders.reduce((sum, po) => sum + (po.total_amount || 0), 0);
         const totalPaid = purchaseOrders.reduce((sum, po) => sum + (po.amount_paid || 0), 0);
         const unpaidCount = purchaseOrders.filter(po => po.payment_status !== 'Paid').length;
-        const overdueCount = purchaseOrders.filter(po => 
-            po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date()
-        ).length;
+        const overdueCount = purchaseOrders.filter(isPOOverdue).length;
         return { totalPOs, totalValue, totalPaid, outstanding: totalValue - totalPaid, unpaidCount, overdueCount };
     }, [purchaseOrders]);
 
@@ -886,7 +889,7 @@ const PurchaseOrdersPage = () => {
                     {paginatedPOs.map(po => {
                         const statusCfg = getStatusConfig(po.status);
                         const payCfg = getPaymentConfig(po.payment_status || 'Unpaid');
-                        const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();
+                        const isOverdue = isPOOverdue(po);
                         const balance = (po.total_amount || 0) - (po.amount_paid || 0);
                         return (
                             <SwipeRow
@@ -995,7 +998,7 @@ const PurchaseOrdersPage = () => {
                             {paginatedPOs.map((po, idx) => {
                                 const statusCfg = getStatusConfig(po.status);
                                 const payCfg = getPaymentConfig(po.payment_status || 'Unpaid');
-                                const isOverdue = po.payment_status !== 'Paid' && po.payment_due_date && new Date(po.payment_due_date) < new Date();
+                                const isOverdue = isPOOverdue(po);
                                 const paidPercent = po.total_amount > 0 ? Math.min(100, Math.round(((po.amount_paid || 0) / po.total_amount) * 100)) : 0;
                                 return (
                                     <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined }} className="hover-highlight">
@@ -1406,7 +1409,7 @@ const PurchaseOrdersPage = () => {
                 const payCfg = getPaymentConfig(viewPO.payment_status || 'Unpaid');
                 const paid = Number(viewPO.amount_paid) || 0;
                 const balance = (Number(viewPO.total_amount) || 0) - paid;
-                const isOverdue = viewPO.payment_status !== 'Paid' && viewPO.payment_due_date && new Date(viewPO.payment_due_date) < new Date();
+                const isOverdue = isPOOverdue(viewPO);
                 return (
                     <div
                         onClick={() => setViewPO(null)}

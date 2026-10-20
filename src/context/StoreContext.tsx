@@ -2636,7 +2636,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     postRetailSaleToLedger({
                         txId: depTxn.id,
                         amount: depAmount,
-                        date: depDateIso,
+                        // journal_entries.date is a DATE: pass the local day, not the UTC instant.
+                        date: localDayOf(rawDepDate),
                         description: depTxn.description,
                         depositAccountId: (updates as Partial<Sale>).depositAccountId,
                         type: 'DEP'

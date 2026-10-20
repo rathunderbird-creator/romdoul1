@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -43,7 +44,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             // transfer from the shipping company (still changeable in the dropdown).
             const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
-            setSettleDate(initialDate ? new Date(initialDate).toISOString().slice(0, 10) : localYMD());
+            setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
         }
     }, [isOpen, initialMethod, initialDate, paymentMethods]);
 

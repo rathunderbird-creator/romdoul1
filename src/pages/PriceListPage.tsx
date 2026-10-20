@@ -6,6 +6,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 type SortKey = 'sold' | 'name' | 'model' | 'category' | 'price' | 'stock';
 
@@ -154,7 +155,7 @@ const PriceListPage: React.FC = () => {
         })));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Price List');
-        XLSX.writeFile(wb, `Price_List_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `Price_List_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     const thStyle: React.CSSProperties = { padding: '9px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--color-bg)', zIndex: 2 };

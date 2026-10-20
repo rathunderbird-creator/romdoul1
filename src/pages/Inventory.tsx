@@ -29,6 +29,7 @@ import { useWholesale } from '../hooks/useWholesale';
 import MobileInventoryCard from '../components/MobileInventoryCard';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
+import { dayKeyFromDate } from '../utils/dateRange';
 import type { Product } from '../types';
 import LazyAvatar from '../components/LazyAvatar';
 
@@ -783,7 +784,9 @@ const Inventory: React.FC = () => {
         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const now = new Date();
+        const p2 = (x: number) => String(x).padStart(2, '0');
+        const timestamp = `${dayKeyFromDate(now)}T${p2(now.getHours())}-${p2(now.getMinutes())}-${p2(now.getSeconds())}`;
         link.href = url;
         link.setAttribute('download', `inventory_export_${timestamp}.csv`);
         document.body.appendChild(link);

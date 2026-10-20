@@ -12,6 +12,7 @@ import { Scale, TrendingUp, ArrowDownUp, ClipboardList, CheckCircle2, AlertTrian
 import { supabase } from '../../lib/supabase';
 import { useMobile } from '../../hooks/useMobile';
 import type { ChartOfAccount } from '../../types';
+import { dayKeyFromDate } from '../../utils/dateRange';
 
 type AccountType = ChartOfAccount['account_type'];
 interface LedgerLine { accountId: string; entryId: string; debit: number; credit: number; date: string }
@@ -24,6 +25,7 @@ const displayDate = (ymd: string): string => {
     return `${d}/${m}/${y}`;
 };
 const shiftYears = (ymd: string, delta: number): string => {
+    if (!ymd) return '';
     const d = new Date(ymd + 'T00:00:00');
     d.setFullYear(d.getFullYear() + delta);
     const p = (x: number) => String(x).padStart(2, '0');
@@ -52,7 +54,9 @@ export interface FinancialStatementsProps {
     initialTab?: TabKey;
 }
 
-const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, endDate, initialTab }) => {
+const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, endDate: endDateProp, initialTab }) => {
+    // "Lifetime" sends '' for both bounds: '' start is already unbounded, '' end means today.
+    const endDate = endDateProp || dayKeyFromDate(new Date());
     const isMobile = useMobile();
     const navigate = useNavigate();
     const goToLedger = (accountId: string) => navigate(`/accounting/general-ledger?account=${accountId}`);

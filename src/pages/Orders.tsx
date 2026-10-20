@@ -36,6 +36,12 @@ type SortConfig = {
     direction: 'asc' | 'desc';
 } | null;
 
+// Local start/end of a 'YYYY-MM-DD' day (new Date('YYYY-MM-DD') would parse as UTC).
+const localDayBound = (dateStr: string, edge: 'start' | 'end'): Date => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return edge === 'start' ? new Date(y, m - 1, d, 0, 0, 0, 0) : new Date(y, m - 1, d, 23, 59, 59, 999);
+};
+
 const getStatusBorderColor = (s: string) => {
     switch (s) {
         case 'Pending': return '#D97706';
@@ -1397,14 +1403,10 @@ const Orders: React.FC = () => {
                         const startStr = parts[0];
                         const endStr = parts.length > 1 ? parts[1] : '';
                         if (startStr) {
-                            const start = new Date(startStr);
-                            start.setHours(0, 0, 0, 0);
-                            query = query.gte('date', start.toISOString());
+                            query = query.gte('date', localDayBound(startStr, 'start').toISOString());
                         }
                         if (endStr) {
-                            const end = new Date(endStr);
-                            end.setHours(23, 59, 59, 999);
-                            query = query.lte('date', end.toISOString());
+                            query = query.lte('date', localDayBound(endStr, 'end').toISOString());
                         }
                         break;
                     }
@@ -1419,16 +1421,14 @@ const Orders: React.FC = () => {
                         const endStr = parts.length > 1 ? parts[1] : '';
                         const orGroups: string[] = [];
                         for (const col of ['settle_date', 'deposit_date']) {
+                            // deposit_date is a DATE: a UTC instant would be cast to the previous day.
+                            const isPlainDate = col === 'deposit_date';
                             const colConds: string[] = [];
                             if (startStr) {
-                                const start = new Date(startStr);
-                                start.setHours(0, 0, 0, 0);
-                                colConds.push(`${col}.gte.${start.toISOString()}`);
+                                colConds.push(`${col}.gte.${isPlainDate ? startStr : localDayBound(startStr, 'start').toISOString()}`);
                             }
                             if (endStr) {
-                                const end = new Date(endStr);
-                                end.setHours(23, 59, 59, 999);
-                                colConds.push(`${col}.lte.${end.toISOString()}`);
+                                colConds.push(`${col}.lte.${isPlainDate ? endStr : localDayBound(endStr, 'end').toISOString()}`);
                             }
                             if (colConds.length > 0) {
                                 orGroups.push(colConds.length > 1 ? `and(${colConds.join(',')})` : colConds[0]);

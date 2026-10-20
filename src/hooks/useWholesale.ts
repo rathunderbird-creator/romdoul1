@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -227,7 +228,7 @@ export const useWholesale = () => {
     // Also logs each receipt to Income & Expense so wholesale money shows up as Income.
     const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string, receivedInAccountId?: string, receivedInAccountName?: string) => {
         try {
-            const payDate = paymentDate || new Date().toISOString().split('T')[0];
+            const payDate = paymentDate || dayKeyFromDate(new Date());
             // "Received into" needs migrations/add_customer_payment_account.sql;
             // until an instance has run it, save the receipt without the account.
             const payload: Record<string, unknown> = {

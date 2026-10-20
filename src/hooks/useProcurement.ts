@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Supplier, PurchaseOrder, PurchaseOrderItem } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -239,7 +240,7 @@ export const useProcurement = () => {
     // Also logs each supplier payment to Income & Expense as an Expense.
     const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) => {
         try {
-            const payDate = paymentDate || new Date().toISOString().split('T')[0];
+            const payDate = paymentDate || dayKeyFromDate(new Date());
             // Log payment ("Paid from" needs migrations/add_supplier_payment_account.sql;
             // until an instance has run it, save the payment without the account).
             const payload: Record<string, unknown> = {

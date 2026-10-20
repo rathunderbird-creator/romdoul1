@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Employee, LeaveRequest, PayrollRun } from '../types';
 import { useToast } from '../context/ToastContext';
+import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -224,7 +225,7 @@ export const useHR = () => {
             return;
         }
 
-        const payDate = run.payment_date || new Date().toISOString().split('T')[0];
+        const payDate = run.payment_date || dayKeyFromDate(new Date());
         const dateIso = new Date(payDate).toISOString();
         if (rows.length > 0) {
             const [keep, ...extras] = rows;

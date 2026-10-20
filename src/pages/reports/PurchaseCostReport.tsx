@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Package, DollarSign, TrendingUp, ShoppingBag } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import type { Sale } from '../../types';
+import { dayKeyFromDate } from '../../utils/dateRange';
 
 
 const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Drafted', 'Returned', 'Cancelled'];
@@ -38,7 +39,7 @@ const PurchaseCostReport: React.FC = () => {
             if (statusFilter.size > 0 && !statusFilter.has(status)) return;
 
             // Extract date as YYYY-MM-DD
-            const dateKey = sale.date ? sale.date.substring(0, 10) : 'Unknown';
+            const dateKey = sale.date ? dayKeyFromDate(new Date(sale.date)) : 'Unknown';
 
             (sale.items || []).forEach(item => {
                 const productInfo = productCostMap.get(item.id);
