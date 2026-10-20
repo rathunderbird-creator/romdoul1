@@ -179,7 +179,7 @@ export async function postRetailSaleToLedger({
 // (always called from updateOrder, always a brand-new entry), this first
 // checks whether a journal entry already exists for the transaction
 // (reference_id === 'TX-' + txId):
-//   - If one exists, its lines are replaced and its date/description/status
+//   - If a Draft one exists, its lines are replaced and its date/description/status
 //     (and reference/notes, where those columns exist) are updated to
 //     'Posted' — its entry_number is left untouched.
 //   - If none exists, a fresh already-Posted entry is created via
@@ -210,13 +210,18 @@ export async function postOrFinalizeTransactionReceipt({
     reference?: string;
     notes?: string;
 }): Promise<void> {
+    // select('*') so status is read where that column exists without failing where it doesn't.
     const { data: existing, error: findErr } = await supabase
         .from('journal_entries')
-        .select('id')
+        .select('*')
         .eq('reference_id', 'TX-' + txId)
         .limit(1)
         .maybeSingle();
     if (findErr) throw findErr;
+    // Never rewrite a finalized entry; a missing status counts as Posted, same as the page.
+    if (existing && (existing as { status?: string }).status !== 'Draft') {
+        throw new Error('This payment is already posted to the ledger.');
+    }
 
     if (existing) {
         // Resolve the accounts BEFORE touching any existing lines — if this

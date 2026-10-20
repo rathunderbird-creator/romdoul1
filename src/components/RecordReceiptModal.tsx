@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
@@ -30,6 +30,13 @@ interface RecordReceiptModalProps {
     order: Pick<Sale, 'total' | 'amountReceived' | 'depositAmount' | 'customer'>;
     initialMethod?: string;
     initialDate?: string;
+    // Preferred "Deposited into" account: an explicit id (e.g. the existing
+    // journal entry's debit account), else an account whose name matches the hint.
+    initialDepositAccountId?: string;
+    depositAccountHint?: string;
+    // Finalizing an already-recorded payment: the amount is fixed to order.total
+    // and there is no method or remaining balance to edit.
+    finalizeMode?: boolean;
     title?: string;
     description?: string;
 }
@@ -41,6 +48,9 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     order,
     initialMethod,
     initialDate,
+    initialDepositAccountId,
+    depositAccountHint,
+    finalizeMode = false,
     title = "Record Receipt",
     description = "Please confirm the settle date and payment method."
 }) => {
@@ -48,12 +58,19 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
-    const [depositAccountId, setDepositAccountId] = useState<string>('');
+    // The user's explicit "Deposited into" pick; '' falls back to the default below.
+    const [chosenAccountId, setChosenAccountId] = useState<string>('');
     const [amountReceived, setAmountReceived] = useState<number>(0);
     const [receiptReference, setReceiptReference] = useState<string>('');
     const [receiptNotes, setReceiptNotes] = useState<string>('');
+    const [accountsLoaded, setAccountsLoaded] = useState(false);
+    const initializedRef = useRef(false);
 
-    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+    useEffect(() => {
+        let alive = true;
+        fetchAccounts().finally(() => { if (alive) setAccountsLoaded(true); });
+        return () => { alive = false; };
+    }, [fetchAccounts]);
 
     // Cash/bank ledger accounts for the "Deposit into" select.
     const paymentAccounts = useMemo(
@@ -61,28 +78,42 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         [accounts]
     );
 
+    // Initialize once per open, so accounts arriving later never wipe the user's edits.
     useEffect(() => {
-        if (isOpen) {
-            // Bank is the default Pay By — settlements normally arrive by bank
-            // transfer from the shipping company (still changeable in the dropdown).
-            const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
-            setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
-            setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
-            // Bank is the default Deposit into account too, same idea as Pay By above.
-            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
-            setDepositAccountId(bankAccount?.id || paymentAccounts[0]?.id || '');
-            // Default to the order's outstanding balance — an order that already
-            // took a deposit defaults to the remainder, not the whole total again.
-            setAmountReceived(Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0)));
-            setReceiptReference('');
-            setReceiptNotes('');
-        }
-    }, [isOpen, initialMethod, initialDate, paymentMethods, paymentAccounts, order.total, order.depositAmount, order.amountReceived]);
+        if (!isOpen) { initializedRef.current = false; return; }
+        if (initializedRef.current) return;
+        initializedRef.current = true;
+        // Bank is the default Pay By — settlements normally arrive by bank
+        // transfer from the shipping company (still changeable in the dropdown).
+        const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
+        setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
+        setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
+        setChosenAccountId('');
+        // Default to the order's outstanding balance — an order that already
+        // took a deposit defaults to the remainder, not the whole total again.
+        setAmountReceived(finalizeMode ? order.total : Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0)));
+        setReceiptReference('');
+        setReceiptNotes('');
+    }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived]);
+
+    // Default "Deposited into" until the user picks one: the preferred id, then
+    // a name match on the hint (a cash method picks the cash account), then Bank.
+    const defaultAccountId = useMemo(() => {
+        const hint = (depositAccountHint || '').trim().toLowerCase();
+        const preferred = (initialDepositAccountId && paymentAccounts.find(a => a.id === initialDepositAccountId))
+            || (hint ? paymentAccounts.find(a => a.account_name.toLowerCase() === hint) : undefined)
+            || (hint.includes('cash') ? paymentAccounts.find(a => /cash/i.test(a.account_name)) : undefined)
+            || paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'))
+            || paymentAccounts[0];
+        return preferred?.id || '';
+    }, [paymentAccounts, initialDepositAccountId, depositAccountHint]);
+    const depositAccountId = chosenAccountId || defaultAccountId;
 
     // A prior deposit already reduced the balance — leave it out of "remaining"
     // too, or a fully-settling receipt would still show a bogus balance.
     const remainingBalance = Math.max(0, order.total - (order.depositAmount || 0) - (amountReceived || 0));
-    const canRecord = amountReceived > 0 && !(paymentAccounts.length > 0 && !depositAccountId);
+    const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(settleDate);
+    const canRecord = accountsLoaded && dateValid && amountReceived > 0 && !(paymentAccounts.length > 0 && !depositAccountId);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -107,7 +138,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         value={settleDate}
                         onChange={(e) => setSettleDate(e.target.value)}
                         style={{
-                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            width: '100%', padding: '10px', borderRadius: '8px', border: `1px solid ${dateValid ? 'var(--color-border)' : 'red'}`,
                             background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
                             outline: 'none', boxSizing: 'border-box'
                         }}
@@ -136,36 +167,48 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Amount received <span style={{ color: 'red' }}>*</span></label>
-                    <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={amountReceived}
-                        onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
-                        style={{
-                            width: '100%', padding: '10px', borderRadius: '8px',
-                            border: `1px solid ${amountReceived <= 0 ? 'red' : 'var(--color-border)'}`,
-                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                            outline: 'none', boxSizing: 'border-box'
-                        }}
-                    />
-                </div>
-                <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Method <span style={{ color: 'red' }}>*</span></label>
-                    <select
-                        value={selectedMethod}
-                        onChange={(e) => setSelectedMethod(e.target.value)}
-                        style={{
+                    {finalizeMode ? (
+                        <div style={{
                             width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                            outline: 'none', boxSizing: 'border-box'
-                        }}
-                    >
-                        {paymentMethods.map(method => (
-                            <option key={method} value={method}>{method}</option>
-                        ))}
-                    </select>
+                            background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '14px', fontWeight: 600,
+                            boxSizing: 'border-box'
+                        }}>
+                            ${Number(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                    ) : (
+                        <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={amountReceived}
+                            onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
+                            style={{
+                                width: '100%', padding: '10px', borderRadius: '8px',
+                                border: `1px solid ${amountReceived <= 0 ? 'red' : 'var(--color-border)'}`,
+                                background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                outline: 'none', boxSizing: 'border-box'
+                            }}
+                        />
+                    )}
                 </div>
+                {!finalizeMode && (
+                    <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Method <span style={{ color: 'red' }}>*</span></label>
+                        <select
+                            value={selectedMethod}
+                            onChange={(e) => setSelectedMethod(e.target.value)}
+                            style={{
+                                width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                outline: 'none', boxSizing: 'border-box'
+                            }}
+                        >
+                            {paymentMethods.map(method => (
+                                <option key={method} value={method}>{method}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Reference</label>
                     <input
@@ -184,7 +227,8 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Deposited into <span style={{ color: 'red' }}>*</span></label>
                     <select
                         value={depositAccountId}
-                        onChange={(e) => setDepositAccountId(e.target.value)}
+                        disabled={!accountsLoaded}
+                        onChange={(e) => setChosenAccountId(e.target.value)}
                         style={{
                             width: '100%', padding: '10px', borderRadius: '8px',
                             border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? 'red' : 'var(--color-border)'}`,
@@ -197,15 +241,21 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                             <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
                         ))}
                     </select>
-                    {paymentAccounts.length === 0 && (
+                    {!accountsLoaded ? (
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                            Loading accounts…
+                        </div>
+                    ) : paymentAccounts.length === 0 && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                             No cash or bank accounts in the Chart of Accounts yet — the settlement saves without one.
                         </div>
                     )}
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    Remaining balance: ${remainingBalance.toFixed(2)}
-                </div>
+                {!finalizeMode && (
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                        Remaining balance: ${remainingBalance.toFixed(2)}
+                    </div>
+                )}
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Notes</label>
                     <textarea
@@ -232,8 +282,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     </button>
                     <button
                         onClick={() => {
-                            // Ensure time is preserved, or just set to noon if we only care about the date
-                            // Default behavior for <input type="date"> is YYYY-MM-DD
+                            if (!canRecord) return;
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 paymentMethod: selectedMethod,
