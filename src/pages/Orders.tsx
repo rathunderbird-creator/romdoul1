@@ -1392,21 +1392,54 @@ const Orders: React.FC = () => {
                     // Date-range column filters: "From" only = that day onward,
                     // "To" only = up to that day, both = the inclusive range.
                     // (Previously a lone From collapsed to a single day.)
-                    case 'date':
-                    case 'settleDate': {
-                        const col = key === 'date' ? 'date' : 'settle_date';
+                    case 'date': {
                         const parts = v.split('|');
                         const startStr = parts[0];
                         const endStr = parts.length > 1 ? parts[1] : '';
                         if (startStr) {
                             const start = new Date(startStr);
                             start.setHours(0, 0, 0, 0);
-                            query = query.gte(col, start.toISOString());
+                            query = query.gte('date', start.toISOString());
                         }
                         if (endStr) {
                             const end = new Date(endStr);
                             end.setHours(23, 59, 59, 999);
-                            query = query.lte(col, end.toISOString());
+                            query = query.lte('date', end.toISOString());
+                        }
+                        break;
+                    }
+                    // The column now shows settle_date, falling back to
+                    // deposit_date for an order that's only been deposited on
+                    // (see the 'settleDate' render case below) — match either
+                    // column here too, or filtering by this column would never
+                    // find a deposit-only order it visibly displays a date for.
+                    case 'settleDate': {
+                        const parts = v.split('|');
+                        const startStr = parts[0];
+                        const endStr = parts.length > 1 ? parts[1] : '';
+                        const orGroups: string[] = [];
+                        for (const col of ['settle_date', 'deposit_date']) {
+                            const colConds: string[] = [];
+                            if (startStr) {
+                                const start = new Date(startStr);
+                                start.setHours(0, 0, 0, 0);
+                                colConds.push(`${col}.gte.${start.toISOString()}`);
+                            }
+                            if (endStr) {
+                                const end = new Date(endStr);
+                                end.setHours(23, 59, 59, 999);
+                                colConds.push(`${col}.lte.${end.toISOString()}`);
+                            }
+                            if (colConds.length > 0) {
+                                orGroups.push(colConds.length > 1 ? `and(${colConds.join(',')})` : colConds[0]);
+                            }
+                        }
+                        if (orGroups.length > 0) {
+                            // Matches the display's own gating — an order sitting on
+                            // Unpaid/Cancel/etc. keeps its old settle_date/deposit_date
+                            // for financial-record reasons but no longer shows a date
+                            // in this column, so don't surface it here either.
+                            query = query.in('payment_status', ['Paid', 'Deposit']).or(orGroups.join(','));
                         }
                         break;
                     }
@@ -1887,7 +1920,12 @@ const Orders: React.FC = () => {
             'Total Amount': order.total,
             'Payment Method': order.paymentMethod,
             'Payment Status': order.paymentStatus || 'Paid',
-            'Settle Date': order.settleDate ? new Date(order.settleDate).toLocaleDateString() : 'N/A',
+            'Settle Date': (() => {
+                const d = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit')
+                    ? (order.settleDate || order.depositDate)
+                    : null;
+                return d ? new Date(d).toLocaleDateString() : 'N/A';
+            })(),
             'Shipping Company': order.shipping?.company || 'N/A',
             'Shipping Status': order.shipping?.status || 'Pending',
             'Tracking Number': order.shipping?.trackingNumber || 'N/A',
@@ -3850,7 +3888,19 @@ const Orders: React.FC = () => {
                                                                         </div>
                                                                     </td>
                                                                 );
-                                                            case 'settleDate': return <td key={colId} style={cellStyle}>{order.settleDate ? new Date(order.settleDate).toLocaleDateString() : '-'}</td>;
+                                                            case 'settleDate': {
+                                                                // Settle date once fully Paid; the deposit's own date
+                                                                // while only Deposited. Gated on the order's current
+                                                                // Pay Status (not just whether the fields happen to be
+                                                                // set) — depositDate/settleDate are deliberately kept
+                                                                // on the order even after it's reverted to Unpaid/
+                                                                // Cancel/etc. for financial-record reasons, so showing
+                                                                // them unconditionally would leave a stale date here.
+                                                                const displayDate = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit')
+                                                                    ? (order.settleDate || order.depositDate)
+                                                                    : null;
+                                                                return <td key={colId} style={cellStyle}>{displayDate ? new Date(displayDate).toLocaleDateString() : '-'}</td>;
+                                                            }
                                                             default: return <td key={colId} style={cellStyle}>-</td>;
                                                         }
                                                     })}
