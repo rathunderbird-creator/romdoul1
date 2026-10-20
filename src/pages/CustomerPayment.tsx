@@ -272,7 +272,9 @@ const CustomerPaymentPage: React.FC = () => {
     const filteredPayments = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();
         return retailPayments.filter(r => {
-            const matchesSearch = !term || (r.description || '').toLowerCase().includes(term);
+            const matchesSearch = !term
+                || (r.description || '').toLowerCase().includes(term)
+                || (r.customer_phone || '').toLowerCase().includes(term);
 
             let matchesDate = true;
             const itemDate = parseDate(r.date);
@@ -338,7 +340,7 @@ const CustomerPaymentPage: React.FC = () => {
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                     <input
                         type="text"
-                        placeholder="Search customer name..."
+                        placeholder="Search customer name or phone..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="search-input"
