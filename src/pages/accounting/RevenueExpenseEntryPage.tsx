@@ -12,6 +12,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
+import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
 import type { ChartOfAccount } from '../../types';
 
 const GREEN = '#10B981', RED = '#EF4444';
@@ -26,7 +27,7 @@ const CFG = {
         accountLabel: 'Revenue Account',
         counterLabel: 'Received Into',
         submit: 'Record Revenue',
-        refPrefix: 'REV',
+        refPrefix: 'REV' as const,
     },
     expense: {
         title: 'Expense',
@@ -37,7 +38,7 @@ const CFG = {
         accountLabel: 'Expense Account',
         counterLabel: 'Paid From',
         submit: 'Record Expense',
-        refPrefix: 'EXP',
+        refPrefix: 'EXP' as const,
     },
 };
 
@@ -52,6 +53,10 @@ interface EntryRow {
     amount: number;
     status: string;
     ref: string;
+    // Created by a payment flow (reference_id 'TX-…': retail receipts/deposits,
+    // supplier and wholesale payments, imports) — managed from its own page.
+    isSystem: boolean;
+    lineCount: number;
 }
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -80,6 +85,18 @@ const StatusChip: React.FC<{ status: string }> = ({ status }) => (
     }}>{status}</span>
 );
 
+// Marks entries written by the payment flows (retail receipts/deposits,
+// supplier and wholesale payments) — viewable here, managed on their own page.
+const SystemChip: React.FC = () => (
+    <span
+        title="Created automatically by a payment flow (Customer Payment, Procurement or Wholesale) — view and print it here, manage it from its own page."
+        style={{
+            fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
+            color: 'var(--color-text-secondary)', background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
+        }}>auto</span>
+);
+
 // Local calendar day as YYYY-MM-DD — timezone-safe (uses local date parts,
 // not a UTC-shifted 24h), so it can't land on the wrong date.
 const todayYmd = (): string => {
@@ -99,8 +116,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const navigate = useNavigate();
 
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; status: string; ref: string }
+    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; status: string; ref: string; refId: string }
     const [lines, setLines] = useState<RawLine[] | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [isFetching, setIsFetching] = useState(false);
     // False once loading falls back because journal_entries.status does not
     // exist yet (migrations/add_entry_status.sql not run on this instance).
     const [statusSupported, setStatusSupported] = useState(true);
@@ -122,62 +141,82 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
 
     useEffect(() => {
         let alive = true;
-        setLines(null);
+        // Refetches keep the previous list on screen; only the first load shows "Loading".
+        setIsFetching(true);
+        setLoadError(null);
         (async () => {
             try {
-                const { data: accs, error: accErr } = await supabase
+                const accsPromise = supabase
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
-                if (accErr) throw accErr;
 
-                const loadPage = (from: number, withStatus: boolean, withEntryNumber: boolean) => supabase
+                const PAGE = 1000;
+                const loadPage = (from: number, withStatus: boolean, withEntryNumber: boolean, withCount: boolean) => supabase
                     .from('journal_entry_lines')
-                    .select(`account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''})`)
+                    .select(`account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''})`, withCount ? { count: 'exact' } : undefined)
                     .order('id', { ascending: true })
-                    .range(from, from + 999);
+                    .range(from, from + PAGE - 1);
 
-                const all: RawLine[] = [];
                 let withStatus = true;
                 // entry_number arrives with migrations/add_journal_entry_number.sql;
                 // instances that haven't run it yet fall back to reference_id.
                 let withEntryNumber = true;
-                for (let from = 0; from < 100000; from += 1000) {
-                    let { data, error } = await loadPage(from, withStatus, withEntryNumber);
-                    if (error && withEntryNumber && /entry_number/i.test(error.message || '')) {
-                        withEntryNumber = false;
-                        ({ data, error } = await loadPage(from, withStatus, withEntryNumber));
-                    }
-                    // Instances that haven't run add_entry_status.sql have no
-                    // status column — reload without it; everything is Posted.
-                    if (error && withStatus && /status/i.test(error.message || '')) {
-                        withStatus = false;
-                        ({ data, error } = await loadPage(from, withStatus, withEntryNumber));
-                    }
-                    if (error) throw error;
-                    type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown } | null };
-                    for (const l of (data || []) as Row[]) {
-                        all.push({
-                            entryId: String(l.journal_entry_id),
-                            accountId: String(l.account_id),
-                            debit: Number(l.debit) || 0,
-                            credit: Number(l.credit) || 0,
-                            date: String(l.entry?.date || '').slice(0, 10),
-                            description: String(l.entry?.description || ''),
-                            status: String(l.entry?.status || 'Posted'),
-                            // Prefer the human-readable entry_number (see
-                            // utils/journalEntryNumber.ts); older rows keep
-                            // showing their reference_id.
-                            ref: String(l.entry?.entry_number || l.entry?.reference_id || ''),
-                        });
-                    }
-                    if (!data || data.length < 1000) break;
+                // First page resolves the optional columns; the rest load in parallel.
+                let first = await loadPage(0, withStatus, withEntryNumber, true);
+                if (first.error && /entry_number/i.test(first.error.message || '')) {
+                    withEntryNumber = false;
+                    first = await loadPage(0, withStatus, withEntryNumber, true);
                 }
+                // Instances that haven't run add_entry_status.sql have no
+                // status column — reload without it; everything is Posted.
+                if (first.error && /status/i.test(first.error.message || '')) {
+                    withStatus = false;
+                    first = await loadPage(0, withStatus, withEntryNumber, true);
+                }
+                if (first.error) throw first.error;
+
+                type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown } | null };
+                const pages: Row[][] = [(first.data || []) as Row[]];
+                const total = first.count ?? pages[0].length;
+                const step = pages[0].length;
+                if (step > 0 && step < total) {
+                    const rest = await Promise.all(
+                        Array.from({ length: Math.ceil(total / step) - 1 }, (_, i) => loadPage((i + 1) * step, withStatus, withEntryNumber, false))
+                    );
+                    for (const page of rest) {
+                        if (page.error) throw page.error;
+                        pages.push((page.data || []) as Row[]);
+                    }
+                }
+
+                const { data: accs, error: accErr } = await accsPromise;
+                if (accErr) throw accErr;
+
+                const all: RawLine[] = pages.flat().map(l => ({
+                    entryId: String(l.journal_entry_id),
+                    accountId: String(l.account_id),
+                    debit: Number(l.debit) || 0,
+                    credit: Number(l.credit) || 0,
+                    date: String(l.entry?.date || '').slice(0, 10),
+                    description: String(l.entry?.description || ''),
+                    status: String(l.entry?.status || 'Posted'),
+                    // Prefer the human-readable entry_number (see
+                    // utils/journalEntryNumber.ts); older rows keep
+                    // showing their reference_id.
+                    ref: String(l.entry?.entry_number || l.entry?.reference_id || ''),
+                    refId: String(l.entry?.reference_id || ''),
+                }));
                 if (!alive) return;
                 setAccounts(accs || []);
                 setLines(all);
                 setStatusSupported(withStatus);
             } catch (e) {
                 console.error('Failed to load the ledger:', e);
-                if (alive) setLines([]);
+                if (!alive) return;
+                setLoadError(e instanceof Error ? e.message : String(e));
+                // First-load failure: land on the error state, not an endless spinner.
+                setLines(prev => prev ?? []);
+            } finally {
+                if (alive) setIsFetching(false);
             }
         })();
         return () => { alive = false; };
@@ -236,10 +275,20 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     }, [mode]);
 
     const startEdit = (row: EntryRow) => {
+        // Defense in depth behind the hidden buttons: system entries belong to
+        // their own flow, and Posted books don't change (reverse them instead).
+        if (row.isSystem) { showToast('This entry was created by a payment flow — manage it from its own page.', 'info'); return; }
+        if (statusSupported && row.status !== 'Draft') { showToast('Posted entries cannot be changed — record a correcting entry instead.', 'info'); return; }
         const ls = entryLinesOf(row.entryId);
-        const simple = ls.length === 2;
-        const main = ls.find(l => accountById.get(l.accountId)?.account_type === cfg.accountType);
+        // The main line follows this page's direction (revenue = the credit on a
+        // Revenue account), so editing a same-type reclass can't flip its sides.
+        const main = ls.find(l => accountById.get(l.accountId)?.account_type === cfg.accountType
+            && (mode === 'revenue' ? l.credit > 0 : l.debit > 0));
         const counter = ls.find(l => l !== main);
+        // Fully editable only when the two lines map onto this form's selects;
+        // anything else (more lines, a reclass counter) edits its header only.
+        const simple = ls.length === 2 && !!main && !!counter
+            && counterAccounts.some(a => a.id === counter.accountId);
         setEditingEntry(row);
         setEditSimple(simple);
         setDate(row.date);
@@ -283,10 +332,22 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         { journal_entry_id: editingEntry.entryId, account_id: accountId, debit: amountNum, credit: 0 },
                         { journal_entry_id: editingEntry.entryId, account_id: counterId, debit: 0, credit: amountNum },
                     ];
+                // Keep the old lines to restore if the re-insert fails — a
+                // delete+insert with no rollback would erase the amount.
+                const oldLines = entryLinesOf(editingEntry.entryId).map(l => ({
+                    journal_entry_id: editingEntry.entryId, account_id: l.accountId, debit: l.debit, credit: l.credit,
+                }));
                 const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', editingEntry.entryId);
                 if (delErr) throw delErr;
                 const { error: insErr } = await supabase.from('journal_entry_lines').insert(newLines);
-                if (insErr) throw insErr;
+                if (insErr) {
+                    const { error: restoreErr } = await supabase.from('journal_entry_lines').insert(oldLines);
+                    if (restoreErr) {
+                        console.error('Failed to restore the entry lines after a failed edit:', restoreErr);
+                        throw new Error(`${insErr.message} — and restoring the previous lines also failed; re-enter this ${mode} (${editingEntry.ref || editingEntry.entryId}).`);
+                    }
+                    throw insErr;
+                }
             }
             showToast('Entry updated', 'success');
             cancelEdit();
@@ -314,8 +375,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     { account_id: accountId, debit: amountNum, credit: 0 },
                     { account_id: counterId, debit: 0, credit: amountNum },
                 ];
+            // Same human-readable numbering as every other flow (JE-<n>-REV/EXP-…);
+            // null (missing migration) just omits it, like the sibling pages.
+            const entryNumber = await nextJournalEntryNumber(cfg.refPrefix, date);
             await saveJournalEntry(
-                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: `${cfg.refPrefix}-${Date.now()}`, status: entryStatus },
+                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
                 entryLines
             );
             setAmount('');
@@ -339,11 +403,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         }
         const out: EntryRow[] = [];
         for (const [entryId, entryLines] of byEntry) {
-            const mains = entryLines.filter(l => {
-                const a = accountById.get(l.accountId);
-                if (!a || a.account_type !== cfg.accountType) return false;
-                return mode === 'revenue' ? l.credit > 0 : l.debit > 0;
-            });
+            // Every line on an account of this kind, both directions, so a
+            // contra line (partial refund/adjustment) nets against the amount
+            // instead of being counted as a counter-account.
+            const mains = entryLines.filter(l => accountById.get(l.accountId)?.account_type === cfg.accountType);
             if (mains.length === 0) continue;
             const amount = mains.reduce((s, l) => s + (mode === 'revenue' ? l.credit - l.debit : l.debit - l.credit), 0);
             if (amount <= 0) continue;
@@ -359,6 +422,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 amount,
                 status: entryLines[0].status,
                 ref: entryLines[0].ref,
+                isSystem: entryLines[0].refId.startsWith('TX-'),
+                lineCount: entryLines.length,
             });
         }
         return out.sort((a, b) => b.date.localeCompare(a.date) || b.entryId.localeCompare(a.entryId));
@@ -486,8 +551,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         URL.revokeObjectURL(a.href);
     };
 
+    // Entries mid-post/mid-delete, so a double-click can't fire twice.
+    const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+    const markBusy = (id: string, busy: boolean) => setBusyIds(prev => {
+        const n = new Set(prev);
+        if (busy) n.add(id); else n.delete(id);
+        return n;
+    });
+
     // Post a draft entry (one way, like real books).
     const postEntry = async (row: EntryRow) => {
+        if (busyIds.has(row.entryId)) return;
+        markBusy(row.entryId, true);
         try {
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', row.entryId);
             if (error) throw error;
@@ -496,11 +571,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             showToast('Failed to post entry: ' + msg, 'error');
+        } finally {
+            markBusy(row.entryId, false);
         }
     };
 
     const handleDelete = async (row: EntryRow) => {
-        if (!confirm(`Delete this ${mode} entry of ${fmt(row.amount)} (${row.date})? The journal entry and its lines are removed.`)) return;
+        if (row.isSystem) { showToast('This entry was created by a payment flow — manage it from its own page.', 'info'); return; }
+        if (statusSupported && row.status !== 'Draft') { showToast('Posted entries cannot be deleted — record a correcting entry instead.', 'info'); return; }
+        if (busyIds.has(row.entryId)) return;
+        const scope = row.lineCount > 2 ? ` The WHOLE journal entry (${row.lineCount} ledger lines, not just the ${mode} part) is removed.` : ' The journal entry and its lines are removed.';
+        if (!confirm(`Delete this ${mode} entry of ${fmt(row.amount)} (${row.date})?${scope}`)) return;
+        markBusy(row.entryId, true);
         try {
             const { error: lineErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', row.entryId);
             if (lineErr) throw lineErr;
@@ -511,10 +593,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             showToast('Failed to delete entry: ' + msg, 'error');
+        } finally {
+            markBusy(row.entryId, false);
         }
     };
 
     const loading = lines === null;
+    // Edit/Delete only on this page's own Draft entries: Posted books are final
+    // (record a correcting entry instead) and payment-flow entries live on their
+    // own page — same draft-only rule as the Journal Entries page.
+    const canMutate = (r: EntryRow) => !r.isSystem && r.status === 'Draft';
 
     const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
     const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
@@ -541,8 +629,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 ))}
             </div>
 
-            {/* Entry form */}
-            <div style={{ ...cardStyle, borderLeft: `4px solid ${cfg.color}`, padding: '18px 20px' }}>
+            {/* Entry form — amber border while it edits an existing entry, so it
+                can't be mistaken for the blank New Entry form. */}
+            <div style={{ ...cardStyle, borderLeft: `4px solid ${editingEntry ? '#F59E0B' : cfg.color}`, background: editingEntry ? 'rgba(245, 158, 11, 0.04)' : undefined, padding: '18px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
                     <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: `${cfg.color}1A`, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Icon size={18} />
@@ -560,7 +649,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </div>
                 )}
 
-                {!loading && mainAccounts.length === 0 ? (
+                {!loading && !loadError && mainAccounts.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '13px', color: 'var(--color-text-main)' }}>
                         <AlertTriangle size={18} color="#F59E0B" style={{ flexShrink: 0 }} />
                         <span>
@@ -586,7 +675,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <div>
                             <label style={labelStyle}>{cfg.counterLabel}</label>
                             <select value={counterId} onChange={e => setCounterId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                {counterAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                {mode === 'expense' ? (
+                                    <>
+                                        <optgroup label="Cash / bank / other assets">
+                                            {counterAccounts.filter(a => a.account_type === 'Asset').map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                        </optgroup>
+                                        {counterAccounts.some(a => a.account_type === 'Liability') && (
+                                            <optgroup label="On credit (liabilities)">
+                                                {counterAccounts.filter(a => a.account_type === 'Liability').map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                            </optgroup>
+                                        )}
+                                    </>
+                                ) : counterAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                             </select>
                         </div>
                         <div>
@@ -657,7 +757,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <Download size={13} /> Export CSV
                                     </button>
                                     <button onClick={refetch} title="Reload" style={hdrBtn}>
-                                        <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+                                        <RefreshCw size={13} style={isFetching ? { animation: 'spin 1s linear infinite' } : {}} />
                                     </button>
                                 </>
                             );
@@ -694,6 +794,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </span>
                 </div>
 
+                {loadError && rows.length > 0 && (
+                    <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 18px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', color: '#B45309', background: 'rgba(217, 119, 6, 0.07)' }}>
+                        <span style={{ flex: 1 }}>Couldn't refresh the entries — showing the last loaded list. {loadError}</span>
+                        <button onClick={refetch} disabled={isFetching} style={{ padding: '3px 10px', borderRadius: '7px', border: '1px solid #B45309', background: 'transparent', color: '#B45309', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Retry</button>
+                    </div>
+                )}
                 {!statusSupported && !loading && (
                     <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', color: '#B45309', background: 'rgba(217, 119, 6, 0.07)' }}>
                         Draft / Posted statuses need <code>migrations/add_entry_status.sql</code> on this instance — every entry shows as Posted for now.
@@ -702,6 +808,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
 
                 {loading ? (
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading entries…</div>
+                ) : loadError && rows.length === 0 ? (
+                    <div role="alert" style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                        <div style={{ marginBottom: '12px' }}>Couldn't load the entries. {loadError}</div>
+                        <button onClick={refetch} disabled={isFetching} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                            Retry
+                        </button>
+                    </div>
                 ) : rows.length === 0 ? (
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
                         No {mode} entries yet — record the first one above.
@@ -720,13 +833,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
                                         {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
+                                        {r.isSystem && <SystemChip />}
                                     </span>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                         <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
-                                        <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />
+                                        {canMutate(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />}
                                         <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} />
                                         <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} />
-                                        <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} />
+                                        {canMutate(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} />}
                                     </span>
                                 </div>
                                 {r.description && <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 2px' }}>{r.description}</div>}
@@ -736,8 +850,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                             ? <>{accountLink(r.accountName, r.accountIds)} → {accountLink(r.counterName, r.counterIds)}</>
                                             : <>{accountLink(r.accountName, r.accountIds)} ← {accountLink(r.counterName, r.counterIds)}</>}
                                     </div>
-                                    {r.status === 'Draft' && statusSupported && (
-                                        <button onClick={() => postEntry(r)} style={{ padding: '4px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Post</button>
+                                    {r.status === 'Draft' && statusSupported && !r.isSystem && (
+                                        <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '4px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', flexShrink: 0, opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : 'Post'}</button>
                                     )}
                                 </div>
                             </div>
@@ -769,17 +883,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 <StatusChip status={r.status} />
-                                                {r.status === 'Draft' && statusSupported && (
-                                                    <button onClick={() => postEntry(r)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Post</button>
+                                                {r.isSystem && <SystemChip />}
+                                                {r.status === 'Draft' && statusSupported && !r.isSystem && (
+                                                    <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : 'Post'}</button>
                                                 )}
                                             </span>
                                         </td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
-                                                <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />
+                                                {canMutate(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />}
                                                 <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label="View entry" />
                                                 <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} aria-label="Print entry" />
-                                                <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />
+                                                {canMutate(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />}
                                             </span>
                                         </td>
                                     </tr>
