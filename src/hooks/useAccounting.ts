@@ -134,12 +134,22 @@ export const useAccounting = () => {
                 journal_entry_id: insertedEntry.id,
                 account_id: line.account_id,
                 debit: line.debit || 0,
-                credit: line.credit || 0
+                credit: line.credit || 0,
+                ...(line.description?.trim() ? { description: line.description.trim() } : {})
             }));
 
-            const { error: linesError } = await supabase
+            let { error: linesError } = await supabase
                 .from('journal_entry_lines')
                 .insert(linesToInsert);
+
+            // Line descriptions arrive with migrations/add_journal_entry_line_description.sql;
+            // until an instance has run it, save the lines without them.
+            if (linesError && /description/i.test(linesError.message || '') && linesToInsert.some(l => 'description' in l)) {
+                ({ error: linesError } = await supabase
+                    .from('journal_entry_lines')
+                    .insert(linesToInsert.map(l => { const copy: Record<string, unknown> = { ...l }; delete copy.description; return copy; })));
+                if (!linesError) showToast('Saved without the line descriptions — run migrations/add_journal_entry_line_description.sql to store them', 'info');
+            }
 
             if (linesError) {
                 // Manual rollback if lines fail (again, RPC is better for real transactions)

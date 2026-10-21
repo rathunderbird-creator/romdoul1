@@ -1024,5 +1024,9 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_account_id TEXT;
 -- add_journal_entry_number.sql).
 ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS entry_number TEXT;
 
+-- Journal entry lines: optional per-line description (see
+-- add_journal_entry_line_description.sql).
+ALTER TABLE journal_entry_lines ADD COLUMN IF NOT EXISTS description TEXT;
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';

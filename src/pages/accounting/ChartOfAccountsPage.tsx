@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { Modal } from '../../components';
@@ -558,81 +558,140 @@ const ChartOfAccountsPage = () => {
                 )}
             </div>
 
-            <Modal 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
-                title={editingAccount ? 'Edit Account' : 'New Account'}
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                title={editingAccount ? 'Edit Account' : 'Create Account'}
+                width="640px"
             >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Code</label>
-                        <input 
-                            type="text" 
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                            value={formData.account_code || ''} 
-                            onChange={(e) => setFormData({...formData, account_code: e.target.value})} 
-                            placeholder="e.g. 1000"
-                        />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Name</label>
-                        <input 
-                            type="text" 
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                            value={formData.account_name || ''} 
-                            onChange={(e) => setFormData({...formData, account_name: e.target.value})} 
-                            placeholder="e.g. Cash on Hand"
-                        />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Account Type</label>
-                        <select
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)' }}
-                            value={formData.account_type}
-                            onChange={(e) => setFormData({...formData, account_type: e.target.value as ChartOfAccount['account_type'], sub_type: ''})}
-                        >
-                            <option value="Asset">Asset</option>
-                            <option value="Liability">Liability</option>
-                            <option value="Equity">Equity</option>
-                            <option value="Revenue">Revenue</option>
-                            <option value="Expense">Expense</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>
-                            Sub Category <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span>
-                        </label>
-                        <select
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)' }}
-                            value={formData.sub_type || ''}
-                            onChange={(e) => setFormData({ ...formData, sub_type: e.target.value })}
-                        >
-                            <option value="">—</option>
-                            {SUB_TYPES[formData.account_type || 'Asset'].map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px' }}>
-                        <input 
-                            type="checkbox" 
-                            checked={formData.is_active} 
-                            onChange={(e) => setFormData({...formData, is_active: e.target.checked})} 
-                        />
-                        <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>Active</span>
-                    </label>
+                {(() => {
+                    const fieldLabel: React.CSSProperties = { display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)' };
+                    const fieldInput: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', outline: 'none', boxSizing: 'border-box', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text-main)' };
+                    const ready = !!(formData.account_code && formData.account_name);
+                    const typeColor = TYPE_CARDS.find(c => c.type === (formData.account_type || 'Asset'))?.color || '#2742c9';
+                    const accent = ready ? typeColor : '#DC2626';
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', padding: '8px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '160px 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={fieldLabel}>Account Code</label>
+                                    <input
+                                        type="text"
+                                        style={fieldInput}
+                                        value={formData.account_code || ''}
+                                        onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
+                                        placeholder="e.g., 1000"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={fieldLabel}>Account Name</label>
+                                    <input
+                                        type="text"
+                                        className="d2-khmer"
+                                        style={fieldInput}
+                                        value={formData.account_name || ''}
+                                        onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
+                                        placeholder="e.g., Cash on Hand"
+                                    />
+                                </div>
+                            </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button onClick={() => setIsModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-                        <button 
-                            onClick={handleSave} 
-                            disabled={!formData.account_code || !formData.account_name}
-                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#5469d4', color: 'white', fontWeight: 500, cursor: 'pointer', opacity: (!formData.account_code || !formData.account_name) ? 0.5 : 1 }}
-                        >
-                            Save
-                        </button>
-                    </div>
-                </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={fieldLabel}>Account Type</label>
+                                    <select
+                                        style={{ ...fieldInput, cursor: 'pointer' }}
+                                        value={formData.account_type}
+                                        onChange={(e) => setFormData({ ...formData, account_type: e.target.value as ChartOfAccount['account_type'], sub_type: '' })}
+                                    >
+                                        <option value="Asset">Asset</option>
+                                        <option value="Liability">Liability</option>
+                                        <option value="Equity">Equity</option>
+                                        <option value="Revenue">Revenue</option>
+                                        <option value="Expense">Expense</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style={fieldLabel}>
+                                        Sub Category <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span>
+                                    </label>
+                                    <select
+                                        style={{ ...fieldInput, cursor: 'pointer' }}
+                                        value={formData.sub_type || ''}
+                                        onChange={(e) => setFormData({ ...formData, sub_type: e.target.value })}
+                                    >
+                                        <option value="">—</option>
+                                        {SUB_TYPES[formData.account_type || 'Asset'].map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={fieldLabel}>Description <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                                <input
+                                    type="text"
+                                    className="d2-khmer"
+                                    style={fieldInput}
+                                    value={formData.description || ''}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    placeholder="Describe the account..."
+                                />
+                            </div>
+
+                            {/* Live preview banner — the account type's color once code and name are in. */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                                padding: '12px 16px', borderRadius: '10px',
+                                border: `1.5px solid ${accent}`,
+                                background: `color-mix(in srgb, ${accent} 6%, var(--color-surface))`
+                            }}>
+                                <div style={{ minWidth: 0 }}>
+                                    <div className="d2-khmer" style={{ fontSize: '14px', fontWeight: 700, color: accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {ready ? <>✓ {formData.account_code} · {formData.account_name}</> : 'Code and name required'}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                                        {formData.account_type || 'Asset'}{formData.sub_type ? ` · ${formData.sub_type}` : ''}{formData.is_active ? '' : ' · Inactive'}
+                                    </div>
+                                </div>
+                                {ready
+                                    ? <Check size={20} color={accent} style={{ flexShrink: 0 }} />
+                                    : <AlertTriangle size={20} color={accent} style={{ flexShrink: 0 }} />}
+                            </div>
+
+                            <label style={{
+                                display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+                                padding: '12px 16px', borderRadius: '10px', background: 'var(--color-bg)'
+                            }}>
+                                <input
+                                    type="checkbox"
+                                    checked={formData.is_active}
+                                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                    style={{ cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--color-text-main)' }}>Active</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>— inactive accounts stay out of entry forms</span>
+                            </label>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
+                                <button
+                                    onClick={() => setIsModalOpen(false)}
+                                    style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '13.5px', cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSave}
+                                    disabled={!ready}
+                                    style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.55 }}
+                                >
+                                    {editingAccount ? 'Save Changes' : 'Create Account'}
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
             </Modal>
         </div>
     );
