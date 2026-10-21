@@ -15,6 +15,138 @@ const generateUUID = () => {
     });
 };
 
+type ToastFn = (msg: string, kind: 'success' | 'error' | 'info') => void;
+
+// Standard accounting for goods received from a supplier: until they're sold
+// they are an asset, not an expense — receiving a PO posts a Draft entry of
+// Dr Inventory / Cr Accounts Payable for the PO total (COGS is booked later,
+// when the goods sell — see retailCogsLines in StoreContext). Reference
+// 'PO-<id>' so re-receiving never double-books and deleting the PO can remove
+// it again. Called on EVERY save of a Received PO (not just the transition),
+// so a post that failed once self-heals on the next save, and a still-Draft
+// entry follows an edited PO total. Non-fatal: the receive itself succeeded.
+const postPurchaseReceiptEntry = async (
+    poId: string,
+    totalAmount: number,
+    supplierId: string | undefined,
+    showToast: ToastFn
+) => {
+    try {
+        const amount = Math.round((Number(totalAmount) || 0) * 100) / 100;
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('*').eq('reference_id', 'PO-' + poId).limit(1).maybeSingle();
+        // Fail closed: posting blind on a failed dedupe read could double-book.
+        if (exErr) { console.error('Could not check for an existing PO entry:', exErr); return; }
+
+        const { data: coa } = await supabase.from('chart_of_accounts')
+            .select('id, account_code, account_name, account_type').eq('is_active', true);
+        const pool = coa || [];
+        const inventoryAcc = pool.find(a => a.account_code === '1300')
+            || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
+        const apAcc = pool.find(a => a.account_code === '2000')
+            || pool.find(a => a.account_type === 'Liability' && /payable/i.test(a.account_name));
+
+        if (existing) {
+            // Keep a still-Draft entry in step with an edited PO total; a Posted
+            // entry is final and only gets a heads-up.
+            const { data: oldLines, error: lnErr } = await supabase.from('journal_entry_lines')
+                .select('id, account_id, debit, credit').eq('journal_entry_id', existing.id);
+            if (lnErr) return;
+            const current = Math.round((oldLines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0) * 100) / 100;
+            if (current === amount || amount <= 0) return;
+            if (((existing as { status?: string }).status || 'Posted') !== 'Draft') {
+                showToast(`This PO's posted inventory entry is $${current.toFixed(2)} but the PO total is now $${amount.toFixed(2)} — adjust the ledger manually.`, 'info');
+                return;
+            }
+            if (!inventoryAcc || !apAcc) return;
+            const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
+            if (delErr) return;
+            const { error: insErr } = await supabase.from('journal_entry_lines').insert([
+                { journal_entry_id: existing.id, account_id: inventoryAcc.id, debit: amount, credit: 0 },
+                { journal_entry_id: existing.id, account_id: apAcc.id, debit: 0, credit: amount },
+            ]);
+            if (insErr) {
+                // Put the previous lines back rather than leaving the entry empty.
+                await supabase.from('journal_entry_lines').insert((oldLines || []).map(l => ({
+                    journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit,
+                })));
+                showToast('PO saved, but its inventory ledger entry could not be updated — re-save the PO to retry.', 'error');
+            }
+            return;
+        }
+
+        if (amount <= 0) return;
+        if (!inventoryAcc || !apAcc) {
+            showToast('PO received, but no Inventory or Accounts Payable account exists in the Chart of Accounts — no ledger entry was posted.', 'info');
+            return;
+        }
+        let supplierName = 'Supplier';
+        if (supplierId) {
+            const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', supplierId).single();
+            if (supplier?.name) supplierName = supplier.name;
+        }
+        const date = dayKeyFromDate(new Date());
+        const entryNumber = await nextJournalEntryNumber('PUR', date);
+        const entryPayload: Record<string, unknown> = {
+            date,
+            description: `${supplierName} · PO-${poId.slice(0, 8).toUpperCase()} received`,
+            reference_id: 'PO-' + poId,
+            status: 'Draft',
+        };
+        if (entryNumber) entryPayload.entry_number = entryNumber;
+        let entry: { id: string } | null | undefined;
+        let jeErr: { message?: string } | null | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
+            if (!jeErr) break;
+            const msg = jeErr.message || '';
+            if (/entry_number/i.test(msg) && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
+            break;
+        }
+        // Never create an instantly-posted entry on an instance without the
+        // status column — same refusal as every other auto-posting flow.
+        if (jeErr && /status/i.test(jeErr.message || '')) {
+            showToast('PO received — run migrations/add_entry_status.sql on this instance to also post the inventory entry as a draft.', 'info');
+            return;
+        }
+        if (jeErr || !entry) {
+            console.error('Failed to post the inventory entry for the received PO:', jeErr);
+            showToast('PO received, but the inventory ledger entry failed to post — re-save the PO to retry.', 'error');
+            return;
+        }
+        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: amount, credit: 0 },
+            { journal_entry_id: entry.id, account_id: apAcc.id, debit: 0, credit: amount },
+        ]);
+        if (lErr) {
+            console.error('Failed to post the inventory entry lines for the received PO:', lErr);
+            await supabase.from('journal_entries').delete().eq('id', entry.id);
+            showToast('PO received, but the inventory ledger entry failed to post — re-save the PO to retry.', 'error');
+        }
+    } catch (e) {
+        console.error('Failed to post the inventory entry for the received PO:', e);
+    }
+};
+
+// Cancelling a received PO takes the goods (and the debt) back off the books:
+// a still-Draft receive entry is deleted outright; a Posted one is final, so
+// the user is told to reverse it manually.
+const cancelPurchaseReceiptEntry = async (poId: string, showToast: ToastFn) => {
+    try {
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('*').eq('reference_id', 'PO-' + poId).limit(1).maybeSingle();
+        if (exErr || !existing) return;
+        if (((existing as { status?: string }).status || 'Posted') !== 'Draft') {
+            showToast('This cancelled PO has a POSTED inventory entry — record a reversing entry manually.', 'info');
+            return;
+        }
+        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
+        await supabase.from('journal_entries').delete().eq('id', existing.id);
+    } catch (e) {
+        console.error('Failed to remove the inventory entry for the cancelled PO:', e);
+    }
+};
+
 export const useProcurement = () => {
     const { showToast } = useToast();
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -124,8 +256,13 @@ export const useProcurement = () => {
     const savePurchaseOrder = useCallback(async (po: Partial<PurchaseOrder>, items: Partial<PurchaseOrderItem>[]) => {
         try {
             let currentPoId = po.id;
-            
+            let wasReceived = false;
+
             if (currentPoId) {
+                // The old status decides whether a Cancelled save needs to take a
+                // received PO's inventory entry back off the books (see below).
+                const { data: oldPo } = await supabase.from('purchase_orders').select('status').eq('id', currentPoId).single();
+                wasReceived = oldPo?.status === 'Received';
                 // Update. payment_status/amount_paid are owned by the payment
                 // flow (recordSupplierPayment) — only write them when the caller
                 // explicitly passes them, otherwise an ordinary edit (fixing a
@@ -203,6 +340,15 @@ export const useProcurement = () => {
                 throw itemsError;
             }
 
+            if (po.status === 'Received' && currentPoId) {
+                // Every save, not just the transition: the PO- dedupe makes it
+                // idempotent, a previously failed post self-heals, and an edited
+                // total updates a still-Draft entry.
+                await postPurchaseReceiptEntry(currentPoId, Number(po.total_amount) || 0, po.supplier_id, showToast);
+            } else if (po.status === 'Cancelled' && wasReceived && currentPoId) {
+                await cancelPurchaseReceiptEntry(currentPoId, showToast);
+            }
+
             showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
             await fetchPurchaseOrders(true); // silent fetch
             return currentPoId;
@@ -225,8 +371,32 @@ export const useProcurement = () => {
             const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
             if (error) throw error;
             for (const p of cascadingPays || []) {
-                const { error: txErr } = await supabase.from('transactions').delete().like('description', `%#SPP-${String(p.id).slice(0, 8)}%`);
+                const marker = `%#SPP-${String(p.id).slice(0, 8)}%`;
+                // The payments' ledger entries now DEBIT Accounts Payable — remove
+                // them along with the receive entry below, or deleting a paid PO
+                // would leave a permanent negative A/P balance (and the entries
+                // would be unfindable once their transactions rows are gone).
+                const { data: txs } = await supabase.from('transactions').select('id').like('description', marker);
+                const refIds = (txs || []).map(t => 'TX-' + t.id);
+                if (refIds.length) {
+                    const { data: payEntries } = await supabase.from('journal_entries').select('id').in('reference_id', refIds);
+                    const payEntryIds = (payEntries || []).map(e => e.id);
+                    if (payEntryIds.length) {
+                        await supabase.from('journal_entry_lines').delete().in('journal_entry_id', payEntryIds);
+                        await supabase.from('journal_entries').delete().in('id', payEntryIds);
+                    }
+                }
+                const { error: txErr } = await supabase.from('transactions').delete().like('description', marker);
                 if (txErr) console.error('Failed to remove expense row for deleted supplier payment:', txErr);
+            }
+            // The receive-time inventory entry (Dr Inventory / Cr A-P) belongs to
+            // this PO — remove it too, or the ledger keeps a liability for a
+            // purchase that no longer exists.
+            const { data: poEntries } = await supabase.from('journal_entries').select('id').eq('reference_id', 'PO-' + id);
+            const poEntryIds = (poEntries || []).map(e => e.id);
+            if (poEntryIds.length) {
+                await supabase.from('journal_entry_lines').delete().in('journal_entry_id', poEntryIds);
+                await supabase.from('journal_entries').delete().in('id', poEntryIds);
             }
             showToast('Purchase Order deleted successfully', 'success');
             await fetchPurchaseOrders(true);
@@ -316,11 +486,26 @@ export const useProcurement = () => {
                     const { data: coa } = await supabase.from('chart_of_accounts')
                         .select('id, account_code, account_name, account_type').eq('is_active', true);
                     const pool = coa || [];
-                    const expenseAcc = pool.find(a => a.account_code === '5000')
+                    // Standard accounting: paying a supplier settles the liability the
+                    // received PO created (Dr Accounts Payable, Cr Cash/Bank) — the
+                    // purchase itself already sits in Inventory, and COGS is booked
+                    // when the goods sell. Debit A/P only when this PO's receive
+                    // entry actually exists in the ledger (prepayments on unreceived
+                    // POs, and POs received before this treatment shipped, have no
+                    // A/P credit to settle); otherwise keep the old direct-expense
+                    // treatment so the books stay balanced either way.
+                    const { data: receiveEntry } = await supabase.from('journal_entries')
+                        .select('id').eq('reference_id', 'PO-' + poId).limit(1).maybeSingle();
+                    const apAcc = receiveEntry
+                        ? (pool.find(a => a.account_code === '2000')
+                            || pool.find(a => a.account_type === 'Liability' && /payable/i.test(a.account_name)))
+                        : undefined;
+                    const debitAcc = apAcc
+                        || pool.find(a => a.account_code === '5000')
                         || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs|purchas/i.test(a.account_name))
                         || pool.find(a => a.account_type === 'Expense');
                     const cashAccId = paidFromAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
-                    if (expenseAcc && cashAccId) {
+                    if (debitAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('SPP', payDate);
                         const entryPayload: Record<string, unknown> = { date: payDate, description, reference_id: 'TX-' + txId, status: 'Draft' };
                         if (entryNumber) entryPayload.entry_number = entryNumber;
@@ -342,7 +527,7 @@ export const useProcurement = () => {
                             console.error('Failed to create journal entry for payment:', jeErr);
                         } else {
                             const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-                                { journal_entry_id: entry.id, account_id: expenseAcc.id, debit: Number(amount), credit: 0 },
+                                { journal_entry_id: entry.id, account_id: debitAcc.id, debit: Number(amount), credit: 0 },
                                 { journal_entry_id: entry.id, account_id: cashAccId, debit: 0, credit: Number(amount) },
                             ]);
                             if (lErr) {

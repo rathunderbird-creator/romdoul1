@@ -73,6 +73,7 @@ const generateUUID = () => {
 async function resolveRetailLedgerAccounts(depositAccountId?: string): Promise<{
     revenueAcc: { id: string; account_code: string; account_name: string; account_type: string } | undefined;
     cashAccId: string | undefined;
+    pool: { id: string; account_code: string; account_name: string; account_type: string }[];
 }> {
     const { data: coa } = await supabase.from('chart_of_accounts')
         .select('id, account_code, account_name, account_type').eq('is_active', true);
@@ -82,7 +83,87 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string): Promise<{
         || pool.find(a => a.account_type === 'Revenue');
     const cashAccId = depositAccountId
         || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
-    return { revenueAcc, cashAccId };
+    return { revenueAcc, cashAccId, pool };
+}
+
+// Standard-accounting COGS lines for a retail settlement: Dr Cost of Goods
+// Sold, Cr Inventory at the items' purchase cost (each product's current
+// "Cost of Purchase", same basis as the Purchase Cost report — sale_items
+// carry no cost snapshot). Returns null when the cost is zero or the chart
+// is missing either account, so the caller just posts the revenue side alone.
+async function retailCogsLines(
+    orderId: string,
+    pool: { id: string; account_code: string; account_name: string; account_type: string }[]
+): Promise<{ account_id: string; debit: number; credit: number }[] | null> {
+    try {
+        const cogsAcc = pool.find(a => a.account_code === '5000')
+            || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs/i.test(a.account_name));
+        const inventoryAcc = pool.find(a => a.account_code === '1300')
+            || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
+        if (!cogsAcc || !inventoryAcc) return null;
+        const { data: items, error: itemsErr } = await supabase
+            .from('sale_items').select('product_id, quantity').eq('sale_id', orderId);
+        if (itemsErr || !items || items.length === 0) return null;
+        const productIds = Array.from(new Set(items.map(i => i.product_id).filter((id): id is string => !!id)));
+        if (productIds.length === 0) return null;
+        const { data: products, error: prodErr } = await supabase
+            .from('products').select('id, purchase_cost').in('id', productIds);
+        if (prodErr) return null;
+        const costOf = new Map((products || []).map(p => [p.id, Number(p.purchase_cost) || 0]));
+        const cost = Math.round(items.reduce((s, i) => s + (costOf.get(i.product_id) || 0) * (Number(i.quantity) || 0), 0) * 100) / 100;
+        if (cost <= 0) return null;
+        return [
+            { account_id: cogsAcc.id, debit: cost, credit: 0 },
+            { account_id: inventoryAcc.id, debit: 0, credit: cost },
+        ];
+    } catch (e) {
+        console.error('Failed to compute COGS lines for order', orderId, e);
+        return null;
+    }
+}
+
+// COGS entry for an order with NO receipt entry to carry it: when the deposit
+// covered the whole total, the Paid transition books no RCP row (nothing left
+// to collect), so the cost side gets its own 2-line entry — Dr Cost of Goods
+// Sold / Cr Inventory. Reference 'ORD-<id>-COGS' so a revert/re-pay (or a
+// later Post Now on the deposit row) can never book it twice. Non-fatal.
+async function postRetailCogsOnlyEntry(orderId: string, date: string, description: string, status: 'Draft' | 'Posted' = 'Draft'): Promise<void> {
+    try {
+        const reference = `ORD-${orderId}-COGS`;
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('id').eq('reference_id', reference).limit(1).maybeSingle();
+        if (exErr || existing) return;
+        const { pool } = await resolveRetailLedgerAccounts();
+        const cogs = await retailCogsLines(orderId, pool);
+        if (!cogs) return;
+        const entryNumber = await nextJournalEntryNumber('RCP', date);
+        const entryPayload: Record<string, unknown> = { date, description, reference_id: reference, status };
+        if (entryNumber) entryPayload.entry_number = entryNumber;
+        let entry: { id: string } | null | undefined;
+        let jeErr: { message?: string } | null | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
+            if (!jeErr) break;
+            if (/entry_number/i.test(jeErr.message || '') && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
+            break;
+        }
+        if (jeErr && /status/i.test(jeErr.message || '')) {
+            console.warn('Skipped the COGS entry — this instance needs migrations/add_entry_status.sql');
+            return;
+        }
+        if (jeErr || !entry) {
+            console.error('Failed to create the COGS entry for order', orderId, jeErr);
+            return;
+        }
+        const { error: lErr } = await supabase.from('journal_entry_lines')
+            .insert(cogs.map(l => ({ journal_entry_id: entry.id, ...l })));
+        if (lErr) {
+            console.error('Failed to create the COGS entry lines for order', orderId, lErr);
+            await supabase.from('journal_entries').delete().eq('id', entry.id);
+        }
+    } catch (e) {
+        console.error('Failed to post the COGS entry for order', orderId, e);
+    }
 }
 
 // Posts a journal entry (Draft by default) straight to the ledger for a
@@ -108,7 +189,8 @@ export async function postRetailSaleToLedger({
     type,
     status = 'Draft',
     reference,
-    notes
+    notes,
+    orderId
 }: {
     txId: string;
     amount: number;
@@ -121,9 +203,12 @@ export async function postRetailSaleToLedger({
     status?: 'Draft' | 'Posted';
     reference?: string;
     notes?: string;
+    // The settled order, when the caller can resolve it: an RCP entry then
+    // also books COGS (Dr Cost of Goods Sold, Cr Inventory) for its items.
+    orderId?: string;
 }): Promise<boolean> {
     try {
-        const { revenueAcc, cashAccId } = await resolveRetailLedgerAccounts(depositAccountId);
+        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId);
         if (revenueAcc && cashAccId) {
             const entryNumber = await nextJournalEntryNumber(type, date);
             const entryPayload: Record<string, unknown> = { date, description, reference_id: 'TX-' + txId, status };
@@ -155,9 +240,13 @@ export async function postRetailSaleToLedger({
                 console.error('Failed to create journal entry for payment:', jeErr);
                 return false;
             } else {
+                // Deposits aren't a completed sale yet — COGS books once, on the
+                // Paid-transition (RCP) entry.
+                const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
                 const { error: lErr } = await supabase.from('journal_entry_lines').insert([
                     { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0 },
                     { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: amount },
+                    ...(cogs || []).map(l => ({ journal_entry_id: entry.id, ...l })),
                 ]);
                 if (lErr) {
                     console.error('Failed to create journal entry lines for payment:', lErr);
@@ -199,7 +288,8 @@ export async function postOrFinalizeTransactionReceipt({
     depositAccountId,
     type,
     reference,
-    notes
+    notes,
+    orderId
 }: {
     txId: string;
     amount: number;
@@ -209,6 +299,8 @@ export async function postOrFinalizeTransactionReceipt({
     type: 'RCP' | 'DEP';
     reference?: string;
     notes?: string;
+    // The settled order, when known — an RCP posting then also books COGS.
+    orderId?: string;
 }): Promise<void> {
     // select('*') so status is read where that column exists without failing where it doesn't.
     const { data: existing, error: findErr } = await supabase
@@ -224,13 +316,29 @@ export async function postOrFinalizeTransactionReceipt({
     }
 
     if (existing) {
-        // Resolve the accounts BEFORE touching any existing lines — if this
-        // fails, the entry's current (valid) lines must be left untouched
-        // rather than deleted with nothing to replace them.
-        const { revenueAcc, cashAccId } = await resolveRetailLedgerAccounts(depositAccountId);
+        // Resolve the accounts (and COGS) BEFORE touching any existing lines —
+        // if this fails, the entry's current (valid) lines must be left
+        // untouched rather than deleted with nothing to replace them.
+        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId);
         if (!revenueAcc || !cashAccId) {
             throw new Error('Could not resolve a Sales Revenue account and a cash/bank account in the Chart of Accounts.');
         }
+        const { data: oldLines, error: oldErr } = await supabase.from('journal_entry_lines')
+            .select('account_id, debit, credit').eq('journal_entry_id', existing.id);
+        if (oldErr) throw oldErr;
+        const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
+        // When COGS can't be recomputed (the page couldn't resolve the order),
+        // the rebuild must not silently drop the COGS pair the auto-posted
+        // draft already carried: keep every old line that isn't the cash debit
+        // or the revenue credit being replaced.
+        const accById = new Map(pool.map(a => [a.id, a]));
+        const preserved = cogs ? [] : (oldLines || []).filter(l => {
+            const a = accById.get(l.account_id);
+            if (!a) return false;
+            if (a.account_type === 'Revenue') return false;
+            if (a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)) return false;
+            return true;
+        });
 
         const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
         if (delErr) throw delErr;
@@ -238,6 +346,7 @@ export async function postOrFinalizeTransactionReceipt({
         const { error: lErr } = await supabase.from('journal_entry_lines').insert([
             { journal_entry_id: existing.id, account_id: cashAccId, debit: amount, credit: 0 },
             { journal_entry_id: existing.id, account_id: revenueAcc.id, debit: 0, credit: amount },
+            ...(cogs || preserved).map(l => ({ journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit })),
         ]);
         if (lErr) throw lErr;
 
@@ -262,9 +371,24 @@ export async function postOrFinalizeTransactionReceipt({
         if (updErr) throw updErr;
         if (statusDropped) console.warn('Finalized the receipt, but this instance needs migrations/add_entry_status.sql to mark it Posted');
     } else {
-        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes });
+        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId });
         if (!ok) {
             throw new Error('Could not create a Posted journal entry — check that the Chart of Accounts has an active Sales Revenue account and a cash/bank account.');
+        }
+    }
+
+    // A deposit that covered the whole order never gets an RCP row to carry
+    // COGS — posting that deposit IS the sale's finalization, so book the cost
+    // side alongside it (deduped per order by its ORD-…-COGS reference).
+    if (type === 'DEP' && orderId) {
+        try {
+            const { data: sale } = await supabase.from('sales')
+                .select('payment_status, total, deposit_amount').eq('id', orderId).maybeSingle();
+            if (sale && sale.payment_status === 'Paid' && Number(sale.total) > 0 && Number(sale.deposit_amount) >= Number(sale.total)) {
+                await postRetailCogsOnlyEntry(orderId, date, `${description} · cost of goods sold`, 'Posted');
+            }
+        } catch (e) {
+            console.error('Could not check whether the deposit covered the order:', e);
         }
     }
 }
@@ -2455,9 +2579,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         date: normalizedDate,
                         description: customerName,
                         depositAccountId: (updates as Partial<Sale>).depositAccountId,
-                        type: 'RCP'
+                        type: 'RCP',
+                        orderId: id
                     });
                 }
+            } else if ((updates as Partial<Sale>).postToLedger === true) {
+                // Deposit covered the whole order: no receipt entry exists to carry
+                // COGS, so book the cost side on its own (deduped per order).
+                postRetailCogsOnlyEntry(id, localDayOf(normalizedDate), `${customerName} · cost of goods sold`);
             }
         } else if (
             updates.settleDate &&

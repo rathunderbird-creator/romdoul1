@@ -6,6 +6,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard } from '../../components/MobileFilterKit';
+import { useProcurement } from '../../hooks/useProcurement';
 import type { Supplier } from '../../types';
 
 interface LedgerEntry {
@@ -31,6 +32,7 @@ const SupplierDetailsPage = () => {
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { deletePurchaseOrder, deleteSupplierPayment } = useProcurement();
 
     const [supplier, setSupplier] = useState<Supplier | null>(null);
     const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
@@ -216,38 +218,19 @@ const SupplierDetailsPage = () => {
 
     const handleDeleteLedgerEntry = async (entry: LedgerEntry) => {
         if (!window.confirm(`Are you sure you want to delete this ${entry.type}? This action cannot be undone.`)) return;
-        
+
         try {
+            // Route through the hook's flows: they also clean up the linked
+            // Income & Expense rows and journal entries (the PO's receive entry
+            // and the payments' A/P entries) that raw row deletes would orphan.
             if (entry.id.startsWith('po-')) {
                 const poId = entry.id.replace('po-', '');
-                const { error } = await supabase.from('purchase_orders').delete().eq('id', poId);
-                if (error) throw error;
+                await deletePurchaseOrder(poId);
                 setPurchaseOrders(prev => prev.filter(po => po.id !== poId));
-                showToast('Purchase order deleted', 'success');
             } else if (entry.id.startsWith('pay-')) {
                 const payId = entry.id.replace('pay-', '');
-                
-                // Revert PO payment amount
-                const { data: payment, error: fetchErr } = await supabase.from('supplier_payments').select('*').eq('id', payId).single();
-                if (fetchErr) throw fetchErr;
-
-                if (payment && payment.purchase_order_id) {
-                    const { data: po } = await supabase.from('purchase_orders').select('amount_paid, total_amount').eq('id', payment.purchase_order_id).single();
-                    if (po) {
-                        const newAmountPaid = Math.max(0, (Number(po.amount_paid) || 0) - Number(payment.amount));
-                        const newPaymentStatus = newAmountPaid === 0 ? 'Unpaid' : (newAmountPaid >= po.total_amount ? 'Paid' : 'Partial');
-                        await supabase.from('purchase_orders').update({
-                            amount_paid: newAmountPaid,
-                            payment_status: newPaymentStatus
-                        }).eq('id', payment.purchase_order_id);
-                    }
-                }
-
-                const { error } = await supabase.from('supplier_payments').delete().eq('id', payId);
-                if (error) throw error;
-                
+                await deleteSupplierPayment(payId);
                 setPayments(prev => prev.filter(p => p.id !== payId));
-                showToast('Payment deleted', 'success');
             }
         } catch (err: any) {
             console.error('Delete error', err);

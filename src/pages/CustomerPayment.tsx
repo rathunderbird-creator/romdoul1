@@ -300,7 +300,8 @@ const CustomerPaymentPage: React.FC = () => {
     useEffect(() => {
         let cancelled = false;
         setLedger(prev => prev.state === 'ready' ? prev : { ...prev, state: 'loading' });
-        type JeRow = { reference_id: string | null; status?: string | null; lines?: { account_id: string; debit: number | string | null }[] | null };
+        type JeLine = { account_id: string; debit: number | string | null; account?: { account_type?: string | null; account_name?: string | null } | null };
+        type JeRow = { reference_id: string | null; status?: string | null; lines?: JeLine[] | null };
         const load = (cols: string) => fetchAll<JeRow>((from, to) => supabase
             .from('journal_entries')
             .select(cols)
@@ -309,13 +310,14 @@ const CustomerPaymentPage: React.FC = () => {
             .range(from, to) as unknown as PromiseLike<{ data: JeRow[] | null; error: unknown }>);
         (async () => {
             try {
+                const lineCols = 'lines:journal_entry_lines(account_id, debit, account:chart_of_accounts(account_type, account_name))';
                 let rows: JeRow[];
                 try {
-                    rows = await load('reference_id, status, lines:journal_entry_lines(account_id, debit)');
+                    rows = await load(`reference_id, status, ${lineCols}`);
                 } catch (err) {
                     // Instances without migrations/add_entry_status.sql: every entry counts as Posted.
                     if (!/status/i.test((err as { message?: string })?.message || '')) throw err;
-                    rows = await load('reference_id, lines:journal_entry_lines(account_id, debit)');
+                    rows = await load(`reference_id, ${lineCols}`);
                 }
                 const byTx = new Map<string, LedgerStatus>();
                 const debitAccountByTx = new Map<string, string>();
@@ -324,7 +326,10 @@ const CustomerPaymentPage: React.FC = () => {
                     if (!ref.startsWith('TX-')) continue;
                     const txId = ref.slice(3);
                     if (byTx.get(txId) !== 'Posted') byTx.set(txId, je.status === 'Draft' ? 'Draft' : 'Posted');
-                    const debit = (je.lines || []).find(l => Number(l.debit) > 0);
+                    // The entry's cash side only — an RCP entry also carries a COGS
+                    // debit, which must never become the "Deposited into" prefill.
+                    const debit = (je.lines || []).find(l => Number(l.debit) > 0
+                        && l.account?.account_type === 'Asset' && /cash|bank/i.test(l.account?.account_name || ''));
                     if (debit && !debitAccountByTx.has(txId)) debitAccountByTx.set(txId, debit.account_id);
                 }
                 if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, refreshError: false });
@@ -452,7 +457,9 @@ const CustomerPaymentPage: React.FC = () => {
             depositAccountId,
             type: isDepositRow(tx) ? 'DEP' : 'RCP',
             reference: receiptReference,
-            notes: receiptNotes
+            notes: receiptNotes,
+            // Lets an RCP posting also book COGS against the order's items.
+            orderId: orderIdByTxId.get(tx.id)
         }).then(() => {
             setPostedIds(s => new Set(s).add(tx.id));
             showToast('Payment posted to the ledger', 'success');
@@ -573,6 +580,7 @@ const CustomerPaymentPage: React.FC = () => {
                     description: r.description || 'Customer',
                     depositAccountId: accountFor(r),
                     type: isDepositRow(r) ? 'DEP' : 'RCP',
+                    orderId: orderIdByTxId.get(r.id),
                 });
                 ok++;
                 setPostedIds(prev => new Set(prev).add(r.id));
