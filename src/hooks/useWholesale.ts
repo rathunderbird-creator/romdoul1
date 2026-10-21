@@ -15,6 +15,101 @@ const generateUUID = () => {
     });
 };
 
+// Standard accounting for a wholesale credit sale: the goods leave the company
+// when the order is CREATED (stock is deducted right there), so that's when
+// inventory is relieved — one Draft entry of Dr Cost of Goods Sold /
+// Cr Inventory at the items' purchase cost, reference 'WSO-<id>-COGS' so a
+// retry never double-books and cancel/delete can take it back off the books.
+// Revenue stays on the per-payment WSP entries. Non-fatal: the order exists.
+const postWholesaleCogsEntry = async (
+    orderId: string,
+    label: string,
+    items: { product_id?: string | null; quantity?: number | null }[],
+    showToast: (msg: string, kind: 'success' | 'error' | 'info') => void
+) => {
+    try {
+        const reference = `WSO-${orderId}-COGS`;
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('id').eq('reference_id', reference).limit(1).maybeSingle();
+        if (exErr || existing) return;
+        const productIds = Array.from(new Set(items.map(i => i.product_id).filter((id): id is string => !!id)));
+        if (productIds.length === 0) return;
+        const { data: products, error: prodErr } = await supabase
+            .from('products').select('id, purchase_cost').in('id', productIds);
+        if (prodErr) return;
+        const costOf = new Map((products || []).map(p => [p.id, Number(p.purchase_cost) || 0]));
+        const cost = Math.round(items.reduce((s, i) => s + (costOf.get(i.product_id || '') || 0) * (Number(i.quantity) || 0), 0) * 100) / 100;
+        if (cost <= 0) return;
+        const { data: coa } = await supabase.from('chart_of_accounts')
+            .select('id, account_code, account_name, account_type').eq('is_active', true);
+        const pool = coa || [];
+        const cogsAcc = pool.find(a => a.account_code === '5000')
+            || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs/i.test(a.account_name));
+        const inventoryAcc = pool.find(a => a.account_code === '1300')
+            || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
+        if (!cogsAcc || !inventoryAcc) return;
+        const date = dayKeyFromDate(new Date());
+        const entryNumber = await nextJournalEntryNumber('WSP', date);
+        const entryPayload: Record<string, unknown> = {
+            date,
+            description: `${label} · cost of goods sold`,
+            reference_id: reference,
+            status: 'Draft',
+        };
+        if (entryNumber) entryPayload.entry_number = entryNumber;
+        let entry: { id: string } | null | undefined;
+        let jeErr: { message?: string } | null | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
+            if (!jeErr) break;
+            if (/entry_number/i.test(jeErr.message || '') && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
+            break;
+        }
+        // Never create an instantly-posted entry on an instance without the
+        // status column — same refusal as every other auto-posting flow.
+        if (jeErr && /status/i.test(jeErr.message || '')) {
+            showToast('Order saved — run migrations/add_entry_status.sql on this instance to also post its COGS entry as a draft.', 'info');
+            return;
+        }
+        if (jeErr || !entry) {
+            console.error('Failed to post the wholesale COGS entry:', jeErr);
+            return;
+        }
+        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+            { journal_entry_id: entry.id, account_id: cogsAcc.id, debit: cost, credit: 0 },
+            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: 0, credit: cost },
+        ]);
+        if (lErr) {
+            console.error('Failed to post the wholesale COGS entry lines:', lErr);
+            await supabase.from('journal_entries').delete().eq('id', entry.id);
+        }
+    } catch (e) {
+        console.error('Failed to post the wholesale COGS entry:', e);
+    }
+};
+
+// Cancelling or deleting a wholesale order puts the stock back, so its COGS
+// entry comes back off the books too: a still-Draft entry is deleted; a Posted
+// one is final, so the user is told to reverse it manually.
+const removeWholesaleCogsEntry = async (
+    orderId: string,
+    showToast: (msg: string, kind: 'success' | 'error' | 'info') => void
+) => {
+    try {
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('*').eq('reference_id', `WSO-${orderId}-COGS`).limit(1).maybeSingle();
+        if (exErr || !existing) return;
+        if (((existing as { status?: string }).status || 'Posted') !== 'Draft') {
+            showToast('This order has a POSTED cost-of-goods entry — record a reversing entry manually.', 'info');
+            return;
+        }
+        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
+        await supabase.from('journal_entries').delete().eq('id', existing.id);
+    } catch (e) {
+        console.error('Failed to remove the wholesale COGS entry:', e);
+    }
+};
+
 // Mirror of useProcurement, but for customer credit sales (Accounts Receivable).
 export const useWholesale = () => {
     const { showToast } = useToast();
@@ -180,6 +275,14 @@ export const useWholesale = () => {
                 }
             }
 
+            // The goods just left the company — relieve ledger inventory at cost.
+            await postWholesaleCogsEntry(
+                orderId,
+                `${order.customer_name || 'Wholesale'} · ${order.invoice_number || 'WO-' + String(orderId).slice(0, 8).toUpperCase()}`,
+                items,
+                showToast
+            );
+
             showToast('Wholesale order created', 'success');
             await fetchWholesaleOrders(true);
             return orderId as string;
@@ -212,9 +315,24 @@ export const useWholesale = () => {
             const { error } = await supabase.from('wholesale_orders').delete().eq('id', order.id);
             if (error) throw error;
             for (const p of cascadingPays || []) {
-                const { error: txErr } = await supabase.from('transactions').delete().like('description', `%#WSP-${String(p.id).slice(0, 8)}%`);
+                const marker = `%#WSP-${String(p.id).slice(0, 8)}%`;
+                // Remove the payments' ledger entries along with their income rows,
+                // or they'd be unfindable once the transactions rows are gone.
+                const { data: txs } = await supabase.from('transactions').select('id').like('description', marker);
+                const refIds = (txs || []).map(t => 'TX-' + t.id);
+                if (refIds.length) {
+                    const { data: payEntries } = await supabase.from('journal_entries').select('id').in('reference_id', refIds);
+                    const payEntryIds = (payEntries || []).map(e => e.id);
+                    if (payEntryIds.length) {
+                        await supabase.from('journal_entry_lines').delete().in('journal_entry_id', payEntryIds);
+                        await supabase.from('journal_entries').delete().in('id', payEntryIds);
+                    }
+                }
+                const { error: txErr } = await supabase.from('transactions').delete().like('description', marker);
                 if (txErr) console.error('Failed to remove income row for deleted wholesale payment:', txErr);
             }
+            // And the order's own cost-of-goods entry (no-op if already gone).
+            await removeWholesaleCogsEntry(order.id, showToast);
             showToast('Wholesale order deleted', 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {
@@ -350,6 +468,8 @@ export const useWholesale = () => {
                     if (order.warehouse_id) await adjustWarehouseStock(order.warehouse_id, i.product_id, i.quantity);
                 }
                 await supabase.from('stock_movements').delete().eq('reference_id', order.id).eq('type', 'out');
+                // Stock is back, so the cost-of-goods entry comes off the books too.
+                await removeWholesaleCogsEntry(order.id, showToast);
             }
             const { error } = await supabase.from('wholesale_orders').update({ status }).eq('id', order.id);
             if (error) throw error;

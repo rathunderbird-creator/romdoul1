@@ -128,9 +128,12 @@ const JournalEntriesPage = () => {
             const pool = accounts.filter(a => a.is_active);
             const byCode = (code: string) => pool.find(a => a.account_code === code);
             const byName = (re: RegExp, type?: string) => pool.find(a => (!type || a.account_type === type) && re.test(a.account_name));
-            // An Expense account (what Accounting › Expense reads) rather than the
-            // Inventory asset — matches the Draft entry a payment now posts directly.
-            const purchaseExpense = byCode('5000') || byName(/cost of goods|cogs|purchas/i, 'Expense') || byCode('1300') || byName(/inventory/i, 'Asset');
+            // Supplier payments settle the liability the received PO created
+            // (Dr Accounts Payable), matching what recordSupplierPayment now
+            // posts directly; only a chart without a payable account falls back
+            // to the old direct-expense treatment.
+            const supplierPayable = byCode('2000') || byName(/payable/i, 'Liability')
+                || byCode('5000') || byName(/cost of goods|cogs|purchas/i, 'Expense') || byCode('1300') || byName(/inventory/i, 'Asset');
             const salesRevenue = byCode('4000') || byName(/sales revenue/i, 'Revenue') || pool.find(a => a.account_type === 'Revenue');
             const payrollExp = byName(/payroll|salary/i, 'Expense') || byCode('6000') || pool.find(a => a.account_type === 'Expense');
             const cashFor = (payBy: string) => {
@@ -149,9 +152,9 @@ const JournalEntriesPage = () => {
                 const desc = String(t.description || '');
                 if (alreadyImported.has('TX-' + String(t.id))) continue;
                 let source = '';
-                let main: typeof purchaseExpense;
+                let main: typeof supplierPayable;
                 let isExpense = false;
-                if (desc.includes('#SPP-')) { source = 'Supplier payment'; main = purchaseExpense; isExpense = true; }
+                if (desc.includes('#SPP-')) { source = 'Supplier payment'; main = supplierPayable; isExpense = true; }
                 else if (desc.includes('#WSP-')) { source = 'Wholesale receipt'; main = salesRevenue; }
                 else if (desc.includes('#PAY-')) { source = 'Payroll'; main = payrollExp; isExpense = true; }
                 else continue; // an Income & Expense row — stays out of the ledger
