@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircle2, Download } from 'lucide-react';
+import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircle2, Download, Check, AlertTriangle } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
@@ -286,8 +286,8 @@ const JournalEntriesPage = () => {
         setReferenceId('');
         setEntryStatus('Posted');
         setLines([
-            { account_id: '', debit: 0, credit: 0 },
-            { account_id: '', debit: 0, credit: 0 }
+            { account_id: '', debit: 0, credit: 0, description: '' },
+            { account_id: '', debit: 0, credit: 0, description: '' }
         ]);
         setIsModalOpen(true);
     };
@@ -299,13 +299,13 @@ const JournalEntriesPage = () => {
         setDescription(entry.description || '');
         setReferenceId(entry.reference_id || '');
         setEntryStatus(entry.status === 'Draft' ? 'Draft' : 'Posted');
-        const ls = (entry.lines || []).map(l => ({ account_id: l.account_id, debit: l.debit || 0, credit: l.credit || 0 }));
-        setLines(ls.length >= 2 ? ls : [...ls, { account_id: '', debit: 0, credit: 0 }, { account_id: '', debit: 0, credit: 0 }].slice(0, Math.max(2, ls.length)));
+        const ls = (entry.lines || []).map(l => ({ account_id: l.account_id, debit: l.debit || 0, credit: l.credit || 0, description: l.description || '' }));
+        setLines(ls.length >= 2 ? ls : [...ls, { account_id: '', debit: 0, credit: 0, description: '' }, { account_id: '', debit: 0, credit: 0, description: '' }].slice(0, Math.max(2, ls.length)));
         setIsModalOpen(true);
     };
 
     const addLine = () => {
-        setLines([...lines, { account_id: '', debit: 0, credit: 0 }]);
+        setLines([...lines, { account_id: '', debit: 0, credit: 0, description: '' }]);
     };
 
     const removeLine = (index: number) => {
@@ -347,9 +347,21 @@ const JournalEntriesPage = () => {
                 if (error) throw error;
                 const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', editingEntryId);
                 if (delErr) throw delErr;
-                const { error: insErr } = await supabase.from('journal_entry_lines').insert(
-                    lines.map(l => ({ journal_entry_id: editingEntryId, account_id: l.account_id, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 }))
-                );
+                const linePayloads = lines.map(l => ({
+                    journal_entry_id: editingEntryId,
+                    account_id: l.account_id,
+                    debit: Number(l.debit) || 0,
+                    credit: Number(l.credit) || 0,
+                    ...(l.description?.trim() ? { description: l.description.trim() } : {})
+                }));
+                let { error: insErr } = await supabase.from('journal_entry_lines').insert(linePayloads);
+                // Line descriptions need migrations/add_journal_entry_line_description.sql.
+                if (insErr && /description/i.test(insErr.message || '') && linePayloads.some(l => 'description' in l)) {
+                    ({ error: insErr } = await supabase.from('journal_entry_lines').insert(
+                        linePayloads.map(l => { const copy: Record<string, unknown> = { ...l }; delete copy.description; return copy; })
+                    ));
+                    if (!insErr) showToast('Saved without the line descriptions — run migrations/add_journal_entry_line_description.sql to store them', 'info');
+                }
                 if (insErr) throw insErr;
                 showToast('Entry updated', 'success');
                 setIsModalOpen(false);
@@ -829,153 +841,181 @@ const JournalEntriesPage = () => {
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => { setIsModalOpen(false); setEditingEntryId(null); }}
-                title={editingEntryId ? 'Edit Journal Entry' : 'New Journal Entry'}
+                title={editingEntryId ? 'Edit Journal Entry' : 'Create Journal Entry'}
+                width="820px"
             >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Date</label>
-                            <input
-                                type="date"
-                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
-                                value={date}
-                                onChange={(e) => setDate(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Reference (Optional)</label>
-                            <input
-                                type="text"
-                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
-                                value={referenceId}
-                                onChange={(e) => setReferenceId(e.target.value)}
-                                placeholder="e.g. INV-1002"
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Status</label>
-                            <select
-                                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: 'var(--color-surface)', boxSizing: 'border-box' }}
-                                value={entryStatus}
-                                onChange={(e) => setEntryStatus(e.target.value as 'Posted' | 'Draft')}
+                {(() => {
+                    const fieldLabel: React.CSSProperties = { display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)' };
+                    const fieldInput: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', outline: 'none', boxSizing: 'border-box', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text-main)' };
+                    const cellInput: React.CSSProperties = { width: '100%', padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid var(--color-border)', outline: 'none', boxSizing: 'border-box', background: 'var(--color-surface)', color: 'var(--color-text-main)' };
+                    const thCell: React.CSSProperties = { padding: '10px 10px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)' };
+                    // Balanced whenever debits equal credits (an empty form counts, like the mock).
+                    const balancedNow = totalDebit === totalCredit;
+                    const accent = balancedNow ? '#2742c9' : '#DC2626';
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', padding: '8px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 170px', gap: '16px' }}>
+                                <div>
+                                    <label style={fieldLabel}>Transaction Date</label>
+                                    <input type="date" style={fieldInput} value={date} onChange={(e) => setDate(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label style={fieldLabel}>Reference/JV Number</label>
+                                    <input type="text" style={fieldInput} value={referenceId} onChange={(e) => setReferenceId(e.target.value)} placeholder="e.g., JE-001" />
+                                </div>
+                                <div>
+                                    <label style={fieldLabel}>Status</label>
+                                    <select style={{ ...fieldInput, cursor: 'pointer' }} value={entryStatus} onChange={(e) => setEntryStatus(e.target.value as 'Posted' | 'Draft')}>
+                                        <option value="Posted">Posted</option>
+                                        <option value="Draft">Draft</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={fieldLabel}>Description</label>
+                                <input type="text" className="d2-khmer" style={fieldInput} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the transaction..." />
+                            </div>
+
+                            {/* Live balance banner — blue when debits equal credits, red otherwise. */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                                padding: '12px 16px', borderRadius: '10px',
+                                border: `1.5px solid ${accent}`,
+                                background: `color-mix(in srgb, ${accent} 6%, var(--color-surface))`
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: 700, color: accent, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {balancedNow ? <>✓ Entry Balanced</> : <>Entry Not Balanced</>}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
+                                        Debits: {totalDebit.toFixed(2)} | Credits: {totalCredit.toFixed(2)}
+                                        {!balancedNow && <> · difference {Math.abs(totalDebit - totalCredit).toFixed(2)}</>}
+                                    </div>
+                                </div>
+                                {balancedNow
+                                    ? <Check size={20} color={accent} style={{ flexShrink: 0 }} />
+                                    : <AlertTriangle size={20} color={accent} style={{ flexShrink: 0 }} />}
+                            </div>
+
+                            {/* Line items */}
+                            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                <th style={thCell}>Account</th>
+                                                <th style={thCell}>Description</th>
+                                                <th style={{ ...thCell, textAlign: 'right', width: '110px' }}>Debit</th>
+                                                <th style={{ ...thCell, textAlign: 'right', width: '110px' }}>Credit</th>
+                                                <th style={{ ...thCell, textAlign: 'center', width: '56px' }}>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {lines.map((line, index) => (
+                                                <tr key={index} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                    <td style={{ padding: '8px 10px', minWidth: '180px' }}>
+                                                        <select
+                                                            className="d2-khmer"
+                                                            style={{ ...cellInput, cursor: 'pointer' }}
+                                                            value={line.account_id}
+                                                            onChange={(e) => updateLine(index, 'account_id', e.target.value)}
+                                                        >
+                                                            <option value="">Select account...</option>
+                                                            {activeAccounts.map(acc => (
+                                                                <option key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ padding: '8px 10px', minWidth: '150px' }}>
+                                                        <input
+                                                            type="text"
+                                                            className="d2-khmer"
+                                                            style={cellInput}
+                                                            value={line.description || ''}
+                                                            onChange={(e) => updateLine(index, 'description', e.target.value)}
+                                                            placeholder="Line description"
+                                                        />
+                                                    </td>
+                                                    <td style={{ padding: '8px 10px' }}>
+                                                        <input
+                                                            type="number"
+                                                            style={{ ...cellInput, textAlign: 'right' }}
+                                                            value={line.debit || ''}
+                                                            min="0"
+                                                            placeholder="0.00"
+                                                            onChange={(e) => updateLine(index, 'debit', parseFloat(e.target.value) || 0)}
+                                                        />
+                                                    </td>
+                                                    <td style={{ padding: '8px 10px' }}>
+                                                        <input
+                                                            type="number"
+                                                            style={{ ...cellInput, textAlign: 'right' }}
+                                                            value={line.credit || ''}
+                                                            min="0"
+                                                            placeholder="0.00"
+                                                            onChange={(e) => updateLine(index, 'credit', parseFloat(e.target.value) || 0)}
+                                                        />
+                                                    </td>
+                                                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                                        <button
+                                                            onClick={() => removeLine(index)}
+                                                            disabled={lines.length <= 2}
+                                                            title={lines.length > 2 ? 'Remove line' : 'An entry needs at least two lines'}
+                                                            style={{
+                                                                background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'not-allowed',
+                                                                color: lines.length > 2 ? '#ef7a7a' : 'var(--color-border)',
+                                                                padding: '4px'
+                                                            }}
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr style={{ background: 'var(--color-bg)' }}>
+                                                <td colSpan={2} style={{ padding: '12px 10px', fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Total</td>
+                                                <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, fontSize: '13px', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>USD {totalDebit.toFixed(2)}</td>
+                                                <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, fontSize: '13px', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>USD {totalCredit.toFixed(2)}</td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={addLine}
+                                style={{
+                                    width: '100%', padding: '14px', fontSize: '13.5px', fontWeight: 600,
+                                    borderRadius: '10px', border: 'none', background: 'var(--color-bg)',
+                                    color: 'var(--color-text-main)', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                                }}
                             >
-                                <option value="Posted">Posted</option>
-                                <option value="Draft">Draft</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Description</label>
-                        <input 
-                            type="text" 
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                            value={description} 
-                            onChange={(e) => setDescription(e.target.value)} 
-                            placeholder="Reason for this entry"
-                        />
-                    </div>
+                                <Plus size={16} /> Add Line Item
+                            </button>
 
-                    <div style={{ marginTop: '16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <label style={{ fontWeight: 500, fontSize: '14px', color: 'var(--color-text-main)' }}>Line Items</label>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
+                                <button
+                                    onClick={() => { setIsModalOpen(false); setEditingEntryId(null); }}
+                                    style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '13.5px', cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSave}
+                                    disabled={!isFormValid}
+                                    style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: isFormValid ? 'pointer' : 'not-allowed', opacity: (!isFormValid) ? 0.55 : 1 }}
+                                >
+                                    {editingEntryId ? 'Save Changes' : 'Create Entry'}
+                                </button>
+                            </div>
                         </div>
-                        <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '420px' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid #cbd5e1', color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>
-                                    <th style={{ padding: '8px 4px', textAlign: 'left', fontWeight: 600 }}>Account</th>
-                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '90px', fontWeight: 600 }}>Debit</th>
-                                    <th style={{ padding: '8px 4px', textAlign: 'right', width: '90px', fontWeight: 600 }}>Credit</th>
-                                    <th style={{ padding: '8px 4px', width: '36px' }}></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {lines.map((line, index) => (
-                                    <tr key={index}>
-                                        <td style={{ padding: '4px' }}>
-                                            <select 
-                                                style={{ width: '100%', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', outline: 'none' }}
-                                                value={line.account_id}
-                                                onChange={(e) => updateLine(index, 'account_id', e.target.value)}
-                                            >
-                                                <option value="">Select Account</option>
-                                                {activeAccounts.map(acc => (
-                                                    <option key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td style={{ padding: '4px' }}>
-                                            <input 
-                                                type="number" 
-                                                style={{ width: '100%', padding: '8px', textAlign: 'right', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', outline: 'none' }}
-                                                value={line.debit || ''}
-                                                min="0"
-                                                onChange={(e) => updateLine(index, 'debit', parseFloat(e.target.value) || 0)}
-                                            />
-                                        </td>
-                                        <td style={{ padding: '4px' }}>
-                                            <input 
-                                                type="number" 
-                                                style={{ width: '100%', padding: '8px', textAlign: 'right', fontSize: '13px', borderRadius: '4px', border: '1px solid #cbd5e1', outline: 'none' }}
-                                                value={line.credit || ''}
-                                                min="0"
-                                                onChange={(e) => updateLine(index, 'credit', parseFloat(e.target.value) || 0)}
-                                            />
-                                        </td>
-                                        <td style={{ padding: '4px', textAlign: 'center' }}>
-                                            <button 
-                                                onClick={() => removeLine(index)} 
-                                                disabled={lines.length <= 2}
-                                                style={{ 
-                                                    background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'not-allowed', 
-                                                    color: lines.length > 2 ? '#ef4444' : 'var(--color-border)',
-                                                    padding: '4px'
-                                                }}
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        </div>
-                        <button
-                            onClick={addLine}
-                            style={{ marginTop: '8px', padding: '6px 12px', fontSize: '13px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid #cbd5e1', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}
-                        >
-                            + Add Line
-                        </button>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '32px', margin: '16px 0', padding: '16px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Debit</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#10b981' }}>{formatCurrency(totalDebit)}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Credit</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#ef4444' }}>{formatCurrency(totalCredit)}</div>
-                        </div>
-                    </div>
-                    {!isBalanced && totalDebit > 0 && totalCredit > 0 && (
-                        <div style={{ color: '#ef4444', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>
-                            Debits and Credits must be equal to save. (Difference: {formatCurrency(Math.abs(totalDebit - totalCredit))})
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                        <button onClick={() => { setIsModalOpen(false); setEditingEntryId(null); }} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-                        <button
-                            onClick={handleSave}
-                            disabled={!isFormValid}
-                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#5469d4', color: 'white', fontWeight: 500, cursor: 'pointer', opacity: (!isFormValid) ? 0.5 : 1 }}
-                        >
-                            {editingEntryId ? 'Save Changes' : 'Save Entry'}
-                        </button>
-                    </div>
-                </div>
+                    );
+                })()}
             </Modal>
         </div>
     );

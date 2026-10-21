@@ -453,6 +453,8 @@ export interface JournalEntryLine {
     account_id: string;
     debit: number;
     credit: number;
+    // Optional per-line note (migrations/add_journal_entry_line_description.sql).
+    description?: string;
     created_at?: string;
     // Joined field for UI convenience
     account?: ChartOfAccount;
