@@ -29,6 +29,9 @@ interface LedgerRow {
     account: ChartOfAccount;
     debit: number;
     credit: number;
+    // The entry's other side: where this posting's money came from or went to.
+    contraName: string;
+    contraIds: string[];
 }
 
 const GeneralLedgerPage = () => {
@@ -69,6 +72,19 @@ const GeneralLedgerPage = () => {
         for (const entry of journalEntries) {
             for (const line of entry.lines || []) {
                 if (!line.account) continue; // the account was deleted
+                const debit = Number(line.debit) || 0;
+                const credit = Number(line.credit) || 0;
+                // Contra = the entry's opposite-side lines (a compound entry can
+                // have several); deduped so a 4-line sale shows each account once.
+                const opposite = (entry.lines || []).filter(l =>
+                    l !== line && l.account && (debit > 0 ? (Number(l.credit) || 0) > 0 : (Number(l.debit) || 0) > 0));
+                const contraIds: string[] = [];
+                const contraNames: string[] = [];
+                for (const l of opposite) {
+                    if (!l.account || contraIds.includes(l.account.id)) continue;
+                    contraIds.push(l.account.id);
+                    contraNames.push(l.account.account_name);
+                }
                 rows.push({
                     key: line.id || `${entry.id}-${line.account_id}-${rows.length}`,
                     date: entry.date,
@@ -79,8 +95,10 @@ const GeneralLedgerPage = () => {
                     entryRef: entry.entry_number || entry.reference_id || `#${entry.id.slice(0, 8)}`,
                     description: entry.description || '—',
                     account: line.account,
-                    debit: Number(line.debit) || 0,
-                    credit: Number(line.credit) || 0,
+                    debit,
+                    credit,
+                    contraName: contraNames.join(', ') || '—',
+                    contraIds,
                 });
             }
         }
@@ -239,7 +257,9 @@ const GeneralLedgerPage = () => {
                                 <div key={row.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid var(--color-border)' }}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.description}</div>
-                                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{fmtDate(row.date)} · {row.entryRef}</div>
+                                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {fmtDate(row.date)} · {row.entryRef}{row.contraName !== '—' && <span className="d2-khmer"> · ↔ {row.contraName}</span>}
+                                        </div>
                                     </div>
                                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                         <div style={{ fontSize: '12.5px', fontVariantNumeric: 'tabular-nums', color: row.debit > 0 ? '#059669' : row.credit > 0 ? '#DC2626' : 'var(--color-text-muted)' }}>
@@ -253,12 +273,13 @@ const GeneralLedgerPage = () => {
                     ))
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px', minWidth: '760px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px', minWidth: '920px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '120px' }}>Date</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '140px' }}>Entry</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Description</th>
+                                    <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '180px' }}>Contra Account</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '130px', textAlign: 'right' }}>Debit</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '130px', textAlign: 'right' }}>Credit</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px', textAlign: 'right' }}>Balance</th>
@@ -268,7 +289,7 @@ const GeneralLedgerPage = () => {
                                 {ledgerGroups.map(g => (
                                     <Fragment key={g.account.id}>
                                         <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
-                                            <td colSpan={5} style={{ padding: '10px 24px', borderLeft: `3px solid ${TYPE_COLORS[g.account.account_type]}` }}>{sectionHeader(g)}</td>
+                                            <td colSpan={6} style={{ padding: '10px 24px', borderLeft: `3px solid ${TYPE_COLORS[g.account.account_type]}` }}>{sectionHeader(g)}</td>
                                             <td style={{ padding: '10px 24px', textAlign: 'right', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                                                 {dateFrom ? <>Opening <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: g.opening < 0 ? '#DC2626' : 'var(--color-text-secondary)' }}>{fmt(g.opening)}</span></> : null}
                                             </td>
@@ -278,13 +299,23 @@ const GeneralLedgerPage = () => {
                                                 <td style={{ padding: '12px 24px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(row.date)}</td>
                                                 <td style={{ padding: '12px 24px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{row.entryRef}</td>
                                                 <td className="d2-khmer" style={{ padding: '12px 24px', color: 'var(--color-text-main)' }}>{row.description}</td>
+                                                <td className="d2-khmer" style={{ padding: '12px 24px', color: 'var(--color-text-secondary)' }}>
+                                                    {row.contraIds.length === 1 ? (
+                                                        <span
+                                                            className="hover-highlight"
+                                                            onClick={() => setAccountFilter(row.contraIds[0])}
+                                                            title="View this account's ledger"
+                                                            style={{ cursor: 'pointer' }}
+                                                        >{row.contraName}</span>
+                                                    ) : row.contraName}
+                                                </td>
                                                 <td style={{ padding: '12px 24px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.debit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{row.debit > 0 ? fmt(row.debit) : '—'}</td>
                                                 <td style={{ padding: '12px 24px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.credit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{row.credit > 0 ? fmt(row.credit) : '—'}</td>
                                                 <td style={{ padding: '12px 24px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: row.balance < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(row.balance)}</td>
                                             </tr>
                                         ))}
                                         <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-                                            <td colSpan={3} style={{ padding: '10px 24px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+                                            <td colSpan={4} style={{ padding: '10px 24px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
                                                 Total · {g.rows.length} {g.rows.length === 1 ? 'line' : 'lines'}
                                             </td>
                                             <td style={{ padding: '10px 24px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(g.debits)}</td>
