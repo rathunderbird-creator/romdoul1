@@ -8,7 +8,7 @@
 //   'លក់រាយ'   (Retail)  -> a Paid/receipt transaction
 //   'កក់ប្រាក់' (Deposit) -> a deposit transaction
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Receipt, Hash, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle } from 'lucide-react';
+import { Search, Receipt, Hash, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle, Trash2 } from 'lucide-react';
 import { postOrFinalizeTransactionReceipt } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -339,10 +339,12 @@ const CustomerPaymentPage: React.FC = () => {
     // Rows posted in this session, so they flip to Posted immediately.
     const [postedIds, setPostedIds] = useState<Set<string>>(new Set());
     const [postingIds, setPostingIds] = useState<Set<string>>(new Set());
-    // Row checkboxes for bulk Post Now. Raw picks; the effective selection is
-    // derived below so rows that got posted or filtered away drop out on their own.
+    // Row checkboxes for bulk Post Now / bulk Delete. Raw picks; the effective
+    // selection is derived below so rows that got posted, deleted or filtered
+    // away drop out on their own.
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkPosting, setIsBulkPosting] = useState(false);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
     // No matching entry at all is treated the same as an unposted (Draft) one.
     const statusOf = useCallback(
@@ -500,20 +502,29 @@ const CustomerPaymentPage: React.FC = () => {
     const page = Math.min(currentPage, totalPages);
     const pageRows = filteredPayments.slice((page - 1) * pageSize, page * pageSize);
 
-    // ── Bulk Post Now ──
+    // ── Bulk Post Now / bulk Delete ──
+    // A checkbox selects any row regardless of status — Delete applies to any
+    // selection, Post Now silently acts on just the postable (Draft) subset of it.
     const canPostRow = useCallback(
         (id: string) => ledgerReady && statusOf(id) === 'Draft' && !postingIds.has(id),
         [ledgerReady, statusOf, postingIds]
     );
-    // Effective selection: only rows that are still listed and still postable.
-    const selectedRows = useMemo(
-        () => selectedIds.size === 0 ? [] : filteredPayments.filter(r => selectedIds.has(r.id) && canPostRow(r.id)),
-        [selectedIds, filteredPayments, canPostRow]
+    // Effective selection: only rows that are still listed (filtered away or
+    // deleted elsewhere drop out on their own).
+    const selectedAllRows = useMemo(
+        () => selectedIds.size === 0 ? [] : filteredPayments.filter(r => selectedIds.has(r.id)),
+        [selectedIds, filteredPayments]
     );
-    const selectedTotal = useMemo(() => selectedRows.reduce((s, r) => s + Number(r.amount || 0), 0), [selectedRows]);
-    const pagePostableIds = useMemo(() => pageRows.filter(r => canPostRow(r.id)).map(r => r.id), [pageRows, canPostRow]);
-    const allPageSelected = pagePostableIds.length > 0 && pagePostableIds.every(id => selectedIds.has(id));
-    const somePageSelected = pagePostableIds.some(id => selectedIds.has(id));
+    const selectedTotal = useMemo(() => selectedAllRows.reduce((s, r) => s + Number(r.amount || 0), 0), [selectedAllRows]);
+    const selectedPostableRows = useMemo(
+        () => selectedAllRows.filter(r => canPostRow(r.id)),
+        [selectedAllRows, canPostRow]
+    );
+    const selectedPostableTotal = useMemo(() => selectedPostableRows.reduce((s, r) => s + Number(r.amount || 0), 0), [selectedPostableRows]);
+    // A row mid-post can't also be selected for a new bulk action.
+    const pageSelectableIds = useMemo(() => pageRows.filter(r => !postingIds.has(r.id)).map(r => r.id), [pageRows, postingIds]);
+    const allPageSelected = pageSelectableIds.length > 0 && pageSelectableIds.every(id => selectedIds.has(id));
+    const somePageSelected = pageSelectableIds.some(id => selectedIds.has(id));
 
     const toggleSelect = (id: string) => setSelectedIds(prev => {
         const n = new Set(prev);
@@ -522,8 +533,8 @@ const CustomerPaymentPage: React.FC = () => {
     });
     const togglePage = () => setSelectedIds(prev => {
         const n = new Set(prev);
-        if (allPageSelected) pagePostableIds.forEach(id => n.delete(id));
-        else pagePostableIds.forEach(id => n.add(id));
+        if (allPageSelected) pageSelectableIds.forEach(id => n.delete(id));
+        else pageSelectableIds.forEach(id => n.add(id));
         return n;
     });
 
@@ -532,9 +543,9 @@ const CustomerPaymentPage: React.FC = () => {
     // else an account matching the payment's method, else the server's cash/bank
     // fallback). The server refuses non-Draft entries, so a stale row can't repost.
     const handleBulkPost = async () => {
-        const rows = selectedRows;
+        const rows = selectedPostableRows;
         if (rows.length === 0 || isBulkPosting) return;
-        if (!window.confirm(`Post ${rows.length} draft payment${rows.length === 1 ? '' : 's'} (${formatAmount(selectedTotal)}) to the ledger?\nEach is posted with its own payment date, amount and deposit account.`)) return;
+        if (!window.confirm(`Post ${rows.length} draft payment${rows.length === 1 ? '' : 's'} (${formatAmount(selectedPostableTotal)}) to the ledger?\nEach is posted with its own payment date, amount and deposit account.`)) return;
         setIsBulkPosting(true);
         setPostingIds(prev => new Set([...prev, ...rows.map(r => r.id)]));
         let paymentAccounts: { id: string; account_name: string }[] = [];
@@ -577,6 +588,58 @@ const CustomerPaymentPage: React.FC = () => {
         setLedgerNonce(n => n + 1);
         if (failed.length === 0) showToast(`Posted ${ok} payment${ok === 1 ? '' : 's'} to the ledger`, 'success');
         else showToast(`Posted ${ok} of ${rows.length} — failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`, 'error');
+    };
+
+    // Deletes the selected payments outright — any status, not just Draft. A
+    // selected row with a linked journal entry (Posted or Draft) has that entry
+    // removed too, or it would be left behind pointing at a deleted transaction.
+    const handleBulkDelete = async () => {
+        const rows = selectedAllRows;
+        if (rows.length === 0 || isBulkDeleting) return;
+        const linkedCount = rows.filter(r => ledgerReady && ledger.byTx.has(r.id)).length;
+        const warn = linkedCount > 0
+            ? `\n${linkedCount} of them ${linkedCount === 1 ? 'has' : 'have'} a ledger entry — ${linkedCount === 1 ? 'it is' : 'those are'} deleted too.`
+            : '';
+        if (!window.confirm(`Delete ${rows.length} payment${rows.length === 1 ? '' : 's'} (${formatAmount(selectedTotal)})? This cannot be undone.${warn}`)) return;
+        setIsBulkDeleting(true);
+        const ids = rows.map(r => r.id);
+        try {
+            const refIds = ids.map(id => `TX-${id}`);
+            const entryIds: string[] = [];
+            for (const batch of chunk(refIds, PREFIX_CHUNK)) {
+                const { data, error } = await supabase.from('journal_entries').select('id').in('reference_id', batch);
+                if (error) throw error;
+                entryIds.push(...((data || []) as { id: string }[]).map(e => e.id));
+            }
+            if (entryIds.length > 0) {
+                for (const batch of chunk(entryIds, PREFIX_CHUNK)) {
+                    const { error: lineErr } = await supabase.from('journal_entry_lines').delete().in('journal_entry_id', batch);
+                    if (lineErr) throw lineErr;
+                }
+                for (const batch of chunk(entryIds, PREFIX_CHUNK)) {
+                    const { error: entryErr } = await supabase.from('journal_entries').delete().in('id', batch);
+                    if (entryErr) throw entryErr;
+                }
+            }
+            for (const batch of chunk(ids, PREFIX_CHUNK)) {
+                const { error: txErr } = await supabase.from('transactions').delete().in('id', batch);
+                if (txErr) throw txErr;
+            }
+            const idSet = new Set(ids);
+            setAllRetailPayments(prev => prev.filter(r => !idSet.has(r.id)));
+            setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            showToast(`Deleted ${rows.length} payment${rows.length === 1 ? '' : 's'}`, 'success');
+            if (entryIds.length > 0) setLedgerNonce(n => n + 1);
+        } catch (err) {
+            console.error('Bulk delete failed:', err);
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            showToast('Failed to delete: ' + message, 'error');
+            // Re-sync — some rows or their ledger entries may have been removed before the failure.
+            fetchRetailPayments();
+            setLedgerNonce(n => n + 1);
+        } finally {
+            setIsBulkDeleting(false);
+        }
     };
 
     const hasActiveFilters = searchTerm !== '' || dateRange.start !== '' || dateRange.end !== ''
@@ -800,36 +863,57 @@ const CustomerPaymentPage: React.FC = () => {
                 </Notice>
             )}
 
-            {/* Bulk Post Now bar */}
-            {selectedRows.length > 0 && (
+            {/* Bulk selection bar — floats at the bottom-center once any row is
+                checked, same place regardless of scroll position. Post Now only
+                shows when the selection includes at least one postable Draft;
+                Delete applies to the whole selection, any status. */}
+            {selectedAllRows.length > 0 && (
                 <div style={{
-                    display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
-                    padding: '10px 16px', borderRadius: '10px',
-                    background: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
-                    border: '1px solid var(--color-primary)'
+                    position: 'fixed', left: '50%', bottom: '24px', transform: 'translateX(-50%)',
+                    zIndex: 500, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                    justifyContent: 'center', maxWidth: 'calc(100vw - 32px)',
+                    padding: '12px 18px', borderRadius: '14px',
+                    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                    boxShadow: '0 10px 32px rgba(0,0,0,0.22)'
                 }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', flex: 1, minWidth: '180px' }}>
-                        {selectedRows.length} draft payment{selectedRows.length === 1 ? '' : 's'} selected · {formatAmount(selectedTotal)}
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                        {selectedAllRows.length} selected · {formatAmount(selectedTotal)}
                     </span>
+                    {selectedPostableRows.length > 0 && (
+                        <button
+                            onClick={handleBulkPost}
+                            disabled={isBulkPosting || isBulkDeleting}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                background: 'var(--color-primary)', color: '#fff',
+                                fontSize: '13px', fontWeight: 600, cursor: (isBulkPosting || isBulkDeleting) ? 'not-allowed' : 'pointer',
+                                opacity: (isBulkPosting || isBulkDeleting) ? 0.7 : 1, whiteSpace: 'nowrap'
+                            }}
+                        >
+                            {isBulkPosting ? 'Posting…' : `Post Now (${selectedPostableRows.length})`}
+                        </button>
+                    )}
                     <button
-                        onClick={handleBulkPost}
-                        disabled={isBulkPosting}
+                        onClick={handleBulkDelete}
+                        disabled={isBulkPosting || isBulkDeleting}
                         style={{
+                            display: 'flex', alignItems: 'center', gap: '6px',
                             padding: '8px 16px', borderRadius: '8px', border: 'none',
-                            background: 'var(--color-primary)', color: '#fff',
-                            fontSize: '13px', fontWeight: 600, cursor: isBulkPosting ? 'not-allowed' : 'pointer',
-                            opacity: isBulkPosting ? 0.7 : 1
+                            background: '#EF4444', color: '#fff',
+                            fontSize: '13px', fontWeight: 600, cursor: (isBulkPosting || isBulkDeleting) ? 'not-allowed' : 'pointer',
+                            opacity: (isBulkPosting || isBulkDeleting) ? 0.7 : 1, whiteSpace: 'nowrap'
                         }}
                     >
-                        {isBulkPosting ? 'Posting…' : `Post Now (${selectedRows.length})`}
+                        <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedAllRows.length})`}
                     </button>
                     <button
                         onClick={() => setSelectedIds(new Set())}
-                        disabled={isBulkPosting}
+                        disabled={isBulkPosting || isBulkDeleting}
                         style={{
                             padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                            background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
-                            fontSize: '13px', fontWeight: 600, cursor: isBulkPosting ? 'not-allowed' : 'pointer'
+                            background: 'var(--color-bg)', color: 'var(--color-text-secondary)',
+                            fontSize: '13px', fontWeight: 600, cursor: (isBulkPosting || isBulkDeleting) ? 'not-allowed' : 'pointer',
+                            whiteSpace: 'nowrap'
                         }}
                     >
                         Clear
@@ -849,9 +933,9 @@ const CustomerPaymentPage: React.FC = () => {
                                         checked={allPageSelected}
                                         ref={el => { if (el) el.indeterminate = !allPageSelected && somePageSelected; }}
                                         onChange={togglePage}
-                                        disabled={pagePostableIds.length === 0}
-                                        title="Select the draft payments on this page"
-                                        style={{ cursor: pagePostableIds.length === 0 ? 'not-allowed' : 'pointer' }}
+                                        disabled={pageSelectableIds.length === 0}
+                                        title="Select all payments on this page"
+                                        style={{ cursor: pageSelectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                     />
                                 </th>
                                 <th style={thStyle}>Date</th>
@@ -910,11 +994,11 @@ const CustomerPaymentPage: React.FC = () => {
                                             <td style={{ ...tdStyle, padding: '10px 8px 10px 12px' }}>
                                                 <input
                                                     type="checkbox"
-                                                    checked={selectedIds.has(r.id) && canPost}
+                                                    checked={selectedIds.has(r.id)}
                                                     onChange={() => toggleSelect(r.id)}
-                                                    disabled={!canPost}
-                                                    title={canPost ? 'Select for bulk Post Now' : 'Only draft payments can be posted'}
-                                                    style={{ cursor: canPost ? 'pointer' : 'not-allowed' }}
+                                                    disabled={posting}
+                                                    title={posting ? 'Posting…' : 'Select payment'}
+                                                    style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
