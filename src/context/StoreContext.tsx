@@ -130,9 +130,21 @@ async function retailCogsLines(
 async function postRetailCogsOnlyEntry(orderId: string, date: string, description: string, status: 'Draft' | 'Posted' = 'Draft'): Promise<void> {
     try {
         const reference = `ORD-${orderId}-COGS`;
+        // select('*') so status is read where that column exists without failing where it doesn't.
         const { data: existing, error: exErr } = await supabase.from('journal_entries')
-            .select('id').eq('reference_id', reference).limit(1).maybeSingle();
-        if (exErr || existing) return;
+            .select('*').eq('reference_id', reference).limit(1).maybeSingle();
+        if (exErr) return;
+        if (existing) {
+            // A companion an admin unposted (Draft) must follow a 'Posted'
+            // request back to Posted — Post Now after Unpost — and moves to the
+            // corrected date with it. An already-Posted companion stays untouched.
+            if (status === 'Posted' && (existing as { status?: string }).status === 'Draft') {
+                const { error: upErr } = await supabase.from('journal_entries')
+                    .update({ status: 'Posted', date }).eq('id', (existing as { id: string }).id);
+                if (upErr) console.error('Failed to re-post the COGS entry for order', orderId, upErr);
+            }
+            return;
+        }
         const { pool } = await resolveRetailLedgerAccounts();
         const cogs = await retailCogsLines(orderId, pool);
         if (!cogs) return;

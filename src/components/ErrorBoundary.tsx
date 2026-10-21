@@ -36,40 +36,62 @@ class ErrorBoundary extends Component<Props, State> {
             const message = this.state.error?.message || '';
             const isStaleChunk = /dynamically imported module|module script failed|Failed to fetch dynamically imported module/i.test(message);
             if (isStaleChunk) {
+                // The notice sits at the BOTTOM-CENTER of the viewport, styled like
+                // UpdateBanner's popup — the page behind is blank (the stale chunk
+                // never rendered), so the card is the only thing on screen.
+                // position: fixed, not flex-end in a 100vh container: on mobile,
+                // 100vh is the URL-bar-collapsed height, which would push the card
+                // below the visible viewport; fixed tracks what's actually visible.
                 return (
                     <div style={{
                         minHeight: 'var(--vh-full)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '14px',
                         fontFamily: 'system-ui, sans-serif',
                         background: '#F6F8FB',
-                        color: '#111827',
-                        textAlign: 'center',
-                        padding: '24px'
+                        color: '#111827'
                     }}>
-                        <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>A new version is available.</p>
-                        <p style={{ fontSize: '13px', color: '#6B7280', margin: 0, maxWidth: '360px' }}>
-                            This page was loaded before the latest update. Reload to get it.
-                        </p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            style={{
-                                marginTop: '6px',
-                                padding: '9px 20px',
-                                backgroundColor: '#3B82F6',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                fontWeight: 600,
-                                fontSize: '14px'
-                            }}
-                        >
-                            Reload
-                        </button>
+                        <div style={{
+                            position: 'fixed',
+                            left: '50%',
+                            bottom: '24px',
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                            flexWrap: 'wrap',
+                            justifyContent: 'center',
+                            width: 'max-content',
+                            maxWidth: 'calc(100vw - 32px)',
+                            boxSizing: 'border-box',
+                            background: '#FFFFFF',
+                            border: '1px solid #E5E7EB',
+                            borderRadius: '10px',
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+                            padding: '14px 16px 14px 20px'
+                        }}>
+                            <div style={{ minWidth: 0 }}>
+                                <p style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>A new version is available.</p>
+                                <p style={{ fontSize: '12.5px', color: '#6B7280', margin: '2px 0 0' }}>
+                                    This page was loaded before the latest update. Reload to get it.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => window.location.reload()}
+                                style={{
+                                    padding: '9px 20px',
+                                    backgroundColor: '#3B82F6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0
+                                }}
+                            >
+                                Reload
+                            </button>
+                        </div>
                     </div>
                 );
             }
