@@ -166,11 +166,15 @@ const CustomerPaymentPage: React.FC = () => {
     const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const fetchSeqRef = useRef(0);
-    // Date corrections made by the Post Now flow (txId -> new stored date). A
-    // range fetch that read the DB before the correction committed re-applies
-    // these on resolve instead of reverting the row; entries clear themselves
-    // once the server round-trips the moved date.
-    const dateCorrectionsRef = useRef(new Map<string, string>());
+    // Corrections made by the Post Now flow (txId -> patch of changed fields).
+    // A range fetch that read the DB before a correction committed re-applies
+    // the still-pending fields on resolve instead of reverting the row; each
+    // field clears itself once the server round-trips that value.
+    const pendingCorrectionsRef = useRef(new Map<string, Partial<Pick<CustomerPaymentRow, 'date' | 'pay_by'>>>());
+    const mergeCorrection = (id: string, patch: Partial<Pick<CustomerPaymentRow, 'date' | 'pay_by'>>) => {
+        const existing = pendingCorrectionsRef.current.get(id) || {};
+        pendingCorrectionsRef.current.set(id, { ...existing, ...patch });
+    };
 
     const fetchRetailPayments = useCallback(async () => {
         const seq = ++fetchSeqRef.current;
@@ -206,13 +210,22 @@ const CustomerPaymentPage: React.FC = () => {
                 }
             }
             if (seq !== fetchSeqRef.current) return;
-            const corrections = dateCorrectionsRef.current;
+            const corrections = pendingCorrectionsRef.current;
             if (corrections.size > 0) {
                 for (const row of rows) {
-                    const corrected = corrections.get(row.id);
-                    if (!corrected) continue;
-                    if (localYMD(row.date) === localYMD(corrected)) corrections.delete(row.id);
-                    else row.date = corrected;
+                    const patch = corrections.get(row.id);
+                    if (!patch) continue;
+                    const remaining: typeof patch = {};
+                    if (patch.date !== undefined) {
+                        if (localYMD(row.date) === localYMD(patch.date)) { /* server caught up */ }
+                        else { row.date = patch.date; remaining.date = patch.date; }
+                    }
+                    if (patch.pay_by !== undefined) {
+                        if ((row.pay_by || '').trim() === (patch.pay_by || '').trim()) { /* server caught up */ }
+                        else { row.pay_by = patch.pay_by; remaining.pay_by = patch.pay_by; }
+                    }
+                    if (Object.keys(remaining).length > 0) corrections.set(row.id, remaining);
+                    else corrections.delete(row.id);
                 }
             }
             setAllRetailPayments(rows);
@@ -495,12 +508,33 @@ const CustomerPaymentPage: React.FC = () => {
         }
         // Survive a range fetch that read the DB before this commit:
         // fetchRetailPayments re-applies this correction on resolve.
-        dateCorrectionsRef.current.set(tx.id, settleDateIso);
+        mergeCorrection(tx.id, { date: settleDateIso });
         setAllRetailPayments(prev => prev.map(r => r.id === tx.id ? { ...r, date: settleDateIso } : r));
         return { status: 'moved', saleFailed };
     };
 
+    // A corrected Method moves with the payment row too — the Method column,
+    // Income & Expense, and the CSV export all read transactions.pay_by, which
+    // the Record Receipt popup previously had no field for (the row kept
+    // whatever method it was created with, even when that was wrong).
+    const syncTransactionMethod = async (
+        tx: CustomerPaymentRow,
+        newMethod: string
+    ): Promise<'unchanged' | 'moved' | 'row-failed'> => {
+        const trimmed = newMethod.trim();
+        if (!trimmed || trimmed === (tx.pay_by || '').trim()) return 'unchanged';
+        const { error } = await supabase.from('transactions').update({ pay_by: trimmed }).eq('id', tx.id);
+        if (error) {
+            console.error('Posted, but could not update the payment method:', error);
+            return 'row-failed';
+        }
+        mergeCorrection(tx.id, { pay_by: trimmed });
+        setAllRetailPayments(prev => prev.map(r => r.id === tx.id ? { ...r, pay_by: trimmed } : r));
+        return 'moved';
+    };
+
     const handlePostNowConfirm = ({
+        paymentMethod,
         settleDate,
         depositAccountId,
         receiptReference,
@@ -532,22 +566,25 @@ const CustomerPaymentPage: React.FC = () => {
             orderId: orderIdByTxId.get(tx.id)
         }).then(async () => {
             setPostedIds(s => new Set(s).add(tx.id));
-            // A corrected Payment Date moves the payment row itself too (the
-            // DATE column and Income & Expense), not just the ledger entry —
-            // otherwise the two sides of the same receipt live on different days.
-            // RecordReceiptModal hands settleDate as an ISO built from the picked
-            // YYYY-MM-DD at UTC midnight.
+            // A corrected Payment Date or Method moves the payment row itself too
+            // (the DATE/Method columns and Income & Expense), not just the ledger
+            // entry — otherwise the receipt's two sides disagree. RecordReceiptModal
+            // hands settleDate as an ISO built from the picked YYYY-MM-DD at UTC midnight.
             const moved = await moveTransactionDay(tx, settleDate);
+            const methodMoved = await syncTransactionMethod(tx, paymentMethod);
+            const changes: string[] = [];
+            if (moved.status === 'moved') changes.push(`date moved to ${formatDate(settleDate)}`);
+            if (methodMoved === 'moved') changes.push(`method set to ${paymentMethod}`);
             if (moved.status === 'row-failed') {
                 showToast('Posted to the ledger, but the payment date could not be updated: ' + moved.message, 'info');
-            } else if (moved.status === 'moved') {
-                if (moved.saleFailed) {
-                    showToast('Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.', 'info');
-                }
-                showToast(`Payment posted — date moved to ${formatDate(settleDate)}`, 'success');
-            } else {
-                showToast('Payment posted to the ledger', 'success');
             }
+            if (moved.status === 'moved' && moved.saleFailed) {
+                showToast('Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.', 'info');
+            }
+            if (methodMoved === 'row-failed') {
+                showToast('Posted to the ledger, but the payment method could not be updated.', 'info');
+            }
+            showToast(changes.length > 0 ? `Payment posted — ${changes.join(', ')}` : 'Payment posted to the ledger', 'success');
         }).catch((err: unknown) => {
             console.error('Failed to post payment to the ledger:', err);
             const message = err instanceof Error ? err.message : 'Unknown error';
