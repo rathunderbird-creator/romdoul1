@@ -9,7 +9,7 @@
 //   'កក់ប្រាក់' (Deposit) -> a deposit transaction
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Receipt, Hash, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle, Trash2 } from 'lucide-react';
-import { postOrFinalizeTransactionReceipt } from '../context/StoreContext';
+import { postOrFinalizeTransactionReceipt, useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useToast } from '../context/ToastContext';
@@ -133,6 +133,10 @@ const CustomerPaymentPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
     const { showToast } = useToast();
+    const { currentUser } = useStore();
+    // Unposting rewinds finalized books, so it stays an admin-only action
+    // (same gate as Income & Expense's bulk delete).
+    const isAdmin = currentUser?.roleId === 'admin';
     const isMobile = useMobile();
 
     React.useEffect(() => {
@@ -294,7 +298,10 @@ const CustomerPaymentPage: React.FC = () => {
         byTx: Map<string, LedgerStatus>;
         debitAccountByTx: Map<string, string>; // existing entry's cash/bank account
         refreshError: boolean;
-    }>({ state: 'loading', byTx: new Map(), debitAccountByTx: new Map(), refreshError: false });
+        // Instance never ran add_entry_status.sql: every entry reads as Posted
+        // and unposting can't work, so the Unpost button must not be offered.
+        statusMissing: boolean;
+    }>({ state: 'loading', byTx: new Map(), debitAccountByTx: new Map(), refreshError: false, statusMissing: false });
     const [ledgerNonce, setLedgerNonce] = useState(0);
 
     useEffect(() => {
@@ -312,11 +319,13 @@ const CustomerPaymentPage: React.FC = () => {
             try {
                 const lineCols = 'lines:journal_entry_lines(account_id, debit, account:chart_of_accounts(account_type, account_name))';
                 let rows: JeRow[];
+                let statusMissing = false;
                 try {
                     rows = await load(`reference_id, status, ${lineCols}`);
                 } catch (err) {
                     // Instances without migrations/add_entry_status.sql: every entry counts as Posted.
                     if (!/status/i.test((err as { message?: string })?.message || '')) throw err;
+                    statusMissing = true;
                     rows = await load(`reference_id, ${lineCols}`);
                 }
                 const byTx = new Map<string, LedgerStatus>();
@@ -332,7 +341,7 @@ const CustomerPaymentPage: React.FC = () => {
                         && l.account?.account_type === 'Asset' && /cash|bank/i.test(l.account?.account_name || ''));
                     if (debit && !debitAccountByTx.has(txId)) debitAccountByTx.set(txId, debit.account_id);
                 }
-                if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, refreshError: false });
+                if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, refreshError: false, statusMissing });
             } catch (err) {
                 console.error('Failed to load ledger status for customer payments:', err);
                 if (!cancelled) setLedger(prev => prev.state === 'ready' ? { ...prev, refreshError: true } : { ...prev, state: 'error' });
@@ -350,6 +359,7 @@ const CustomerPaymentPage: React.FC = () => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkPosting, setIsBulkPosting] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [isBulkUnposting, setIsBulkUnposting] = useState(false);
 
     // No matching entry at all is treated the same as an unposted (Draft) one.
     const statusOf = useCallback(
@@ -473,6 +483,80 @@ const CustomerPaymentPage: React.FC = () => {
         });
     };
 
+    // Admin-only: return the selected Posted payments to Draft so they can be
+    // corrected and posted again. Touches only the journal entries' status —
+    // the payment rows, their lines and amounts stay exactly as they are.
+    const handleBulkUnpost = async () => {
+        const rows = selectedPostedRows;
+        if (!isAdmin || ledger.statusMissing || rows.length === 0 || isBulkUnposting) return;
+        if (!window.confirm(`Return ${rows.length} posted ${rows.length === 1 ? 'payment' : 'payments'} to Draft?\nTheir ledger entries can then be corrected and posted again.`)) return;
+        setIsBulkUnposting(true);
+        const ids = rows.map(r => r.id);
+        setPostingIds(prev => new Set([...prev, ...ids]));
+        try {
+            // A full-coverage deposit books its cost side as a separate
+            // ORD-<orderId>-COGS companion entry — unposting the receipt must
+            // pull that companion back to Draft with it, or the statements
+            // would count the cost of a sale whose revenue is excluded as Draft.
+            const refs = ids.map(id => `TX-${id}`);
+            rows.forEach(r => {
+                const orderId = isDepositRow(r) ? orderIdByTxId.get(r.id) : undefined;
+                if (orderId) refs.push(`ORD-${orderId}-COGS`);
+            });
+            const entryIds: string[] = [];
+            for (const batch of chunk(refs, PREFIX_CHUNK)) {
+                const { data, error } = await supabase.from('journal_entries').select('id').in('reference_id', batch);
+                if (error) throw error;
+                entryIds.push(...((data || []) as { id: string }[]).map(e => e.id));
+            }
+            if (entryIds.length === 0) {
+                // Only reachable when the local status map is stale (another
+                // session deleted these entries) — resync so the Posted chips
+                // agree with the toast instead of re-offering a dead-end Unpost.
+                setLedgerNonce(n => n + 1);
+                showToast('No ledger entries exist for the selected payments.', 'info');
+                return;
+            }
+            for (const batch of chunk(entryIds, PREFIX_CHUNK)) {
+                const { error } = await supabase.from('journal_entries').update({ status: 'Draft' }).in('id', batch);
+                if (error) {
+                    // Only a genuinely missing status column — a transient error
+                    // that merely mentions "status" must reach the resync path
+                    // below, since an earlier batch may already be Draft.
+                    const msg = error.message || '';
+                    if (/status/i.test(msg) && /column|schema cache|does not exist/i.test(msg)) {
+                        showToast('This instance needs migrations/add_entry_status.sql before entries can be unposted.', 'info');
+                        return;
+                    }
+                    throw error;
+                }
+            }
+            setLedger(prev => {
+                const byTx = new Map(prev.byTx);
+                ids.forEach(id => { if (byTx.has(id)) byTx.set(id, 'Draft'); });
+                return { ...prev, byTx };
+            });
+            setPostedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            // The local patch above gives instant feedback, but a ledger refetch
+            // already in flight (started by a post or Refresh) read these entries
+            // as Posted and would clobber it when it lands — and unposted ids have
+            // no postedIds shield. Bumping the nonce cancels that stale load.
+            setLedgerNonce(n => n + 1);
+            showToast(`Returned ${rows.length} ${rows.length === 1 ? 'payment' : 'payments'} to Draft`, 'success');
+        } catch (err) {
+            console.error('Failed to unpost the entries:', err);
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            showToast('Failed to unpost: ' + message, 'error');
+            // Earlier batches may already be Draft in the DB — drop the
+            // postedIds shield for the acted rows so the refetch's statuses win.
+            setPostedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            setLedgerNonce(n => n + 1);
+        } finally {
+            setPostingIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            setIsBulkUnposting(false);
+        }
+    };
+
     const filteredPayments = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();
         return sortedPayments.filter(r => {
@@ -526,6 +610,11 @@ const CustomerPaymentPage: React.FC = () => {
     const selectedPostableRows = useMemo(
         () => selectedAllRows.filter(r => canPostRow(r.id)),
         [selectedAllRows, canPostRow]
+    );
+    // Posted rows in the selection — what the admin-only bulk Unpost acts on.
+    const selectedPostedRows = useMemo(
+        () => ledgerReady ? selectedAllRows.filter(r => statusOf(r.id) === 'Posted' && !postingIds.has(r.id)) : [],
+        [selectedAllRows, ledgerReady, statusOf, postingIds]
     );
     const selectedPostableTotal = useMemo(() => selectedPostableRows.reduce((s, r) => s + Number(r.amount || 0), 0), [selectedPostableRows]);
     // A row mid-post can't also be selected for a new bulk action.
@@ -874,8 +963,11 @@ const CustomerPaymentPage: React.FC = () => {
             {/* Bulk selection bar — floats at the bottom-center once any row is
                 checked, same place regardless of scroll position. Post Now only
                 shows when the selection includes at least one postable Draft;
-                Delete applies to the whole selection, any status. */}
-            {selectedAllRows.length > 0 && (
+                Unpost (admin only) when it includes a Posted row; Delete applies
+                to the whole selection, any status. */}
+            {selectedAllRows.length > 0 && (() => {
+                const bulkBusy = isBulkPosting || isBulkDeleting || isBulkUnposting;
+                return (
                 <div style={{
                     position: 'fixed', left: '50%', bottom: '24px', transform: 'translateX(-50%)',
                     zIndex: 500, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
@@ -890,44 +982,67 @@ const CustomerPaymentPage: React.FC = () => {
                     {selectedPostableRows.length > 0 && (
                         <button
                             onClick={handleBulkPost}
-                            disabled={isBulkPosting || isBulkDeleting}
+                            disabled={bulkBusy}
                             style={{
                                 padding: '8px 16px', borderRadius: '8px', border: 'none',
                                 background: 'var(--color-primary)', color: '#fff',
-                                fontSize: '13px', fontWeight: 600, cursor: (isBulkPosting || isBulkDeleting) ? 'not-allowed' : 'pointer',
-                                opacity: (isBulkPosting || isBulkDeleting) ? 0.7 : 1, whiteSpace: 'nowrap'
+                                fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                             }}
                         >
                             {isBulkPosting ? 'Posting…' : `Post Now (${selectedPostableRows.length})`}
                         </button>
                     )}
+                    {/* Stays mounted mid-unpost: the acted rows join postingIds, which
+                        empties selectedPostedRows, and the button would vanish instead
+                        of showing its progress label. Hidden on instances whose
+                        journal entries have no status column — unposting can't work there. */}
+                    {isAdmin && !ledger.statusMissing && (selectedPostedRows.length > 0 || isBulkUnposting) && (
+                        <button
+                            onClick={handleBulkUnpost}
+                            disabled={bulkBusy}
+                            title="Return the selected posted payments to Draft so they can be corrected"
+                            style={{
+                                // Same forced-light amber pairing as the page's status
+                                // chips — a transparent background would put dark amber
+                                // on the dark theme's navy surface at ~3.5:1.
+                                padding: '8px 16px', borderRadius: '8px',
+                                border: '1px solid #D97706', background: '#FEF3C7', color: '#92400E',
+                                fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                            }}
+                        >
+                            {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
+                        </button>
+                    )}
                     <button
                         onClick={handleBulkDelete}
-                        disabled={isBulkPosting || isBulkDeleting}
+                        disabled={bulkBusy}
                         style={{
                             display: 'flex', alignItems: 'center', gap: '6px',
                             padding: '8px 16px', borderRadius: '8px', border: 'none',
                             background: '#EF4444', color: '#fff',
-                            fontSize: '13px', fontWeight: 600, cursor: (isBulkPosting || isBulkDeleting) ? 'not-allowed' : 'pointer',
-                            opacity: (isBulkPosting || isBulkDeleting) ? 0.7 : 1, whiteSpace: 'nowrap'
+                            fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                            opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                         }}
                     >
                         <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedAllRows.length})`}
                     </button>
                     <button
                         onClick={() => setSelectedIds(new Set())}
-                        disabled={isBulkPosting || isBulkDeleting}
+                        disabled={bulkBusy}
                         style={{
                             padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)',
                             background: 'var(--color-bg)', color: 'var(--color-text-secondary)',
-                            fontSize: '13px', fontWeight: 600, cursor: (isBulkPosting || isBulkDeleting) ? 'not-allowed' : 'pointer',
+                            fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
                             whiteSpace: 'nowrap'
                         }}
                     >
                         Clear
                     </button>
                 </div>
-            )}
+                );
+            })()}
 
             {/* Table */}
             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
