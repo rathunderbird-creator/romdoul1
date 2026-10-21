@@ -58,18 +58,21 @@ const UpdateBanner: React.FC = () => {
         <>
             <style>{`
                 @keyframes updateBannerSlideIn {
-                    from { transform: translateY(16px); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
+                    from { transform: translate(-50%, 16px); opacity: 0; }
+                    to { transform: translate(-50%, 0); opacity: 1; }
                 }
             `}</style>
             <div style={{
                 position: 'fixed',
                 bottom: '24px',
-                left: '24px',
+                left: '50%',
                 zIndex: 10000,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '14px',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                maxWidth: 'calc(100vw - 32px)',
                 background: 'var(--color-surface)',
                 border: '1px solid var(--color-border)',
                 borderRadius: '10px',
@@ -77,7 +80,8 @@ const UpdateBanner: React.FC = () => {
                 padding: '12px 14px 12px 18px',
                 fontSize: '13px',
                 color: 'var(--color-text-main)',
-                animation: 'updateBannerSlideIn 0.3s ease'
+                animation: 'updateBannerSlideIn 0.3s ease',
+                transform: 'translateX(-50%)'
             }}>
                 <span>{message}</span>
                 <button
