@@ -374,6 +374,11 @@ const CustomerPaymentPage: React.FC = () => {
     const [isBulkPosting, setIsBulkPosting] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [isBulkUnposting, setIsBulkUnposting] = useState(false);
+    // Bulk Post Now popup: null = closed. date '' keeps each payment's own day,
+    // accountId '' resolves the deposit account per payment (same defaults the
+    // old confirm-based flow used); notes apply to every posted entry.
+    const [bulkPostForm, setBulkPostForm] = useState<{ date: string; accountId: string; notes: string } | null>(null);
+    const [bulkAccounts, setBulkAccounts] = useState<{ id: string; account_name: string }[]>([]);
 
     // No matching entry at all is treated the same as an unposted (Draft) one.
     const statusOf = useCallback(
@@ -454,6 +459,47 @@ const CustomerPaymentPage: React.FC = () => {
         return { total: Number(postTarget.amount || 0), amountReceived: 0, depositAmount: 0, customer: syntheticCustomer };
     }, [postTarget]);
 
+    // After a successful posting, moves the payment row (and its linked sale's
+    // settled/deposit day) to the picked day, so the DATE column, Income &
+    // Expense, the Orders page and the ledger all land together. settleDateIso
+    // is the picked YYYY-MM-DD at UTC midnight — transactions.date's stored
+    // convention. Comparison runs in the DISPLAY frame (localYMD both sides) so
+    // the update only runs when the day the user sees actually changes.
+    const moveTransactionDay = async (
+        tx: CustomerPaymentRow,
+        settleDateIso: string
+    ): Promise<{ status: 'unchanged' | 'moved' | 'row-failed'; saleFailed: boolean; message?: string }> => {
+        const pickedDay = localYMD(settleDateIso);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(pickedDay) || pickedDay === localYMD(tx.date)) {
+            return { status: 'unchanged', saleFailed: false };
+        }
+        const { error } = await supabase.from('transactions').update({ date: settleDateIso }).eq('id', tx.id);
+        if (error) {
+            console.error('Posted, but could not move the payment date:', error);
+            return { status: 'row-failed', saleFailed: false, message: error.message || 'unknown error' };
+        }
+        // The sale's own paid/deposit day must move with it: Orders' Settled
+        // Date column filters on it, and StoreContext's settle-date sync would
+        // otherwise clobber this row back to the old day on the next order edit.
+        let saleFailed = false;
+        const orderId = orderIdByTxId.get(tx.id);
+        if (orderId) {
+            const salePatch = isDepositRow(tx)
+                ? { deposit_date: settleDateIso.slice(0, 10) } // DATE column: plain Y-M-D
+                : { settle_date: settleDateIso };
+            const { error: saleErr } = await supabase.from('sales').update(salePatch).eq('id', orderId);
+            if (saleErr) {
+                console.error('Moved the payment date, but not the order’s settled/deposit date:', saleErr);
+                saleFailed = true;
+            }
+        }
+        // Survive a range fetch that read the DB before this commit:
+        // fetchRetailPayments re-applies this correction on resolve.
+        dateCorrectionsRef.current.set(tx.id, settleDateIso);
+        setAllRetailPayments(prev => prev.map(r => r.id === tx.id ? { ...r, date: settleDateIso } : r));
+        return { status: 'moved', saleFailed };
+    };
+
     const handlePostNowConfirm = ({
         settleDate,
         depositAccountId,
@@ -490,41 +536,18 @@ const CustomerPaymentPage: React.FC = () => {
             // DATE column and Income & Expense), not just the ledger entry —
             // otherwise the two sides of the same receipt live on different days.
             // RecordReceiptModal hands settleDate as an ISO built from the picked
-            // YYYY-MM-DD at UTC midnight — already transactions.date's stored
-            // convention. Compare in the DISPLAY frame (localYMD on both sides)
-            // so the update only runs, and the toast only claims a move, when
-            // the day the user sees actually changes.
-            const pickedDay = localYMD(settleDate);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(pickedDay) && pickedDay !== localYMD(tx.date)) {
-                const { error } = await supabase.from('transactions').update({ date: settleDate }).eq('id', tx.id);
-                if (error) {
-                    console.error('Posted, but could not move the payment date:', error);
-                    showToast('Posted to the ledger, but the payment date could not be updated: ' + (error.message || 'unknown error'), 'info');
-                } else {
-                    // The sale's own paid/deposit day must move with it: Orders'
-                    // Settled Date column filters on it, and StoreContext's
-                    // settle-date sync would otherwise clobber this row back to
-                    // the old day on the next order edit.
-                    const orderId = orderIdByTxId.get(tx.id);
-                    if (orderId) {
-                        const salePatch = isDepositRow(tx)
-                            ? { deposit_date: settleDate.slice(0, 10) } // DATE column: plain Y-M-D
-                            : { settle_date: settleDate };
-                        const { error: saleErr } = await supabase.from('sales').update(salePatch).eq('id', orderId);
-                        if (saleErr) {
-                            console.error('Moved the payment date, but not the order’s settled/deposit date:', saleErr);
-                            showToast('Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.', 'info');
-                        }
-                    }
-                    // Survive a range fetch that read the DB before this commit:
-                    // fetchRetailPayments re-applies this correction on resolve.
-                    dateCorrectionsRef.current.set(tx.id, settleDate);
-                    setAllRetailPayments(prev => prev.map(r => r.id === tx.id ? { ...r, date: settleDate } : r));
-                    showToast(`Payment posted — date moved to ${formatDate(settleDate)}`, 'success');
+            // YYYY-MM-DD at UTC midnight.
+            const moved = await moveTransactionDay(tx, settleDate);
+            if (moved.status === 'row-failed') {
+                showToast('Posted to the ledger, but the payment date could not be updated: ' + moved.message, 'info');
+            } else if (moved.status === 'moved') {
+                if (moved.saleFailed) {
+                    showToast('Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.', 'info');
                 }
-                return;
+                showToast(`Payment posted — date moved to ${formatDate(settleDate)}`, 'success');
+            } else {
+                showToast('Payment posted to the ledger', 'success');
             }
-            showToast('Payment posted to the ledger', 'success');
         }).catch((err: unknown) => {
             console.error('Failed to post payment to the ledger:', err);
             const message = err instanceof Error ? err.message : 'Unknown error';
@@ -686,46 +709,103 @@ const CustomerPaymentPage: React.FC = () => {
         return n;
     });
 
-    // Posts every selected Draft with its own date, amount and account — the same
-    // defaults the single-row popup pre-fills (the entry's existing debit account,
-    // else an account matching the payment's method, else the server's cash/bank
-    // fallback). The server refuses non-Draft entries, so a stale row can't repost.
+    // Loads the cash & bank accounts once, shared by the popup's picker and the
+    // posting loop. handleBulkPost AWAITS this before resolving per-payment
+    // accounts — a submit racing the fetch must not silently skip pay_by
+    // matching and let the server debit its generic first-cash/bank fallback.
+    // A failed load resets the ref so the next open retries.
+    const bulkAccountsPromiseRef = useRef<Promise<{ id: string; account_name: string }[]> | null>(null);
+    const loadBulkAccounts = useCallback(() => {
+        if (!bulkAccountsPromiseRef.current) {
+            bulkAccountsPromiseRef.current = (async () => {
+                try {
+                    const { data, error } = await supabase.from('chart_of_accounts').select('id, account_name, account_type, is_active');
+                    if (error) throw error;
+                    const accounts = ((data || []) as { id: string; account_name: string; account_type: string; is_active: boolean }[])
+                        .filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))
+                        .map(a => ({ id: a.id, account_name: a.account_name }));
+                    setBulkAccounts(accounts);
+                    return accounts;
+                } catch {
+                    bulkAccountsPromiseRef.current = null;
+                    return [];
+                }
+            })();
+        }
+        return bulkAccountsPromiseRef.current;
+    }, []);
+
+    // Opens the bulk Post Now popup (Payment date / Deposited into / Notes).
+    // The account list is refetched per open — an account deactivated while the
+    // page stayed mounted must not remain pickable.
+    const openBulkPost = () => {
+        if (selectedPostableRows.length === 0 || isBulkPosting) return;
+        setBulkPostForm({ date: '', accountId: '', notes: '' });
+        bulkAccountsPromiseRef.current = null;
+        loadBulkAccounts();
+    };
+
+    // Posts every selected Draft. The popup's choices override the per-payment
+    // defaults: a picked Payment date posts (and moves) every payment to that
+    // day, a picked account debits all of them there, and Notes land on each
+    // entry. Left empty, each payment keeps its own date and resolved account —
+    // the entry's existing debit account, else an account matching the payment's
+    // method, else the server's cash/bank fallback. The server refuses non-Draft
+    // entries, so a stale row can't repost.
     const handleBulkPost = async () => {
         const rows = selectedPostableRows;
-        if (rows.length === 0 || isBulkPosting) return;
-        if (!window.confirm(`Post ${rows.length} draft payment${rows.length === 1 ? '' : 's'} (${formatAmount(selectedPostableTotal)}) to the ledger?\nEach is posted with its own payment date, amount and deposit account.`)) return;
+        const form = bulkPostForm;
+        if (isBulkPosting || !form) return;
+        if (rows.length === 0) {
+            // A background ledger refresh can drain the postable selection while
+            // the popup is open (rows posted elsewhere) — close it rather than
+            // leaving a dead 'Post 0 Payments' button.
+            setBulkPostForm(null);
+            showToast('Nothing left to post — the selected payments are already posted.', 'info');
+            return;
+        }
+        const chosenDay = /^\d{4}-\d{2}-\d{2}$/.test(form.date) ? form.date : '';
+        const chosenIso = chosenDay ? new Date(chosenDay).toISOString() : '';
+        const notes = form.notes.trim() || undefined;
+        setBulkPostForm(null);
         setIsBulkPosting(true);
         setPostingIds(prev => new Set([...prev, ...rows.map(r => r.id)]));
-        let paymentAccounts: { id: string; account_name: string }[] = [];
-        try {
-            const { data } = await supabase.from('chart_of_accounts').select('id, account_name, account_type, is_active');
-            paymentAccounts = ((data || []) as { id: string; account_name: string; account_type: string; is_active: boolean }[])
-                .filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name));
-        } catch { /* postOrFinalizeTransactionReceipt resolves a fallback account itself */ }
+        // Settled account list, not the render-time state — a submit that races
+        // the popup's fetch must still resolve pay_by hints per payment.
+        const accounts = await loadBulkAccounts();
         const accountFor = (r: CustomerPaymentRow): string | undefined => {
+            if (form.accountId) return form.accountId;
             const existing = ledger.debitAccountByTx.get(r.id);
             if (existing) return existing;
             const hint = (r.pay_by || '').trim().toLowerCase();
-            if (!hint || paymentAccounts.length === 0) return undefined;
-            return paymentAccounts.find(a => a.account_name.toLowerCase() === hint)?.id
-                || (hint.includes('cash') ? paymentAccounts.find(a => /cash/i.test(a.account_name))?.id : undefined);
+            if (!hint || accounts.length === 0) return undefined;
+            return accounts.find(a => a.account_name.toLowerCase() === hint)?.id
+                || (hint.includes('cash') ? accounts.find(a => /cash/i.test(a.account_name))?.id : undefined);
         };
         let ok = 0;
+        let moved = 0;
+        let moveFailed = 0;
         const failed: string[] = [];
         for (const r of rows) {
             try {
                 await postOrFinalizeTransactionReceipt({
                     txId: r.id,
                     amount: Number(r.amount || 0),
-                    date: localYMD(r.date),
+                    date: chosenDay || localYMD(r.date),
                     description: r.description || 'Customer',
                     depositAccountId: accountFor(r),
                     type: isDepositRow(r) ? 'DEP' : 'RCP',
+                    notes,
                     orderId: orderIdByTxId.get(r.id),
                 });
                 ok++;
                 setPostedIds(prev => new Set(prev).add(r.id));
                 setSelectedIds(prev => { const n = new Set(prev); n.delete(r.id); return n; });
+                if (chosenIso) {
+                    const res = await moveTransactionDay(r, chosenIso);
+                    if (res.status === 'moved') moved += res.saleFailed ? 0 : 1;
+                    if (res.status === 'row-failed' || (res.status === 'moved' && res.saleFailed)) moveFailed++;
+                }
             } catch (err) {
                 console.error('Bulk post failed for', r.id, err);
                 failed.push(r.description || r.id);
@@ -735,8 +815,17 @@ const CustomerPaymentPage: React.FC = () => {
         }
         setIsBulkPosting(false);
         setLedgerNonce(n => n + 1);
-        if (failed.length === 0) showToast(`Posted ${ok} payment${ok === 1 ? '' : 's'} to the ledger`, 'success');
-        else showToast(`Posted ${ok} of ${rows.length} — failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`, 'error');
+        const movedNote = chosenIso && moved > 0
+            ? ` — ${moved === 1 ? '1 date' : `${moved} dates`} moved to ${formatDate(chosenIso)}`
+            : '';
+        if (failed.length === 0) {
+            showToast(`Posted ${ok} payment${ok === 1 ? '' : 's'} to the ledger${movedNote}`, 'success');
+        } else {
+            showToast(`Posted ${ok} of ${rows.length}${movedNote} — failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`, 'error');
+        }
+        if (moveFailed > 0) {
+            showToast(`${moveFailed} payment${moveFailed === 1 ? '' : 's'} posted but couldn't fully move to the new date — the payment or its Orders row may still show the old day.`, 'info');
+        }
     };
 
     // Deletes the selected payments outright — any status, not just Draft. A
@@ -1033,7 +1122,7 @@ const CustomerPaymentPage: React.FC = () => {
                     </span>
                     {selectedPostableRows.length > 0 && (
                         <button
-                            onClick={handleBulkPost}
+                            onClick={openBulkPost}
                             disabled={bulkBusy}
                             style={{
                                 padding: '8px 16px', borderRadius: '8px', border: 'none',
@@ -1093,6 +1182,74 @@ const CustomerPaymentPage: React.FC = () => {
                         Clear
                     </button>
                 </div>
+                );
+            })()}
+
+            {/* Bulk Post Now popup — Payment date / Deposited into / Notes applied
+                to every selected draft; empty fields keep per-payment defaults. */}
+            {bulkPostForm && (() => {
+                const n = selectedPostableRows.length;
+                const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
+                const inputStyle: React.CSSProperties = {
+                    width: '100%', padding: '9px 12px', borderRadius: '8px', boxSizing: 'border-box',
+                    border: '1px solid var(--color-border)', background: 'var(--color-bg)',
+                    color: 'var(--color-text-main)', fontSize: '13px'
+                };
+                return (
+                    <div
+                        // Close on a press that STARTS on the backdrop (mousedown
+                        // target check) — a click handler would also fire when a
+                        // drag begins inside the dialog and releases outside (the
+                        // click lands on the common ancestor), wiping typed input.
+                        onMouseDown={e => { if (e.target === e.currentTarget) setBulkPostForm(null); }}
+                        style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+                    >
+                        <div style={{ width: '420px', maxWidth: '100%', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '14px', boxShadow: '0 18px 44px rgba(0,0,0,0.28)', padding: '20px' }}>
+                            <h3 style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: 700, color: 'var(--color-text-main)' }}>Post {n} draft payment{n === 1 ? '' : 's'}</h3>
+                            <p style={{ margin: '0 0 16px', fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>{formatAmount(selectedPostableTotal)} total · leave a field empty to keep each payment's own value.</p>
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>Payment date</label>
+                                <input type="date" value={bulkPostForm.date} onChange={e => setBulkPostForm(f => f && { ...f, date: e.target.value })} style={inputStyle} />
+                                <p style={{ margin: '5px 0 0', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
+                                    {bulkPostForm.date
+                                        ? `All ${n} payment${n === 1 ? '' : 's'} (and their Income & Expense rows) move to this day.`
+                                        : 'Empty — each payment posts on its own date.'}
+                                </p>
+                            </div>
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>Deposited into</label>
+                                <select value={bulkPostForm.accountId} onChange={e => setBulkPostForm(f => f && { ...f, accountId: e.target.value })} style={inputStyle}>
+                                    <option value="">Auto — each payment's own account</option>
+                                    {bulkAccounts.map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ marginBottom: '18px' }}>
+                                <label style={labelStyle}>Notes</label>
+                                <input type="text" value={bulkPostForm.notes} placeholder="Optional — saved on every posted entry" onChange={e => setBulkPostForm(f => f && { ...f, notes: e.target.value })} style={inputStyle} />
+                                {bulkPostForm.notes.trim() !== '' && (
+                                    <p style={{ margin: '5px 0 0', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
+                                        Replaces any note the selected entries already carry.
+                                    </p>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                                <button onClick={() => setBulkPostForm(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleBulkPost}
+                                    disabled={n === 0}
+                                    style={{
+                                        padding: '9px 18px', borderRadius: '8px', border: 'none',
+                                        background: 'var(--color-primary)', color: '#fff', fontSize: '13px', fontWeight: 600,
+                                        cursor: n === 0 ? 'not-allowed' : 'pointer', opacity: n === 0 ? 0.6 : 1
+                                    }}
+                                >
+                                    Post {n} Payment{n === 1 ? '' : 's'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 );
             })()}
 
