@@ -166,6 +166,11 @@ const CustomerPaymentPage: React.FC = () => {
     const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const fetchSeqRef = useRef(0);
+    // Date corrections made by the Post Now flow (txId -> new stored date). A
+    // range fetch that read the DB before the correction committed re-applies
+    // these on resolve instead of reverting the row; entries clear themselves
+    // once the server round-trips the moved date.
+    const dateCorrectionsRef = useRef(new Map<string, string>());
 
     const fetchRetailPayments = useCallback(async () => {
         const seq = ++fetchSeqRef.current;
@@ -201,6 +206,15 @@ const CustomerPaymentPage: React.FC = () => {
                 }
             }
             if (seq !== fetchSeqRef.current) return;
+            const corrections = dateCorrectionsRef.current;
+            if (corrections.size > 0) {
+                for (const row of rows) {
+                    const corrected = corrections.get(row.id);
+                    if (!corrected) continue;
+                    if (localYMD(row.date) === localYMD(corrected)) corrections.delete(row.id);
+                    else row.date = corrected;
+                }
+            }
             setAllRetailPayments(rows);
         } catch (error) {
             if (seq !== fetchSeqRef.current) return;
@@ -470,8 +484,46 @@ const CustomerPaymentPage: React.FC = () => {
             notes: receiptNotes,
             // Lets an RCP posting also book COGS against the order's items.
             orderId: orderIdByTxId.get(tx.id)
-        }).then(() => {
+        }).then(async () => {
             setPostedIds(s => new Set(s).add(tx.id));
+            // A corrected Payment Date moves the payment row itself too (the
+            // DATE column and Income & Expense), not just the ledger entry —
+            // otherwise the two sides of the same receipt live on different days.
+            // RecordReceiptModal hands settleDate as an ISO built from the picked
+            // YYYY-MM-DD at UTC midnight — already transactions.date's stored
+            // convention. Compare in the DISPLAY frame (localYMD on both sides)
+            // so the update only runs, and the toast only claims a move, when
+            // the day the user sees actually changes.
+            const pickedDay = localYMD(settleDate);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(pickedDay) && pickedDay !== localYMD(tx.date)) {
+                const { error } = await supabase.from('transactions').update({ date: settleDate }).eq('id', tx.id);
+                if (error) {
+                    console.error('Posted, but could not move the payment date:', error);
+                    showToast('Posted to the ledger, but the payment date could not be updated: ' + (error.message || 'unknown error'), 'info');
+                } else {
+                    // The sale's own paid/deposit day must move with it: Orders'
+                    // Settled Date column filters on it, and StoreContext's
+                    // settle-date sync would otherwise clobber this row back to
+                    // the old day on the next order edit.
+                    const orderId = orderIdByTxId.get(tx.id);
+                    if (orderId) {
+                        const salePatch = isDepositRow(tx)
+                            ? { deposit_date: settleDate.slice(0, 10) } // DATE column: plain Y-M-D
+                            : { settle_date: settleDate };
+                        const { error: saleErr } = await supabase.from('sales').update(salePatch).eq('id', orderId);
+                        if (saleErr) {
+                            console.error('Moved the payment date, but not the order’s settled/deposit date:', saleErr);
+                            showToast('Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.', 'info');
+                        }
+                    }
+                    // Survive a range fetch that read the DB before this commit:
+                    // fetchRetailPayments re-applies this correction on resolve.
+                    dateCorrectionsRef.current.set(tx.id, settleDate);
+                    setAllRetailPayments(prev => prev.map(r => r.id === tx.id ? { ...r, date: settleDate } : r));
+                    showToast(`Payment posted — date moved to ${formatDate(settleDate)}`, 'success');
+                }
+                return;
+            }
             showToast('Payment posted to the ledger', 'success');
         }).catch((err: unknown) => {
             console.error('Failed to post payment to the ledger:', err);
