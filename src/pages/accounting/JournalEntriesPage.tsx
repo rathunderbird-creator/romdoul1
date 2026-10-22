@@ -73,6 +73,26 @@ const statusChip = (status: string) => (
     }}>{status === 'Draft' ? 'Draft' : 'Posted'}</span>
 );
 
+// An entry written by a payment flow (Customer Payment, Procurement or
+// Wholesale) carries a reference_id of TX-<transaction id> — same test
+// Revenue/Expense uses for its own AUTO/MANUAL chip.
+const isSystemEntry = (entry: JournalEntry) => (entry.reference_id || '').startsWith('TX-');
+
+// Same AUTO (blue) / MANUAL (amber) pair as Revenue and Expense, so the same
+// word means the same thing — and the same color — on every ledger page.
+const originChip = (isSystem: boolean) => (
+    <span
+        title={isSystem
+            ? 'Created automatically by a payment flow (Customer Payment, Procurement or Wholesale).'
+            : 'Recorded directly on this page.'}
+        style={{
+            fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
+            color: isSystem ? '#1D4ED8' : '#B45309',
+            background: isSystem ? 'rgba(37, 99, 235, 0.12)' : 'rgba(217, 119, 6, 0.12)',
+            cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
+        }}>{isSystem ? 'auto' : 'manual'}</span>
+);
+
 const JournalEntriesPage = () => {
     const isMobile = useMobile();
     const navigate = useNavigate();
@@ -629,6 +649,7 @@ const JournalEntriesPage = () => {
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                             <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(t.debit)}</span>
                                             {statusChip(entry.status || 'Posted')}
+                                            {originChip(isSystemEntry(entry))}
                                         </span>
                                         <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                                             <ActionBtn icon={Eye} label="View" onClick={() => setViewEntry(entry)} />
@@ -687,7 +708,10 @@ const JournalEntriesPage = () => {
                                             {fmtUsd(t.credit)}
                                         </td>
                                         <td style={{ padding: '14px 20px' }}>
-                                            {statusChip(entry.status || 'Posted')}
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                {statusChip(entry.status || 'Posted')}
+                                                {originChip(isSystemEntry(entry))}
+                                            </span>
                                         </td>
                                         <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
@@ -784,7 +808,10 @@ const JournalEntriesPage = () => {
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewEntry.date)}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>
-                                <span>{statusChip(viewEntry.status || 'Posted')}</span>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    {statusChip(viewEntry.status || 'Posted')}
+                                    {originChip(isSystemEntry(viewEntry))}
+                                </span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Description</span>
                                 <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewEntry.description || '—'}</span>
                             </div>
