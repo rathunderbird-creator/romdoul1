@@ -1341,8 +1341,8 @@ const CustomerPaymentPage: React.FC = () => {
                                             <td style={{ ...tdStyle, fontWeight: 600, color: '#059669' }}>{formatAmount(r.amount)}</td>
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
                                                     <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
+                                                    {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
                                                 </div>
                                             </td>
                                             {hasReferenceData && (
