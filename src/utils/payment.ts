@@ -1,3 +1,5 @@
+import { Banknote, Landmark, type LucideIcon } from 'lucide-react';
+
 export const PAYMENT_LOGOS: Record<string, string> = {
     'bank': '/media/payby/bank.png',
     'aba': '/media/payby/bank.png',
@@ -19,6 +21,24 @@ export const getPaymentLogo = (payBy: string | null | undefined): string | null 
             return logo;
         }
     }
+    return null;
+};
+
+// A CSS-drawn (SVG) icon in place of the raster PAYMENT_LOGOS images — scales
+// cleanly at any size and recolors with getPaymentColor via its `color` prop,
+// where the PNGs could only ever render at their own baked-in color.
+export const getPaymentIcon = (payBy: string | null | undefined): LucideIcon | null => {
+    if (!payBy) return null;
+    const normalized = payBy.toLowerCase().trim();
+
+    if (normalized.includes('cash') || normalized.includes('cod')) {
+        return Banknote;
+    }
+
+    if (normalized.includes('bank') || normalized.includes('aba') || normalized.includes('acleda') || normalized.includes('transfer') || normalized.includes('qr') || normalized.includes('card')) {
+        return Landmark;
+    }
+
     return null;
 };
 

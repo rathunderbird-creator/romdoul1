@@ -18,7 +18,7 @@ import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { addDays, dayKeyFromDate, parseDay } from '../utils/dateRange';
 import { getShippingCoColor } from '../utils/orderUtils';
-import { getPaymentLogo, getPaymentColor } from '../utils/payment';
+import { getPaymentIcon, getPaymentColor } from '../utils/payment';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import type { Transaction, Customer } from '../types';
 
@@ -1322,6 +1322,7 @@ const CustomerPaymentPage: React.FC = () => {
                                     const canPost = known && status === 'Draft' && !posting;
                                     const orderId = orderIdByTxId.get(r.id);
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
+                                    const PaymentIcon = getPaymentIcon(r.pay_by);
                                     return (
                                         <tr key={r.id} style={{ background: idx % 2 === 1 ? 'var(--color-bg)' : 'transparent' }}>
                                             <td style={{ ...tdStyle, padding: '10px 8px 10px 12px' }}>
@@ -1340,9 +1341,7 @@ const CustomerPaymentPage: React.FC = () => {
                                             <td style={{ ...tdStyle, fontWeight: 600, color: '#059669' }}>{formatAmount(r.amount)}</td>
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    {r.pay_by && getPaymentLogo(r.pay_by) && (
-                                                        <img src={getPaymentLogo(r.pay_by)!} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'contain' }} />
-                                                    )}
+                                                    {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
                                                     <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
                                                 </div>
                                             </td>
