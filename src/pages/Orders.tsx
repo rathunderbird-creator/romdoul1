@@ -3602,8 +3602,8 @@ const Orders: React.FC = () => {
                                                                 const PaymentIcon = getPaymentIcon(order.paymentMethod);
                                                                 return <td key={colId} style={cellStyle}>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                                        {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(order.paymentMethod)} />}
                                                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: getPaymentColor(order.paymentMethod) }}>{order.paymentMethod || '-'}</span>
+                                                                        {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(order.paymentMethod)} />}
                                                                     </div>
                                                                 </td>;
                                                             }
