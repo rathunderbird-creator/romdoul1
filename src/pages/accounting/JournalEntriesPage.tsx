@@ -498,11 +498,12 @@ const JournalEntriesPage = () => {
         return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [journalEntries, searchQuery, dateRange, statusFilter]);
 
-    // Summary cards: totals over ALL entries, not the filtered view.
+    // Summary cards: totals over the filtered view, so they track Date/Status/Search.
     const counts = useMemo(() => {
-        const draft = journalEntries.filter(e => e.status === 'Draft').length;
-        return { total: journalEntries.length, posted: journalEntries.length - draft, draft };
-    }, [journalEntries]);
+        const draft = filteredEntries.filter(e => e.status === 'Draft').length;
+        return { total: filteredEntries.length, posted: filteredEntries.length - draft, draft };
+    }, [filteredEntries]);
+    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All');
 
     return (
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
@@ -539,9 +540,9 @@ const JournalEntriesPage = () => {
             {/* Summary cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
                 {([
-                    ['Total Entries', counts.total, 'var(--color-text-main)'],
-                    ['Posted', counts.posted, '#4c5fd0'],
-                    ['Draft', counts.draft, '#D97706'],
+                    [`Total Entries${filtersActive ? ' (Filtered)' : ''}`, counts.total, 'var(--color-text-main)'],
+                    [`Posted${filtersActive ? ' (Filtered)' : ''}`, counts.posted, '#4c5fd0'],
+                    [`Draft${filtersActive ? ' (Filtered)' : ''}`, counts.draft, '#D97706'],
                 ] as const).map(([label, value, color]) => (
                     <div key={label} style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px' }}>
                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
