@@ -61,6 +61,7 @@ const QuotationsPage = lazy(() => import('./pages/crm/QuotationsPage'));
 const SuppliersPage = lazy(() => import('./pages/procurement/SuppliersPage'));
 const SupplierDetailsPage = lazy(() => import('./pages/procurement/SupplierDetailsPage'));
 const PurchaseOrdersPage = lazy(() => import('./pages/procurement/PurchaseOrdersPage'));
+const SupplierBillsPage = lazy(() => import('./pages/procurement/SupplierBillsPage'));
 const ReceivingPage = lazy(() => import('./pages/procurement/ReceivingPage'));
 const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
 const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialReportsPage'));
@@ -216,6 +217,7 @@ const ProtectedApp = () => {
           <Route path="/procurement/suppliers" element={<ProtectedRoute requiredPermission="manage_procurement"><SuppliersPage /></ProtectedRoute>} />
           <Route path="/procurement/suppliers/:id" element={<ProtectedRoute requiredPermission="manage_procurement"><SupplierDetailsPage /></ProtectedRoute>} />
           <Route path="/procurement/purchase-orders" element={<ProtectedRoute requiredPermission="manage_procurement"><PurchaseOrdersPage /></ProtectedRoute>} />
+          <Route path="/procurement/supplier-bills" element={<ProtectedRoute requiredPermission="manage_procurement"><SupplierBillsPage /></ProtectedRoute>} />
           <Route path="/procurement/receiving" element={<ProtectedRoute requiredPermission="manage_procurement"><ReceivingPage /></ProtectedRoute>} />
           <Route path="/procurement/setup" element={<ProtectedRoute requiredPermission="manage_procurement"><PurchaseSetupPage /></ProtectedRoute>} />
 

@@ -267,19 +267,24 @@ export const useProcurement = () => {
                 // flow (recordSupplierPayment) — only write them when the caller
                 // explicitly passes them, otherwise an ordinary edit (fixing a
                 // note) would reset a part-paid PO to Unpaid/$0 and invite a
-                // double payment.
+                // double payment. invoice_number/payment_due_date are now ALSO
+                // independently owned by Supplier Bills (saveBillReference/
+                // clearBillReference) for the same reason: an edit form opened
+                // before a delivery was billed (or before it was un-billed)
+                // snapshots the old value, and saving it afterwards must not
+                // silently clobber what Supplier Bills set in the meantime.
                 const updatePayload: any = {
                     supplier_id: po.supplier_id,
                     order_date: po.order_date,
                     expected_delivery_date: po.expected_delivery_date,
                     status: po.status,
                     total_amount: po.total_amount,
-                    payment_due_date: po.payment_due_date || null,
-                    invoice_number: po.invoice_number || null,
                     notes: po.notes
                 };
                 if (po.payment_status !== undefined) updatePayload.payment_status = po.payment_status;
                 if (po.amount_paid !== undefined) updatePayload.amount_paid = po.amount_paid;
+                if (po.payment_due_date !== undefined) updatePayload.payment_due_date = po.payment_due_date || null;
+                if (po.invoice_number !== undefined) updatePayload.invoice_number = po.invoice_number || null;
                 // When only the total changed, recompute the status from the
                 // stored amount_paid so a paid PO whose total was raised shows
                 // Partial (with its real balance) instead of a stale 'Paid'.
@@ -550,6 +555,45 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
+    // Supplier Bills: billing a delivery means giving its already-Received PO
+    // a reference/due date — never savePurchaseOrder(), whose update path
+    // unconditionally deletes+re-inserts purchase_order_items with no
+    // rollback on a failed re-insert. A narrow UPDATE of just these two
+    // columns can't touch items, inventory, or the PO's receipt journal
+    // entry either way.
+    const saveBillReference = useCallback(async (poId: string, invoiceNumber: string, dueDate: string | null) => {
+        try {
+            const { error } = await supabase.from('purchase_orders')
+                .update({ invoice_number: invoiceNumber || null, payment_due_date: dueDate || null })
+                .eq('id', poId);
+            if (error) throw error;
+            showToast('Bill saved', 'success');
+            await fetchPurchaseOrders(true);
+        } catch (error: any) {
+            console.error('Failed to save bill reference:', error);
+            showToast('Failed to save bill: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchPurchaseOrders]);
+
+    // "Un-bills" a delivery: clears the reference/due date so it reappears in
+    // the "Bill a delivery…" picker. The delivery itself (the PO, its items,
+    // its inventory effect, its receipt journal entry) is untouched.
+    const clearBillReference = useCallback(async (poId: string) => {
+        try {
+            const { error } = await supabase.from('purchase_orders')
+                .update({ invoice_number: null, payment_due_date: null })
+                .eq('id', poId);
+            if (error) throw error;
+            showToast('Bill removed — the delivery stays received', 'success');
+            await fetchPurchaseOrders(true);
+        } catch (error: any) {
+            console.error('Failed to remove bill reference:', error);
+            showToast('Failed to remove bill: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchPurchaseOrders]);
+
     const deleteSupplierPayment = useCallback(async (paymentId: string) => {
         try {
             // Wait, we need to revert PO amount_paid too. 
@@ -604,6 +648,8 @@ export const useProcurement = () => {
         fetchPurchaseOrders,
         deletePurchaseOrder,
         savePurchaseOrder,
+        saveBillReference,
+        clearBillReference,
         recordSupplierPayment,
         deleteSupplierPayment
     };
