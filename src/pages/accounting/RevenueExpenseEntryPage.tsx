@@ -681,8 +681,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         </span>
                     </div>
                 ) : (
-                    // 260px floor: the widest account option (~250px) must fit without clipping.
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'end' }}>
+                    // Fixed 3-across on desktop (Date/Account/Counter, then Amount/Status
+                    // on their own row); one column stacked on mobile.
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', alignItems: 'end' }}>
                         <div>
                             <label style={labelStyle}>Date</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
