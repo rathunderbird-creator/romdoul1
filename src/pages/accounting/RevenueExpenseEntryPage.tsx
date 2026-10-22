@@ -92,7 +92,9 @@ const SystemChip: React.FC = () => (
         title="Created automatically by a payment flow (Customer Payment, Procurement or Wholesale) — view and print it here, manage it from its own page."
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
-            color: 'var(--color-text-secondary)', background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            // Same blue as the app's primary accent, alpha-blended the same way
+            // as ManualChip's amber, for the same look in both themes.
+            color: '#1D4ED8', background: 'rgba(37, 99, 235, 0.12)',
             cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
         }}>auto</span>
 );
@@ -104,7 +106,9 @@ const ManualChip: React.FC = () => (
         title="Recorded directly — not generated automatically by a payment flow."
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
-            color: 'var(--color-text-secondary)', background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            // Same amber as the Draft status chip above — alpha-blended, so it
+            // stays readable on both the light and dark surface.
+            color: '#B45309', background: 'rgba(217, 119, 6, 0.12)',
             cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
         }}>manual</span>
 );
@@ -441,21 +445,23 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         return out.sort((a, b) => b.date.localeCompare(a.date) || b.entryId.localeCompare(a.entryId));
     }, [lines, accountById, cfg.accountType, mode]);
 
-    // ── List filters: search, date range, status ──
+    // ── List filters: search, date range, status, origin (Auto/Manual) ──
     const [search, setSearch] = useState('');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
-    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All');
+    const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
+    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All');
 
     const filteredRows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return rows.filter(r =>
             (statusFilter === 'All' || r.status === statusFilter) &&
+            (originFilter === 'All' || (originFilter === 'Auto' ? r.isSystem : !r.isSystem)) &&
             (!dateFrom || r.date >= dateFrom) &&
             (!dateTo || r.date <= dateTo) &&
             (!q || r.description.toLowerCase().includes(q) || r.accountName.toLowerCase().includes(q) || r.counterName.toLowerCase().includes(q) || r.ref.toLowerCase().includes(q)));
-    }, [rows, search, dateFrom, dateTo, statusFilter]);
+    }, [rows, search, dateFrom, dateTo, statusFilter, originFilter]);
 
     const filteredTotal = useMemo(() => filteredRows.reduce((s, r) => s + r.amount, 0), [filteredRows]);
 
@@ -796,9 +802,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <option value="Posted">Posted</option>
                         <option value="Draft">Draft</option>
                     </select>
+                    <select value={originFilter} onChange={e => setOriginFilter(e.target.value as 'All' | 'Auto' | 'Manual')} style={{ ...inputStyle, width: 'auto', minWidth: '122px', cursor: 'pointer' }}>
+                        <option value="All">Auto &amp; Manual</option>
+                        <option value="Auto">Auto only</option>
+                        <option value="Manual">Manual only</option>
+                    </select>
                     {filtersActive && (
                         <button
-                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); }}
+                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); }}
                             style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
                         >
                             Clear
