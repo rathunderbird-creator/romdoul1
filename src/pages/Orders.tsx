@@ -4407,7 +4407,12 @@ const Orders: React.FC = () => {
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
                         depositAmount: amount,
+                        // depositMethod re-fills this same form's Pay By field next time
+                        // it reopens; paymentMethod is the separate field the table's own
+                        // Pay By column actually displays — both must carry the pick, or
+                        // the column keeps showing whatever it had before the deposit.
                         depositMethod: method,
+                        paymentMethod: method as any,
                         depositDate: date,
                         amountReceived: amount
                     });
