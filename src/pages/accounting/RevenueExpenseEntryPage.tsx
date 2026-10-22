@@ -728,16 +728,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 <option value="Draft">Draft</option>
                             </select>
                         </div>
+                        <div>
+                            <label style={labelStyle}>Description (optional)</label>
+                            <input
+                                type="text" className="d2-khmer" placeholder={`e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
+                                value={description} onChange={e => setDescription(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                                style={inputStyle}
+                            />
+                        </div>
                         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', alignItems: 'end', flexWrap: 'wrap' }}>
-                            <div style={{ flex: 1, minWidth: '220px' }}>
-                                <label style={labelStyle}>Description (optional)</label>
-                                <input
-                                    type="text" className="d2-khmer" placeholder={`e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
-                                    value={description} onChange={e => setDescription(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
-                                    style={inputStyle}
-                                />
-                            </div>
                             <button
                                 onClick={handleSave}
                                 disabled={!canSave}
