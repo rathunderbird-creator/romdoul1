@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, BookText } from 'lucide-react';
+import { Search, BookText, Trash2 } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
+import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
+import { supabase } from '../../lib/supabase';
 import DateRangePicker from '../../components/DateRangePicker';
 import type { ChartOfAccount } from '../../types';
 
@@ -24,7 +26,9 @@ interface LedgerRow {
     key: string;
     date: string;          // YYYY-MM-DD
     sortKey: string;       // date + created_at for a stable posting order
+    entryId: string;
     entryRef: string;
+    status: string;        // the underlying journal entry's status ('Draft' | 'Posted')
     description: string;
     account: ChartOfAccount;
     debit: number;
@@ -37,6 +41,7 @@ interface LedgerRow {
 const GeneralLedgerPage = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
+    const { showToast } = useToast();
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
 
     // A deep link (e.g. from Chart of Accounts or a Financial Report line) can
@@ -66,6 +71,25 @@ const GeneralLedgerPage = () => {
         fetchJournalEntries();
     }, [fetchAccounts, fetchJournalEntries]);
 
+    // A draft entry can be deleted straight from the ledger, same rule as
+    // Journal Entries: Posted is final — adjust it with a correcting entry
+    // instead. One entry's lines can span several accounts, so this removes
+    // it from every account it posted to, not just the one being viewed.
+    const deleteEntry = async (entryId: string) => {
+        if (!confirm('Delete this draft entry? Its lines are removed too.')) return;
+        try {
+            const { error: lErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId);
+            if (lErr) throw lErr;
+            const { error } = await supabase.from('journal_entries').delete().eq('id', entryId);
+            if (error) throw error;
+            showToast('Draft deleted', 'success');
+            fetchJournalEntries();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to delete draft: ' + msg, 'error');
+        }
+    };
+
     // Every journal line flattened into one ledger row, oldest first.
     const allRows = useMemo(() => {
         const rows: LedgerRow[] = [];
@@ -89,10 +113,12 @@ const GeneralLedgerPage = () => {
                     key: line.id || `${entry.id}-${line.account_id}-${rows.length}`,
                     date: entry.date,
                     sortKey: `${entry.date}|${entry.created_at || ''}`,
+                    entryId: entry.id,
                     // Prefer the human-readable entry_number (see
                     // utils/journalEntryNumber.ts); older rows fall back to
                     // reference_id, then a slice of the entry's own uuid.
                     entryRef: entry.entry_number || entry.reference_id || `#${entry.id.slice(0, 8)}`,
+                    status: entry.status || 'Posted',
                     description: entry.description || '—',
                     account: line.account,
                     debit,
@@ -267,6 +293,15 @@ const GeneralLedgerPage = () => {
                                         </div>
                                         <div style={{ fontSize: '11px', color: row.balance < 0 ? '#DC2626' : 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>{fmt(row.balance)}</div>
                                     </div>
+                                    {row.status === 'Draft' && (
+                                        <button
+                                            onClick={() => deleteEntry(row.entryId)}
+                                            title="Delete this draft entry"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', flexShrink: 0 }}
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </Fragment>
@@ -283,6 +318,7 @@ const GeneralLedgerPage = () => {
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '130px', textAlign: 'right' }}>Debit</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '130px', textAlign: 'right' }}>Credit</th>
                                     <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px', textAlign: 'right' }}>Balance</th>
+                                    <th style={{ padding: '14px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '60px' }}></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -290,7 +326,7 @@ const GeneralLedgerPage = () => {
                                     <Fragment key={g.account.id}>
                                         <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
                                             <td colSpan={6} style={{ padding: '10px 24px', borderLeft: `3px solid ${TYPE_COLORS[g.account.account_type]}` }}>{sectionHeader(g)}</td>
-                                            <td style={{ padding: '10px 24px', textAlign: 'right', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                            <td colSpan={2} style={{ padding: '10px 24px', textAlign: 'right', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                                                 {dateFrom ? <>Opening <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: g.opening < 0 ? '#DC2626' : 'var(--color-text-secondary)' }}>{fmt(g.opening)}</span></> : null}
                                             </td>
                                         </tr>
@@ -312,6 +348,17 @@ const GeneralLedgerPage = () => {
                                                 <td style={{ padding: '12px 24px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.debit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{row.debit > 0 ? fmt(row.debit) : '—'}</td>
                                                 <td style={{ padding: '12px 24px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.credit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{row.credit > 0 ? fmt(row.credit) : '—'}</td>
                                                 <td style={{ padding: '12px 24px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: row.balance < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(row.balance)}</td>
+                                                <td style={{ padding: '12px 24px', textAlign: 'center' }}>
+                                                    {row.status === 'Draft' && (
+                                                        <button
+                                                            onClick={() => deleteEntry(row.entryId)}
+                                                            title="Delete this draft entry"
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
+                                                </td>
                                             </tr>
                                         ))}
                                         <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
@@ -321,6 +368,7 @@ const GeneralLedgerPage = () => {
                                             <td style={{ padding: '10px 24px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(g.debits)}</td>
                                             <td style={{ padding: '10px 24px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(g.credits)}</td>
                                             <td style={{ padding: '10px 24px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: g.closing < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(g.closing)}</td>
+                                            <td style={{ padding: '10px 24px' }}></td>
                                         </tr>
                                     </Fragment>
                                 ))}
