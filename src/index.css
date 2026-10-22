@@ -494,6 +494,13 @@ button {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
+/* Sales Setup (and any future page reusing it): a visible keyboard-focus ring
+   for plain inline-styled controls, which have no :focus state of their own. */
+.setup-field:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
 .search-input::placeholder {
   color: var(--color-text-muted);
 }
