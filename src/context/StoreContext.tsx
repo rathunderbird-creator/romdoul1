@@ -2601,26 +2601,34 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 postRetailCogsOnlyEntry(id, localDayOf(normalizedDate), `${customerName} · cost of goods sold`);
             }
         } else if (
-            updates.settleDate &&
             existingOrder &&
-            // Run when the settle day actually moved (compared as LOCAL days), or
-            // when a paid order's received amount was corrected — both must reach
-            // the income row. An ordinary no-op re-save (CheckoutForm resends the
-            // stored settleDate, and COD orders resend amountReceived 0) skips, so
-            // edits like fixing a customer-name typo can't duplicate the row via
-            // the heal branch below.
+            // Run when the settle day actually moved (compared as LOCAL days), when
+            // a paid order's received amount was corrected, or when its Pay By was
+            // corrected — all three must reach the income row. An ordinary no-op
+            // re-save (CheckoutForm resends the stored settleDate/paymentMethod, and
+            // COD orders resend amountReceived 0) skips, so edits like fixing a
+            // customer-name typo can't duplicate the row via the heal branch below.
+            // Not gated on updates.settleDate being truthy — an order marked Paid at
+            // creation (addOnlineOrder/processSale) never gets one, and a later
+            // Pay-By-only correction on it must still reach this block.
             (
-                localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate) ||
-                (updates.amountReceived !== undefined && updates.amountReceived > 0 && updates.amountReceived !== (existingOrder.amountReceived || 0))
+                (!!updates.settleDate && localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate)) ||
+                (updates.amountReceived !== undefined && updates.amountReceived > 0 && updates.amountReceived !== (existingOrder.amountReceived || 0)) ||
+                (updates.paymentMethod !== undefined && updates.paymentMethod !== existingOrder.paymentMethod)
             ) &&
             isPaidStatus(updates.paymentStatus !== undefined ? updates.paymentStatus : existingOrder.paymentStatus)
         ) {
+            // Only overwrite pay_by when THIS edit actually changed it — a
+            // settle-date-only or amount-only correction must leave it alone.
+            const payByChanged = updates.paymentMethod !== undefined && updates.paymentMethod !== existingOrder.paymentMethod;
             // A paid order's settle date changed without a payment-status transition
             // (e.g. the bulk settle-date edit when the shipping company pays out).
             // Move its income transaction to the new date so Income & Expense matches
             // the settle-date view — and if it was never logged (silent failure or
-            // legacy data), create it now.
-            const settleDayChanged = localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate);
+            // legacy data), create it now. Guarded on updates.settleDate being
+            // non-empty too, so a Pay-By-only edit (settleDate '' or unset) can
+            // never be mistaken for a date change with nothing valid to write.
+            const settleDayChanged = !!updates.settleDate && localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate);
             // Look the row up under BOTH names: normally it still carries the old
             // customer name, but when a rename lands in the same save the rename
             // sync above has already moved it to the new one.
@@ -2640,23 +2648,50 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // deposit-covered order (no income row by design) must not have its
             // lookup land on an unrelated row of the same customer.
             const positiveSyncMatches = syncMatches.filter(a => a > 0);
+            // A Pay-By-only correction on an order with no recorded settle date (see
+            // the gate above) has no date to write — leave the transaction's own
+            // date untouched rather than stamping it with an invalid value.
             const rawDate = updates.settleDate;
-            const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDate).toISOString() : rawDate;
+            const normalizedDate = rawDate ? (rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDate).toISOString() : rawDate) : undefined;
             if (positiveSyncMatches.length > 0) try {
-                const { data: txns } = await supabase.from('transactions')
-                    .select('id, amount')
-                    .eq('type', 'Income')
-                    // Also match the pre-rename category so older rows still sync.
-                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                    .in('description', lookupNames)
-                    .or(positiveSyncMatches.map(a => `amount.eq.${a}`).join(','))
-                    .limit(1);
-                if (txns && txns.length > 0) {
+                // order_id disambiguates a repeat customer's same-amount orders (a
+                // name+amount match alone can't tell two $20 orders apart) — prefer
+                // it, but tolerate instances that haven't run
+                // migrations/add_transaction_order_link.sql, where the column select
+                // itself fails and the lookup falls back to the old, looser match.
+                let txns: { id: string; amount: number; order_id?: string | null }[] | null = null;
+                try {
+                    const res = await supabase.from('transactions')
+                        .select('id, amount, order_id')
+                        .eq('type', 'Income')
+                        // Also match the pre-rename category so older rows still sync.
+                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
+                        .in('description', lookupNames)
+                        .or(positiveSyncMatches.map(a => `amount.eq.${a}`).join(','))
+                        .limit(10);
+                    if (res.error) throw res.error;
+                    txns = res.data;
+                } catch (err) {
+                    if (!/order_id/i.test((err as { message?: string })?.message || '')) throw err;
+                    const res = await supabase.from('transactions')
+                        .select('id, amount')
+                        .eq('type', 'Income')
+                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
+                        .in('description', lookupNames)
+                        .or(positiveSyncMatches.map(a => `amount.eq.${a}`).join(','))
+                        .limit(1);
+                    txns = res.data;
+                }
+                const match = txns && (txns.find(t => t.order_id === id) || txns[0]);
+                if (match) {
+                    const patch: Record<string, unknown> = { amount: amountToRecord || match.amount, description: customerName };
+                    if (normalizedDate) patch.date = normalizedDate;
+                    if (payByChanged) patch.pay_by = updates.paymentMethod;
                     await supabase.from('transactions')
-                        .update({ date: normalizedDate, amount: amountToRecord || txns[0].amount, description: customerName })
-                        .eq('id', txns[0].id);
-                    setTransactions(prev => prev.map(t => t.id === txns[0].id ? { ...t, date: normalizedDate, amount: amountToRecord || t.amount, description: customerName } : t));
-                } else if (settleDayChanged && amountToRecord > 0) {
+                        .update(patch)
+                        .eq('id', match.id);
+                    setTransactions(prev => prev.map(t => t.id === match.id ? { ...t, amount: amountToRecord || t.amount, description: customerName, ...(normalizedDate ? { date: normalizedDate } : {}), ...(payByChanged ? { pay_by: updates.paymentMethod } : {}) } : t));
+                } else if (settleDayChanged && normalizedDate && amountToRecord > 0) {
                     // Heal a missing row only on a real settle-day change AND when
                     // there is actual income to book — a deposit-covered order has
                     // no income row by design, and an amount-only correction that
