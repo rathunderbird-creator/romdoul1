@@ -1935,7 +1935,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 description: `${newSale.customer?.name || 'Customer'} #DEP-${newSale.id.slice(0, 8)}`,
                 addedBy: currentUser?.name || 'System',
                 shipping_co: newSale.shipping?.company || null,
-                pay_by: newSale.depositMethod || null,
+                // Deposits are received by bank transfer unless the order's own
+                // payment method says otherwise — never leave Method blank.
+                pay_by: newSale.depositMethod || 'Bank',
                 order_id: newSale.id,
                 customer_phone: newSale.customer?.phone || null
             };
@@ -2771,7 +2773,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     addedBy: currentUser?.name || 'System',
                     shipping_co: existingOrder.shipping?.company || null,
                     // Same "Deposit into" account preference as the Paid branch above.
-                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || null,
+                    // Deposits are received by bank transfer unless told otherwise —
+                    // never leave Method blank.
+                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || 'Bank',
                     order_id: id,
                     customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
                 };
