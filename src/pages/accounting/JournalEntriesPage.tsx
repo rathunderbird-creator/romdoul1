@@ -104,6 +104,7 @@ const JournalEntriesPage = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
+    const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
     // Editing an existing draft reuses the entry modal; null = creating.
     const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
     const [viewEntry, setViewEntry] = useState<JournalEntry | null>(null);
@@ -505,6 +506,10 @@ const JournalEntriesPage = () => {
             result = result.filter(e => (e.status === 'Draft' ? 'Draft' : 'Posted') === statusFilter);
         }
 
+        if (originFilter !== 'All') {
+            result = result.filter(e => (originFilter === 'Auto' ? isSystemEntry(e) : !isSystemEntry(e)));
+        }
+
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             result = result.filter(entry =>
@@ -516,14 +521,14 @@ const JournalEntriesPage = () => {
         }
 
         return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [journalEntries, searchQuery, dateRange, statusFilter]);
+    }, [journalEntries, searchQuery, dateRange, statusFilter, originFilter]);
 
     // Summary cards: totals over the filtered view, so they track Date/Status/Search.
     const counts = useMemo(() => {
         const draft = filteredEntries.filter(e => e.status === 'Draft').length;
         return { total: filteredEntries.length, posted: filteredEntries.length - draft, draft };
     }, [filteredEntries]);
-    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All');
+    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All' || originFilter !== 'All');
 
     return (
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
@@ -586,6 +591,18 @@ const JournalEntriesPage = () => {
                         <option value="Draft">Draft</option>
                     </select>
                 </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Origin</label>
+                    <select
+                        value={originFilter}
+                        onChange={e => setOriginFilter(e.target.value as 'All' | 'Auto' | 'Manual')}
+                        style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                    >
+                        <option value="All">Auto &amp; Manual</option>
+                        <option value="Auto">Auto only</option>
+                        <option value="Manual">Manual only</option>
+                    </select>
+                </div>
                 <div style={{ flex: '1 1 200px', maxWidth: '340px' }}>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Search</label>
                     <div style={{ position: 'relative' }}>
@@ -599,9 +616,9 @@ const JournalEntriesPage = () => {
                         />
                     </div>
                 </div>
-                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All') && (
+                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All' || originFilter !== 'All') && (
                     <button
-                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); }}
+                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); }}
                         style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
                     >
                         Clear
