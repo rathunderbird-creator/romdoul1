@@ -3601,7 +3601,7 @@ const Orders: React.FC = () => {
                                                             case 'payBy': {
                                                                 const PaymentIcon = getPaymentIcon(order.paymentMethod);
                                                                 return <td key={colId} style={cellStyle}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                                                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: getPaymentColor(order.paymentMethod) }}>{order.paymentMethod || '-'}</span>
                                                                         {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(order.paymentMethod)} />}
                                                                     </div>
