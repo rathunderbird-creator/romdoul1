@@ -97,6 +97,18 @@ const SystemChip: React.FC = () => (
         }}>auto</span>
 );
 
+// The complement of SystemChip — this entry was recorded directly (on this
+// page, or in Journal Entries), not generated automatically by a payment flow.
+const ManualChip: React.FC = () => (
+    <span
+        title="Recorded directly — not generated automatically by a payment flow."
+        style={{
+            fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
+            color: 'var(--color-text-secondary)', background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+            cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
+        }}>manual</span>
+);
+
 // Local calendar day as YYYY-MM-DD — timezone-safe (uses local date parts,
 // not a UTC-shifted 24h), so it can't land on the wrong date.
 const todayYmd = (): string => {
@@ -836,7 +848,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
                                         {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
-                                        {r.isSystem && <SystemChip />}
+                                        {r.isSystem ? <SystemChip /> : <ManualChip />}
                                     </span>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                         <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
@@ -886,7 +898,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 <StatusChip status={r.status} />
-                                                {r.isSystem && <SystemChip />}
+                                                {r.isSystem ? <SystemChip /> : <ManualChip />}
                                                 {r.status === 'Draft' && statusSupported && !r.isSystem && (
                                                     <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : 'Post'}</button>
                                                 )}
