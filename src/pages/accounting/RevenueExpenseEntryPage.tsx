@@ -429,17 +429,6 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         return out.sort((a, b) => b.date.localeCompare(a.date) || b.entryId.localeCompare(a.entryId));
     }, [lines, accountById, cfg.accountType, mode]);
 
-    // The money cards count Posted entries only; drafts aren't final yet.
-    const totals = useMemo(() => {
-        const month = todayYmd().slice(0, 7);
-        const posted = rows.filter(r => r.status !== 'Draft');
-        return {
-            month: posted.filter(r => r.date.startsWith(month)).reduce((s, r) => s + r.amount, 0),
-            all: posted.reduce((s, r) => s + r.amount, 0),
-            count: rows.length,
-        };
-    }, [rows]);
-
     // ── List filters: search, date range, status ──
     const [search, setSearch] = useState('');
     const [dateFrom, setDateFrom] = useState('');
@@ -457,6 +446,19 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     }, [rows, search, dateFrom, dateTo, statusFilter]);
 
     const filteredTotal = useMemo(() => filteredRows.reduce((s, r) => s + r.amount, 0), [filteredRows]);
+
+    // The money cards count Posted entries only (drafts aren't final yet) among
+    // whatever the search/date/status filters currently leave in the list below —
+    // narrowing the list narrows the cards too, not just the footer total.
+    const totals = useMemo(() => {
+        const month = todayYmd().slice(0, 7);
+        const posted = filteredRows.filter(r => r.status !== 'Draft');
+        return {
+            month: posted.filter(r => r.date.startsWith(month)).reduce((s, r) => s + r.amount, 0),
+            all: posted.reduce((s, r) => s + r.amount, 0),
+            count: filteredRows.length,
+        };
+    }, [filteredRows]);
 
     // ── View & Print actions ──
     const [viewEntry, setViewEntry] = useState<EntryRow | null>(null);
@@ -618,9 +620,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             {/* Totals */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px' }}>
                 {[
-                    { label: `${cfg.title} This Month`, value: fmt(totals.month) },
-                    { label: `${cfg.title} All Time`, value: fmt(totals.all) },
-                    { label: 'Entries', value: String(totals.count) },
+                    { label: `${cfg.title} This Month${filtersActive ? ' (Filtered)' : ''}`, value: fmt(totals.month) },
+                    { label: `${cfg.title} All Time${filtersActive ? ' (Filtered)' : ''}`, value: fmt(totals.all) },
+                    { label: `Entries${filtersActive ? ' (Filtered)' : ''}`, value: String(totals.count) },
                 ].map(c => (
                     <div key={c.label} style={{ ...cardStyle, borderTop: `3px solid ${cfg.color}`, padding: '14px 16px' }}>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{c.label}</div>
