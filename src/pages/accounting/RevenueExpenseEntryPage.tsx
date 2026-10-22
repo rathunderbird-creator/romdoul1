@@ -903,7 +903,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
-                                    <td colSpan={5} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>{filtersActive ? `Total (filtered · ${filteredRows.length})` : 'Total'}</td>
+                                    <td colSpan={5} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>
+                                        {`Total — ${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''}`}
+                                    </td>
                                     <td style={{ padding: '11px 16px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
                                     <td colSpan={2}></td>
                                 </tr>
