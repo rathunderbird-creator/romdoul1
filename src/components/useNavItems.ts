@@ -36,7 +36,8 @@ export const useNavItems = (): NavItem[] => {
                 // reachable by URL and its Record Receipt ledger-posting flow is unchanged.
                 { label: t('nav.customerPayment'), path: '/customer-payment', icon: Receipt },
                 { label: t('nav.scammers'), path: '/orders/scammers', icon: AlertTriangle },
-                { label: t('nav.deletedOrders'), path: '/orders/deleted', icon: Trash2 }
+                { label: t('nav.deletedOrders'), path: '/orders/deleted', icon: Trash2 },
+                { label: t('nav.salesSetup'), path: '/orders/setup', icon: SlidersHorizontal }
             ]
         });
     }

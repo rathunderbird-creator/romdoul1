@@ -8,6 +8,7 @@
     "shippingDelivery": "Delivery Tracking",
     "allPayStatus": "Payment Tracking",
     "customerPayment": "Customer Payment",
+    "salesSetup": "Sales Setup",
     "inventory": "Inventory",
     "allProducts": "All Products",
     "stockIn": "Stock-In",
