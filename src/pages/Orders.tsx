@@ -337,6 +337,11 @@ const PendingRemarkModalComponent: React.FC<{
 // Closed-out orders: stock and/or payment have already been reversed on these, so
 // editing would re-run order logic against a reversal. They stay read-only until
 // someone deliberately moves the order back to an active status from the order list.
+// Pay Status filter options (toolbar dropdown + mobile drawer). Mirrors
+// PaymentStatusBadge's own options list — kept separate since this list drives
+// filtering, not the badge/dropdown itself.
+const PAY_STATUS_FILTER_OPTIONS = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel'];
+
 // Mirrors the rule enforced in StoreContext: 'Delivered' and 'Returned' only make sense
 // once the goods have shipped. Checked here too so the UI doesn't open a payment or
 // remark modal for a transition the store will reject.
@@ -2810,10 +2815,10 @@ const Orders: React.FC = () => {
                                                 }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={payStatusFilter.length === 4}
+                                                        checked={payStatusFilter.length === PAY_STATUS_FILTER_OPTIONS.length}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setPayStatusFilter(['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel']);
+                                                                setPayStatusFilter(PAY_STATUS_FILTER_OPTIONS);
                                                             } else {
                                                                 setPayStatusFilter([]);
                                                             }
@@ -2822,7 +2827,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                 </label>
-                                                {['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel'].map(status => (
+                                                {PAY_STATUS_FILTER_OPTIONS.map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -3161,7 +3166,7 @@ const Orders: React.FC = () => {
                             />
                             <DrawerChipGroup
                                 title="Pay Status"
-                                options={['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel']}
+                                options={PAY_STATUS_FILTER_OPTIONS}
                                 selected={payStatusFilter}
                                 onToggle={(v) => setPayStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
                             />
@@ -4155,12 +4160,13 @@ const Orders: React.FC = () => {
                                     <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
                                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                         {(() => {
-                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
                                             const getPayStatusColors = (s: string) => {
                                                 switch (s) {
                                                     case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
                                                     case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE' };
                                                     case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
+                                                    case 'PdFee': return { bg: '#CFFAFE', color: '#0E7490' };
                                                     case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
                                                     case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
                                                     case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626' };
