@@ -697,6 +697,32 @@ body.sidebar-navy-amber {
   --modern-sidebar-active-text: #FFFFFF;
 }
 
+/* ── "Dark Blue Ocean" color scheme (ThemeContext.sidebarColor) ───────────
+   A deep ocean-blue background with a bright sky-blue active pill — same
+   structure as Navy & Amber above, different hue (blue throughout, no
+   amber) so the two read as distinct options rather than near-duplicates. */
+body.sidebar-ocean {
+  --classic-sidebar-bg: #0B2545;
+  --classic-sidebar-border: #163A63;
+  --classic-sidebar-text: #9FC4E8;
+  --classic-sidebar-text-hover: #FFFFFF;
+  --classic-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+  --classic-sidebar-active-parent-bg: rgba(255, 255, 255, 0.08);
+  --classic-sidebar-active-bg: #0EA5E9;
+  --classic-sidebar-active-text: #FFFFFF;
+  --classic-sidebar-active-sublink-bg: #0EA5E9;
+  --classic-sidebar-active-sublink-text: #FFFFFF;
+
+  --modern-sidebar-bg: #0B2545;
+  --modern-sidebar-border: #163A63;
+  --modern-sidebar-text: #9FC4E8;
+  --modern-sidebar-text-hover: #FFFFFF;
+  --modern-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+  --modern-sidebar-text-muted: #9FC4E8;
+  --modern-sidebar-active-bg: #0EA5E9;
+  --modern-sidebar-active-text: #FFFFFF;
+}
+
 /* Modern sidebar items: pill rows on a white surface. */
 .msidebar-item {
   display: flex;

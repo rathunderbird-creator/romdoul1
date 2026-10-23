@@ -2,14 +2,14 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 
 export type AppLayout = 'classic' | 'modern';
 export type ThemeMode = 'light' | 'dark';
-export type SidebarColor = 'default' | 'navy-amber';
+export type SidebarColor = 'default' | 'navy-amber' | 'ocean';
 
 interface ThemeContextType {
     themeColor: string;
     fontSize: number; // in pixels
     layout: AppLayout; // 'classic' = black sidebar, 'modern' = light grouped sidebar
     mode: ThemeMode;   // light or dark color scheme (body.theme-dark)
-    sidebarColor: SidebarColor; // 'default' = each layout's own look, 'navy-amber' = the navy/amber scheme on both Classic and Modern
+    sidebarColor: SidebarColor; // 'default' = each layout's own look, 'navy-amber'/'ocean' = a shared scheme on both Classic and Modern
     setThemeColor: (color: string) => void;
     setFontSize: (size: number) => void;
     setLayout: (layout: AppLayout) => void;
@@ -50,7 +50,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [sidebarColor, setSidebarColorState] = useState<SidebarColor>(() => {
         // Respect an explicit choice either way; anything else gets the default.
         const saved = localStorage.getItem('jbl_pos_sidebar_color');
-        return saved === 'default' || saved === 'navy-amber' ? saved : DEFAULT_SIDEBAR_COLOR;
+        return saved === 'default' || saved === 'navy-amber' || saved === 'ocean' ? saved : DEFAULT_SIDEBAR_COLOR;
     });
 
     // Apply Styles
@@ -103,6 +103,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Classic's --classic-sidebar-* and Modern's --modern-sidebar-*.
     useEffect(() => {
         document.body.classList.toggle('sidebar-navy-amber', sidebarColor === 'navy-amber');
+        document.body.classList.toggle('sidebar-ocean', sidebarColor === 'ocean');
         localStorage.setItem('jbl_pos_sidebar_color', sidebarColor);
     }, [sidebarColor]);
 
