@@ -17,6 +17,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
     const getStatusStyle = (s: string) => {
         switch (s) {
             case 'Paid': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
+            case 'PdFee': return { bg: '#CFFAFE', color: '#0E7490', border: '#67E8F9' }; // Teal
             case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE', border: '#D8B4FE' }; // Purple
             case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8', border: '#93C5FD' }; // Blue
             case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
@@ -49,7 +50,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         width: '100%'
     };
 
-    const options = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel'];
+    const options = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel'];
 
     // Update position when opening
     useEffect(() => {
@@ -112,7 +113,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
 
     return (
         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} ref={dropdownRef}>
-            <div className="status-badge" style={badgeStyle} onClick={handleToggle}>
+            <div className="status-badge" style={badgeStyle} onClick={handleToggle} title={status === 'PdFee' ? 'Paid for Delivery Fee' : undefined}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{status}</span>
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>
@@ -140,6 +141,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
                             <div
                                 key={opt}
                                 onClick={() => !isDisabled && handleSelect(opt)}
+                                title={opt === 'PdFee' ? 'Paid for Delivery Fee' : undefined}
                                 style={{
                                     padding: '8px 12px',
                                     cursor: isDisabled ? 'not-allowed' : 'pointer',

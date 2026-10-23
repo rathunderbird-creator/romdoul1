@@ -11,7 +11,7 @@ import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal } from '../components';
+import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal, DeliveryFeeModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import StockMovementSummaryModal from '../components/StockMovementSummaryModal';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
@@ -1101,6 +1101,7 @@ const Orders: React.FC = () => {
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
+    const [deliveryFeeTargetOrder, setDeliveryFeeTargetOrder] = useState<Sale | null>(null);
 
     // Mobile: the filter bar is replaced by a right-side slide-in drawer.
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -1446,7 +1447,7 @@ const Orders: React.FC = () => {
                             // Unpaid/Cancel/etc. keeps its old settle_date/deposit_date
                             // for financial-record reasons but no longer shows a date
                             // in this column, so don't surface it here either.
-                            query = query.in('payment_status', ['Paid', 'Deposit']).or(orGroups.join(','));
+                            query = query.in('payment_status', ['Paid', 'Deposit', 'PdFee']).or(orGroups.join(','));
                         }
                         break;
                     }
@@ -1970,7 +1971,7 @@ const Orders: React.FC = () => {
             'Payment Method': order.paymentMethod,
             'Payment Status': order.paymentStatus || 'Paid',
             'Settle Date': (() => {
-                const d = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit')
+                const d = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee')
                     ? (order.settleDate || order.depositDate)
                     : null;
                 return d ? new Date(d).toLocaleDateString() : 'N/A';
@@ -3304,6 +3305,10 @@ const Orders: React.FC = () => {
                                                 setDepositTargetOrder(order);
                                                 return;
                                             }
+                                            if (status === 'PdFee') {
+                                                setDeliveryFeeTargetOrder(order);
+                                                return;
+                                            }
                                             if (status === 'Paid' || status === 'Settled') {
                                                 // Same flow as desktop: capture Pay By + settle date
                                                 // in the settle modal instead of silently defaulting.
@@ -3665,8 +3670,9 @@ const Orders: React.FC = () => {
                                                             case 'received': return <td key={colId} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',
-                                                                // Blue = money in hand (fully paid, or a deposit received); red = outstanding.
-                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit') ? '#2563EB' : '#DC2626',
+                                                                // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
+                                                                // otherwise-cancelled order); red = outstanding.
+                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee') ? '#2563EB' : '#DC2626',
                                                                 fontWeight: 'bold'
                                                             }}>${(order.paymentStatus === 'Deposit'
                                                                 ? (order.depositAmount || order.amountReceived || 0)
@@ -3692,6 +3698,9 @@ const Orders: React.FC = () => {
                                                                                 } else if (newStatus === 'Deposit') {
                                                                                     setDepositTargetOrder(order);
                                                                                     return;
+                                                                                } else if (newStatus === 'PdFee') {
+                                                                                    setDeliveryFeeTargetOrder(order);
+                                                                                    return;
                                                                                 } else if (newStatus === 'Get File') {
                                                                                     // Same as bulk edit: keep a deposit visible
                                                                                     // in Received when one was taken.
@@ -3709,7 +3718,7 @@ const Orders: React.FC = () => {
                                                                             // Admins bypass the lock so they can correct mistakes
                                                                             // (e.g. un-mark a wrong Paid); the store cleans up the
                                                                             // logged income when leaving Paid.
-                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'))}
+                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid' || order.paymentStatus === 'PdFee'))}
                                                                         />
                                                                     </td>
                                                                 );
@@ -3945,14 +3954,15 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'settleDate': {
-                                                                // Settle date once fully Paid; the deposit's own date
-                                                                // while only Deposited. Gated on the order's current
-                                                                // Pay Status (not just whether the fields happen to be
+                                                                // Settle date once fully Paid or PdFee (the date the
+                                                                // delivery fee was paid); the deposit's own date while
+                                                                // only Deposited. Gated on the order's current Pay
+                                                                // Status (not just whether the fields happen to be
                                                                 // set) — depositDate/settleDate are deliberately kept
                                                                 // on the order even after it's reverted to Unpaid/
                                                                 // Cancel/etc. for financial-record reasons, so showing
                                                                 // them unconditionally would leave a stale date here.
-                                                                const displayDate = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit')
+                                                                const displayDate = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee')
                                                                     ? (order.settleDate || order.depositDate)
                                                                     : null;
                                                                 return <td key={colId} style={cellStyle}>{displayDate ? new Date(displayDate).toLocaleDateString() : '-'}</td>;
@@ -4472,6 +4482,23 @@ const Orders: React.FC = () => {
                         amountReceived: amount
                     });
                     setDepositTargetOrder(null);
+                }}
+            />
+            {/* Delivery Fee Modal */}
+            <DeliveryFeeModal
+                order={deliveryFeeTargetOrder}
+                onClose={() => setDeliveryFeeTargetOrder(null)}
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                    if (!deliveryFeeTargetOrder) return;
+                    updateOrder(deliveryFeeTargetOrder.id, {
+                        paymentStatus: 'PdFee',
+                        paymentMethod: method as any,
+                        settleDate: date,
+                        amountReceived: amount,
+                        depositAccountId,
+                        depositAccountName
+                    });
+                    setDeliveryFeeTargetOrder(null);
                 }}
             />
             {/* Stock Movement Summary (shared with the Stock Movements page) — opens on today */}
