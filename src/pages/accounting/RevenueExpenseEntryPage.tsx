@@ -10,12 +10,20 @@ import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
+import { useStore } from '../../context/StoreContext';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
 import type { ChartOfAccount } from '../../types';
 
 const GREEN = '#10B981', RED = '#EF4444';
+// .in()/.delete() batch size for bulk unpost/delete — well under PostgREST's URL limit.
+const CHUNK = 150;
+const chunk = <T,>(items: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+    return out;
+};
 
 const CFG = {
     revenue: {
@@ -128,6 +136,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { currentUser } = useStore();
+    // Unposting rewinds finalized books, so it stays admin-only — same gate
+    // as Customer Payment's bulk Unpost.
+    const isAdmin = currentUser?.roleId === 'admin';
     const { saveJournalEntry } = useAccounting();
     const navigate = useNavigate();
 
@@ -311,6 +323,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         setEditSimple(true);
         setEntryStatus(defaultEntryStatus);
         setCounterId(defaultCounterId());
+        // A checked-but-now-irrelevant id would drop out of selectedRows on
+        // its own (filteredRows no longer contains it), but clearing it here
+        // avoids holding onto a stale selection across the switch.
+        setSelectedIds(new Set());
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
@@ -620,18 +636,28 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         }
     };
 
+    // Unlike Edit (still Draft-only — Posted books aren't editable in place,
+    // record a correcting entry), Delete can also remove an already-Posted
+    // entry outright — but only an admin, matching Unpost's gate, since
+    // that's a change to finalized books (a non-admin stays Draft-only,
+    // same as before this page gained this capability).
     const handleDelete = async (row: EntryRow) => {
         if (row.isSystem) { showToast('This entry was created by a payment flow — manage it from its own page.', 'info'); return; }
-        if (statusSupported && row.status !== 'Draft') { showToast('Posted entries cannot be deleted — record a correcting entry instead.', 'info'); return; }
+        if (row.status === 'Posted' && !isAdmin) { showToast('Posted entries can only be deleted by an admin — unpost it first, or ask an admin.', 'info'); return; }
         if (busyIds.has(row.entryId)) return;
         const scope = row.lineCount > 2 ? ` The WHOLE journal entry (${row.lineCount} ledger lines, not just the ${mode} part) is removed.` : ' The journal entry and its lines are removed.';
-        if (!confirm(`Delete this ${mode} entry of ${fmt(row.amount)} (${row.date})?${scope}`)) return;
+        const postedWarn = row.status === 'Posted' ? ' This entry is already Posted — deleting it changes the finalized books.' : '';
+        if (!confirm(`Delete this ${mode} entry of ${fmt(row.amount)} (${row.date})?${scope}${postedWarn}`)) return;
         markBusy(row.entryId, true);
         try {
             const { error: lineErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', row.entryId);
             if (lineErr) throw lineErr;
             const { error: entryErr } = await supabase.from('journal_entries').delete().eq('id', row.entryId);
             if (entryErr) throw entryErr;
+            // The row just deleted may be the one open in the edit form above —
+            // leaving it open would save against an entryId that no longer
+            // exists and hit a confusing FK-violation error.
+            if (editingEntry?.entryId === row.entryId) cancelEdit();
             showToast('Entry deleted', 'success');
             refetch();
         } catch (e) {
@@ -642,11 +668,120 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         }
     };
 
+    // ── Bulk checkbox selection: Unpost (admin-only, Posted rows) / Delete
+    // (Draft rows for anyone, Posted rows admin-only — same split as the
+    // single-row action above). Payment-flow entries stay out of both —
+    // managed from their own page, same as the single-row actions above. ──
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isBulkUnposting, setIsBulkUnposting] = useState(false);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    const selectedRows = useMemo(
+        () => selectedIds.size === 0 ? [] : filteredRows.filter(r => selectedIds.has(r.entryId)),
+        [selectedIds, filteredRows]
+    );
+    const selectedTotal = useMemo(() => selectedRows.reduce((s, r) => s + r.amount, 0), [selectedRows]);
+    // A row already mid-post/mid-delete via its own single-row action can't
+    // also be a bulk target — it's excluded here, not just from new picks
+    // (selectableIds, below), or a concurrent bulk+single action could race.
+    const selectedDeletableRows = useMemo(
+        () => selectedRows.filter(r => !r.isSystem && !busyIds.has(r.entryId) && (r.status === 'Draft' || isAdmin)),
+        [selectedRows, busyIds, isAdmin]
+    );
+    const selectedPostedRows = useMemo(
+        () => statusSupported ? selectedRows.filter(r => !r.isSystem && !busyIds.has(r.entryId) && r.status === 'Posted') : [],
+        [selectedRows, statusSupported, busyIds]
+    );
+    // A row mid-post/mid-delete can't also be picked for a new bulk action.
+    const selectableIds = useMemo(() => filteredRows.filter(r => !busyIds.has(r.entryId)).map(r => r.entryId), [filteredRows, busyIds]);
+    const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
+    const someSelected = selectableIds.some(id => selectedIds.has(id));
+
+    const toggleSelect = (id: string) => setSelectedIds(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+    });
+    const toggleSelectAll = () => setSelectedIds(prev => {
+        const n = new Set(prev);
+        if (allSelected) selectableIds.forEach(id => n.delete(id));
+        else selectableIds.forEach(id => n.add(id));
+        return n;
+    });
+
+    const handleBulkUnpost = async () => {
+        const targets = selectedPostedRows;
+        if (!isAdmin || !statusSupported || targets.length === 0 || isBulkUnposting) return;
+        if (!confirm(`Return ${targets.length} posted ${mode} ${targets.length === 1 ? 'entry' : 'entries'} to Draft?\nThey can then be corrected and posted again.`)) return;
+        setIsBulkUnposting(true);
+        const ids = targets.map(r => r.entryId);
+        setBusyIds(prev => new Set([...prev, ...ids]));
+        try {
+            for (const batch of chunk(ids, CHUNK)) {
+                const { error } = await supabase.from('journal_entries').update({ status: 'Draft' }).in('id', batch);
+                if (error) throw error;
+            }
+            showToast(`Returned ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'} to Draft`, 'success');
+            setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            refetch();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to unpost: ' + msg, 'error');
+            refetch();
+        } finally {
+            setBusyIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            setIsBulkUnposting(false);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        const targets = selectedDeletableRows;
+        if (targets.length === 0 || isBulkDeleting) return;
+        const postedCount = targets.filter(r => r.status === 'Posted').length;
+        const multiLineCount = targets.filter(r => r.lineCount > 2).length;
+        const warnParts: string[] = [];
+        if (postedCount > 0) warnParts.push(`${postedCount} ${postedCount === 1 ? 'is' : 'are'} already Posted`);
+        if (multiLineCount > 0) warnParts.push(`${multiLineCount} ${multiLineCount === 1 ? 'has' : 'have'} more than 2 ledger lines — the whole journal entry is removed, not just the ${mode} part`);
+        const warn = warnParts.length > 0 ? `\n${warnParts.join('; ')}.` : '';
+        const total = targets.reduce((s, r) => s + r.amount, 0);
+        if (!confirm(`Delete ${targets.length} ${mode} ${targets.length === 1 ? 'entry' : 'entries'} (${fmt(total)})? This cannot be undone.${warn}`)) return;
+        setIsBulkDeleting(true);
+        const ids = targets.map(r => r.entryId);
+        setBusyIds(prev => new Set([...prev, ...ids]));
+        try {
+            // Lines then entries WITHIN each batch (not two separate passes
+            // over the whole selection) — a batch failing after an earlier
+            // one succeeded leaves only that one batch's size at risk of a
+            // lines-deleted-but-entry-row-left orphan, not the whole selection.
+            for (const batch of chunk(ids, CHUNK)) {
+                const { error: lineErr } = await supabase.from('journal_entry_lines').delete().in('journal_entry_id', batch);
+                if (lineErr) throw lineErr;
+                const { error: entryErr } = await supabase.from('journal_entries').delete().in('id', batch);
+                if (entryErr) throw entryErr;
+            }
+            // The row just deleted may be the one open in the edit form above.
+            if (editingEntry && ids.includes(editingEntry.entryId)) cancelEdit();
+            showToast(`Deleted ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'}`, 'success');
+            setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            refetch();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to delete: ' + msg, 'error');
+            refetch();
+        } finally {
+            setBusyIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            setIsBulkDeleting(false);
+        }
+    };
+
     const loading = lines === null;
-    // Edit/Delete only on this page's own Draft entries: Posted books are final
-    // (record a correcting entry instead) and payment-flow entries live on their
-    // own page — same draft-only rule as the Journal Entries page.
-    const canMutate = (r: EntryRow) => !r.isSystem && r.status === 'Draft';
+    // Edit stays Draft-only — Posted books aren't editable in place (record a
+    // correcting entry instead). Delete is wider — Draft for anyone, Posted
+    // for an admin only (deleting finalized books, same gate as Unpost).
+    // Payment-flow entries are never mutable here either way — managed from
+    // their own page.
+    const canEdit = (r: EntryRow) => !r.isSystem && r.status === 'Draft';
+    const canDelete = (r: EntryRow) => !r.isSystem && (r.status === 'Draft' || isAdmin);
 
     const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
     const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
@@ -879,19 +1014,27 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     <>
                         {filteredRows.map(r => (
                             <div key={r.entryId} style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', rowGap: '6px' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap', rowGap: '4px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.has(r.entryId)}
+                                            onChange={() => toggleSelect(r.entryId)}
+                                            disabled={busyIds.has(r.entryId)}
+                                            title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                            style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+                                        />
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
                                         {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
                                         {r.isSystem ? <SystemChip /> : <ManualChip />}
                                     </span>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
                                         <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
-                                        {canMutate(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />}
+                                        {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />}
                                         <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} />
                                         <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} />
-                                        {canMutate(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} />}
+                                        {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} />}
                                     </span>
                                 </div>
                                 {r.description && <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 2px' }}>{r.description}</div>}
@@ -917,6 +1060,17 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '680px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
+                                    <th style={{ padding: '10px 8px 10px 16px', width: '32px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={allSelected}
+                                            ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
+                                            onChange={toggleSelectAll}
+                                            disabled={selectableIds.length === 0}
+                                            title="Select all listed entries"
+                                            style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
+                                        />
+                                    </th>
                                     {['Date', 'Reference', 'Description', cfg.accountLabel, cfg.counterLabel, 'Amount', 'Status', 'Actions'].map((h, i) => (
                                         <th key={h || 'x'} style={{ padding: '10px 16px', textAlign: i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: i === 7 ? '110px' : undefined }}>{h}</th>
                                     ))}
@@ -925,6 +1079,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             <tbody>
                                 {filteredRows.map((r, idx) => (
                                     <tr key={r.entryId} style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 ? 'rgba(0,0,0,0.015)' : 'transparent' }}>
+                                        <td style={{ padding: '10px 8px 10px 16px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(r.entryId)}
+                                                onChange={() => toggleSelect(r.entryId)}
+                                                disabled={busyIds.has(r.entryId)}
+                                                title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer' }}
+                                            />
+                                        </td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>{r.ref || '—'}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
@@ -942,10 +1106,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         </td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
-                                                {canMutate(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />}
+                                                {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />}
                                                 <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label="View entry" />
                                                 <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} aria-label="Print entry" />
-                                                {canMutate(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />}
+                                                {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />}
                                             </span>
                                         </td>
                                     </tr>
@@ -953,7 +1117,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
-                                    <td colSpan={5} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>
+                                    <td colSpan={6} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>
                                         {`Total — ${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''}`}
                                     </td>
                                     <td style={{ padding: '11px 16px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
@@ -964,6 +1128,75 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </div>
                 )}
             </div>
+
+            {/* Bulk selection bar — floats at the bottom-center once any row is
+                checked, same place/style as Customer Payment's. Unpost (admin
+                only) shows when the selection includes a Posted row; Delete
+                applies to the whole non-system selection, Draft for anyone
+                and Posted for an admin only. Stays mounted (via the
+                isBulk*ing OR below) through a mode switch that clears
+                selectedIds mid-operation — this page doesn't remount on
+                that nav, so an in-flight bulk action would otherwise keep
+                running with no visible progress once the bar disappeared. */}
+            {(selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
+                const bulkBusy = isBulkUnposting || isBulkDeleting;
+                return (
+                    <div style={{
+                        position: 'fixed', left: '50%', bottom: '24px', transform: 'translateX(-50%)',
+                        zIndex: 500, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                        justifyContent: 'center', maxWidth: 'calc(100vw - 32px)',
+                        padding: '12px 18px', borderRadius: '14px',
+                        background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                        boxShadow: '0 10px 32px rgba(0,0,0,0.22)'
+                    }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                            {selectedRows.length > 0 ? `${selectedRows.length} selected · ${fmt(selectedTotal)}` : 'Working…'}
+                        </span>
+                        {isAdmin && statusSupported && (selectedPostedRows.length > 0 || isBulkUnposting) && (
+                            <button
+                                onClick={handleBulkUnpost}
+                                disabled={bulkBusy}
+                                title="Return the selected posted entries to Draft so they can be corrected"
+                                style={{
+                                    padding: '8px 16px', borderRadius: '8px',
+                                    border: '1px solid #D97706', background: '#FEF3C7', color: '#92400E',
+                                    fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                    opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
+                            </button>
+                        )}
+                        {(selectedDeletableRows.length > 0 || isBulkDeleting) && (
+                            <button
+                                onClick={handleBulkDelete}
+                                disabled={bulkBusy}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                    background: '#EF4444', color: '#fff',
+                                    fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                    opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                                }}
+                            >
+                                <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedDeletableRows.length})`}
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setSelectedIds(new Set())}
+                            disabled={bulkBusy}
+                            style={{
+                                padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                background: 'var(--color-bg)', color: 'var(--color-text-secondary)',
+                                fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                whiteSpace: 'nowrap'
+                            }}
+                        >
+                            Clear
+                        </button>
+                    </div>
+                );
+            })()}
 
             {/* View entry modal */}
             <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title={`${cfg.title} Entry`}>
