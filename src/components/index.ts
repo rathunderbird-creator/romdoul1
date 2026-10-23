@@ -18,4 +18,5 @@ export { default as StatusBadge } from './StatusBadge';
 export { default as MobileOrderCard } from './MobileOrderCard';
 export { default as Modal } from './Modal';
 export { default as DepositModal } from './DepositModal';
+export { default as DeliveryFeeModal } from './DeliveryFeeModal';
 export { default as OrderDetailsModal } from './OrderDetailsModal';

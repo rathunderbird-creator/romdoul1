@@ -2,9 +2,10 @@ import { supabase } from '../lib/supabase';
 
 // What created the journal entry, embedded in its human-readable
 // entry_number. REV/EXP come from the Revenue & Expense entry pages, PUR from
-// receiving a purchase order into inventory. ADJ is reserved for a future
-// manual-adjustment flow — no current code path produces one.
-export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN' | 'REV' | 'EXP' | 'PUR' | 'ADJ';
+// receiving a purchase order into inventory. DLV is a cancelled order's
+// delivery-fee-only payment (paymentStatus 'PdFee'). ADJ is reserved for a
+// future manual-adjustment flow — no current code path produces one.
+export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN' | 'REV' | 'EXP' | 'PUR' | 'DLV' | 'ADJ';
 
 // Human-readable display ID for a journal entry, additive to (never a
 // replacement for) reference_id: JE-{globalSeq}-{TYPE}-{YYYYMMDD}-{dailySeq},

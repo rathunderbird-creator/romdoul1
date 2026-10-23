@@ -5,7 +5,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit, Trash2 } from 'lucide-react';
 import type { Sale } from '../types';
-import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal } from '../components';
+import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -486,6 +486,7 @@ const PaymentTracking: React.FC = () => {
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
+    const [deliveryFeeTargetOrder, setDeliveryFeeTargetOrder] = useState<Sale | null>(null);
 
     // Server-side fetching (same pattern as Orders Management)
     const [currentPage, setCurrentPage] = useState(1);
@@ -1280,9 +1281,13 @@ const PaymentTracking: React.FC = () => {
                                                 setDepositTargetOrder(order);
                                                 return;
                                             }
+                                            if (newStatus === 'PdFee') {
+                                                setDeliveryFeeTargetOrder(order);
+                                                return;
+                                            }
                                             updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })
                                         }}
-                                        readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel'}
+                                        readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee'}
                                     />
                                 </td>}
                                 {visibleColumns.includes('remark') && <td style={{ width: `var(--col-payment-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}
@@ -1543,6 +1548,24 @@ const PaymentTracking: React.FC = () => {
                         depositAccountName
                     });
                     setDepositTargetOrder(null);
+                }}
+            />
+
+            {/* Delivery Fee Modal */}
+            <DeliveryFeeModal
+                order={deliveryFeeTargetOrder}
+                onClose={() => setDeliveryFeeTargetOrder(null)}
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                    if (!deliveryFeeTargetOrder) return;
+                    updateOrder(deliveryFeeTargetOrder.id, {
+                        paymentStatus: 'PdFee',
+                        paymentMethod: method as any,
+                        settleDate: date,
+                        amountReceived: amount,
+                        depositAccountId,
+                        depositAccountName
+                    });
+                    setDeliveryFeeTargetOrder(null);
                 }}
             />
 

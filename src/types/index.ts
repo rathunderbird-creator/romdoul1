@@ -67,7 +67,7 @@ export interface Sale {
     postToLedger?: boolean; // transient, UI-only: when true, updateOrder() also posts a Draft journal entry for this payment — never persisted to the sales table
     lastEditedAt?: string; // ISO string
     lastEditedBy?: string;
-    paymentStatus?: 'Unpaid' | 'Deposit' | 'Paid' | 'Get File' | 'Cancel';
+    paymentStatus?: 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel';
     orderStatus?: 'Open' | 'Closed';
     orderIndex?: number;
     pageSource?: string;
