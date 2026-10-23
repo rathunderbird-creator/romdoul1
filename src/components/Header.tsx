@@ -647,7 +647,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                 <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
                                     <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{t('header.sidebarColor')}</div>
                                     <div style={{ display: 'flex', gap: '6px' }}>
-                                        {([['default', t('header.sidebarColorDefault')], ['navy-amber', t('header.sidebarColorNavyAmber')]] as const).map(([key, label]) => (
+                                        {([['default', t('header.sidebarColorDefault')], ['navy-amber', t('header.sidebarColorNavyAmber')], ['ocean', t('header.sidebarColorOcean')]] as const).map(([key, label]) => (
                                             <button
                                                 key={key}
                                                 onClick={() => setSidebarColor(key)}
