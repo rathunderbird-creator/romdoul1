@@ -3561,6 +3561,9 @@ const Orders: React.FC = () => {
                                                                                     <Edit size={16} color="var(--color-text-secondary)" />
                                                                                 </button>
                                                                             )}
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Order Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                                <Copy size={16} color="var(--color-text-secondary)" />
+                                                                            </button>
                                                                         </div>
                                                                     </td>
                                                                 );
