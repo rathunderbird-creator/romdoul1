@@ -256,15 +256,30 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const [accountId, setAccountId] = useState('');
     const [counterId, setCounterId] = useState('');
     const [amount, setAmount] = useState('');
-    const [entryStatus, setEntryStatus] = useState<'Posted' | 'Draft'>('Posted');
+    // Expense entries default to Draft (reviewed before posting); Revenue keeps
+    // defaulting straight to Posted, unchanged.
+    const defaultEntryStatus = mode === 'expense' ? 'Draft' : 'Posted';
+    const [entryStatus, setEntryStatus] = useState<'Posted' | 'Draft'>(defaultEntryStatus);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Default the selects once accounts arrive, and re-default when switching
-    // between the Revenue and Expense pages (same component, prop change).
+    // Picks "Bank Account (ABA)" specifically for Expense when it exists,
+    // else the same cash/bank-first pick Revenue already uses.
+    const defaultCounterId = () => {
+        const aba = mode === 'expense' ? counterAccounts.find(a => a.account_name.trim().toLowerCase() === 'bank account (aba)') : undefined;
+        return aba?.id || counterAccounts[0]?.id || '';
+    };
+
+    // Default the selects once accounts arrive (counterId only — accountId's
+    // own type filter already invalidates a stale pick on its own, below).
     useEffect(() => {
         setAccountId(prev => (prev && mainAccounts.some(a => a.id === prev)) ? prev : (mainAccounts[0]?.id || ''));
-        setCounterId(prev => (prev && counterAccounts.some(a => a.id === prev)) ? prev : (counterAccounts[0]?.id || ''));
-    }, [mainAccounts, counterAccounts, mode]);
+        // Asset accounts are valid counters in BOTH modes, so a Revenue pick
+        // (e.g. Cash on Hand) looks "still valid" after switching to Expense
+        // and would otherwise survive here — the dedicated mode-change effect
+        // below is what actually re-defaults it on a mode switch.
+        setCounterId(prev => (prev && counterAccounts.some(a => a.id === prev)) ? prev : defaultCounterId());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mainAccounts, counterAccounts]);
 
     const amountNum = Math.round((Number(amount) || 0) * 100) / 100;
     const canSave = !isSaving && amountNum > 0 && !!accountId && !!counterId && !!date;
@@ -281,13 +296,22 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         setAmount('');
         setDescription('');
         setDate(todayYmd());
-        setEntryStatus('Posted');
+        setEntryStatus(defaultEntryStatus);
     };
 
-    // Switching between the Revenue and Expense pages abandons an open edit.
+    // Switching between the Revenue and Expense pages abandons an open edit
+    // and re-defaults Status/Paid-From — this component doesn't remount on
+    // that nav (a mode prop change, not a route unmount), so a plain
+    // useState initial value only applies once, to whichever page loaded
+    // first, and Cash on Hand (a valid counter account in BOTH modes) would
+    // otherwise survive a switch into Expense looking "still valid" instead
+    // of re-defaulting to Bank Account (ABA).
     useEffect(() => {
         setEditingEntry(null);
         setEditSimple(true);
+        setEntryStatus(defaultEntryStatus);
+        setCounterId(defaultCounterId());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
     const startEdit = (row: EntryRow) => {
