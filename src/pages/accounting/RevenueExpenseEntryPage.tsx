@@ -256,16 +256,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const [accountId, setAccountId] = useState('');
     const [counterId, setCounterId] = useState('');
     const [amount, setAmount] = useState('');
-    // Expense entries default to Draft (reviewed before posting); Revenue keeps
-    // defaulting straight to Posted, unchanged.
-    const defaultEntryStatus = mode === 'expense' ? 'Draft' : 'Posted';
+    // Both Revenue and Expense entries default to Draft (reviewed before
+    // posting), not straight to Posted.
+    const defaultEntryStatus: 'Posted' | 'Draft' = 'Draft';
     const [entryStatus, setEntryStatus] = useState<'Posted' | 'Draft'>(defaultEntryStatus);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Picks "Bank Account (ABA)" specifically for Expense when it exists,
-    // else the same cash/bank-first pick Revenue already uses.
+    // Picks "Bank Account (ABA)" specifically when it exists, else the same
+    // cash/bank-first pick this page already used as a fallback.
     const defaultCounterId = () => {
-        const aba = mode === 'expense' ? counterAccounts.find(a => a.account_name.trim().toLowerCase() === 'bank account (aba)') : undefined;
+        const aba = counterAccounts.find(a => a.account_name.trim().toLowerCase() === 'bank account (aba)');
         return aba?.id || counterAccounts[0]?.id || '';
     };
 
