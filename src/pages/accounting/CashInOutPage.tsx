@@ -154,6 +154,24 @@ const CashInOutPage: React.FC = () => {
         net: acc.net + r.net, closing: acc.closing + r.closing,
     }), { opening: 0, cashIn: 0, cashOut: 0, net: 0, closing: 0 }), [positionRows]);
 
+    // Every entry's lines, keyed by entry id — used to find each cash line's
+    // contra account(s): the other side(s) of that entry's double entry.
+    const linesByEntry = useMemo(() => {
+        const m = new Map<string, Line[]>();
+        for (const l of allLines) {
+            const arr = m.get(l.entryId);
+            if (arr) arr.push(l); else m.set(l.entryId, [l]);
+        }
+        return m;
+    }, [allLines]);
+
+    const contraOf = (entryId: string, accountId: string): string => {
+        const siblings = (linesByEntry.get(entryId) || []).filter(l => l.accountId !== accountId);
+        if (siblings.length === 0) return '—';
+        const names = Array.from(new Set(siblings.map(l => nameOf.get(l.accountId) || '(Deleted account)')));
+        return names.join(', ');
+    };
+
     // ── Cash Book: chronological transaction list, running balance ──
     const cashBookRows = useMemo(() => {
         let opening = 0;
@@ -162,9 +180,10 @@ const CashInOutPage: React.FC = () => {
         let running = opening;
         return inRange.map(l => {
             running += l.debit - l.credit;
-            return { ...l, accountName: nameOf.get(l.accountId) || '(Deleted account)', balance: running };
+            return { ...l, accountName: nameOf.get(l.accountId) || '(Deleted account)', contra: contraOf(l.entryId, l.accountId), balance: running };
         });
-    }, [scopedCashLines, range, nameOf]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scopedCashLines, range, nameOf, linesByEntry]);
 
     // ── Trend: Cash In / Cash Out per day (or per month for long ranges) ──
     const trendData = useMemo(() => {
@@ -271,8 +290,8 @@ const CashInOutPage: React.FC = () => {
         if (tab === 'book') {
             return {
                 name: 'Cash Book', period,
-                columns: ['Date', 'Entry #', 'Description', 'Account', 'Cash In', 'Cash Out', 'Balance'],
-                rows: cashBookRows.map(r => [r.date, r.entryNumber, r.description || '—', r.accountName, r.debit ? money(r.debit) : '', r.credit ? money(r.credit) : '', money(r.balance)]),
+                columns: ['Date', 'Entry #', 'Description', 'Account', 'Contra', 'Cash In', 'Cash Out', 'Balance'],
+                rows: cashBookRows.map(r => [r.date, r.entryNumber, r.description || '—', r.accountName, r.contra, r.debit ? money(r.debit) : '', r.credit ? money(r.credit) : '', money(r.balance)]),
             };
         }
         if (tab === 'trend') {
@@ -308,7 +327,10 @@ const CashInOutPage: React.FC = () => {
         const t = activeTable();
         const w = window.open('', '_blank', 'width=900,height=700');
         if (!w) return;
-        const body = t.rows.map(r => `<tr>${r.map((c, i) => `<td style="text-align:${i === 0 ? 'left' : 'right'}">${escapeHtml(String(c))}</td>`).join('')}</tr>`).join('');
+        // All tabs' tables are text columns first, numeric columns last — align
+        // by counting the numeric columns back from the end.
+        const numericCols = tab === 'position' ? 5 : tab === 'book' ? 3 : tab === 'trend' ? 3 : 2;
+        const body = t.rows.map(r => `<tr>${r.map((c, i) => `<td style="text-align:${i >= t.columns.length - numericCols ? 'right' : 'left'}">${escapeHtml(String(c))}</td>`).join('')}</tr>`).join('');
         w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${t.name}</title><style>
             body{font-family:Segoe UI,Arial,sans-serif;color:#1a1f36;padding:28px}
             h1{font-size:20px;margin:0}p{color:#64748b;margin:4px 0 20px;font-size:13px}
@@ -432,20 +454,21 @@ const CashInOutPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '720px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    {['Date', 'Entry #', 'Description', 'Account', 'Cash In', 'Cash Out', 'Balance'].map((h, i) => (
-                                        <th key={h} style={{ padding: '10px 16px', textAlign: i >= 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                    {['Date', 'Entry #', 'Description', 'Account', 'Contra', 'Cash In', 'Cash Out', 'Balance'].map((h, i) => (
+                                        <th key={h} style={{ padding: '10px 16px', textAlign: i >= 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {cashBookRows.length === 0 ? (
-                                    <tr><td colSpan={7} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No cash transactions in this range.</td></tr>
+                                    <tr><td colSpan={8} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No cash transactions in this range.</td></tr>
                                 ) : cashBookRows.map((r, i) => (
                                     <tr key={`${r.entryId}-${r.accountId}-${i}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-main)' }}>{r.date}</td>
                                         <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.entryNumber || '—'}</td>
                                         <td style={{ padding: '10px 16px', color: 'var(--color-text-main)' }}>{r.description || '—'}</td>
                                         <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.accountName}</td>
+                                        <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.contra}</td>
                                         <td style={{ padding: '10px 16px', textAlign: 'right' }}>{r.debit ? amountText(r.debit, BLUE) : ''}</td>
                                         <td style={{ padding: '10px 16px', textAlign: 'right' }}>{r.credit ? amountText(r.credit, RED) : ''}</td>
                                         <td style={{ padding: '10px 16px', textAlign: 'right' }}>{amountText(r.balance)}</td>
