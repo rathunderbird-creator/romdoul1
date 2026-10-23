@@ -98,6 +98,8 @@ const CashInOutPage: React.FC = () => {
     );
     const cashIds = useMemo(() => new Set(cashAccounts.map(a => a.id)), [cashAccounts]);
     const nameOf = useMemo(() => new Map(accounts.map(a => [a.id, `${a.account_code} · ${a.account_name}`])), [accounts]);
+    // Cash Book's Account/Contra columns show just the name — no account code.
+    const nameOnly = useMemo(() => new Map(accounts.map(a => [a.id, a.account_name])), [accounts]);
 
     // Every posted line of every entry — flat, with its entry's date/number/
     // description carried along. `allLines` feeds By Source (needs the
@@ -168,7 +170,7 @@ const CashInOutPage: React.FC = () => {
     const contraOf = (entryId: string, accountId: string): string => {
         const siblings = (linesByEntry.get(entryId) || []).filter(l => l.accountId !== accountId);
         if (siblings.length === 0) return '—';
-        const names = Array.from(new Set(siblings.map(l => nameOf.get(l.accountId) || '(Deleted account)')));
+        const names = Array.from(new Set(siblings.map(l => nameOnly.get(l.accountId) || '(Deleted account)')));
         return names.join(', ');
     };
 
@@ -180,10 +182,10 @@ const CashInOutPage: React.FC = () => {
         let running = opening;
         return inRange.map(l => {
             running += l.debit - l.credit;
-            return { ...l, accountName: nameOf.get(l.accountId) || '(Deleted account)', contra: contraOf(l.entryId, l.accountId), balance: running };
+            return { ...l, accountName: nameOnly.get(l.accountId) || '(Deleted account)', contra: contraOf(l.entryId, l.accountId), balance: running };
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scopedCashLines, range, nameOf, linesByEntry]);
+    }, [scopedCashLines, range, nameOnly, linesByEntry]);
 
     // ── Trend: Cash In / Cash Out per day (or per month for long ranges) ──
     const trendData = useMemo(() => {
