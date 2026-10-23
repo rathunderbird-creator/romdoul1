@@ -158,7 +158,7 @@ const CustomerPaymentPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [shippingFilter, setShippingFilter] = useState('All');
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(50);
+    const [pageSize, setPageSize] = useState(200);
 
     // This page's own dedicated data: every retail Payment/Deposit transaction in
     // the range, fetched completely (paged past the API row cap) so the totals
@@ -1425,7 +1425,7 @@ const CustomerPaymentPage: React.FC = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
                                 <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}>
-                                    {[50, 100, 200, 500, 1000, 2000, 3000].map(n => <option key={n} value={n}>{n}</option>)}
+                                    {[200, 500, 1000, 2000, 3000].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </div>
                         </div>
