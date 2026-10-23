@@ -1474,9 +1474,17 @@ const Orders: React.FC = () => {
                     case 'status':
                         query = query.ilike('shipping_status', `%${esc}%`);
                         break;
-                    case 'payStatus':
-                        query = query.ilike('payment_status', `%${esc}%`);
+                    case 'payStatus': {
+                        // payment_status has no NOT NULL/DEFAULT in the DB; a null row
+                        // falls back to displaying 'Unpaid' (see the render case below),
+                        // so a filter whose text would also match that fallback label
+                        // must match null rows too, or it misses them.
+                        const matchesUnpaidFallback = 'unpaid'.includes(v.toLowerCase());
+                        query = matchesUnpaidFallback
+                            ? query.or(`payment_status.ilike.%${esc}%,payment_status.is.null`)
+                            : query.ilike('payment_status', `%${esc}%`);
                         break;
+                    }
                     case 'shippingCo':
                         query = query.ilike('shipping_company', `%${esc}%`);
                         break;
@@ -1487,29 +1495,63 @@ const Orders: React.FC = () => {
                         query = query.ilike('tracking_number', `%${esc}%`);
                         break;
                     case 'items': {
-                        let itemQuery = supabase.from('sale_items').select('sale_id');
-                        const numVal = Number(v.trim());
-                        if (!isNaN(numVal) && v.trim() !== '') {
-                            itemQuery = itemQuery.or(`name.ilike.%${esc}%,quantity.eq.${numVal}`);
-                        } else {
-                            itemQuery = itemQuery.ilike('name', `%${esc}%`);
+                        // The old single limit(300)+slice(0,200) silently dropped any
+                        // match beyond the cap with no notice, while the Items cell
+                        // shows every item on an order regardless — a true match could
+                        // sit past the cap and never surface. Mirror the paginated,
+                        // ordered, notice-on-truncation scan the main search bar's
+                        // item-match path already uses (above).
+                        const numVal = Number(v);
+                        const itemFilterOr = (!isNaN(numVal) && v !== '')
+                            ? `name.ilike.%${esc}%,quantity.eq.${numVal}`
+                            : `name.ilike.%${esc}%`;
+                        const colIds = new Set<string>();
+                        let colTruncated = false;
+                        const COL_MAX_SCAN = 10000;
+                        for (let fromRow = 0; !colTruncated; fromRow += 1000) {
+                            if (fromRow >= COL_MAX_SCAN) { colTruncated = true; break; }
+                            const { data: colItemMatches, error: colItemError } = await supabase
+                                .from('sale_items')
+                                .select('sale_id')
+                                .or(itemFilterOr)
+                                .order('sale_id', { ascending: false })
+                                .range(fromRow, fromRow + 999);
+                            if (colItemError) throw colItemError;
+                            for (const m of colItemMatches || []) {
+                                colIds.add(String(m.sale_id));
+                                if (colIds.size > SEARCH_ID_CAP) { colTruncated = true; break; }
+                            }
+                            if (!colItemMatches || colItemMatches.length < 1000) break;
                         }
-                        const { data: colItemMatches } = await itemQuery.limit(300);
-
-                        if (colItemMatches && colItemMatches.length > 0) {
-                            const ids = Array.from(new Set(colItemMatches.map(m => m.sale_id))).slice(0, 200);
-                            query = query.in('id', ids);
+                        const matchingColIds = Array.from(colIds).slice(0, SEARCH_ID_CAP);
+                        if (colTruncated && truncationNoticeRef.current !== `items-filter:${v}`) {
+                            truncationNoticeRef.current = `items-filter:${v}`;
+                            showToast(`The Items filter matches more than ${SEARCH_ID_CAP} orders — showing the newest ${SEARCH_ID_CAP}. Narrow the date range to see them all.`, 'info');
+                        }
+                        if (matchingColIds.length > 0) {
+                            query = query.in('id', matchingColIds);
                         } else {
                             query = query.eq('id', 'NO_MATCH');
                         }
                         break;
                     }
-                    case 'total':
-                        if (!isNaN(Number(v))) query = query.eq('total', Number(v));
+                    case 'total': {
+                        // The cell displays total.toFixed(2); an exact eq() on the raw
+                        // value misses a row whose unrounded total has more than 2
+                        // decimals (e.g. a fractional-percentage discount) and so no
+                        // longer equals the figure its own cell shows. A half-cent band
+                        // matches whatever rounds to the typed 2-decimal value.
+                        const target = Number(v);
+                        if (!isNaN(target)) query = query.gte('total', target - 0.005).lte('total', target + 0.005);
                         break;
-                    case 'received':
-                        if (!isNaN(Number(v))) query = query.eq('amount_received', Number(v));
+                    }
+                    case 'received': {
+                        // Same rounding mismatch as 'total' — amount_received can carry
+                        // more than 2 decimals while the Received cell rounds for display.
+                        const target = Number(v);
+                        if (!isNaN(target)) query = query.gte('amount_received', target - 0.005).lte('amount_received', target + 0.005);
                         break;
+                    }
                     case 'balance': {
                         // Balance is computed (orderBalance), not a DB column — the old
                         // eq('total', v) matched the wrong orders. Scan the money columns
