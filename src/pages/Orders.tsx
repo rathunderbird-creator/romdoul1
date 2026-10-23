@@ -1431,6 +1431,13 @@ const Orders: React.FC = () => {
                                 colConds.push(`${col}.lte.${isPlainDate ? endStr : localDayBound(endStr, 'end').toISOString()}`);
                             }
                             if (colConds.length > 0) {
+                                // The column only falls back to deposit_date when
+                                // settle_date is unset (render case below) — once an
+                                // order has settled, its old deposit_date is no longer
+                                // what's displayed, so gate this branch the same way or
+                                // it matches a stale deposit date on an order that has
+                                // since settled on a different day.
+                                if (isPlainDate) colConds.push('settle_date.is.null');
                                 orGroups.push(colConds.length > 1 ? `and(${colConds.join(',')})` : colConds[0]);
                             }
                         }
