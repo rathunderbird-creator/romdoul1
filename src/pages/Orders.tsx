@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, Eye, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
 import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
@@ -3549,12 +3549,6 @@ const Orders: React.FC = () => {
                                                                             >
                                                                                 <Printer size={16} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                                                             </button>
-                                                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                                <Copy size={16} color="var(--color-text-secondary)" />
-                                                                            </button>
-                                                                            <button onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                                                                                <Eye size={16} color="var(--color-text-secondary)" />
-                                                                            </button>
                                                                             {hasPermission('manage_orders') && (
                                                                                 <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" disabled={isOrderLocked(order)} title={isOrderLocked(order) ? `${order.shipping?.status} orders cannot be edited` : 'Edit Order'} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: isOrderLocked(order) ? 'not-allowed' : 'pointer', opacity: isOrderLocked(order) ? 0.35 : 1 }}>
                                                                                     <Edit size={16} color="var(--color-text-secondary)" />
@@ -3563,7 +3557,16 @@ const Orders: React.FC = () => {
                                                                         </div>
                                                                     </td>
                                                                 );
-                                                            case 'date': return <td key={colId} style={cellStyle}>{new Date(order.date).toLocaleDateString()}</td>;
+                                                            case 'date': return (
+                                                                <td
+                                                                    key={colId}
+                                                                    style={{ ...cellStyle, cursor: 'pointer', color: 'var(--color-primary)' }}
+                                                                    title="View Details"
+                                                                    onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }}
+                                                                >
+                                                                    {new Date(order.date).toLocaleDateString()}
+                                                                </td>
+                                                            );
                                                             case 'customer': {
                                                                 const orderPhone = String(order.customer?.phone || '').trim();
                                                                 const isScammer = blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(orderPhone));
