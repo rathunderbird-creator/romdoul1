@@ -635,7 +635,20 @@ const CustomerPaymentPage: React.FC = () => {
 
     const filteredPayments = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();
+        // The date range is applied server-side at fetch time, but Post Now's
+        // moveTransactionDay patches a row's date locally (no refetch) when it
+        // corrects the payment date — re-check the range here too, or a row
+        // moved outside it stays visible, showing a date that visibly
+        // contradicts the active filter, until the next refresh.
+        const startMs = dateRange.start ? parseDay(dateRange.start).getTime() : null;
+        const endMs = dateRange.end ? parseDay(addDays(dateRange.end, 1)).getTime() : null;
         return sortedPayments.filter(r => {
+            if (startMs !== null || endMs !== null) {
+                const t = parseDate(r.date).getTime();
+                if (isNaN(t)) return false;
+                if (startMs !== null && t < startMs) return false;
+                if (endMs !== null && t >= endMs) return false;
+            }
             if (typeFilter === 'Paid' && isDepositRow(r)) return false;
             if (typeFilter === 'Deposit' && !isDepositRow(r)) return false;
             if (shippingFilter !== 'All' && (r.shipping_co || '') !== shippingFilter) return false;
@@ -644,7 +657,7 @@ const CustomerPaymentPage: React.FC = () => {
             return [r.description, r.customer_phone, r.shipping_co, r.pay_by, r.reference, r.notes]
                 .some(v => (v || '').toLowerCase().includes(term));
         });
-    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf]);
+    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange]);
 
     const stats = useMemo(() => {
         const s = { total: 0, count: 0, paid: 0, paidCount: 0, deposit: 0, depositCount: 0, draft: 0, draftCount: 0 };
