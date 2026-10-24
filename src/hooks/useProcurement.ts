@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Supplier, PurchaseOrder, PurchaseOrderItem } from '../types';
+import type { Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../utils/dateRange';
@@ -248,6 +248,28 @@ export const useProcurement = () => {
         } catch (error: any) {
             console.error('Failed to fetch purchase orders:', error);
             showToast('Failed to fetch purchase orders: ' + error.message, 'error');
+        } finally {
+            if (!silent) setIsLoading(false);
+        }
+    }, [showToast]);
+
+    const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([]);
+
+    const fetchSupplierPayments = useCallback(async (silent = false) => {
+        if (!silent) setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('supplier_payments')
+                .select('*, supplier:suppliers(*)')
+                // payment_date is a plain date — same tie-break as Purchase Orders.
+                .order('payment_date', { ascending: false })
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setSupplierPayments(data || []);
+        } catch (error: any) {
+            console.error('Failed to fetch supplier payments:', error);
+            showToast('Failed to fetch supplier payments: ' + error.message, 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -548,12 +570,13 @@ export const useProcurement = () => {
 
             showToast('Payment recorded successfully', 'success');
             await fetchPurchaseOrders(true);
+            await fetchSupplierPayments(true);
         } catch (error: any) {
             console.error('Failed to record payment:', error);
             showToast('Failed to record payment: ' + error.message, 'error');
             throw error;
         }
-    }, [showToast, fetchPurchaseOrders]);
+    }, [showToast, fetchPurchaseOrders, fetchSupplierPayments]);
 
     // Supplier Bills: billing a delivery means giving its already-Received PO
     // a reference/due date — never savePurchaseOrder(), whose update path
@@ -631,12 +654,13 @@ export const useProcurement = () => {
             await supabase.from('transactions').delete().like('description', marker);
             showToast('Payment deleted successfully', 'success');
             await fetchPurchaseOrders(true);
+            await fetchSupplierPayments(true);
         } catch (error: any) {
             console.error('Failed to delete payment:', error);
             showToast('Failed to delete payment: ' + error.message, 'error');
             throw error;
         }
-    }, [showToast, fetchPurchaseOrders]);
+    }, [showToast, fetchPurchaseOrders, fetchSupplierPayments]);
 
     return {
         suppliers,
@@ -651,6 +675,8 @@ export const useProcurement = () => {
         saveBillReference,
         clearBillReference,
         recordSupplierPayment,
-        deleteSupplierPayment
+        deleteSupplierPayment,
+        supplierPayments,
+        fetchSupplierPayments
     };
 };
