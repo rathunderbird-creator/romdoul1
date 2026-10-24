@@ -3633,7 +3633,7 @@ const Orders: React.FC = () => {
                                                                 const orderPhone = String(order.customer?.phone || '').trim();
                                                                 const isScammer = blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(orderPhone));
                                                                 return (
-                                                                    <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
+                                                                    <td key={colId} style={cellStyle}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                             {order.customer?.name}
                                                                             {isScammer && <AlertTriangle size={14} color="#EF4444" />}
@@ -3662,7 +3662,7 @@ const Orders: React.FC = () => {
                                                                         </div>
                                                                     </td>
                                                                 );
-                                                            case 'total': return <td key={colId} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
+                                                            case 'total': return <td key={colId} style={{ ...cellStyle, textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
                                                             case 'payBy': {
                                                                 const PaymentIcon = getPaymentIcon(order.paymentMethod);
                                                                 return <td key={colId} style={cellStyle}>
@@ -3677,8 +3677,7 @@ const Orders: React.FC = () => {
                                                                 textAlign: 'right',
                                                                 // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
                                                                 // otherwise-cancelled order); red = outstanding.
-                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee') ? '#2563EB' : '#DC2626',
-                                                                fontWeight: 'bold'
+                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee') ? '#2563EB' : '#DC2626'
                                                             }}>${(order.paymentStatus === 'Deposit'
                                                                 ? (order.depositAmount || order.amountReceived || 0)
                                                                 : (order.amountReceived ?? order.total)).toFixed(2)}</td>;
@@ -3730,7 +3729,7 @@ const Orders: React.FC = () => {
                                                             case 'balance': {
                                                                 const balance = orderBalance(order);
                                                                 return (
-                                                                    <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
+                                                                    <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', textAlign: 'right' }}>
                                                                         ${balance.toFixed(2)}
                                                                     </td>
                                                                 );
@@ -3877,14 +3876,14 @@ const Orders: React.FC = () => {
                                                                                     {row && (
                                                                                         <span
                                                                                             title={row.error ? `Last check failed: ${row.error}` : (eventsTip || row.last_status || '')}
-                                                                                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: row.error ? '#B45309' : (row.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
+                                                                                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: row.error ? '#B45309' : (row.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
                                                                                         >
                                                                                             {row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`}
                                                                                             <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>
                                                                                         </span>
                                                                                     )}
                                                                                     {url && (
-                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', fontWeight: 700, whiteSpace: 'nowrap', textDecoration: 'none' }}>
+                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
                                                                                             Track ↗
                                                                                         </a>
                                                                                     )}
@@ -3947,7 +3946,7 @@ const Orders: React.FC = () => {
                                                                 return (
                                                                     <td key={colId} style={cellStyle}>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', fontSize: '11px', lineHeight: '1.2' }}>
-                                                                            <span style={{ fontWeight: 500 }}>{order.lastEditedBy || '-'}</span>
+                                                                            <span>{order.lastEditedBy || '-'}</span>
                                                                             {order.lastEditedAt && (
                                                                                 <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>
                                                                                     {new Date(order.lastEditedAt).toLocaleString()}
