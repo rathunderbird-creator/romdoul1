@@ -14,7 +14,7 @@
 //   receipt entry Posted, amount_paid > 0             -> 'Partially Paid'
 //   receipt entry Posted, nothing paid yet             -> 'Posted'
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Eye, Printer, CheckCircle2, Pencil, Trash2, DollarSign, Download, RefreshCw, FileText } from 'lucide-react';
+import { Plus, Search, Eye, Printer, CheckCircle2, Pencil, Trash2, DollarSign, Download, RefreshCw, FileText, HelpCircle } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -210,6 +210,7 @@ const SupplierBillsPage = () => {
 
     // ── Post (Draft -> flips the existing receipt entry to Posted) ──
     const [postingId, setPostingId] = useState<string | null>(null);
+    const [confirmPostPO, setConfirmPostPO] = useState<PurchaseOrder | null>(null);
     const postBill = async (po: PurchaseOrder) => {
         setPostingId(po.id);
         try {
@@ -452,7 +453,7 @@ const SupplierBillsPage = () => {
                         const outstanding = (po.total_amount || 0) - (po.amount_paid || 0);
                         const actions = [
                             { icon: Eye, label: 'View', color: '#6366F1', onClick: () => openView(po) },
-                            ...(needsPosting(po) ? [{ icon: CheckCircle2, label: 'Post', color: '#4C5FD0', onClick: () => postBill(po) }] : []),
+                            ...(needsPosting(po) ? [{ icon: CheckCircle2, label: 'Post', color: '#4C5FD0', onClick: () => setConfirmPostPO(po) }] : []),
                             ...(status === 'Draft' ? [
                                 { icon: Pencil, label: 'Edit', color: '#2563EB', onClick: () => openEditBill(po) },
                                 { icon: Trash2, label: 'Delete', color: '#EF4444', onClick: () => handleUnbill(po) },
@@ -509,7 +510,7 @@ const SupplierBillsPage = () => {
                                                     <button onClick={() => openView(po)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
                                                     <button onClick={() => printBill(po)} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
                                                     {needsPosting(po) && (
-                                                        <button onClick={() => postBill(po)} disabled={postingId === po.id} title="Post" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === po.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === po.id ? 0.6 : 1 }}>
+                                                        <button onClick={() => setConfirmPostPO(po)} disabled={postingId === po.id} title="Post" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === po.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === po.id ? 0.6 : 1 }}>
                                                             {postingId === po.id ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={15} />}
                                                         </button>
                                                     )}
@@ -644,7 +645,7 @@ const SupplierBillsPage = () => {
                                 <Printer size={13} /> Print
                             </button>
                             {needsPosting(viewPO) && (
-                                <button onClick={() => postBill(viewPO)} disabled={postingId === viewPO.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPO.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPO.id ? 0.6 : 1 }}>
+                                <button onClick={() => setConfirmPostPO(viewPO)} disabled={postingId === viewPO.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPO.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPO.id ? 0.6 : 1 }}>
                                     <CheckCircle2 size={13} /> {postingId === viewPO.id ? 'Posting…' : 'Post'}
                                 </button>
                             )}
@@ -666,6 +667,35 @@ const SupplierBillsPage = () => {
                     remainingBalance={viewOutstanding}
                     supplierName={viewPO.supplier?.name || supplierById.get(viewPO.supplier_id)?.name}
                 />
+            )}
+
+            {confirmPostPO && (
+                <div onClick={() => setConfirmPostPO(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(76,95,208,0.12)', color: '#4c5fd0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <HelpCircle size={22} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>Are you sure?</h3>
+                                <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
+                                    Post {confirmPostPO.invoice_number || poShortId(confirmPostPO)}? This creates the payable.
+                                </p>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                            <button onClick={() => setConfirmPostPO(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => { const po = confirmPostPO; setConfirmPostPO(null); postBill(po); }}
+                                style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                                Post
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
