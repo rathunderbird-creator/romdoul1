@@ -191,24 +191,25 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         />
                     )}
                 </div>
-                {!finalizeMode && (
-                    <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Method <span style={{ color: 'red' }}>*</span></label>
-                        <select
-                            value={selectedMethod}
-                            onChange={(e) => setSelectedMethod(e.target.value)}
-                            style={{
-                                width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                                background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                                outline: 'none', boxSizing: 'border-box'
-                            }}
-                        >
-                            {paymentMethods.map(method => (
-                                <option key={method} value={method}>{method}</option>
-                            ))}
-                        </select>
-                    </div>
-                )}
+                {/* Shown in every mode, including finalizeMode — a finalized receipt
+                    still has a payment method (how the money actually arrived),
+                    and the caller may need to correct it, not just view it. */}
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Method <span style={{ color: 'red' }}>*</span></label>
+                    <select
+                        value={selectedMethod}
+                        onChange={(e) => setSelectedMethod(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none', boxSizing: 'border-box'
+                        }}
+                    >
+                        {paymentMethods.map(method => (
+                            <option key={method} value={method}>{method}</option>
+                        ))}
+                    </select>
+                </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Reference</label>
                     <input
