@@ -1297,10 +1297,10 @@ const CustomerPaymentPage: React.FC = () => {
             {/* Table */}
             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', whiteSpace: 'nowrap' }}>
                         <thead>
-                            <tr style={{ background: 'var(--color-bg)' }}>
-                                <th style={{ ...thStyle, width: '34px', padding: '10px 8px 10px 12px' }}>
+                            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                <th style={{ ...thStyle, width: '34px', padding: '14px 8px 14px 20px' }}>
                                     <input
                                         type="checkbox"
                                         checked={allPageSelected}
@@ -1355,7 +1355,7 @@ const CustomerPaymentPage: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                pageRows.map((r, idx) => {
+                                pageRows.map((r) => {
                                     const known = ledgerReady || postedIds.has(r.id);
                                     const status = statusOf(r.id);
                                     const posting = postingIds.has(r.id);
@@ -1364,8 +1364,8 @@ const CustomerPaymentPage: React.FC = () => {
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
                                     const PaymentIcon = getPaymentIcon(r.pay_by);
                                     return (
-                                        <tr key={r.id} style={{ background: idx % 2 === 1 ? 'var(--color-bg)' : 'transparent' }}>
-                                            <td style={{ ...tdStyle, padding: '10px 8px 10px 12px' }}>
+                                        <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
+                                            <td style={{ ...tdStyle, padding: '14px 8px 14px 20px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedIds.has(r.id)}
@@ -1492,14 +1492,15 @@ const CustomerPaymentPage: React.FC = () => {
     );
 };
 
+// Same style tokens as Journal Entries' table — generous padding, non-uppercase
+// 600-weight headers, border/background carried on the row rather than per-cell.
 const thStyle: React.CSSProperties = {
-    padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700,
-    textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)',
-    borderBottom: '1px solid var(--color-border)'
+    padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: 600,
+    textTransform: 'none', color: 'var(--color-text-secondary)'
 };
 
 const tdStyle: React.CSSProperties = {
-    padding: '10px 12px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-main)'
+    padding: '14px 20px', color: 'var(--color-text-main)'
 };
 
 export default CustomerPaymentPage;
