@@ -295,7 +295,7 @@ const SupplierPaymentsPage: React.FC = () => {
                             <tbody>
                                 {filteredPayments.map(p => (
                                     <tr key={p.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        <td style={{ padding: '12px 20px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 600 }}>{referenceOf.get(p.id) || '—'}</td>
+                                        <td style={{ padding: '12px 20px', fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 600 }}>{referenceOf.get(p.id) || '—'}</td>
                                         <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(p.payment_date)}</td>
                                         <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{p.supplier?.name || '—'}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}</td>
@@ -361,7 +361,7 @@ const SupplierPaymentsPage: React.FC = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '8px' }}>
                             <span style={{ color: 'var(--color-text-secondary)' }}>Reference</span>
-                            <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{referenceOf.get(viewPayment.id) || '—'}</span>
+                            <span style={{ fontWeight: 600 }}>{referenceOf.get(viewPayment.id) || '—'}</span>
                             <span style={{ color: 'var(--color-text-secondary)' }}>Date</span>
                             <span>{fmtDate(viewPayment.payment_date)}</span>
                             <span style={{ color: 'var(--color-text-secondary)' }}>Supplier</span>

@@ -132,7 +132,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
                                         onChange={e => setTemplateDrafts(prev => ({ ...prev, [item]: e.target.value }))}
                                         onBlur={() => commitTemplate(item)}
                                         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                                        style={{ width: '100%', marginTop: '6px', padding: '6px 8px', fontSize: '12px', fontFamily: 'monospace', color: saved ? 'var(--color-text)' : 'var(--color-text-secondary)' }}
+                                        style={{ width: '100%', marginTop: '6px', padding: '6px 8px', fontSize: '12px', color: saved ? 'var(--color-text)' : 'var(--color-text-secondary)' }}
                                     />
                                 )}
                             </div>

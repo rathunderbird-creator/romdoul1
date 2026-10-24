@@ -161,8 +161,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
                             padding: '16px',
                             textAlign: 'center',
                             fontSize: '24px',
-                            marginBottom: '24px',
-                            fontFamily: 'monospace'
+                            marginBottom: '24px'
                         }}
                     />
 

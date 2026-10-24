@@ -908,7 +908,7 @@ const PurchaseOrdersPage = () => {
                                 style={{ padding: '10px 12px 10px 14px', borderLeft: `4px solid ${statusCfg.color}` }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
+                                    <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
                                         {po.invoice_number || `PO-${po.id.substring(0, 8).toUpperCase()}`}
                                     </span>
                                     <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
@@ -1002,7 +1002,7 @@ const PurchaseOrdersPage = () => {
                                 const paidPercent = po.total_amount > 0 ? Math.min(100, Math.round(((po.amount_paid || 0) / po.total_amount) * 100)) : 0;
                                 return (
                                     <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined }} className="hover-highlight">
-                                        <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', fontFamily: 'monospace' }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)' }}>
                                             PO-{po.id.substring(0, 8).toUpperCase()}
                                         </td>
                                         <td style={{ padding: '8px 12px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
@@ -1014,7 +1014,7 @@ const PurchaseOrdersPage = () => {
                                         <td style={{ padding: '8px 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                             {po.expected_delivery_date ? new Date(po.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}
                                         </td>
-                                        <td style={{ padding: '8px 12px', fontSize: '13px', color: po.invoice_number ? 'var(--color-text)' : 'var(--color-text-muted)', fontFamily: po.invoice_number ? 'monospace' : undefined, fontWeight: po.invoice_number ? 500 : 400 }}>
+                                        <td style={{ padding: '8px 12px', fontSize: '13px', color: po.invoice_number ? 'var(--color-text)' : 'var(--color-text-muted)', fontWeight: po.invoice_number ? 500 : 400 }}>
                                             {po.invoice_number || '—'}
                                         </td>
                                         <td style={{ padding: '8px 12px', fontSize: '13px' }}>
@@ -1297,7 +1297,7 @@ const PurchaseOrdersPage = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
-                                        <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontFamily: 'monospace' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                                        <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Notes</label>
@@ -1423,7 +1423,7 @@ const PurchaseOrdersPage = () => {
                                         <FileText size={20} />
                                     </div>
                                     <div>
-                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, fontFamily: 'monospace' }}>PO-{viewPO.id.substring(0, 8).toUpperCase()}</h2>
+                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>PO-{viewPO.id.substring(0, 8).toUpperCase()}</h2>
                                         <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{viewPO.supplier?.name || 'Unknown supplier'}</p>
                                     </div>
                                 </div>
@@ -1443,7 +1443,7 @@ const PurchaseOrdersPage = () => {
                                     <DetailItem label="Order Date" value={viewPO.order_date ? new Date(viewPO.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
                                     <DetailItem label="Expected Delivery" value={viewPO.expected_delivery_date ? new Date(viewPO.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
                                     <DetailItem label="Payment Due" value={viewPO.payment_due_date ? new Date(viewPO.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} valueColor={isOverdue ? '#ef4444' : undefined} />
-                                    <DetailItem label="Invoice No" value={viewPO.invoice_number || '—'} mono={!!viewPO.invoice_number} />
+                                    <DetailItem label="Invoice No" value={viewPO.invoice_number || '—'} />
                                     {viewPO.notes && <DetailItem label="Notes" value={viewPO.notes} span />}
                                 </div>
 
@@ -1802,10 +1802,10 @@ const PurchaseOrdersPage = () => {
 };
 
 // Helpers for the View Details modal
-const DetailItem: React.FC<{ label: string; value: React.ReactNode; valueColor?: string; mono?: boolean; span?: boolean }> = ({ label, value, valueColor, mono, span }) => (
+const DetailItem: React.FC<{ label: string; value: React.ReactNode; valueColor?: string; span?: boolean }> = ({ label, value, valueColor, span }) => (
     <div style={span ? { gridColumn: '1 / -1' } : undefined}>
         <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>{label}</div>
-        <div style={{ fontSize: '13px', fontWeight: 500, color: valueColor || 'var(--color-text)', fontFamily: mono ? 'monospace' : undefined }}>{value}</div>
+        <div style={{ fontSize: '13px', fontWeight: 500, color: valueColor || 'var(--color-text)' }}>{value}</div>
     </div>
 );
 

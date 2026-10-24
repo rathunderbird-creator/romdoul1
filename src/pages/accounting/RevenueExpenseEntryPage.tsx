@@ -820,7 +820,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </div>
                     <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>
                         {editingEntry ? `Edit ${cfg.title} Entry` : `New ${cfg.title} Entry`}
-                        {editingEntry && <span style={{ marginLeft: '10px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)' }}>{editingEntry.ref || editingEntry.entryId}</span>}
+                        {editingEntry && <span style={{ marginLeft: '10px', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)' }}>{editingEntry.ref || editingEntry.entryId}</span>}
                     </div>
                 </div>
 
@@ -1030,7 +1030,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                             />
                                         )}
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
-                                        {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
+                                        {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
                                         {r.isSystem ? <SystemChip /> : <ManualChip />}
                                     </span>
@@ -1099,7 +1099,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                             </td>
                                         )}
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
-                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>{r.ref || '—'}</td>
+                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontSize: '12px' }}>{r.ref || '—'}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{accountLink(r.accountName, r.accountIds)}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{accountLink(r.counterName, r.counterIds)}</td>
@@ -1217,7 +1217,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
-                                <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace', fontSize: '12px' }}>{viewEntry.ref || viewEntry.entryId}</span>
+                                <span style={{ color: 'var(--color-text-main)', fontSize: '12px' }}>{viewEntry.ref || viewEntry.entryId}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{viewEntry.date}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>

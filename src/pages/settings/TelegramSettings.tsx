@@ -301,7 +301,7 @@ const TelegramSettings: React.FC = () => {
                                     }}
                                     placeholder="Leave empty to use the default message format."
                                     className="search-input"
-                                    style={{ width: '100%', padding: '12px', minHeight: '150px', resize: 'vertical', fontFamily: 'monospace', fontSize: '13px' }}
+                                    style={{ width: '100%', padding: '12px', minHeight: '150px', resize: 'vertical', fontSize: '13px' }}
                                 />
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
                                     <button

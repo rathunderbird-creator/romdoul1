@@ -180,7 +180,7 @@ const AccountsPayablePage: React.FC = () => {
                                             return (
                                                 <div key={po.id} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                                        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-main)' }}>{po.invoice_number || `PO-${po.id.slice(0, 8)}`}</span>
+                                                        <span style={{ fontSize: '12px', color: 'var(--color-text-main)' }}>{po.invoice_number || `PO-${po.id.slice(0, 8)}`}</span>
                                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{po.order_date ? new Date(po.order_date).toLocaleDateString() : '—'}</span>
                                                     </div>
                                                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '5px 0' }}>
@@ -216,7 +216,7 @@ const AccountsPayablePage: React.FC = () => {
                                                     return (
                                                         <tr key={po.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                                                             <td style={tdStyle}>
-                                                                <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                                                                <span style={{ fontSize: '12px' }}>
                                                                     {po.invoice_number || `PO-${po.id.slice(0, 8)}`}
                                                                 </span>
                                                             </td>

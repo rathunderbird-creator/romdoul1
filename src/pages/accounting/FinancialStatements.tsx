@@ -380,7 +380,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                         title={r.id ? 'View in General Ledger' : undefined}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: i === rows.length - 1 ? 'none' : '1px solid var(--color-border)', fontSize: '14px', cursor: r.id ? 'pointer' : 'default' }}
                     >
-                        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-secondary)', width: '44px', flexShrink: 0 }}>{r.code}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', width: '44px', flexShrink: 0 }}>{r.code}</span>
                         <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
                         {compare && <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{loading ? '…' : fmt(r.prev || 0)}</span>}
                         {amountText(r.amount)}
@@ -606,7 +606,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                                         title="View in General Ledger"
                                         style={{ borderBottom: '1px solid var(--color-border)', background: i % 2 ? 'rgba(0,0,0,0.015)' : 'transparent', cursor: 'pointer' }}
                                     >
-                                        <td style={{ padding: '10px 20px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.code}</td>
+                                        <td style={{ padding: '10px 20px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.code}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{r.name}</td>
                                         <td style={{ padding: '10px 20px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.type}</td>
                                         <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{loading ? '…' : r.debit ? fmt(r.debit) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}</td>

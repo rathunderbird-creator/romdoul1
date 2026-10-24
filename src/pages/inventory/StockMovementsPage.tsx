@@ -856,7 +856,7 @@ const StockMovementsPage: React.FC = () => {
                                                 );
                                             })()}
                                             <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--color-text-secondary)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{record.reference_id || record.note || '-'}</span>
+                                                <span style={{ fontSize: '12px' }}>{record.reference_id || record.note || '-'}</span>
                                             </td>
                                         </tr>
                                     );
@@ -1084,7 +1084,7 @@ const StockMovementsPage: React.FC = () => {
                                     <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Reference & Notes</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <DetailField label="Reference ID" value={detailRecord.reference_id || '-'} mono />
+                                    <DetailField label="Reference ID" value={detailRecord.reference_id || '-'} />
                                     <DetailField label="Created By" value={detailRecord.created_by || '-'} />
                                 </div>
                                 {detailRecord.note && (
@@ -1120,10 +1120,10 @@ const StockMovementsPage: React.FC = () => {
 };
 
 /* Small helper component for detail modal fields */
-const DetailField: React.FC<{ label: string; value: React.ReactNode; mono?: boolean }> = ({ label, value, mono }) => (
+const DetailField: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
     <div>
         <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>{label}</div>
-        <div style={{ fontSize: '13px', color: 'var(--color-text)', fontWeight: 500, fontFamily: mono ? 'monospace' : undefined }}>{value}</div>
+        <div style={{ fontSize: '13px', color: 'var(--color-text)', fontWeight: 500 }}>{value}</div>
     </div>
 );
 

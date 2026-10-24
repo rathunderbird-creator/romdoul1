@@ -664,7 +664,7 @@ const JournalEntriesPage = () => {
                             return (
                                 <div key={entry.id} style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
-                                        <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
+                                        <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fmtDate(entry.date)}</span>
                                     </div>
                                     <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 6px', fontWeight: 500 }}>
@@ -720,7 +720,7 @@ const JournalEntriesPage = () => {
                                         <td style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
                                             {fmtDate(entry.date)}
                                         </td>
-                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
+                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-secondary)', fontSize: '12px', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
                                             {displayIdOf(entry)}
                                         </td>
                                         <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-main)', fontWeight: '500', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.description || ''}>
@@ -829,7 +829,7 @@ const JournalEntriesPage = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
-                                <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace', fontSize: '12px' }}>{displayIdOf(viewEntry)}</span>
+                                <span style={{ color: 'var(--color-text-main)', fontSize: '12px' }}>{displayIdOf(viewEntry)}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewEntry.date)}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>

@@ -575,7 +575,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                 style={{ padding: '10px 12px 10px 14px', borderLeft: `4px solid ${oc.color}`, opacity: o.status === 'Cancelled' ? 0.55 : 1 }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
+                                    <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-text)' }}>
                                         {o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`}
                                     </span>
                                     <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
@@ -669,7 +669,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                 const paidPercent = (o.total_amount || 0) > 0 ? Math.min(100, Math.round(((o.amount_paid || 0) / (o.total_amount || 1)) * 100)) : 0;
                                 return (
                                     <tr key={o.id} className="hover-highlight" style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.2s ease', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined, opacity: o.status === 'Cancelled' ? 0.5 : 1 }}>
-                                        <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: 700, color: 'var(--color-text)' }}>{o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`}</td>
+                                        <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--color-text)' }}>{o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`}</td>
                                         <td style={tdStyle}>
                                             <div style={{ fontWeight: 500 }}>{o.customer_name}</div>
                                             {o.customer_phone && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{o.customer_phone}</div>}
@@ -858,7 +858,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <label style={fieldLabel}>Invoice Number</label>
-                                        <input style={{ ...fieldInput, fontFamily: 'monospace' }} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="e.g. WS-2026-001" />
+                                        <input style={fieldInput} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="e.g. WS-2026-001" />
                                     </div>
                                     <div>
                                         <label style={fieldLabel}>Notes</label>
@@ -957,7 +957,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                         <ShoppingCart size={20} />
                                     </div>
                                     <div>
-                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, fontFamily: 'monospace' }}>{viewOrder.invoice_number || `WO-${viewOrder.id.slice(0, 8).toUpperCase()}`}</h2>
+                                        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>{viewOrder.invoice_number || `WO-${viewOrder.id.slice(0, 8).toUpperCase()}`}</h2>
                                         <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{viewOrder.customer_name}{viewOrder.customer_phone ? ` · ${viewOrder.customer_phone}` : ''}</p>
                                     </div>
                                 </div>

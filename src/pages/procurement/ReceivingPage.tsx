@@ -348,7 +348,7 @@ const ReceivingPage: React.FC = () => {
                                     const status = receiptStatusOf(po);
                                     return (
                                         <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 20px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 600 }}>{referenceOf.get(po.id) || '—'}</td>
+                                            <td style={{ padding: '12px 20px', fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 600 }}>{referenceOf.get(po.id) || '—'}</td>
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(receiptDateOf(po))}</td>
                                             <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{po.supplier?.name || '—'}</td>
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)' }}>{warehouseName}</td>
@@ -411,7 +411,7 @@ const ReceivingPage: React.FC = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '8px' }}>
                             <span style={{ color: 'var(--color-text-secondary)' }}>Reference</span>
-                            <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{referenceOf.get(viewPO.id) || '—'}</span>
+                            <span style={{ fontWeight: 600 }}>{referenceOf.get(viewPO.id) || '—'}</span>
                             <span style={{ color: 'var(--color-text-secondary)' }}>Date</span>
                             <span>{fmtDate(receiptDateOf(viewPO))}</span>
                             <span style={{ color: 'var(--color-text-secondary)' }}>Supplier</span>
