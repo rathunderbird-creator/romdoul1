@@ -3480,7 +3480,7 @@ const Orders: React.FC = () => {
                                                                 userSelect: 'none'
                                                             }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'visible', color: 'var(--color-text-main)' }}>
-                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{colDef?.label || colId}</span>
+                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 'normal' }}>{colDef?.label || colId}</span>
                                                                 <SortIcon columnKey={colId} />
                                                                 {colId !== 'actions' && (
                                                                     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
@@ -3863,25 +3863,25 @@ const Orders: React.FC = () => {
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                             onPointerDown={(e) => e.stopPropagation()}
                                                                         />
-                                                                        {/* Carrier link + cached carrier status (Phase 1 + 2 tracking) */}
+                                                                        {/* Carrier link + cached carrier status (Phase 1 + 2 tracking).
+                                                                            Always rendered (just invisible when there's nothing to show)
+                                                                            so every row reserves the same height — otherwise a row only
+                                                                            grew taller once its tracking ID resolved to carrier data. */}
                                                                         {(() => {
                                                                             const no = order.shipping?.trackingNumber || '';
-                                                                            if (!no) return null;
-                                                                            const url = buildTrackingUrl(order.shipping?.company, no, trackingUrlTemplates);
-                                                                            const row = trackingMap[no];
+                                                                            const url = no ? buildTrackingUrl(order.shipping?.company, no, trackingUrlTemplates) : null;
+                                                                            const row = no ? trackingMap[no] : undefined;
                                                                             const eventsTip = row?.events?.slice(0, 4).map(ev => `${ev.time}  ${ev.status}${ev.desc ? ' — ' + ev.desc : ''}`).join('\n');
-                                                                            if (!url && !row) return null;
+                                                                            const hasContent = !!(url || row);
                                                                             return (
-                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px 2px', fontSize: '10px', lineHeight: 1.3, minWidth: 0 }} onClick={(e) => e.stopPropagation()}>
-                                                                                    {row && (
-                                                                                        <span
-                                                                                            title={row.error ? `Last check failed: ${row.error}` : (eventsTip || row.last_status || '')}
-                                                                                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: row.error ? '#B45309' : (row.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
-                                                                                        >
-                                                                                            {row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`}
-                                                                                            <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>
-                                                                                        </span>
-                                                                                    )}
+                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px 2px', fontSize: '10px', lineHeight: 1.3, minWidth: 0, visibility: hasContent ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                                                                                    <span
+                                                                                        title={row?.error ? `Last check failed: ${row.error}` : (eventsTip || row?.last_status || '')}
+                                                                                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: row?.error ? '#B45309' : (row?.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
+                                                                                    >
+                                                                                        {row ? (row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`) : ' '}
+                                                                                        {row && <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>}
+                                                                                    </span>
                                                                                     {url && (
                                                                                         <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
                                                                                             Track ↗
