@@ -8,7 +8,7 @@
 //   'លក់រាយ'   (Retail)  -> a Paid/receipt transaction
 //   'កក់ប្រាក់' (Deposit) -> a deposit transaction
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Receipt, Hash, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle, Trash2 } from 'lucide-react';
+import { Search, Receipt, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle, Trash2 } from 'lucide-react';
 import { postOrFinalizeTransactionReceipt, useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -1311,12 +1311,12 @@ const CustomerPaymentPage: React.FC = () => {
                                         style={{ cursor: pageSelectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                     />
                                 </th>
+                                <th style={thStyle}>Reference</th>
                                 <th style={thStyle}>Date</th>
                                 <th style={thStyle}>Customer</th>
                                 <th style={thStyle}>Payment Type</th>
                                 <th style={thStyle}>Amount</th>
                                 <th style={thStyle}>Method</th>
-                                <th style={thStyle}>Reference</th>
                                 {hasNotesData && <th style={thStyle}>Notes</th>}
                                 <th style={thStyle}>Added by</th>
                                 <th style={thStyle}>Status</th>
@@ -1375,6 +1375,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                     style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
+                                            <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '12px' }}>{referenceOf(r)}</td>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
                                             <td style={{ ...tdStyle, fontWeight: 600 }}>{customerLabel}</td>
                                             <td style={tdStyle}><TypeBadge category={r.category} /></td>
@@ -1384,11 +1385,6 @@ const CustomerPaymentPage: React.FC = () => {
                                                     <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
                                                     {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
                                                 </div>
-                                            </td>
-                                            <td style={tdStyle}>
-                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace', fontSize: '12px' }}>
-                                                    <Hash size={12} style={{ color: 'var(--color-text-secondary)' }} />{referenceOf(r)}
-                                                </span>
                                             </td>
                                             {hasNotesData && (
                                                 <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '240px' }}>{r.notes || '—'}</td>
