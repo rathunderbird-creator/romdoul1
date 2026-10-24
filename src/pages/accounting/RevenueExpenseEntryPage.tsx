@@ -136,10 +136,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
-    const { currentUser } = useStore();
+    const { currentUser, hasPermission } = useStore();
     // Unposting rewinds finalized books, so it stays admin-only — same gate
     // as Customer Payment's bulk Unpost.
     const isAdmin = currentUser?.roleId === 'admin';
+    // Grantable per role in Roles & Permissions — same permission Orders.tsx
+    // uses for its own checkbox bulk-select (admins always pass).
+    const canUseCheckbox = hasPermission('use_checkbox');
     const { saveJournalEntry } = useAccounting();
     const navigate = useNavigate();
 
@@ -1016,14 +1019,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             <div key={r.entryId} style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', rowGap: '6px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap', rowGap: '4px' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedIds.has(r.entryId)}
-                                            onChange={() => toggleSelect(r.entryId)}
-                                            disabled={busyIds.has(r.entryId)}
-                                            title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
-                                            style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
-                                        />
+                                        {canUseCheckbox && (
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(r.entryId)}
+                                                onChange={() => toggleSelect(r.entryId)}
+                                                disabled={busyIds.has(r.entryId)}
+                                                title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+                                            />
+                                        )}
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
                                         {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
@@ -1060,17 +1065,19 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '680px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    <th style={{ padding: '10px 8px 10px 16px', width: '32px' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={allSelected}
-                                            ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
-                                            onChange={toggleSelectAll}
-                                            disabled={selectableIds.length === 0}
-                                            title="Select all listed entries"
-                                            style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
-                                        />
-                                    </th>
+                                    {canUseCheckbox && (
+                                        <th style={{ padding: '10px 8px 10px 16px', width: '32px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={allSelected}
+                                                ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
+                                                onChange={toggleSelectAll}
+                                                disabled={selectableIds.length === 0}
+                                                title="Select all listed entries"
+                                                style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
+                                            />
+                                        </th>
+                                    )}
                                     {['Date', 'Reference', 'Description', cfg.accountLabel, cfg.counterLabel, 'Amount', 'Status', 'Actions'].map((h, i) => (
                                         <th key={h || 'x'} style={{ padding: '10px 16px', textAlign: i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: i === 7 ? '110px' : undefined }}>{h}</th>
                                     ))}
@@ -1079,16 +1086,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             <tbody>
                                 {filteredRows.map((r, idx) => (
                                     <tr key={r.entryId} style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 ? 'rgba(0,0,0,0.015)' : 'transparent' }}>
-                                        <td style={{ padding: '10px 8px 10px 16px' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.has(r.entryId)}
-                                                onChange={() => toggleSelect(r.entryId)}
-                                                disabled={busyIds.has(r.entryId)}
-                                                title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
-                                                style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer' }}
-                                            />
-                                        </td>
+                                        {canUseCheckbox && (
+                                            <td style={{ padding: '10px 8px 10px 16px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.has(r.entryId)}
+                                                    onChange={() => toggleSelect(r.entryId)}
+                                                    disabled={busyIds.has(r.entryId)}
+                                                    title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                    style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer' }}
+                                                />
+                                            </td>
+                                        )}
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>{r.ref || '—'}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
@@ -1138,7 +1147,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 selectedIds mid-operation — this page doesn't remount on
                 that nav, so an in-flight bulk action would otherwise keep
                 running with no visible progress once the bar disappeared. */}
-            {(selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
+            {canUseCheckbox && (selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
                 const bulkBusy = isBulkUnposting || isBulkDeleting;
                 return (
                     <div style={{
