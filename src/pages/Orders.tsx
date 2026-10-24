@@ -117,7 +117,7 @@ const ShippingModalComponent: React.FC<{
                             <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No phone number</span>
                         )}
                     </div>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
@@ -3837,7 +3837,6 @@ const Orders: React.FC = () => {
                                                                                 padding: '4px 8px',
                                                                                 fontSize: 'inherit',
                                                                                 color: 'inherit',
-                                                                                fontFamily: 'monospace',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
                                                                             }}
@@ -3919,7 +3918,6 @@ const Orders: React.FC = () => {
                                                                                 padding: '4px 8px',
                                                                                 fontSize: 'inherit',
                                                                                 color: 'inherit',
-                                                                                fontFamily: 'Battambang',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
                                                                             }}

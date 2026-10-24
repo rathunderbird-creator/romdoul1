@@ -240,7 +240,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                                             <div>{e.description}</div>
                                             {e.paymentMethod && <span style={{ fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'inline-block', padding: '2px 8px', borderRadius: '8px', background: 'rgba(107, 114, 128, 0.08)', color: 'var(--color-text-secondary)' }}>{e.paymentMethod}</span>}
                                         </td>
-                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-secondary)', fontFamily: e.invoiceNumber ? 'monospace' : undefined }}>{e.invoiceNumber || (e.type === 'Invoice' ? `WO-${e.reference}` : '—')}</td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{e.invoiceNumber || (e.type === 'Invoice' ? `WO-${e.reference}` : '—')}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: e.debt > 0 ? '#ef4444' : 'var(--color-text-muted)' }}>{e.debt > 0 ? fmt(e.debt) : ''}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: e.paid > 0 ? '#3b82f6' : 'var(--color-text-muted)' }}>{e.paid > 0 ? fmt(e.paid) : ''}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 700, color: e.balance > 0 ? '#ef4444' : '#10b981' }}>{fmt(e.balance)}</td>

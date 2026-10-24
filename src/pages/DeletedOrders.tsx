@@ -571,10 +571,10 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                         </td>
 
                                         {/* Remark */}
-                                        <td style={{ ...cellStyle, fontFamily: 'Battambang' }}>{order.remark || '-'}</td>
+                                        <td style={cellStyle}>{order.remark || '-'}</td>
 
                                         {/* Tracking */}
-                                        <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{order.shipping?.trackingNumber || '-'}</td>
+                                        <td style={cellStyle}>{order.shipping?.trackingNumber || '-'}</td>
 
                                         {/* Actions */}
                                         <td style={{ ...cellStyle, overflow: 'visible' }}>

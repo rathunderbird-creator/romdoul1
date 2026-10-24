@@ -492,7 +492,7 @@ const SupplierDetailsPage = () => {
                                                 </span>
                                             )}
                                         </td>
-                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, fontFamily: entry.invoiceNumber ? 'monospace' : undefined }}>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                                             {entry.invoiceNumber || (entry.type === 'Invoice' ? `PO-${entry.reference}` : '—')}
                                         </td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: entry.debt > 0 ? '#ef4444' : 'var(--color-text-muted)' }}>

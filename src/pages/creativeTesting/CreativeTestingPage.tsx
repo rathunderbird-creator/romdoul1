@@ -542,7 +542,7 @@ const CreativeTestingPage: React.FC = () => {
                                         return (
                                             <tr key={w.id} style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 ? 'rgba(127,127,127,0.03)' : 'transparent' }}>
                                                 <td style={tdStyle}>{w.graduatedDate || '—'}</td>
-                                                <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '11px', maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={w.postId}>{w.postId || '—'}</td>
+                                                <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={w.postId}>{w.postId || '—'}</td>
                                                 <td className="d2-khmer" style={{ ...tdStyle, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={w.page}>{w.page || '—'}</td>
                                                 <td className="d2-khmer" style={{ ...tdStyle, fontWeight: 600, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={w.productName}>{w.productName}</td>
                                                 <td className="d2-khmer" style={{ ...tdStyle, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={w.hook}>{w.hook || '—'}</td>

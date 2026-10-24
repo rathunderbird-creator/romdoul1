@@ -467,7 +467,7 @@ const CashInOutPage: React.FC = () => {
                                 ) : cashBookRows.map((r, i) => (
                                     <tr key={`${r.entryId}-${r.accountId}-${i}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                         <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-main)' }}>{r.date}</td>
-                                        <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.entryNumber || '—'}</td>
+                                        <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.entryNumber || '—'}</td>
                                         <td style={{ padding: '10px 16px', color: 'var(--color-text-main)' }}>{r.description || '—'}</td>
                                         <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.accountName}</td>
                                         <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.contra}</td>

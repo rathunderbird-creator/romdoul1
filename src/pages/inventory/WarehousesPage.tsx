@@ -234,7 +234,7 @@ const WarehousesPage: React.FC = () => {
                                                                 <span style={{ fontWeight: 500, fontSize: '13px' }}>{item.productName}</span>
                                                             </div>
                                                         </td>
-                                                        <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>{item.sku}</td>
+                                                        <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{item.sku}</td>
                                                         <td style={{ textAlign: 'center' }}>
                                                             <span style={{ 
                                                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

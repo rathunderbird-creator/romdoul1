@@ -1464,7 +1464,7 @@ const DeliveryTracking: React.FC = () => {
                                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.shipping?.company || '-'}</span>
                                         </div>
                                     </td>}
-                                    {visibleColumns.includes('tracking') && <td style={{ fontFamily: 'monospace', width: `var(--col-delivery-tracking-width, ${columnWidths.tracking}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.trackingNumber || ''}>
+                                    {visibleColumns.includes('tracking') && <td style={{ width: `var(--col-delivery-tracking-width, ${columnWidths.tracking}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.trackingNumber || ''}>
                                         {order.shipping?.trackingNumber ? (() => {
                                             const url = buildTrackingUrl(order.shipping?.company, order.shipping.trackingNumber, trackingUrlTemplates);
                                             return url ? (
@@ -1759,7 +1759,7 @@ const DeliveryTracking: React.FC = () => {
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <div>
                                                 <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Tracking Number</label>
-                                                <div style={{ fontFamily: 'monospace', fontWeight: 600 }}>{selectedOrder.shipping?.trackingNumber || 'N/A'}</div>
+                                                <div style={{ fontWeight: 600 }}>{selectedOrder.shipping?.trackingNumber || 'N/A'}</div>
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Shipping Co.</label>

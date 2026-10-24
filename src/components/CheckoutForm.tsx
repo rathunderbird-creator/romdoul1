@@ -1149,7 +1149,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ចំណាំ / Note</label>
-                            <input className="search-input" style={{ width: '100%', padding: '10px 12px', fontFamily: 'Battambang' }} value={formData.remark} onChange={e => setFormData({ ...formData, remark: e.target.value })} placeholder="បញ្ចូលចំណាំបន្ថែម..." />
+                            <input className="search-input" style={{ width: '100%', padding: '10px 12px' }} value={formData.remark} onChange={e => setFormData({ ...formData, remark: e.target.value })} placeholder="បញ្ចូលចំណាំបន្ថែម..." />
                         </div>
                     </div>
                 </div>

@@ -463,7 +463,7 @@ const SupplierBillsPage = () => {
                             <SwipeRow key={po.id} onClick={() => openView(po)} style={{ borderBottom: '1px solid var(--color-border)' }} actions={actions}>
                                 <div style={{ padding: '10px 12px 10px 14px', borderLeft: `4px solid ${STATUS_CFG[status].color}` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)' }}>{po.invoice_number || poShortId(po)}</span>
+                                        <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)' }}>{po.invoice_number || poShortId(po)}</span>
                                         <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(po.total_amount)}</span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
@@ -499,7 +499,7 @@ const SupplierBillsPage = () => {
                                     const outstanding = (po.total_amount || 0) - (po.amount_paid || 0);
                                     return (
                                         <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 20px', fontFamily: 'monospace', fontSize: '12.5px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{po.invoice_number || poShortId(po)}</td>
+                                            <td style={{ padding: '12px 20px', fontSize: '12.5px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{po.invoice_number || poShortId(po)}</td>
                                             <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}</td>
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(po.payment_due_date)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(po.total_amount)}</td>
@@ -581,7 +581,7 @@ const SupplierBillsPage = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
-                            <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace' }}>{viewPO.invoice_number || poShortId(viewPO)}</span>
+                            <span style={{ color: 'var(--color-text-main)' }}>{viewPO.invoice_number || poShortId(viewPO)}</span>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Supplier</span>
                             <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewPO.supplier?.name || supplierById.get(viewPO.supplier_id)?.name || '—'}</span>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Due</span>

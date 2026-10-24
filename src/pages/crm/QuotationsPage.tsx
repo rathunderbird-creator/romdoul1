@@ -173,7 +173,7 @@ const QuotationsPage: React.FC = () => {
                                 const expired = !!q.valid_until && q.valid_until.slice(0, 10) < dayKeyFromDate(new Date()) && (q.status === 'Draft' || q.status === 'Sent');
                                 return (
                                     <tr key={q.id} className="hover-highlight" style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 === 1 ? 'rgba(0,0,0,0.015)' : undefined }}>
-                                        <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: 700 }}>QT-{q.id.slice(0, 8).toUpperCase()}</td>
+                                        <td style={{ ...tdStyle, fontWeight: 700 }}>QT-{q.id.slice(0, 8).toUpperCase()}</td>
                                         <td style={{ ...tdStyle, fontWeight: 600 }}>{q.lead?.name || '—'}</td>
                                         <td style={{ ...tdStyle, color: 'var(--color-text-secondary)', fontSize: '12px' }}>{q.created_at ? new Date(q.created_at).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</td>
                                         <td style={{ ...tdStyle, fontSize: '12px' }}>
