@@ -520,7 +520,15 @@ const JournalEntriesPage = () => {
             );
         }
 
-        return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        // Same-day entries need a tiebreaker: `date` is a plain YYYY-MM-DD, so
+        // every entry dated today compares equal and the newest one (e.g. the
+        // highest entry_number) isn't guaranteed to land first. created_at is
+        // a real timestamp and always distinct.
+        return result.sort((a, b) => {
+            const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        });
     }, [journalEntries, searchQuery, dateRange, statusFilter, originFilter]);
 
     // Summary cards: totals over the filtered view, so they track Date/Status/Search.
