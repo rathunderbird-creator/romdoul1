@@ -1375,7 +1375,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                     style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
-                                            <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{referenceOf(r)}</td>
+                                            <td style={tdStyle}>{referenceOf(r)}</td>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
                                             <td style={tdStyle}>{customerLabel}</td>
                                             <td style={tdStyle}><TypeBadge category={r.category} /></td>
