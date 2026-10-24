@@ -4,6 +4,7 @@ import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircl
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
+import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
@@ -11,6 +12,14 @@ import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { JournalEntry, JournalEntryLine } from '../../types';
+
+// .in()/.delete() batch size for bulk unpost/delete — well under PostgREST's URL limit.
+const CHUNK = 150;
+const chunk = <T,>(items: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+    return out;
+};
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -98,6 +107,10 @@ const JournalEntriesPage = () => {
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { currentUser } = useStore();
+    // Unposting rewinds finalized books, so it stays admin-only — same gate
+    // as Customer Payment's and Revenue/Expense's bulk Unpost.
+    const isAdmin = currentUser?.roleId === 'admin';
     const { journalEntries, accounts, isLoading, fetchJournalEntries, fetchAccounts, saveJournalEntry } = useAccounting();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -250,24 +263,51 @@ const JournalEntriesPage = () => {
         }
     };
 
-    // Reviewing a draft can also mean rejecting it.
-    const deleteDraft = async (entryId: string) => {
-        if (!confirm('Delete this draft entry? Its lines are removed too.')) return;
+    // Entries mid-post/mid-delete, so a double-click — or a bulk action
+    // racing a single-row one on the same entry — can't fire twice.
+    const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+    const markBusy = (id: string, busy: boolean) => setBusyIds(prev => {
+        const n = new Set(prev);
+        if (busy) n.add(id); else n.delete(id);
+        return n;
+    });
+    // Bulk checkbox selection (derived values and handlers are defined below,
+    // once filteredEntries exists).
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isBulkUnposting, setIsBulkUnposting] = useState(false);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    // Delete a Draft entry (anyone), or an already-Posted one (admin only —
+    // same gate as Unpost, since it changes finalized books). Edit/Post stay
+    // Draft-only (unchanged below); only Delete is widened.
+    const handleDelete = async (entry: JournalEntry) => {
+        const entryId = entry.id;
+        if (entry.status !== 'Draft' && !isAdmin) { showToast('Posted entries can only be deleted by an admin — unpost it first, or ask an admin.', 'info'); return; }
+        if (busyIds.has(entryId)) return;
+        const postedWarn = entry.status !== 'Draft' ? ' This entry is already Posted — deleting it changes the finalized books.' : '';
+        if (!confirm(`Delete this entry? Its lines are removed too.${postedWarn}`)) return;
+        markBusy(entryId, true);
         try {
             const { error: lErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId);
             if (lErr) throw lErr;
             const { error } = await supabase.from('journal_entries').delete().eq('id', entryId);
             if (error) throw error;
-            showToast('Draft deleted', 'success');
+            // The entry just deleted may be the one open in the edit modal.
+            if (editingEntryId === entryId) { setIsModalOpen(false); setEditingEntryId(null); }
+            showToast('Entry deleted', 'success');
             fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to delete draft: ' + msg, 'error');
+            showToast('Failed to delete entry: ' + msg, 'error');
+        } finally {
+            markBusy(entryId, false);
         }
     };
 
     // Manually post a draft entry.
     const postEntry = async (entryId: string) => {
+        if (busyIds.has(entryId)) return;
+        markBusy(entryId, true);
         try {
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', entryId);
             if (error) throw error;
@@ -278,6 +318,8 @@ const JournalEntriesPage = () => {
             showToast(/status/i.test(msg)
                 ? 'Posting needs migrations/add_entry_status.sql on this instance'
                 : 'Failed to post entry: ' + msg, 'error');
+        } finally {
+            markBusy(entryId, false);
         }
     };
 
@@ -538,6 +580,128 @@ const JournalEntriesPage = () => {
     }, [filteredEntries]);
     const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All' || originFilter !== 'All');
 
+    // ── Bulk checkbox selection: Unpost (admin-only, Posted rows) / Delete
+    // (Draft rows for anyone, Posted rows admin-only — same split as the
+    // single-row action above). Matches this page's existing rule that
+    // Auto/Manual origin makes no difference to what can be mutated. ──
+    const selectedRows = useMemo(
+        () => selectedIds.size === 0 ? [] : filteredEntries.filter(e => selectedIds.has(e.id)),
+        [selectedIds, filteredEntries]
+    );
+    // A row already mid-post/mid-delete via its own single-row action can't
+    // also be a bulk target — excluded here, not just from new picks
+    // (selectableIds, below), or a concurrent bulk+single action could race.
+    const selectedDeletableRows = useMemo(
+        () => selectedRows.filter(e => !busyIds.has(e.id) && (e.status === 'Draft' || isAdmin)),
+        [selectedRows, busyIds, isAdmin]
+    );
+    const selectedPostedRows = useMemo(
+        () => selectedRows.filter(e => !busyIds.has(e.id) && e.status !== 'Draft'),
+        [selectedRows, busyIds]
+    );
+    const selectableIds = useMemo(() => filteredEntries.filter(e => !busyIds.has(e.id)).map(e => e.id), [filteredEntries, busyIds]);
+    const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
+    const someSelected = selectableIds.some(id => selectedIds.has(id));
+
+    const toggleSelect = (id: string) => setSelectedIds(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+    });
+    const toggleSelectAll = () => setSelectedIds(prev => {
+        const n = new Set(prev);
+        if (allSelected) selectableIds.forEach(id => n.delete(id));
+        else selectableIds.forEach(id => n.add(id));
+        return n;
+    });
+
+    const handleBulkUnpost = async () => {
+        const targets = selectedPostedRows;
+        if (!isAdmin || targets.length === 0 || isBulkUnposting) return;
+        if (!confirm(`Return ${targets.length} posted ${targets.length === 1 ? 'entry' : 'entries'} to Draft?\nThey can then be corrected and posted again.`)) return;
+        setIsBulkUnposting(true);
+        const ids = targets.map(e => e.id);
+        setBusyIds(prev => new Set([...prev, ...ids]));
+        let allIds = ids;
+        try {
+            // A TX-<id> receipt entry may have a paired ORD-<orderId>-COGS
+            // companion entry (Customer Payment's full-coverage-deposit
+            // postings — see postRetailCogsOnlyEntry in StoreContext.tsx) —
+            // unposting only the receipt half would misstate the books (cost
+            // booked against revenue that's now Draft), so pull any Posted
+            // companion back to Draft with it, same as Customer Payment's own
+            // bulk Unpost already does for this exact pairing.
+            const txIds = targets.filter(e => isSystemEntry(e)).map(e => (e.reference_id || '').slice(3));
+            if (txIds.length > 0) {
+                const { data: txRows, error: txErr } = await supabase.from('transactions').select('id, order_id').in('id', txIds);
+                if (txErr) throw txErr;
+                const orderIds = Array.from(new Set((txRows || []).map((t: { order_id?: string | null }) => t.order_id).filter((id): id is string => !!id)));
+                if (orderIds.length > 0) {
+                    const companionRefs = orderIds.map(id => `ORD-${id}-COGS`);
+                    const { data: companions, error: compErr } = await supabase.from('journal_entries').select('id').in('reference_id', companionRefs).eq('status', 'Posted');
+                    if (compErr) throw compErr;
+                    const companionIds = (companions || []).map((c: { id: string }) => c.id);
+                    if (companionIds.length > 0) {
+                        allIds = Array.from(new Set([...ids, ...companionIds]));
+                        setBusyIds(prev => new Set([...prev, ...companionIds]));
+                    }
+                }
+            }
+            for (const batch of chunk(allIds, CHUNK)) {
+                const { error } = await supabase.from('journal_entries').update({ status: 'Draft' }).in('id', batch);
+                if (error) throw error;
+            }
+            const extra = allIds.length - ids.length;
+            showToast(`Returned ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'} to Draft${extra > 0 ? ` (plus ${extra} linked COGS ${extra === 1 ? 'entry' : 'entries'})` : ''}`, 'success');
+            setSelectedIds(prev => { const n = new Set(prev); allIds.forEach(id => n.delete(id)); return n; });
+            fetchJournalEntries();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(/status/i.test(msg)
+                ? 'Unposting needs migrations/add_entry_status.sql on this instance'
+                : 'Failed to unpost: ' + msg, 'error');
+            fetchJournalEntries();
+        } finally {
+            setBusyIds(prev => { const n = new Set(prev); allIds.forEach(id => n.delete(id)); return n; });
+            setIsBulkUnposting(false);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        const targets = selectedDeletableRows;
+        if (targets.length === 0 || isBulkDeleting) return;
+        const postedCount = targets.filter(e => e.status !== 'Draft').length;
+        const warn = postedCount > 0 ? `\n${postedCount} ${postedCount === 1 ? 'is' : 'are'} already Posted — deleting them changes the finalized books.` : '';
+        if (!confirm(`Delete ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'}? Their lines are removed too.${warn}`)) return;
+        setIsBulkDeleting(true);
+        const ids = targets.map(e => e.id);
+        setBusyIds(prev => new Set([...prev, ...ids]));
+        try {
+            // Lines then entries WITHIN each batch (not two separate passes
+            // over the whole selection) — a batch failing after an earlier
+            // one succeeded leaves only that one batch's size at risk of a
+            // lines-deleted-but-entry-row-left orphan, not the whole selection.
+            for (const batch of chunk(ids, CHUNK)) {
+                const { error: lineErr } = await supabase.from('journal_entry_lines').delete().in('journal_entry_id', batch);
+                if (lineErr) throw lineErr;
+                const { error: entryErr } = await supabase.from('journal_entries').delete().in('id', batch);
+                if (entryErr) throw entryErr;
+            }
+            // The entry just deleted may be the one open in the edit modal.
+            if (editingEntryId && ids.includes(editingEntryId)) { setIsModalOpen(false); setEditingEntryId(null); }
+            showToast(`Deleted ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'}`, 'success');
+            setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            fetchJournalEntries();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to delete: ' + msg, 'error');
+            fetchJournalEntries();
+        } finally {
+            setBusyIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
+            setIsBulkDeleting(false);
+        }
+    };
+
     return (
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
             {/* Actions (top right, like the reference design) */}
@@ -661,10 +825,22 @@ const JournalEntriesPage = () => {
                         filteredEntries.map(entry => {
                             const t = entryTotals(entry);
                             const isDraft = entry.status === 'Draft';
+                            const canDeleteRow = isDraft || isAdmin;
+                            const busy = busyIds.has(entry.id);
                             return (
                                 <div key={entry.id} style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
-                                        <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap', rowGap: '4px' }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(entry.id)}
+                                                onChange={() => toggleSelect(entry.id)}
+                                                disabled={busy}
+                                                title={busy ? 'Busy…' : 'Select entry'}
+                                                style={{ cursor: busy ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+                                            />
+                                            <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
+                                        </span>
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fmtDate(entry.date)}</span>
                                     </div>
                                     <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 6px', fontWeight: 500 }}>
@@ -683,9 +859,9 @@ const JournalEntriesPage = () => {
                                                 <>
                                                     <ActionBtn icon={Pencil} label="Edit" onClick={() => openEdit(entry)} />
                                                     <ActionBtn icon={CheckCircle2} label="Post" onClick={() => postEntry(entry.id)} color="#4c5fd0" />
-                                                    <ActionBtn icon={Trash2} label="Delete" onClick={() => deleteDraft(entry.id)} color="#ef4444" />
                                                 </>
                                             )}
+                                            {canDeleteRow && <ActionBtn icon={Trash2} label="Delete" onClick={() => handleDelete(entry)} color="#ef4444" />}
                                         </span>
                                     </div>
                                 </div>
@@ -697,6 +873,17 @@ const JournalEntriesPage = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '860px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '14px 8px 14px 20px', width: '32px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
+                                    onChange={toggleSelectAll}
+                                    disabled={selectableIds.length === 0}
+                                    title="Select all listed entries"
+                                    style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
+                                />
+                            </th>
                             <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Date</th>
                             <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Reference</th>
                             <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Description</th>
@@ -708,15 +895,27 @@ const JournalEntriesPage = () => {
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
+                            <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
                         ) : filteredEntries.length === 0 ? (
-                            <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
+                            <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
                         ) : (
                             filteredEntries.map(entry => {
                                 const t = entryTotals(entry);
                                 const isDraft = entry.status === 'Draft';
+                                const canDeleteRow = isDraft || isAdmin;
+                                const busy = busyIds.has(entry.id);
                                 return (
                                     <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
+                                        <td style={{ padding: '14px 8px 14px 20px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(entry.id)}
+                                                onChange={() => toggleSelect(entry.id)}
+                                                disabled={busy}
+                                                title={busy ? 'Busy…' : 'Select entry'}
+                                                style={{ cursor: busy ? 'not-allowed' : 'pointer' }}
+                                            />
+                                        </td>
                                         <td style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
                                             {fmtDate(entry.date)}
                                         </td>
@@ -746,9 +945,9 @@ const JournalEntriesPage = () => {
                                                     <>
                                                         <ActionBtn icon={Pencil} label="Edit" onClick={() => openEdit(entry)} />
                                                         <ActionBtn icon={CheckCircle2} label="Post" onClick={() => postEntry(entry.id)} color="#4c5fd0" />
-                                                        <ActionBtn icon={Trash2} label="Delete" onClick={() => deleteDraft(entry.id)} color="#ef4444" />
                                                     </>
                                                 )}
+                                                {canDeleteRow && <ActionBtn icon={Trash2} label="Delete" onClick={() => handleDelete(entry)} color="#ef4444" />}
                                             </span>
                                         </td>
                                     </tr>
@@ -760,6 +959,73 @@ const JournalEntriesPage = () => {
                 </div>
                 )}
             </div>
+
+            {/* Bulk selection bar — floats at the bottom-center once any row is
+                checked, same place/style as Customer Payment's and Revenue/
+                Expense's. Unpost (admin only) shows when the selection
+                includes a Posted row; Delete applies to Draft entries for
+                anyone and Posted entries for an admin only. Stays mounted
+                (via the isBulk*ing OR below) through an in-flight operation
+                even if selectedIds empties out some other way. */}
+            {(selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
+                const bulkBusy = isBulkUnposting || isBulkDeleting;
+                return (
+                    <div style={{
+                        position: 'fixed', left: '50%', bottom: '24px', transform: 'translateX(-50%)',
+                        zIndex: 500, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                        justifyContent: 'center', maxWidth: 'calc(100vw - 32px)',
+                        padding: '12px 18px', borderRadius: '14px',
+                        background: 'var(--color-surface)', border: '1px solid #e2e8f0',
+                        boxShadow: '0 10px 32px rgba(0,0,0,0.22)'
+                    }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                            {selectedRows.length > 0 ? `${selectedRows.length} selected` : 'Working…'}
+                        </span>
+                        {isAdmin && (selectedPostedRows.length > 0 || isBulkUnposting) && (
+                            <button
+                                onClick={handleBulkUnpost}
+                                disabled={bulkBusy}
+                                title="Return the selected posted entries to Draft so they can be corrected"
+                                style={{
+                                    padding: '8px 16px', borderRadius: '8px',
+                                    border: '1px solid #D97706', background: '#FEF3C7', color: '#92400E',
+                                    fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                    opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
+                            </button>
+                        )}
+                        {(selectedDeletableRows.length > 0 || isBulkDeleting) && (
+                            <button
+                                onClick={handleBulkDelete}
+                                disabled={bulkBusy}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                    background: '#EF4444', color: '#fff',
+                                    fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                    opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                                }}
+                            >
+                                <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedDeletableRows.length})`}
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setSelectedIds(new Set())}
+                            disabled={bulkBusy}
+                            style={{
+                                padding: '8px 14px', borderRadius: '8px', border: '1px solid #e2e8f0',
+                                background: 'var(--color-bg)', color: 'var(--color-text-secondary)',
+                                fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                whiteSpace: 'nowrap'
+                            }}
+                        >
+                            Clear
+                        </button>
+                    </div>
+                );
+            })()}
 
             {/* Import-to-ledger preview */}
             <Modal
