@@ -7,9 +7,10 @@ interface StatusBadgeProps {
     onChange?: (status: string) => void;
     readOnly?: boolean;
     disabledOptions?: string[];
+    bold?: boolean;
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [] }) => {
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -37,7 +38,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         padding: '4px 8px 4px 12px',
         borderRadius: '9999px',
         fontSize: 'inherit',
-        fontWeight: 600,
+        fontWeight: bold ? 600 : 400,
         backgroundColor: style.bg,
         color: style.color,
         border: `1px solid ${style.border}`,

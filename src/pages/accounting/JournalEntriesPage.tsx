@@ -562,7 +562,15 @@ const JournalEntriesPage = () => {
             );
         }
 
-        return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        // Same-day entries need a tiebreaker: `date` is a plain YYYY-MM-DD, so
+        // every entry dated today compares equal and the newest one (e.g. the
+        // highest entry_number) isn't guaranteed to land first. created_at is
+        // a real timestamp and always distinct.
+        return result.sort((a, b) => {
+            const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        });
     }, [journalEntries, searchQuery, dateRange, statusFilter, originFilter]);
 
     // Summary cards: totals over the filtered view, so they track Date/Status/Search.
@@ -831,7 +839,7 @@ const JournalEntriesPage = () => {
                                                 title={busy ? 'Busy…' : 'Select entry'}
                                                 style={{ cursor: busy ? 'not-allowed' : 'pointer', flexShrink: 0 }}
                                             />
-                                            <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
+                                            <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
                                         </span>
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fmtDate(entry.date)}</span>
                                     </div>
@@ -911,7 +919,7 @@ const JournalEntriesPage = () => {
                                         <td style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
                                             {fmtDate(entry.date)}
                                         </td>
-                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
+                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-secondary)', fontSize: '12px', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
                                             {displayIdOf(entry)}
                                         </td>
                                         <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-main)', fontWeight: '500', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.description || ''}>
@@ -1087,7 +1095,7 @@ const JournalEntriesPage = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
-                                <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace', fontSize: '12px' }}>{displayIdOf(viewEntry)}</span>
+                                <span style={{ color: 'var(--color-text-main)', fontSize: '12px' }}>{displayIdOf(viewEntry)}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewEntry.date)}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>

@@ -8,7 +8,7 @@
 //   'លក់រាយ'   (Retail)  -> a Paid/receipt transaction
 //   'កក់ប្រាក់' (Deposit) -> a deposit transaction
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Receipt, Hash, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle, Trash2 } from 'lucide-react';
+import { Search, Receipt, Wallet, X, ExternalLink, Download, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Truck, Banknote, CircleDollarSign, AlertTriangle, Trash2 } from 'lucide-react';
 import { postOrFinalizeTransactionReceipt, useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -94,7 +94,7 @@ const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
     return (
         <span style={{
             display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '12px',
-            fontSize: '11px', fontWeight: 700, background: `${color}1A`, color
+            fontSize: '11px', fontWeight: 400, background: `${color}1A`, color
         }}>
             {label}
         </span>
@@ -107,7 +107,7 @@ const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
 const StatusChip: React.FC<{ status: LedgerStatus | 'Unknown' }> = ({ status }) => (
     <span style={{
         display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: '12px',
-        fontSize: '11px', fontWeight: 700,
+        fontSize: '11px', fontWeight: 400,
         background: status === 'Draft' ? '#fef3c7' : status === 'Posted' ? 'rgba(84, 105, 212, 0.12)' : 'var(--color-bg)',
         color: status === 'Draft' ? '#92400e' : status === 'Posted' ? '#4c5fd0' : 'var(--color-text-secondary)',
     }}>
@@ -158,7 +158,7 @@ const CustomerPaymentPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
     const [shippingFilter, setShippingFilter] = useState('All');
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(50);
+    const [pageSize, setPageSize] = useState(200);
 
     // This page's own dedicated data: every retail Payment/Deposit transaction in
     // the range, fetched completely (paged past the API row cap) so the totals
@@ -292,10 +292,37 @@ const CustomerPaymentPage: React.FC = () => {
         .sort((a, b) => (b.d - a.d) || (b.c - a.c))
         .map(x => x.r), [retailPayments]);
 
-    // Only show the Reference / Notes columns when this database instance actually
-    // has data in them — they may not exist on every instance yet.
-    const hasReferenceData = useMemo(() => retailPayments.some(r => (r.reference || '').trim() !== ''), [retailPayments]);
+    // Only show the Notes column when this database instance actually has
+    // data in it — it may not exist on every instance yet. Reference always
+    // shows: a manually-typed one (Post Now's optional field) is kept as-is,
+    // everything else falls back to a computed "RCP/DEP-YYYYMMDD-NNN" below.
     const hasNotesData = useMemo(() => retailPayments.some(r => (r.notes || '').trim() !== ''), [retailPayments]);
+
+    // Computed only for rows with no manually-typed reference — grouped by
+    // day, numbered in creation order within that day. Same RCP/DEP prefixes
+    // the underlying journal entry already uses for this row (see
+    // handlePostNowConfirm's `type: isDepositRow(tx) ? 'DEP' : 'RCP'`
+    // above), so the label matches the ledger. Derived for display only —
+    // no migration, works for every existing row immediately.
+    const computedReferenceOf = useMemo(() => {
+        const byDate = new Map<string, CustomerPaymentRow[]>();
+        for (const r of retailPayments) {
+            if ((r.reference || '').trim() !== '') continue;
+            const day = dayKeyFromDate(parseDate(r.date));
+            const arr = byDate.get(day);
+            if (arr) arr.push(r); else byDate.set(day, [r]);
+        }
+        const refs = new Map<string, string>();
+        for (const [day, list] of byDate) {
+            const ordered = [...list].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+            ordered.forEach((r, i) => {
+                const prefix = isDepositRow(r) ? 'DEP' : 'RCP';
+                refs.set(r.id, `${prefix}-${day.replace(/-/g, '')}-${String(i + 1).padStart(3, '0')}`);
+            });
+        }
+        return refs;
+    }, [retailPayments]);
+    const referenceOf = useCallback((r: CustomerPaymentRow): string => (r.reference || '').trim() || computedReferenceOf.get(r.id) || '—', [computedReferenceOf]);
 
     const shippingOptions = useMemo(
         () => Array.from(new Set(retailPayments.map(r => r.shipping_co).filter((s): s is string => !!s))).sort(),
@@ -654,10 +681,10 @@ const CustomerPaymentPage: React.FC = () => {
             if (shippingFilter !== 'All' && (r.shipping_co || '') !== shippingFilter) return false;
             if (statusFilter !== 'All' && statusOf(r.id) !== statusFilter) return false;
             if (!term) return true;
-            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, r.reference, r.notes]
+            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, referenceOf(r), r.notes]
                 .some(v => (v || '').toLowerCase().includes(term));
         });
-    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange]);
+    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange, referenceOf]);
 
     const stats = useMemo(() => {
         const s = { total: 0, count: 0, paid: 0, paidCount: 0, deposit: 0, depositCount: 0, draft: 0, draftCount: 0 };
@@ -921,7 +948,7 @@ const CustomerPaymentPage: React.FC = () => {
             'Payment Type': isDepositRow(r) ? 'Deposit' : 'Paid',
             Amount: Number(r.amount || 0),
             Method: r.pay_by || '',
-            Reference: r.reference || '',
+            Reference: referenceOf(r),
             Notes: r.notes || '',
             'Added by': r.added_by || '',
             Status: ledgerReady || postedIds.has(r.id) ? statusOf(r.id) : '',
@@ -934,7 +961,7 @@ const CustomerPaymentPage: React.FC = () => {
         XLSX.writeFile(wb, `Customer_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
-    const colCount = 9 + (hasReferenceData ? 1 : 0) + (hasNotesData ? 1 : 0);
+    const colCount = 10 + (hasNotesData ? 1 : 0);
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
     const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
@@ -1270,10 +1297,10 @@ const CustomerPaymentPage: React.FC = () => {
             {/* Table */}
             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', whiteSpace: 'nowrap' }}>
                         <thead>
-                            <tr style={{ background: 'var(--color-bg)' }}>
-                                <th style={{ ...thStyle, width: '34px', padding: '10px 8px 10px 12px' }}>
+                            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                <th style={{ ...thStyle, width: '34px', padding: '14px 8px 14px 20px' }}>
                                     <input
                                         type="checkbox"
                                         checked={allPageSelected}
@@ -1284,12 +1311,12 @@ const CustomerPaymentPage: React.FC = () => {
                                         style={{ cursor: pageSelectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                     />
                                 </th>
+                                <th style={thStyle}>Reference</th>
                                 <th style={thStyle}>Date</th>
                                 <th style={thStyle}>Customer</th>
                                 <th style={thStyle}>Payment Type</th>
                                 <th style={thStyle}>Amount</th>
                                 <th style={thStyle}>Method</th>
-                                {hasReferenceData && <th style={thStyle}>Reference</th>}
                                 {hasNotesData && <th style={thStyle}>Notes</th>}
                                 <th style={thStyle}>Added by</th>
                                 <th style={thStyle}>Status</th>
@@ -1328,7 +1355,7 @@ const CustomerPaymentPage: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                pageRows.map((r, idx) => {
+                                pageRows.map((r) => {
                                     const known = ledgerReady || postedIds.has(r.id);
                                     const status = statusOf(r.id);
                                     const posting = postingIds.has(r.id);
@@ -1337,8 +1364,8 @@ const CustomerPaymentPage: React.FC = () => {
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
                                     const PaymentIcon = getPaymentIcon(r.pay_by);
                                     return (
-                                        <tr key={r.id} style={{ background: idx % 2 === 1 ? 'var(--color-bg)' : 'transparent' }}>
-                                            <td style={{ ...tdStyle, padding: '10px 8px 10px 12px' }}>
+                                        <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
+                                            <td style={{ ...tdStyle, padding: '14px 8px 14px 20px' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedIds.has(r.id)}
@@ -1348,25 +1375,17 @@ const CustomerPaymentPage: React.FC = () => {
                                                     style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
+                                            <td style={tdStyle}>{referenceOf(r)}</td>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
-                                            <td style={{ ...tdStyle, fontWeight: 600 }}>{customerLabel}</td>
+                                            <td style={tdStyle}>{customerLabel}</td>
                                             <td style={tdStyle}><TypeBadge category={r.category} /></td>
-                                            <td style={{ ...tdStyle, fontWeight: 600, color: '#059669' }}>{formatAmount(r.amount)}</td>
+                                            <td style={{ ...tdStyle, color: '#059669' }}>{formatAmount(r.amount)}</td>
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
                                                     {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
                                                 </div>
                                             </td>
-                                            {hasReferenceData && (
-                                                <td style={tdStyle}>
-                                                    {r.reference ? (
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                                            <Hash size={12} style={{ color: 'var(--color-text-secondary)' }} />{r.reference}
-                                                        </span>
-                                                    ) : '—'}
-                                                </td>
-                                            )}
                                             {hasNotesData && (
                                                 <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '240px' }}>{r.notes || '—'}</td>
                                             )}
@@ -1425,7 +1444,7 @@ const CustomerPaymentPage: React.FC = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
                                 <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}>
-                                    {[50, 100, 200, 500, 1000, 2000, 3000].map(n => <option key={n} value={n}>{n}</option>)}
+                                    {[200, 500, 1000, 2000, 3000].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -1473,14 +1492,15 @@ const CustomerPaymentPage: React.FC = () => {
     );
 };
 
+// Same style tokens as Journal Entries' table — generous padding, non-uppercase
+// 600-weight headers, border/background carried on the row rather than per-cell.
 const thStyle: React.CSSProperties = {
-    padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700,
-    textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)',
-    borderBottom: '1px solid var(--color-border)'
+    padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: 600,
+    textTransform: 'none', color: 'var(--color-text-secondary)'
 };
 
 const tdStyle: React.CSSProperties = {
-    padding: '10px 12px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-main)'
+    padding: '14px 20px', color: 'var(--color-text-main)'
 };
 
 export default CustomerPaymentPage;

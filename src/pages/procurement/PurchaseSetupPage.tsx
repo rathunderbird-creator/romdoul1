@@ -268,7 +268,7 @@ const PurchaseSetupPage: React.FC = () => {
                     </p>
                     {suppliers.length === 0 ? (
                         <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
-                            No suppliers yet — add them under Purchasing → Suppliers first.
+                            No suppliers yet — add them under Procurement → Suppliers first.
                         </div>
                     ) : (
                         <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>

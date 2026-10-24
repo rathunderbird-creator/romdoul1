@@ -178,6 +178,72 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
     }
 }
 
+// Books a cancelled order's delivery-fee-only payment (paymentStatus
+// 'PdFee') straight to the ledger as Posted — Dr the chosen cash/bank
+// account, Cr the dedicated Delivery Fee Revenue account (4005), never the
+// normal Sales Revenue account, since the order itself wasn't fulfilled.
+// Posted immediately (not Draft): unlike a regular Paid/Deposit receipt,
+// there's no separate "post it from Customer Payment later" step for this.
+async function postDeliveryFeeToLedger({
+    txId,
+    amount,
+    date,
+    description,
+    depositAccountId,
+}: {
+    txId: string;
+    amount: number;
+    date: string;
+    description: string;
+    depositAccountId?: string;
+}): Promise<boolean> {
+    try {
+        const { data: coa } = await supabase.from('chart_of_accounts')
+            .select('id, account_code, account_name, account_type').eq('is_active', true);
+        const pool = coa || [];
+        const feeRevenueAcc = pool.find(a => a.account_code === '4005')
+            || pool.find(a => a.account_type === 'Revenue' && /delivery fee/i.test(a.account_name));
+        const cashAccId = depositAccountId
+            || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+        if (!feeRevenueAcc || !cashAccId) {
+            console.error('Could not post the delivery fee: missing the Delivery Fee Revenue account (run migrations/add_delivery_fee_revenue_account.sql) or a cash/bank account');
+            return false;
+        }
+        const entryNumber = await nextJournalEntryNumber('DLV', date);
+        const entryPayload: Record<string, unknown> = { date, description, reference_id: 'TX-' + txId, status: 'Posted' };
+        if (entryNumber) entryPayload.entry_number = entryNumber;
+        let entry: { id: string } | null | undefined;
+        let jeErr: { message?: string } | null | undefined;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
+            if (!jeErr) break;
+            if (/entry_number/i.test(jeErr.message || '') && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
+            break;
+        }
+        if (jeErr && /status/i.test(jeErr.message || '')) {
+            console.warn('Logged the delivery fee to Income & Expense, but this instance needs migrations/add_entry_status.sql to also post it to the ledger');
+            return false;
+        }
+        if (jeErr || !entry) {
+            console.error('Failed to create journal entry for delivery fee:', jeErr);
+            return false;
+        }
+        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+            { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0 },
+            { journal_entry_id: entry.id, account_id: feeRevenueAcc.id, debit: 0, credit: amount },
+        ]);
+        if (lErr) {
+            console.error('Failed to create journal entry lines for delivery fee:', lErr);
+            await supabase.from('journal_entries').delete().eq('id', entry.id);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error('Failed to post delivery fee to ledger:', e);
+        return false;
+    }
+}
+
 // Posts a journal entry (Draft by default) straight to the ledger for a
 // retail receipt (Dr the resolved cash/bank account, Cr Sales Revenue) —
 // shared by the Paid-branch settlement and the Deposit-branch receipt in
@@ -2448,7 +2514,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
-        if (updates.paymentStatus === 'Cancel') {
+        if (updates.paymentStatus === 'Cancel' || updates.paymentStatus === 'PdFee') {
+            // PdFee (Paid for Delivery Fee) is treated the same as Cancel here —
+            // the order itself isn't fulfilled, only the delivery fee was paid.
             // Cancelling payment normally sends shipping back to 'Pending' so the order can
             // be re-processed. But when the caller ALSO sets a shipping status (the
             // Returned / Cancelled / ReStock transitions cancel payment as a side effect and
@@ -2601,6 +2669,82 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // Deposit covered the whole order: no receipt entry exists to carry
                 // COGS, so book the cost side on its own (deduped per order).
                 postRetailCogsOnlyEntry(id, localDayOf(normalizedDate), `${customerName} · cost of goods sold`);
+            }
+        } else if (updates.paymentStatus === 'PdFee' && existingOrder && existingOrder.paymentStatus !== 'PdFee') {
+            // Order treated as cancelled (shipping reset above), but the
+            // customer paid for delivery — book just that fee to Revenue
+            // (never the order total, no COGS: nothing was sold/shipped).
+            // DeliveryFeeModal always hands the fee amount as amountReceived.
+            const feeAmount = updates.amountReceived || 0;
+            if (feeAmount > 0) {
+                const transactionId = generateUUID();
+                const customerName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
+                const rawDate = updates.settleDate || new Date().toISOString();
+                const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/)
+                    ? new Date(rawDate).toISOString()
+                    : rawDate;
+                const shippingCoToRecord = updates.shipping?.company || existingOrder.shipping?.company || null;
+                const newTransaction = {
+                    id: transactionId,
+                    date: normalizedDate,
+                    type: 'Income' as const,
+                    category: 'ថ្លៃដឹក',
+                    amount: feeAmount,
+                    description: customerName,
+                    addedBy: currentUser?.name || 'System',
+                    shipping_co: shippingCoToRecord,
+                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || null,
+                    order_id: id,
+                    customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
+                };
+
+                // Optimistic update — same shape as the Paid-transition row above.
+                setTransactions(prev => [newTransaction, ...prev]);
+
+                const insertPayload: Record<string, unknown> = {
+                    id: newTransaction.id,
+                    date: newTransaction.date,
+                    type: newTransaction.type,
+                    category: newTransaction.category,
+                    amount: newTransaction.amount,
+                    description: newTransaction.description,
+                    added_by: newTransaction.addedBy,
+                    shipping_co: newTransaction.shipping_co,
+                    pay_by: newTransaction.pay_by,
+                    order_id: newTransaction.order_id,
+                    customer_phone: newTransaction.customer_phone
+                };
+                (async () => {
+                    let error: { message?: string } | null | undefined;
+                    let orderLinkDropped = false;
+                    for (let attempt = 0; attempt < 2; attempt++) {
+                        ({ error } = await supabase.from('transactions').insert([insertPayload]));
+                        if (!error) break;
+                        const msg = error.message || '';
+                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in insertPayload || 'customer_phone' in insertPayload)) {
+                            delete insertPayload.order_id; delete insertPayload.customer_phone; orderLinkDropped = true;
+                            continue;
+                        }
+                        break;
+                    }
+                    if (error) {
+                        console.error('Failed to create transaction for delivery fee:', error);
+                    } else if (orderLinkDropped) {
+                        console.warn('Logged delivery fee without order_id/customer_phone — run migrations/add_transaction_order_link.sql to store them');
+                    }
+                    // Auto-posted straight to the ledger — see postDeliveryFeeToLedger's
+                    // own comment for why this skips the usual Draft-then-Post-Now step.
+                    const posted = await postDeliveryFeeToLedger({
+                        txId: transactionId,
+                        amount: feeAmount,
+                        date: normalizedDate,
+                        description: customerName,
+                        depositAccountId: (updates as Partial<Sale>).depositAccountId,
+                    });
+                    if (!posted) {
+                        console.error('Delivery fee logged to Income & Expense, but could not be posted to the ledger for order', id);
+                    }
+                })();
             }
         } else if (
             existingOrder &&

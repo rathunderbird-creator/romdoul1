@@ -591,8 +591,8 @@ const SuppliersPage = () => {
                                     <input 
                                         type="text" 
                                         className="input-field" 
-                                        style={{ width: '100%', padding: '10px 12px', fontFamily: 'monospace' }}
-                                        value={formData.tax_id || ''} 
+                                        style={{ width: '100%', padding: '10px 12px' }}
+                                        value={formData.tax_id || ''}
                                         onChange={(e) => setFormData({...formData, tax_id: e.target.value})} 
                                         placeholder="Optional"
                                     />

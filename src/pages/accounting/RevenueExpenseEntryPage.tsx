@@ -136,10 +136,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
-    const { currentUser } = useStore();
+    const { currentUser, hasPermission } = useStore();
     // Unposting rewinds finalized books, so it stays admin-only — same gate
     // as Customer Payment's bulk Unpost.
     const isAdmin = currentUser?.roleId === 'admin';
+    // Grantable per role in Roles & Permissions — same permission Orders.tsx
+    // uses for its own checkbox bulk-select (admins always pass).
+    const canUseCheckbox = hasPermission('use_checkbox');
     const { saveJournalEntry } = useAccounting();
     const navigate = useNavigate();
 
@@ -817,7 +820,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </div>
                     <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>
                         {editingEntry ? `Edit ${cfg.title} Entry` : `New ${cfg.title} Entry`}
-                        {editingEntry && <span style={{ marginLeft: '10px', fontFamily: 'monospace', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)' }}>{editingEntry.ref || editingEntry.entryId}</span>}
+                        {editingEntry && <span style={{ marginLeft: '10px', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)' }}>{editingEntry.ref || editingEntry.entryId}</span>}
                     </div>
                 </div>
 
@@ -1016,16 +1019,18 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             <div key={r.entryId} style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', rowGap: '6px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap', rowGap: '4px' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedIds.has(r.entryId)}
-                                            onChange={() => toggleSelect(r.entryId)}
-                                            disabled={busyIds.has(r.entryId)}
-                                            title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
-                                            style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
-                                        />
+                                        {canUseCheckbox && (
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(r.entryId)}
+                                                onChange={() => toggleSelect(r.entryId)}
+                                                disabled={busyIds.has(r.entryId)}
+                                                title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+                                            />
+                                        )}
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
-                                        {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
+                                        {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
                                         {r.isSystem ? <SystemChip /> : <ManualChip />}
                                     </span>
@@ -1057,45 +1062,49 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '680px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '680px' }}>
                             <thead>
-                                <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    <th style={{ padding: '10px 8px 10px 16px', width: '32px' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={allSelected}
-                                            ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
-                                            onChange={toggleSelectAll}
-                                            disabled={selectableIds.length === 0}
-                                            title="Select all listed entries"
-                                            style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
-                                        />
-                                    </th>
+                                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                    {canUseCheckbox && (
+                                        <th style={{ padding: '14px 8px 14px 20px', width: '32px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={allSelected}
+                                                ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
+                                                onChange={toggleSelectAll}
+                                                disabled={selectableIds.length === 0}
+                                                title="Select all listed entries"
+                                                style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
+                                            />
+                                        </th>
+                                    )}
                                     {['Date', 'Reference', 'Description', cfg.accountLabel, cfg.counterLabel, 'Amount', 'Status', 'Actions'].map((h, i) => (
-                                        <th key={h || 'x'} style={{ padding: '10px 16px', textAlign: i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: i === 7 ? '110px' : undefined }}>{h}</th>
+                                        <th key={h || 'x'} style={{ padding: '14px 20px', textAlign: i === 5 ? 'right' : 'left', fontSize: '12px', fontWeight: 600, textTransform: 'none', color: 'var(--color-text-secondary)', width: i === 7 ? '110px' : undefined }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredRows.map((r, idx) => (
-                                    <tr key={r.entryId} style={{ borderBottom: '1px solid var(--color-border)', background: idx % 2 ? 'rgba(0,0,0,0.015)' : 'transparent' }}>
-                                        <td style={{ padding: '10px 8px 10px 16px' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.has(r.entryId)}
-                                                onChange={() => toggleSelect(r.entryId)}
-                                                disabled={busyIds.has(r.entryId)}
-                                                title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
-                                                style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer' }}
-                                            />
-                                        </td>
-                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
-                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>{r.ref || '—'}</td>
-                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
-                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{accountLink(r.accountName, r.accountIds)}</td>
-                                        <td className="d2-khmer" style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{accountLink(r.counterName, r.counterIds)}</td>
-                                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmt(r.amount)}</td>
-                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                                {filteredRows.map((r) => (
+                                    <tr key={r.entryId} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
+                                        {canUseCheckbox && (
+                                            <td style={{ padding: '14px 8px 14px 20px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.has(r.entryId)}
+                                                    onChange={() => toggleSelect(r.entryId)}
+                                                    disabled={busyIds.has(r.entryId)}
+                                                    title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                    style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer' }}
+                                                />
+                                            </td>
+                                        )}
+                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
+                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontSize: '12px' }}>{r.ref || '—'}</td>
+                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
+                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-secondary)' }}>{accountLink(r.accountName, r.accountIds)}</td>
+                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-secondary)' }}>{accountLink(r.counterName, r.counterIds)}</td>
+                                        <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmt(r.amount)}</td>
+                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 <StatusChip status={r.status} />
                                                 {r.isSystem ? <SystemChip /> : <ManualChip />}
@@ -1104,7 +1113,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 )}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
                                                 {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />}
                                                 <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label="View entry" />
@@ -1117,10 +1126,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
-                                    <td colSpan={6} style={{ padding: '11px 16px', color: 'var(--color-text-main)' }}>
+                                    <td colSpan={6} style={{ padding: '14px 20px', color: 'var(--color-text-main)' }}>
                                         {`Total — ${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''}`}
                                     </td>
-                                    <td style={{ padding: '11px 16px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
+                                    <td style={{ padding: '14px 20px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
                                     <td colSpan={2}></td>
                                 </tr>
                             </tfoot>
@@ -1138,7 +1147,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 selectedIds mid-operation — this page doesn't remount on
                 that nav, so an in-flight bulk action would otherwise keep
                 running with no visible progress once the bar disappeared. */}
-            {(selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
+            {canUseCheckbox && (selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
                 const bulkBusy = isBulkUnposting || isBulkDeleting;
                 return (
                     <div style={{
@@ -1208,7 +1217,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
-                                <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace', fontSize: '12px' }}>{viewEntry.ref || viewEntry.entryId}</span>
+                                <span style={{ color: 'var(--color-text-main)', fontSize: '12px' }}>{viewEntry.ref || viewEntry.entryId}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{viewEntry.date}</span>
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>

@@ -8,10 +8,10 @@ import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
 import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
 import { useToast } from '../context/ToastContext';
-import { getOperatorForPhone } from '../utils/telecom';
+import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal } from '../components';
+import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal, DeliveryFeeModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import StockMovementSummaryModal from '../components/StockMovementSummaryModal';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
@@ -117,7 +117,7 @@ const ShippingModalComponent: React.FC<{
                             <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No phone number</span>
                         )}
                     </div>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
@@ -337,6 +337,11 @@ const PendingRemarkModalComponent: React.FC<{
 // Closed-out orders: stock and/or payment have already been reversed on these, so
 // editing would re-run order logic against a reversal. They stay read-only until
 // someone deliberately moves the order back to an active status from the order list.
+// Pay Status filter options (toolbar dropdown + mobile drawer). Mirrors
+// PaymentStatusBadge's own options list — kept separate since this list drives
+// filtering, not the badge/dropdown itself.
+const PAY_STATUS_FILTER_OPTIONS = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel'];
+
 // Mirrors the rule enforced in StoreContext: 'Delivered' and 'Returned' only make sense
 // once the goods have shipped. Checked here too so the UI doesn't open a payment or
 // remark modal for a transition the store will reject.
@@ -522,7 +527,7 @@ const lockedOrderMessage = (order: Sale) =>
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
     // The fetched page of orders (declared early: the header effect below lists
@@ -1101,6 +1106,7 @@ const Orders: React.FC = () => {
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
+    const [deliveryFeeTargetOrder, setDeliveryFeeTargetOrder] = useState<Sale | null>(null);
 
     // Mobile: the filter bar is replaced by a right-side slide-in drawer.
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -1446,7 +1452,7 @@ const Orders: React.FC = () => {
                             // Unpaid/Cancel/etc. keeps its old settle_date/deposit_date
                             // for financial-record reasons but no longer shows a date
                             // in this column, so don't surface it here either.
-                            query = query.in('payment_status', ['Paid', 'Deposit']).or(orGroups.join(','));
+                            query = query.in('payment_status', ['Paid', 'Deposit', 'PdFee']).or(orGroups.join(','));
                         }
                         break;
                     }
@@ -1970,7 +1976,7 @@ const Orders: React.FC = () => {
             'Payment Method': order.paymentMethod,
             'Payment Status': order.paymentStatus || 'Paid',
             'Settle Date': (() => {
-                const d = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit')
+                const d = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee')
                     ? (order.settleDate || order.depositDate)
                     : null;
                 return d ? new Date(d).toLocaleDateString() : 'N/A';
@@ -2809,10 +2815,10 @@ const Orders: React.FC = () => {
                                                 }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={payStatusFilter.length === 4}
+                                                        checked={payStatusFilter.length === PAY_STATUS_FILTER_OPTIONS.length}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setPayStatusFilter(['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel']);
+                                                                setPayStatusFilter(PAY_STATUS_FILTER_OPTIONS);
                                                             } else {
                                                                 setPayStatusFilter([]);
                                                             }
@@ -2821,7 +2827,7 @@ const Orders: React.FC = () => {
                                                     />
                                                     <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
                                                 </label>
-                                                {['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel'].map(status => (
+                                                {PAY_STATUS_FILTER_OPTIONS.map(status => (
                                                     <label key={status} style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -3160,7 +3166,7 @@ const Orders: React.FC = () => {
                             />
                             <DrawerChipGroup
                                 title="Pay Status"
-                                options={['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel']}
+                                options={PAY_STATUS_FILTER_OPTIONS}
                                 selected={payStatusFilter}
                                 onToggle={(v) => setPayStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
                             />
@@ -3302,6 +3308,10 @@ const Orders: React.FC = () => {
                                             const updates: any = { paymentStatus: status };
                                             if (status === 'Deposit') {
                                                 setDepositTargetOrder(order);
+                                                return;
+                                            }
+                                            if (status === 'PdFee') {
+                                                setDeliveryFeeTargetOrder(order);
                                                 return;
                                             }
                                             if (status === 'Paid' || status === 'Settled') {
@@ -3470,7 +3480,7 @@ const Orders: React.FC = () => {
                                                                 userSelect: 'none'
                                                             }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'visible', color: 'var(--color-text-main)' }}>
-                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{colDef?.label || colId}</span>
+                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 'normal' }}>{colDef?.label || colId}</span>
                                                                 <SortIcon columnKey={colId} />
                                                                 {colId !== 'actions' && (
                                                                     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
@@ -3491,30 +3501,6 @@ const Orders: React.FC = () => {
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    toggleOrderColumnPin(colId);
-                                                                }}
-                                                                style={{
-                                                                    background: 'transparent',
-                                                                    border: 'none',
-                                                                    cursor: 'pointer',
-                                                                    padding: '2px',
-                                                                    marginLeft: '4px',
-                                                                    opacity: isPinned ? 1 : 0.3,
-                                                                    transition: 'opacity 0.2s',
-                                                                    display: 'flex', alignItems: 'center'
-                                                                }}
-                                                                onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                                                                onMouseLeave={(e) => e.currentTarget.style.opacity = isPinned ? '1' : '0.3'}
-                                                                title={isPinned ? "Unpin Column" : "Pin Column"}
-                                                            >
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned ? "var(--color-primary)" : "none"} stroke={isPinned ? "var(--color-primary)" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                    <line x1="12" y1="17" x2="12" y2="22"></line>
-                                                                    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                                                </svg>
-                                                            </button>
                                                         </div>
                                                         <div
                                                             onMouseDown={(e) => startResize(e, colId)}
@@ -3623,7 +3609,7 @@ const Orders: React.FC = () => {
                                                                 const orderPhone = String(order.customer?.phone || '').trim();
                                                                 const isScammer = blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(orderPhone));
                                                                 return (
-                                                                    <td key={colId} style={{ ...cellStyle, fontWeight: 500 }}>
+                                                                    <td key={colId} style={cellStyle}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                             {order.customer?.name}
                                                                             {isScammer && <AlertTriangle size={14} color="#EF4444" />}
@@ -3637,7 +3623,7 @@ const Orders: React.FC = () => {
                                                                     <td key={colId} style={cellStyle}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                             {operator && <img src={operator.logo} alt={operator.name} style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '2px' }} title={operator.name} />}
-                                                                            <span>{order.customer?.phone || '-'}</span>
+                                                                            <span>{formatPhoneDisplay(order.customer?.phone) || '-'}</span>
                                                                         </div>
                                                                     </td>
                                                                 );
@@ -3652,7 +3638,7 @@ const Orders: React.FC = () => {
                                                                         </div>
                                                                     </td>
                                                                 );
-                                                            case 'total': return <td key={colId} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
+                                                            case 'total': return <td key={colId} style={{ ...cellStyle, textAlign: 'right' }}>${order.total.toFixed(2)}</td>;
                                                             case 'payBy': {
                                                                 const PaymentIcon = getPaymentIcon(order.paymentMethod);
                                                                 return <td key={colId} style={cellStyle}>
@@ -3665,9 +3651,9 @@ const Orders: React.FC = () => {
                                                             case 'received': return <td key={colId} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',
-                                                                // Blue = money in hand (fully paid, or a deposit received); red = outstanding.
-                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit') ? '#2563EB' : '#DC2626',
-                                                                fontWeight: 'bold'
+                                                                // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
+                                                                // otherwise-cancelled order); red = outstanding.
+                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee') ? '#2563EB' : '#DC2626'
                                                             }}>${(order.paymentStatus === 'Deposit'
                                                                 ? (order.depositAmount || order.amountReceived || 0)
                                                                 : (order.amountReceived ?? order.total)).toFixed(2)}</td>;
@@ -3683,6 +3669,7 @@ const Orders: React.FC = () => {
                                                                         <PaymentStatusBadge
                                                                             status={order.paymentStatus || 'Unpaid'}
                                                                             disabledOptions={isAdmin ? [] : ['Cancel']}
+                                                                            bold={false}
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
@@ -3691,6 +3678,9 @@ const Orders: React.FC = () => {
                                                                                     return;
                                                                                 } else if (newStatus === 'Deposit') {
                                                                                     setDepositTargetOrder(order);
+                                                                                    return;
+                                                                                } else if (newStatus === 'PdFee') {
+                                                                                    setDeliveryFeeTargetOrder(order);
                                                                                     return;
                                                                                 } else if (newStatus === 'Get File') {
                                                                                     // Same as bulk edit: keep a deposit visible
@@ -3709,14 +3699,14 @@ const Orders: React.FC = () => {
                                                                             // Admins bypass the lock so they can correct mistakes
                                                                             // (e.g. un-mark a wrong Paid); the store cleans up the
                                                                             // logged income when leaving Paid.
-                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'))}
+                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid' || order.paymentStatus === 'PdFee'))}
                                                                         />
                                                                     </td>
                                                                 );
                                                             case 'balance': {
                                                                 const balance = orderBalance(order);
                                                                 return (
-                                                                    <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', fontWeight: 600, textAlign: 'right' }}>
+                                                                    <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', textAlign: 'right' }}>
                                                                         ${balance.toFixed(2)}
                                                                     </td>
                                                                 );
@@ -3732,6 +3722,7 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
+                                                                            bold={false}
                                                                             // Admins may reopen a ReStock order (to Drafted only).
                                                                             readOnly={!canEdit || ((order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel') && !(isAdmin && order.shipping?.status === 'ReStock'))}
                                                                             disabledOptions={((order.shipping?.status === 'Shipped')
@@ -3823,7 +3814,6 @@ const Orders: React.FC = () => {
                                                                                 padding: '4px 8px',
                                                                                 fontSize: 'inherit',
                                                                                 color: 'inherit',
-                                                                                fontFamily: 'monospace',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
                                                                             }}
@@ -3851,27 +3841,27 @@ const Orders: React.FC = () => {
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                             onPointerDown={(e) => e.stopPropagation()}
                                                                         />
-                                                                        {/* Carrier link + cached carrier status (Phase 1 + 2 tracking) */}
+                                                                        {/* Carrier link + cached carrier status (Phase 1 + 2 tracking).
+                                                                            Always rendered (just invisible when there's nothing to show)
+                                                                            so every row reserves the same height — otherwise a row only
+                                                                            grew taller once its tracking ID resolved to carrier data. */}
                                                                         {(() => {
                                                                             const no = order.shipping?.trackingNumber || '';
-                                                                            if (!no) return null;
-                                                                            const url = buildTrackingUrl(order.shipping?.company, no, trackingUrlTemplates);
-                                                                            const row = trackingMap[no];
+                                                                            const url = no ? buildTrackingUrl(order.shipping?.company, no, trackingUrlTemplates) : null;
+                                                                            const row = no ? trackingMap[no] : undefined;
                                                                             const eventsTip = row?.events?.slice(0, 4).map(ev => `${ev.time}  ${ev.status}${ev.desc ? ' — ' + ev.desc : ''}`).join('\n');
-                                                                            if (!url && !row) return null;
+                                                                            const hasContent = !!(url || row);
                                                                             return (
-                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px 2px', fontSize: '10px', lineHeight: 1.3, minWidth: 0 }} onClick={(e) => e.stopPropagation()}>
-                                                                                    {row && (
-                                                                                        <span
-                                                                                            title={row.error ? `Last check failed: ${row.error}` : (eventsTip || row.last_status || '')}
-                                                                                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: row.error ? '#B45309' : (row.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
-                                                                                        >
-                                                                                            {row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`}
-                                                                                            <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>
-                                                                                        </span>
-                                                                                    )}
+                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px 2px', fontSize: '10px', lineHeight: 1.3, minWidth: 0, visibility: hasContent ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                                                                                    <span
+                                                                                        title={row?.error ? `Last check failed: ${row.error}` : (eventsTip || row?.last_status || '')}
+                                                                                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: row?.error ? '#B45309' : (row?.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
+                                                                                    >
+                                                                                        {row ? (row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`) : ' '}
+                                                                                        {row && <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>}
+                                                                                    </span>
                                                                                     {url && (
-                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', fontWeight: 700, whiteSpace: 'nowrap', textDecoration: 'none' }}>
+                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
                                                                                             Track ↗
                                                                                         </a>
                                                                                     )}
@@ -3905,7 +3895,6 @@ const Orders: React.FC = () => {
                                                                                 padding: '4px 8px',
                                                                                 fontSize: 'inherit',
                                                                                 color: 'inherit',
-                                                                                fontFamily: 'Battambang',
                                                                                 border: '1px solid transparent',
                                                                                 background: 'transparent'
                                                                             }}
@@ -3935,7 +3924,7 @@ const Orders: React.FC = () => {
                                                                 return (
                                                                     <td key={colId} style={cellStyle}>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', fontSize: '11px', lineHeight: '1.2' }}>
-                                                                            <span style={{ fontWeight: 500 }}>{order.lastEditedBy || '-'}</span>
+                                                                            <span>{order.lastEditedBy || '-'}</span>
                                                                             {order.lastEditedAt && (
                                                                                 <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px' }}>
                                                                                     {new Date(order.lastEditedAt).toLocaleString()}
@@ -3945,14 +3934,15 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'settleDate': {
-                                                                // Settle date once fully Paid; the deposit's own date
-                                                                // while only Deposited. Gated on the order's current
-                                                                // Pay Status (not just whether the fields happen to be
+                                                                // Settle date once fully Paid or PdFee (the date the
+                                                                // delivery fee was paid); the deposit's own date while
+                                                                // only Deposited. Gated on the order's current Pay
+                                                                // Status (not just whether the fields happen to be
                                                                 // set) — depositDate/settleDate are deliberately kept
                                                                 // on the order even after it's reverted to Unpaid/
                                                                 // Cancel/etc. for financial-record reasons, so showing
                                                                 // them unconditionally would leave a stale date here.
-                                                                const displayDate = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit')
+                                                                const displayDate = (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee')
                                                                     ? (order.settleDate || order.depositDate)
                                                                     : null;
                                                                 return <td key={colId} style={cellStyle}>{displayDate ? new Date(displayDate).toLocaleDateString() : '-'}</td>;
@@ -4145,12 +4135,13 @@ const Orders: React.FC = () => {
                                     <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
                                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                         {(() => {
-                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
                                             const getPayStatusColors = (s: string) => {
                                                 switch (s) {
                                                     case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
                                                     case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE' };
                                                     case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
+                                                    case 'PdFee': return { bg: '#CFFAFE', color: '#0E7490' };
                                                     case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
                                                     case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
                                                     case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626' };
@@ -4472,6 +4463,23 @@ const Orders: React.FC = () => {
                         amountReceived: amount
                     });
                     setDepositTargetOrder(null);
+                }}
+            />
+            {/* Delivery Fee Modal */}
+            <DeliveryFeeModal
+                order={deliveryFeeTargetOrder}
+                onClose={() => setDeliveryFeeTargetOrder(null)}
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                    if (!deliveryFeeTargetOrder) return;
+                    updateOrder(deliveryFeeTargetOrder.id, {
+                        paymentStatus: 'PdFee',
+                        paymentMethod: method as any,
+                        settleDate: date,
+                        amountReceived: amount,
+                        depositAccountId,
+                        depositAccountName
+                    });
+                    setDeliveryFeeTargetOrder(null);
                 }}
             />
             {/* Stock Movement Summary (shared with the Stock Movements page) — opens on today */}

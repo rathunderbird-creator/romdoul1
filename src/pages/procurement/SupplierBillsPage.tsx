@@ -14,11 +14,11 @@
 //   receipt entry Posted, amount_paid > 0             -> 'Partially Paid'
 //   receipt entry Posted, nothing paid yet             -> 'Posted'
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Eye, Printer, CheckCircle2, Pencil, Trash2, DollarSign, Download, RefreshCw, FileText } from 'lucide-react';
+import { Plus, Search, Eye, Printer, CheckCircle2, Pencil, Trash2, DollarSign, Download, RefreshCw, FileText, HelpCircle } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
-import { useProcurement } from '../../hooks/useProcurement';
+import { useProcurement, postPurchaseReceiptEntry } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { useMobile } from '../../hooks/useMobile';
 import { supabase } from '../../lib/supabase';
@@ -145,11 +145,23 @@ const SupplierBillsPage = () => {
 
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'All' | BillStatus>('All');
+    const [supplierFilter, setSupplierFilter] = useState<string>('All');
+
+    // Only suppliers that actually have a bill — same data-derived approach
+    // as the "Bill a delivery…" picker, so the dropdown never offers a
+    // supplier with nothing to show.
+    const billSuppliers = useMemo(() => {
+        const ids = new Set(bills.map(po => po.supplier_id));
+        return Array.from(ids)
+            .map(id => ({ id, name: supplierById.get(id)?.name || bills.find(po => po.supplier_id === id)?.supplier?.name || '(Deleted supplier)' }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [bills, supplierById]);
 
     const filteredBills = useMemo(() => {
         const q = search.trim().toLowerCase();
         return bills
             .filter(po => statusFilter === 'All' || billStatusOf(po) === statusFilter)
+            .filter(po => supplierFilter === 'All' || po.supplier_id === supplierFilter)
             .filter(po => {
                 if (!q) return true;
                 const supplierName = po.supplier?.name || supplierById.get(po.supplier_id)?.name || '';
@@ -157,9 +169,9 @@ const SupplierBillsPage = () => {
             })
             .sort((a, b) => (b.payment_due_date || b.order_date || '').localeCompare(a.payment_due_date || a.order_date || ''));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bills, search, statusFilter, jeByPoId, supplierById]);
+    }, [bills, search, statusFilter, supplierFilter, jeByPoId, supplierById]);
 
-    const hasActiveFilters = search !== '' || statusFilter !== 'All';
+    const hasActiveFilters = search !== '' || statusFilter !== 'All' || supplierFilter !== 'All';
 
     // ── New / Edit Bill modal ──
     const [billModal, setBillModal] = useState<BillModalState | null>(null);
@@ -198,14 +210,28 @@ const SupplierBillsPage = () => {
 
     // ── Post (Draft -> flips the existing receipt entry to Posted) ──
     const [postingId, setPostingId] = useState<string | null>(null);
+    const [confirmPostPO, setConfirmPostPO] = useState<PurchaseOrder | null>(null);
     const postBill = async (po: PurchaseOrder) => {
-        const je = jeByPoId.get(po.id);
-        if (!je) {
-            showToast('No ledger entry found for this delivery — resave it on the Purchase Orders page, then try again.', 'error');
-            return;
-        }
         setPostingId(po.id);
         try {
+            let je = jeByPoId.get(po.id);
+            if (!je) {
+                // A delivery billed via "Bill a delivery…" only ever touches
+                // invoice_number/due date (saveBillReference) — it never
+                // re-runs the receipt posting that a full PO save does, so a
+                // delivery received before that posting existed (or that
+                // failed silently at receive time) can reach here with no
+                // entry at all. Create it now instead of sending the user on
+                // a round trip to Purchase Orders.
+                await postPurchaseReceiptEntry(po.id, Number(po.total_amount) || 0, po.supplier_id, showToast);
+                const { data: created } = await supabase.from('journal_entries')
+                    .select('id, status').eq('reference_id', 'PO-' + po.id).limit(1).maybeSingle();
+                je = created || undefined;
+            }
+            if (!je) {
+                showToast('Could not create a ledger entry for this delivery — check the Chart of Accounts has Inventory and Accounts Payable accounts.', 'error');
+                return;
+            }
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', je.id);
             if (error) throw error;
             showToast('Bill posted', 'success');
@@ -373,6 +399,10 @@ const SupplierBillsPage = () => {
                     <option value="All">All statuses</option>
                     {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+                <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px', cursor: 'pointer' }}>
+                    <option value="All">All suppliers</option>
+                    {billSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
                 <select
                     value=""
                     onChange={e => { if (e.target.value) openNewBill(e.target.value); }}
@@ -391,7 +421,7 @@ const SupplierBillsPage = () => {
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
-                    <button onClick={() => { setSearch(''); setStatusFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
+                    <button onClick={() => { setSearch(''); setStatusFilter('All'); setSupplierFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
                         Clear
                     </button>
                 )}
@@ -423,7 +453,7 @@ const SupplierBillsPage = () => {
                         const outstanding = (po.total_amount || 0) - (po.amount_paid || 0);
                         const actions = [
                             { icon: Eye, label: 'View', color: '#6366F1', onClick: () => openView(po) },
-                            ...(needsPosting(po) ? [{ icon: CheckCircle2, label: 'Post', color: '#4C5FD0', onClick: () => postBill(po) }] : []),
+                            ...(needsPosting(po) ? [{ icon: CheckCircle2, label: 'Post', color: '#4C5FD0', onClick: () => setConfirmPostPO(po) }] : []),
                             ...(status === 'Draft' ? [
                                 { icon: Pencil, label: 'Edit', color: '#2563EB', onClick: () => openEditBill(po) },
                                 { icon: Trash2, label: 'Delete', color: '#EF4444', onClick: () => handleUnbill(po) },
@@ -433,7 +463,7 @@ const SupplierBillsPage = () => {
                             <SwipeRow key={po.id} onClick={() => openView(po)} style={{ borderBottom: '1px solid var(--color-border)' }} actions={actions}>
                                 <div style={{ padding: '10px 12px 10px 14px', borderLeft: `4px solid ${STATUS_CFG[status].color}` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)' }}>{po.invoice_number || poShortId(po)}</span>
+                                        <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)' }}>{po.invoice_number || poShortId(po)}</span>
                                         <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(po.total_amount)}</span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
@@ -469,7 +499,7 @@ const SupplierBillsPage = () => {
                                     const outstanding = (po.total_amount || 0) - (po.amount_paid || 0);
                                     return (
                                         <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 20px', fontFamily: 'monospace', fontSize: '12.5px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{po.invoice_number || poShortId(po)}</td>
+                                            <td style={{ padding: '12px 20px', fontSize: '12.5px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{po.invoice_number || poShortId(po)}</td>
                                             <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}</td>
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(po.payment_due_date)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(po.total_amount)}</td>
@@ -480,7 +510,7 @@ const SupplierBillsPage = () => {
                                                     <button onClick={() => openView(po)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
                                                     <button onClick={() => printBill(po)} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
                                                     {needsPosting(po) && (
-                                                        <button onClick={() => postBill(po)} disabled={postingId === po.id} title="Post" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === po.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === po.id ? 0.6 : 1 }}>
+                                                        <button onClick={() => setConfirmPostPO(po)} disabled={postingId === po.id} title="Post" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === po.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === po.id ? 0.6 : 1 }}>
                                                             {postingId === po.id ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={15} />}
                                                         </button>
                                                     )}
@@ -551,7 +581,7 @@ const SupplierBillsPage = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
-                            <span style={{ color: 'var(--color-text-main)', fontFamily: 'monospace' }}>{viewPO.invoice_number || poShortId(viewPO)}</span>
+                            <span style={{ color: 'var(--color-text-main)' }}>{viewPO.invoice_number || poShortId(viewPO)}</span>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Supplier</span>
                             <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewPO.supplier?.name || supplierById.get(viewPO.supplier_id)?.name || '—'}</span>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Due</span>
@@ -615,7 +645,7 @@ const SupplierBillsPage = () => {
                                 <Printer size={13} /> Print
                             </button>
                             {needsPosting(viewPO) && (
-                                <button onClick={() => postBill(viewPO)} disabled={postingId === viewPO.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPO.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPO.id ? 0.6 : 1 }}>
+                                <button onClick={() => setConfirmPostPO(viewPO)} disabled={postingId === viewPO.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPO.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPO.id ? 0.6 : 1 }}>
                                     <CheckCircle2 size={13} /> {postingId === viewPO.id ? 'Posting…' : 'Post'}
                                 </button>
                             )}
@@ -637,6 +667,35 @@ const SupplierBillsPage = () => {
                     remainingBalance={viewOutstanding}
                     supplierName={viewPO.supplier?.name || supplierById.get(viewPO.supplier_id)?.name}
                 />
+            )}
+
+            {confirmPostPO && (
+                <div onClick={() => setConfirmPostPO(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(76,95,208,0.12)', color: '#4c5fd0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <HelpCircle size={22} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>Are you sure?</h3>
+                                <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
+                                    Post {confirmPostPO.invoice_number || poShortId(confirmPostPO)}? This creates the payable.
+                                </p>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                            <button onClick={() => setConfirmPostPO(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => { const po = confirmPostPO; setConfirmPostPO(null); postBill(po); }}
+                                style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                                Post
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

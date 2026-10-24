@@ -16,10 +16,13 @@
 }
 
 /* Khmer script is taller than Latin and wraps differently (spec §5). Any
-   element that can hold a customer / salesman / page / courier name gets this. */
+   element that can hold a customer / salesman / page / courier name gets this
+   — regardless of whether that particular name turns out to be Khmer or
+   Latin, so Inter leads the stack for the common Latin case; Khmer glyphs
+   still fall back to Battambang right after it. */
 .d2-khmer {
     line-height: 1.85;
-    font-family: 'Battambang', 'Khmer OS Battambang', 'Noto Sans Khmer', 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', 'Battambang', 'Khmer OS Battambang', 'Noto Sans Khmer', system-ui, sans-serif;
     overflow-wrap: anywhere;
 }
 

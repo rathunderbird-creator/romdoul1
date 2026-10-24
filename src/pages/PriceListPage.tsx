@@ -285,7 +285,7 @@ const PriceListPage: React.FC = () => {
                                             )}
                                         </td>
                                         <td style={{ ...tdStyle, fontWeight: 600, color: 'var(--color-text-main)' }}>{p.name}</td>
-                                        <td style={{ ...tdStyle, color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>{p.model || '—'}</td>
+                                        <td style={{ ...tdStyle, color: 'var(--color-text-secondary)', fontSize: '12px' }}>{p.model || '—'}</td>
                                         <td style={tdStyle}>
                                             {p.category ? (
                                                 <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: 'var(--color-bg)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>{p.category}</span>

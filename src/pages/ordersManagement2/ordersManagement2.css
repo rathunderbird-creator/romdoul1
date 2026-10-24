@@ -9,7 +9,7 @@
 
 .om2-khmer {
     line-height: 1.85;
-    font-family: 'Battambang', 'Khmer OS Battambang', 'Noto Sans Khmer', 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', 'Battambang', 'Khmer OS Battambang', 'Noto Sans Khmer', system-ui, sans-serif;
     overflow-wrap: anywhere;
 }
 
