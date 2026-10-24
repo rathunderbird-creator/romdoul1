@@ -527,7 +527,7 @@ const lockedOrderMessage = (order: Sale) =>
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, toggleOrderColumnPin, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
     // The fetched page of orders (declared early: the header effect below lists
@@ -3501,30 +3501,6 @@ const Orders: React.FC = () => {
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    toggleOrderColumnPin(colId);
-                                                                }}
-                                                                style={{
-                                                                    background: 'transparent',
-                                                                    border: 'none',
-                                                                    cursor: 'pointer',
-                                                                    padding: '2px',
-                                                                    marginLeft: '4px',
-                                                                    opacity: isPinned ? 1 : 0.3,
-                                                                    transition: 'opacity 0.2s',
-                                                                    display: 'flex', alignItems: 'center'
-                                                                }}
-                                                                onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                                                                onMouseLeave={(e) => e.currentTarget.style.opacity = isPinned ? '1' : '0.3'}
-                                                                title={isPinned ? "Unpin Column" : "Pin Column"}
-                                                            >
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned ? "var(--color-primary)" : "none"} stroke={isPinned ? "var(--color-primary)" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                    <line x1="12" y1="17" x2="12" y2="22"></line>
-                                                                    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                                                </svg>
-                                                            </button>
                                                         </div>
                                                         <div
                                                             onMouseDown={(e) => startResize(e, colId)}
@@ -3693,6 +3669,7 @@ const Orders: React.FC = () => {
                                                                         <PaymentStatusBadge
                                                                             status={order.paymentStatus || 'Unpaid'}
                                                                             disabledOptions={isAdmin ? [] : ['Cancel']}
+                                                                            bold={false}
                                                                             onChange={(newStatus) => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
@@ -3745,6 +3722,7 @@ const Orders: React.FC = () => {
                                                                     }}>
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
+                                                                            bold={false}
                                                                             // Admins may reopen a ReStock order (to Drafted only).
                                                                             readOnly={!canEdit || ((order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel') && !(isAdmin && order.shipping?.status === 'ReStock'))}
                                                                             disabledOptions={((order.shipping?.status === 'Shipped')
