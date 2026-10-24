@@ -145,11 +145,23 @@ const SupplierBillsPage = () => {
 
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'All' | BillStatus>('All');
+    const [supplierFilter, setSupplierFilter] = useState<string>('All');
+
+    // Only suppliers that actually have a bill — same data-derived approach
+    // as the "Bill a delivery…" picker, so the dropdown never offers a
+    // supplier with nothing to show.
+    const billSuppliers = useMemo(() => {
+        const ids = new Set(bills.map(po => po.supplier_id));
+        return Array.from(ids)
+            .map(id => ({ id, name: supplierById.get(id)?.name || bills.find(po => po.supplier_id === id)?.supplier?.name || '(Deleted supplier)' }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [bills, supplierById]);
 
     const filteredBills = useMemo(() => {
         const q = search.trim().toLowerCase();
         return bills
             .filter(po => statusFilter === 'All' || billStatusOf(po) === statusFilter)
+            .filter(po => supplierFilter === 'All' || po.supplier_id === supplierFilter)
             .filter(po => {
                 if (!q) return true;
                 const supplierName = po.supplier?.name || supplierById.get(po.supplier_id)?.name || '';
@@ -157,9 +169,9 @@ const SupplierBillsPage = () => {
             })
             .sort((a, b) => (b.payment_due_date || b.order_date || '').localeCompare(a.payment_due_date || a.order_date || ''));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bills, search, statusFilter, jeByPoId, supplierById]);
+    }, [bills, search, statusFilter, supplierFilter, jeByPoId, supplierById]);
 
-    const hasActiveFilters = search !== '' || statusFilter !== 'All';
+    const hasActiveFilters = search !== '' || statusFilter !== 'All' || supplierFilter !== 'All';
 
     // ── New / Edit Bill modal ──
     const [billModal, setBillModal] = useState<BillModalState | null>(null);
@@ -373,6 +385,10 @@ const SupplierBillsPage = () => {
                     <option value="All">All statuses</option>
                     {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+                <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px', cursor: 'pointer' }}>
+                    <option value="All">All suppliers</option>
+                    {billSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
                 <select
                     value=""
                     onChange={e => { if (e.target.value) openNewBill(e.target.value); }}
@@ -391,7 +407,7 @@ const SupplierBillsPage = () => {
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
-                    <button onClick={() => { setSearch(''); setStatusFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
+                    <button onClick={() => { setSearch(''); setStatusFilter('All'); setSupplierFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
                         Clear
                     </button>
                 )}
