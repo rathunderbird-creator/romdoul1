@@ -64,7 +64,7 @@ const PERMISSION_GROUPS: PermissionGroup[] = [
         ],
     },
     {
-        category: 'Purchasing',
+        category: 'Procurement',
         icon: Truck,
         permissions: [
             { key: 'manage_procurement', label: 'Manage Procurement', description: 'Purchase orders, suppliers and receiving' },

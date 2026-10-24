@@ -530,6 +530,8 @@ export interface SupplierPayment {
     notes?: string;
     paid_from_account_id?: string; // chart-of-accounts cash/bank account (migrations/add_supplier_payment_account.sql)
     created_at?: string;
+    // Joined field for UI
+    supplier?: Supplier;
 }
 
 // ==========================================
