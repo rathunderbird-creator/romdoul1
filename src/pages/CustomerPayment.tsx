@@ -94,7 +94,7 @@ const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
     return (
         <span style={{
             display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '12px',
-            fontSize: '11px', fontWeight: 700, background: `${color}1A`, color
+            fontSize: '11px', fontWeight: 400, background: `${color}1A`, color
         }}>
             {label}
         </span>
@@ -107,7 +107,7 @@ const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
 const StatusChip: React.FC<{ status: LedgerStatus | 'Unknown' }> = ({ status }) => (
     <span style={{
         display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: '12px',
-        fontSize: '11px', fontWeight: 700,
+        fontSize: '11px', fontWeight: 400,
         background: status === 'Draft' ? '#fef3c7' : status === 'Posted' ? 'rgba(84, 105, 212, 0.12)' : 'var(--color-bg)',
         color: status === 'Draft' ? '#92400e' : status === 'Posted' ? '#4c5fd0' : 'var(--color-text-secondary)',
     }}>
@@ -1375,11 +1375,11 @@ const CustomerPaymentPage: React.FC = () => {
                                                     style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
-                                            <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '12px' }}>{referenceOf(r)}</td>
+                                            <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{referenceOf(r)}</td>
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
-                                            <td style={{ ...tdStyle, fontWeight: 600 }}>{customerLabel}</td>
+                                            <td style={tdStyle}>{customerLabel}</td>
                                             <td style={tdStyle}><TypeBadge category={r.category} /></td>
-                                            <td style={{ ...tdStyle, fontWeight: 600, color: '#059669' }}>{formatAmount(r.amount)}</td>
+                                            <td style={{ ...tdStyle, color: '#059669' }}>{formatAmount(r.amount)}</td>
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
