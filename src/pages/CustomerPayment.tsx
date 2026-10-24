@@ -292,10 +292,37 @@ const CustomerPaymentPage: React.FC = () => {
         .sort((a, b) => (b.d - a.d) || (b.c - a.c))
         .map(x => x.r), [retailPayments]);
 
-    // Only show the Reference / Notes columns when this database instance actually
-    // has data in them — they may not exist on every instance yet.
-    const hasReferenceData = useMemo(() => retailPayments.some(r => (r.reference || '').trim() !== ''), [retailPayments]);
+    // Only show the Notes column when this database instance actually has
+    // data in it — it may not exist on every instance yet. Reference always
+    // shows: a manually-typed one (Post Now's optional field) is kept as-is,
+    // everything else falls back to a computed "RCP/DEP-YYYYMMDD-NNN" below.
     const hasNotesData = useMemo(() => retailPayments.some(r => (r.notes || '').trim() !== ''), [retailPayments]);
+
+    // Computed only for rows with no manually-typed reference — grouped by
+    // day, numbered in creation order within that day. Same RCP/DEP prefixes
+    // the underlying journal entry already uses for this row (see
+    // handlePostNowConfirm's `type: isDepositRow(tx) ? 'DEP' : 'RCP'`
+    // above), so the label matches the ledger. Derived for display only —
+    // no migration, works for every existing row immediately.
+    const computedReferenceOf = useMemo(() => {
+        const byDate = new Map<string, CustomerPaymentRow[]>();
+        for (const r of retailPayments) {
+            if ((r.reference || '').trim() !== '') continue;
+            const day = dayKeyFromDate(parseDate(r.date));
+            const arr = byDate.get(day);
+            if (arr) arr.push(r); else byDate.set(day, [r]);
+        }
+        const refs = new Map<string, string>();
+        for (const [day, list] of byDate) {
+            const ordered = [...list].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+            ordered.forEach((r, i) => {
+                const prefix = isDepositRow(r) ? 'DEP' : 'RCP';
+                refs.set(r.id, `${prefix}-${day.replace(/-/g, '')}-${String(i + 1).padStart(3, '0')}`);
+            });
+        }
+        return refs;
+    }, [retailPayments]);
+    const referenceOf = useCallback((r: CustomerPaymentRow): string => (r.reference || '').trim() || computedReferenceOf.get(r.id) || '—', [computedReferenceOf]);
 
     const shippingOptions = useMemo(
         () => Array.from(new Set(retailPayments.map(r => r.shipping_co).filter((s): s is string => !!s))).sort(),
@@ -654,10 +681,10 @@ const CustomerPaymentPage: React.FC = () => {
             if (shippingFilter !== 'All' && (r.shipping_co || '') !== shippingFilter) return false;
             if (statusFilter !== 'All' && statusOf(r.id) !== statusFilter) return false;
             if (!term) return true;
-            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, r.reference, r.notes]
+            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, referenceOf(r), r.notes]
                 .some(v => (v || '').toLowerCase().includes(term));
         });
-    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange]);
+    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange, referenceOf]);
 
     const stats = useMemo(() => {
         const s = { total: 0, count: 0, paid: 0, paidCount: 0, deposit: 0, depositCount: 0, draft: 0, draftCount: 0 };
@@ -921,7 +948,7 @@ const CustomerPaymentPage: React.FC = () => {
             'Payment Type': isDepositRow(r) ? 'Deposit' : 'Paid',
             Amount: Number(r.amount || 0),
             Method: r.pay_by || '',
-            Reference: r.reference || '',
+            Reference: referenceOf(r),
             Notes: r.notes || '',
             'Added by': r.added_by || '',
             Status: ledgerReady || postedIds.has(r.id) ? statusOf(r.id) : '',
@@ -934,7 +961,7 @@ const CustomerPaymentPage: React.FC = () => {
         XLSX.writeFile(wb, `Customer_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
-    const colCount = 9 + (hasReferenceData ? 1 : 0) + (hasNotesData ? 1 : 0);
+    const colCount = 10 + (hasNotesData ? 1 : 0);
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
     const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
@@ -1289,7 +1316,7 @@ const CustomerPaymentPage: React.FC = () => {
                                 <th style={thStyle}>Payment Type</th>
                                 <th style={thStyle}>Amount</th>
                                 <th style={thStyle}>Method</th>
-                                {hasReferenceData && <th style={thStyle}>Reference</th>}
+                                <th style={thStyle}>Reference</th>
                                 {hasNotesData && <th style={thStyle}>Notes</th>}
                                 <th style={thStyle}>Added by</th>
                                 <th style={thStyle}>Status</th>
@@ -1358,15 +1385,11 @@ const CustomerPaymentPage: React.FC = () => {
                                                     {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
                                                 </div>
                                             </td>
-                                            {hasReferenceData && (
-                                                <td style={tdStyle}>
-                                                    {r.reference ? (
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                                            <Hash size={12} style={{ color: 'var(--color-text-secondary)' }} />{r.reference}
-                                                        </span>
-                                                    ) : '—'}
-                                                </td>
-                                            )}
+                                            <td style={tdStyle}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace', fontSize: '12px' }}>
+                                                    <Hash size={12} style={{ color: 'var(--color-text-secondary)' }} />{referenceOf(r)}
+                                                </span>
+                                            </td>
                                             {hasNotesData && (
                                                 <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '240px' }}>{r.notes || '—'}</td>
                                             )}
