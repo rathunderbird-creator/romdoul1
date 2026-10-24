@@ -25,7 +25,7 @@ type ToastFn = (msg: string, kind: 'success' | 'error' | 'info') => void;
 // it again. Called on EVERY save of a Received PO (not just the transition),
 // so a post that failed once self-heals on the next save, and a still-Draft
 // entry follows an edited PO total. Non-fatal: the receive itself succeeded.
-const postPurchaseReceiptEntry = async (
+export const postPurchaseReceiptEntry = async (
     poId: string,
     totalAmount: number,
     supplierId: string | undefined,

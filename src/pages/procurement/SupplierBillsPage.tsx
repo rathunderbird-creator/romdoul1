@@ -18,7 +18,7 @@ import { Plus, Search, Eye, Printer, CheckCircle2, Pencil, Trash2, DollarSign, D
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
-import { useProcurement } from '../../hooks/useProcurement';
+import { useProcurement, postPurchaseReceiptEntry } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { useMobile } from '../../hooks/useMobile';
 import { supabase } from '../../lib/supabase';
@@ -211,13 +211,26 @@ const SupplierBillsPage = () => {
     // ── Post (Draft -> flips the existing receipt entry to Posted) ──
     const [postingId, setPostingId] = useState<string | null>(null);
     const postBill = async (po: PurchaseOrder) => {
-        const je = jeByPoId.get(po.id);
-        if (!je) {
-            showToast('No ledger entry found for this delivery — resave it on the Purchase Orders page, then try again.', 'error');
-            return;
-        }
         setPostingId(po.id);
         try {
+            let je = jeByPoId.get(po.id);
+            if (!je) {
+                // A delivery billed via "Bill a delivery…" only ever touches
+                // invoice_number/due date (saveBillReference) — it never
+                // re-runs the receipt posting that a full PO save does, so a
+                // delivery received before that posting existed (or that
+                // failed silently at receive time) can reach here with no
+                // entry at all. Create it now instead of sending the user on
+                // a round trip to Purchase Orders.
+                await postPurchaseReceiptEntry(po.id, Number(po.total_amount) || 0, po.supplier_id, showToast);
+                const { data: created } = await supabase.from('journal_entries')
+                    .select('id, status').eq('reference_id', 'PO-' + po.id).limit(1).maybeSingle();
+                je = created || undefined;
+            }
+            if (!je) {
+                showToast('Could not create a ledger entry for this delivery — check the Chart of Accounts has Inventory and Accounts Payable accounts.', 'error');
+                return;
+            }
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', je.id);
             if (error) throw error;
             showToast('Bill posted', 'success');
