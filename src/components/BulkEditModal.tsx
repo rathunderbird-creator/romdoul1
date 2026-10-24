@@ -17,9 +17,25 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
     const [payBy, setPayBy] = useState<string>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Orders.tsx keeps this modal permanently mounted (unlike
+    // OrdersManagement2View, which mounts/unmounts it per open) — without
+    // this, a field/value/settleDate left over from one applied edit would
+    // silently reappear pre-filled on a LATER, unrelated selection the next
+    // time the modal opens, and a one-click "Update Orders" would apply it.
+    useEffect(() => {
+        if (!isOpen) {
+            setField('date');
+            setValue('');
+            setSettleDate('');
+            setPayBy('');
+        }
+    }, [isOpen]);
+
     useEffect(() => {
         if (field === 'paymentStatus' && (value === 'Paid' || value === 'Settled')) {
-            // Settle date is no longer asked for in the form — it is always today.
+            // Default Settle Date to today — the field below lets the admin
+            // pick a different day (e.g. backdating a batch of orders that
+            // actually settled earlier), same as the standalone Date fields.
             const now = new Date();
             const yyyy = now.getFullYear();
             const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -36,8 +52,15 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
 
     if (!isOpen) return null;
 
+    // A cleared Settle Date must never silently fall through to "right now" —
+    // both page-level handlers treat an empty string that way, which would
+    // misdate every order in the batch with no warning.
+    const settleDateRequired = field === 'paymentStatus' && (value === 'Paid' || value === 'Settled');
+    const settleDateValid = /^\d{4}-\d{2}-\d{2}$/.test(settleDate);
+    const canApply = !!value && !isSubmitting && (!settleDateRequired || settleDateValid);
+
     const handleApply = async () => {
-        if (!value) return;
+        if (!canApply) return;
         setIsSubmitting(true);
         try {
             await onApply(field, value, settleDate, payBy);
@@ -244,6 +267,51 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             {(value === 'Paid' || value === 'Settled') && (
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                                        Settle Date
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input
+                                            type="date"
+                                            value={settleDate}
+                                            onChange={(e) => setSettleDate(e.target.value)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '12px',
+                                                borderRadius: '8px',
+                                                border: `1px solid ${settleDateValid ? 'var(--color-border)' : 'red'}`,
+                                                fontSize: '14px'
+                                            }}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                const now = new Date();
+                                                const yyyy = now.getFullYear();
+                                                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                                                const dd = String(now.getDate()).padStart(2, '0');
+                                                setSettleDate(`${yyyy}-${mm}-${dd}`);
+                                            }}
+                                            style={{
+                                                padding: '0 16px',
+                                                borderRadius: '8px',
+                                                border: '1px solid var(--color-primary)',
+                                                background: 'var(--color-surface)',
+                                                color: 'var(--color-primary)',
+                                                fontWeight: 500,
+                                                cursor: 'pointer',
+                                                fontSize: '13px',
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        >
+                                            Now
+                                        </button>
+                                    </div>
+                                    {!settleDateValid && (
+                                        <div style={{ fontSize: '11px', color: 'red', marginTop: '6px' }}>
+                                            A settle date is required to mark orders {value === 'Settled' ? 'Settled' : 'Paid'}.
+                                        </div>
+                                    )}
+
+                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, margin: '16px 0 8px', color: 'var(--color-text-secondary)' }}>
                                         Pay By
                                     </label>
                                     <select
@@ -259,9 +327,6 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                                     >
                                         {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                                     </select>
-                                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
-                                        Settle date will be set to today.
-                                    </div>
                                 </div>
                             )}
                         </div>
@@ -287,7 +352,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                     </button>
                     <button
                         onClick={handleApply}
-                        disabled={!value || isSubmitting}
+                        disabled={!canApply}
                         className="primary-button"
                         style={{
                             flex: 1,
@@ -298,8 +363,8 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             gap: '8px',
                             fontSize: '14px',
                             fontWeight: 600,
-                            opacity: (!value || isSubmitting) ? 0.7 : 1,
-                            cursor: (!value || isSubmitting) ? 'not-allowed' : 'pointer'
+                            opacity: !canApply ? 0.7 : 1,
+                            cursor: !canApply ? 'not-allowed' : 'pointer'
                         }}
                     >
                         {isSubmitting ? 'Updating...' : 'Update Orders'}
