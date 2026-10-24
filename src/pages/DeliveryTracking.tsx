@@ -12,7 +12,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
-import { getOperatorForPhone } from '../utils/telecom';
+import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
 import { getShippingLogo } from '../utils/shipping';
 
 const getStatusBorderColor = (s: string) => {
@@ -1324,7 +1324,11 @@ const DeliveryTracking: React.FC = () => {
                             borderCollapse: 'separate',
                             borderSpacing: 0,
                             fontSize: '13px',
-                            tableLayout: 'fixed'
+                            tableLayout: 'fixed',
+                            // Matches Orders Management's row height (that page's taller
+                            // rows come from a reserved tracking-status line this table
+                            // doesn't have, not a different padding setting).
+                            ['--table-padding' as any]: '12px 6px'
                         }}
                     >
                         <thead>
@@ -1438,7 +1442,7 @@ const DeliveryTracking: React.FC = () => {
                                     }
                                     {visibleColumns.includes('date') && <td style={{ width: `var(--col-delivery-date-width, ${columnWidths.date}px)` }}>{new Date(order.date).toLocaleDateString()}</td>}
                                     {visibleColumns.includes('customer') && <td style={{ width: `var(--col-delivery-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
-                                    {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>
+                                    {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={formatPhoneDisplay(order.customer?.phone)}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                             {order.customer?.phone && getOperatorForPhone(order.customer.phone)?.logo && (
                                                 <img 
@@ -1447,7 +1451,7 @@ const DeliveryTracking: React.FC = () => {
                                                     style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} 
                                                 />
                                             )}
-                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{order.customer?.phone}</span>
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatPhoneDisplay(order.customer?.phone)}</span>
                                         </div>
                                     </td>}
                                     {visibleColumns.includes('address') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-address-width, ${columnWidths.address}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.address || ''}>{order.customer?.address || '-'}</td>}
@@ -1795,7 +1799,7 @@ const DeliveryTracking: React.FC = () => {
                                                     style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} 
                                                 />
                                             )}
-                                            <span>{selectedOrder.customer?.phone}</span>
+                                            <span>{formatPhoneDisplay(selectedOrder.customer?.phone)}</span>
                                         </div>
                                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{selectedOrder.customer?.address}</div>
                                     </div>

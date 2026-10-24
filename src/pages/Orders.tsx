@@ -8,7 +8,7 @@ import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
 import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
 import { useToast } from '../context/ToastContext';
-import { getOperatorForPhone } from '../utils/telecom';
+import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal, DeliveryFeeModal } from '../components';
@@ -3623,7 +3623,7 @@ const Orders: React.FC = () => {
                                                                     <td key={colId} style={cellStyle}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                             {operator && <img src={operator.logo} alt={operator.name} style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '2px' }} title={operator.name} />}
-                                                                            <span>{order.customer?.phone || '-'}</span>
+                                                                            <span>{formatPhoneDisplay(order.customer?.phone) || '-'}</span>
                                                                         </div>
                                                                     </td>
                                                                 );

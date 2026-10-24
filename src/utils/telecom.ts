@@ -58,3 +58,16 @@ export const getOperatorForPhone = (phone: string | null | undefined) => {
 
     return null;
 };
+
+// Cambodian mobile display format: groups of 3-3-3 for a 9-digit number or
+// 3-3-4 for a 10-digit one, e.g. 0977980876 -> '097 798 0876'. Any other
+// length (country code, landline, malformed data) is returned unchanged
+// rather than risk garbling a number we don't recognize the shape of.
+export const formatPhoneDisplay = (phone: string | null | undefined): string => {
+    if (!phone) return '';
+    const digits = String(phone).replace(/\D/g, '');
+    if (digits.length === 9 || digits.length === 10) {
+        return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+    }
+    return phone;
+};
