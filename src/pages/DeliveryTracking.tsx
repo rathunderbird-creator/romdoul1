@@ -1371,7 +1371,7 @@ const DeliveryTracking: React.FC = () => {
                                                 onClick={() => handleSort(colId)}
                                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: '100%', userSelect: 'none', padding: 'var(--table-padding, 5px 6px)', cursor: 'pointer' }}
                                             >
-                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{col.label}</span>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 'normal' }}>{col.label}</span>
                                                 {sortConfig?.key === colId && (
                                                     sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
                                                 )}
@@ -1437,7 +1437,7 @@ const DeliveryTracking: React.FC = () => {
                                         </td>
                                     }
                                     {visibleColumns.includes('date') && <td style={{ width: `var(--col-delivery-date-width, ${columnWidths.date}px)` }}>{new Date(order.date).toLocaleDateString()}</td>}
-                                    {visibleColumns.includes('customer') && <td style={{ fontWeight: 500, width: `var(--col-delivery-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
+                                    {visibleColumns.includes('customer') && <td style={{ width: `var(--col-delivery-customer-width, ${columnWidths.customer}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.name}>{order.customer?.name}</td>}
                                     {visibleColumns.includes('phone') && <td style={{ color: 'var(--color-text-secondary)', width: `var(--col-delivery-phone-width, ${columnWidths.phone}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.customer?.phone}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                             {order.customer?.phone && getOperatorForPhone(order.customer.phone)?.logo && (
@@ -1468,19 +1468,20 @@ const DeliveryTracking: React.FC = () => {
                                         {order.shipping?.trackingNumber ? (() => {
                                             const url = buildTrackingUrl(order.shipping?.company, order.shipping.trackingNumber, trackingUrlTemplates);
                                             return url ? (
-                                                <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ background: '#EFF6FF', color: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600 }}>
+                                                <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ background: '#EFF6FF', color: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none' }}>
                                                     {order.shipping.trackingNumber} ↗
                                                 </a>
                                             ) : (
                                                 <span style={{ background: '#F3F4F6', padding: '2px 6px', borderRadius: '4px' }}>{order.shipping.trackingNumber}</span>
                                             );
-                                        })() : '-'}
+                                        })() : <span style={{ padding: '2px 6px', display: 'inline-block' }}>-</span>}
                                     </td>}
                                     {visibleColumns.includes('deliveryMan') && <td style={{ width: `var(--col-delivery-deliveryMan-width, ${columnWidths.deliveryMan}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.shipping?.staffName || ''}>{order.shipping?.staffName || '-'}</td>}
                                     {visibleColumns.includes('status') && <td style={{ width: `var(--col-delivery-status-width, ${columnWidths.status}px)` }}>
                                         <StatusBadge
                                             status={order.shipping?.status || 'Pending'}
                                             onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock')}
+                                            bold={false}
                                         />
                                     </td>}
                                     {visibleColumns.includes('cost') && <td style={{ textAlign: 'right', width: `var(--col-delivery-cost-width, ${columnWidths.cost}px)` }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}
