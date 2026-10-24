@@ -982,7 +982,7 @@ const CustomerPaymentPage: React.FC = () => {
     });
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px', fontFamily: "'Inter', 'Battambang', sans-serif" }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
             {/* Summary stat cards — Paid / Deposit / Unposted also toggle their filter */}
             <div style={{
                 display: 'grid',
