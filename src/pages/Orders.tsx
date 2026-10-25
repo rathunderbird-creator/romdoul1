@@ -3482,25 +3482,25 @@ const Orders: React.FC = () => {
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'visible', color: 'var(--color-text-main)' }}>
                                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 'normal' }}>{colDef?.label || colId}</span>
                                                                 <SortIcon columnKey={colId} />
-                                                                {colId !== 'actions' && (
-                                                                    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-                                                                        <button
-                                                                            ref={(el) => { filterBtnRefs.current[colId] = el; }}
-                                                                            onClick={() => setActiveColFilter(activeColFilter === colId ? null : colId)}
-                                                                            style={{
-                                                                                background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px',
-                                                                                color: columnFilters[colId] ? 'white' : 'var(--color-text-main)',
-                                                                                backgroundColor: columnFilters[colId] ? '#ef4444' : 'transparent',
-                                                                                borderRadius: '4px',
-                                                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                                            }}
-                                                                            title="Filter Column"
-                                                                        >
-                                                                            <Filter size={14} />
-                                                                        </button>
-                                                                    </div>
-                                                                )}
                                                             </div>
+                                                            {colId !== 'actions' && (
+                                                                <div style={{ position: 'relative', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                                                                    <button
+                                                                        ref={(el) => { filterBtnRefs.current[colId] = el; }}
+                                                                        onClick={() => setActiveColFilter(activeColFilter === colId ? null : colId)}
+                                                                        style={{
+                                                                            background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px',
+                                                                            color: columnFilters[colId] ? 'white' : 'var(--color-text-main)',
+                                                                            backgroundColor: columnFilters[colId] ? '#ef4444' : 'transparent',
+                                                                            borderRadius: '4px',
+                                                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                                        }}
+                                                                        title="Filter Column"
+                                                                    >
+                                                                        <Filter size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div
                                                             onMouseDown={(e) => startResize(e, colId)}
