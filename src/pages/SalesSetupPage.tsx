@@ -6,13 +6,17 @@
 // sections are placeholders until their own data model exists.
 import React, { useId, useState } from 'react';
 import {
-    SlidersHorizontal, Tag, Tags, Users, MapPin, Percent, Truck, Ban, Landmark
+    SlidersHorizontal, Tag, Tags, Users, MapPin, Percent, Truck, Ban, Landmark,
+    Megaphone, Building2, Plus, Trash2
 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
+import { useStore } from '../context/StoreContext';
+import { useToast } from '../context/ToastContext';
 
 type SectionKey =
     | 'defaults' | 'paymentTerms' | 'priceLevels' | 'customerGroups' | 'provinces'
-    | 'discounts' | 'deliveryTypes' | 'rejectionReasons' | 'openingBalances';
+    | 'discounts' | 'deliveryTypes' | 'rejectionReasons' | 'openingBalances'
+    | 'pageNames' | 'shippingCompanies';
 
 const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
@@ -22,9 +26,70 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
     { key: 'provinces', label: 'Provinces', icon: MapPin },
     { key: 'discounts', label: 'Discounts', icon: Percent },
     { key: 'deliveryTypes', label: 'Delivery Types', icon: Truck },
+    { key: 'pageNames', label: 'Page Name', icon: Megaphone },
+    { key: 'shippingCompanies', label: 'Shipping Company', icon: Building2 },
     { key: 'rejectionReasons', label: 'Rejection Reasons', icon: Ban },
     { key: 'openingBalances', label: 'Opening Balances', icon: Landmark },
 ];
+
+// Sections not in this set fall through to the "reserved" placeholder below.
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies']);
+
+// Add/remove UI for a flat string list backed by the store's config blob
+// (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
+// a proper home in Setup instead of only being reachable mid-checkout).
+const SetupListSection: React.FC<{
+    title: string; placeholder: string; items: string[];
+    onAdd: (name: string) => Promise<unknown>; onRemove: (name: string) => Promise<unknown>;
+}> = ({ title, placeholder, items, onAdd, onRemove }) => {
+    const { showToast } = useToast();
+    const [draft, setDraft] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    const reportError = (err: any) => showToast('Failed to save: ' + (err?.message || 'unknown error'), 'error');
+
+    const handleAdd = () => {
+        const name = draft.trim();
+        if (!name || busy) return;
+        setBusy(true);
+        Promise.resolve(onAdd(name)).catch(reportError).finally(() => setBusy(false));
+        setDraft('');
+    };
+
+    const handleRemove = (name: string) => {
+        Promise.resolve(onRemove(name)).catch(reportError);
+    };
+
+    return (
+        <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{title}</div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                    type="text" value={draft} placeholder={placeholder} className="search-input"
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
+                    style={{ flex: 1, padding: '9px 12px' }}
+                />
+                <button onClick={handleAdd} disabled={!draft.trim() || busy} className="primary-button"
+                    style={{ padding: '0 14px', cursor: (!draft.trim() || busy) ? 'not-allowed' : 'pointer', opacity: (!draft.trim() || busy) ? 0.6 : 1 }}>
+                    <Plus size={16} />
+                </button>
+            </div>
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                {items.length === 0 ? (
+                    <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>None added yet.</div>
+                ) : items.map(item => (
+                    <div key={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                        <span>{item}</span>
+                        <button onClick={() => handleRemove(item)} title={`Remove ${item}`} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Trash2 size={15} />
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 const NUMBERING_FIELDS: { key: 'quotations' | 'salesOrders' | 'invoices' | 'receipts' | 'refunds'; label: string; def: string }[] = [
     { key: 'quotations', label: 'Quotations', def: 'QUO' },
@@ -52,6 +117,7 @@ const disabledInputStyle: React.CSSProperties = { ...inputStyle, color: 'var(--c
 
 const SalesSetupPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany } = useStore();
     const [section, setSection] = useState<SectionKey>('defaults');
     const [saving, setSaving] = useState(false);
 
@@ -221,8 +287,18 @@ const SalesSetupPage: React.FC = () => {
                 </div>
             )}
 
+            {/* ── Page Name / Shipping Company: real store-backed lists. ── */}
+            {section === 'pageNames' && (
+                <SetupListSection title="Page Name" placeholder="Add a page name..." items={pages}
+                    onAdd={addPage} onRemove={removePage} />
+            )}
+            {section === 'shippingCompanies' && (
+                <SetupListSection title="Shipping Company" placeholder="Add a shipping company..." items={shippingCompanies}
+                    onAdd={addShippingCompany} onRemove={removeShippingCompany} />
+            )}
+
             {/* ── Every other section: placeholder until its own data model exists. ── */}
-            {section !== 'defaults' && (
+            {section !== 'defaults' && !LIST_SECTIONS.has(section) && (
                 <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
                         <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{activeSection.label}</div>
