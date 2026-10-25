@@ -68,6 +68,7 @@ const ReceivingPage = lazy(() => import('./pages/procurement/ReceivingPage'));
 const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccountsPage'));
 const FinancialDashboardPage = lazy(() => import('./pages/accounting/FinancialDashboardPage'));
 const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialReportsPage'));
+const BalanceSheetPage = lazy(() => import('./pages/accounting/BalanceSheetPage'));
 const CashInOutPage = lazy(() => import('./pages/accounting/CashInOutPage'));
 const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExpenseEntryPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
@@ -189,7 +190,9 @@ const ProtectedApp = () => {
           <Route path="/hr/attendance" element={<ProtectedRoute requiredPermission="manage_attendance"><AttendancePage /></ProtectedRoute>} />
 
           <Route path="/reports" element={<ProtectedRoute requiredPermission="view_reports"><ReportsLayout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="sales" replace />} />
+            <Route index element={<Navigate to="staff" replace />} />
+            {/* Sales Overview, Top Products, Inventory and Financials are hidden
+                from the Reports Center menu; these routes stay reachable by URL. */}
             <Route path="sales" element={<SalesSummary />} />
             <Route path="products" element={<TopProducts />} />
             <Route path="inventory" element={<InventoryAnalytics />} />
@@ -232,7 +235,7 @@ const ProtectedApp = () => {
           <Route path="/accounting/chart-of-accounts" element={<ProtectedRoute requiredPermission="manage_accounting"><ChartOfAccountsPage /></ProtectedRoute>} />
           <Route path="/accounting/financial-dashboard" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialDashboardPage /></ProtectedRoute>} />
           <Route path="/accounting/financial-reports" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage /></ProtectedRoute>} />
-          <Route path="/accounting/balance-sheet" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="balance" /></ProtectedRoute>} />
+          <Route path="/accounting/balance-sheet" element={<ProtectedRoute requiredPermission="manage_accounting"><BalanceSheetPage /></ProtectedRoute>} />
           <Route path="/accounting/income-statement" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="income" /></ProtectedRoute>} />
           <Route path="/accounting/cash-in-out" element={<ProtectedRoute requiredPermission="manage_accounting"><CashInOutPage /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
