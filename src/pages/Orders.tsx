@@ -3966,7 +3966,7 @@ const Orders: React.FC = () => {
                                     </tbody>
                                     <tfoot>
                                         <tr>
-                                            <td className="sticky-col-first" style={{ background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', position: 'sticky', left: 0, zIndex: 20 }}></td>
+                                            <td className="sticky-col-first" style={{ background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)', position: 'sticky', left: 0, zIndex: 20, fontWeight: 'normal' }}></td>
                                             {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
                                                 const colId = col.id;
                                                 const isPinned = (pinnedOrderColumns || []).includes(colId);
@@ -3976,7 +3976,10 @@ const Orders: React.FC = () => {
                                                     padding: '8px 12px',
                                                     // 2px above the body font, tracking the slider.
                                                     fontSize: 'var(--table-footer-font-size, 14px)',
-                                                    fontWeight: 'bold',
+                                                    // .spreadsheet-table tfoot td is bold by default (index.css) —
+                                                    // overridden here since it's shared with other tables (e.g.
+                                                    // Delivery Tracking) that still want it.
+                                                    fontWeight: 'normal' as const,
                                                     borderTop: '2px solid var(--color-border)',
                                                     background: 'var(--color-bg)',
                                                     textAlign: 'left' as const,
