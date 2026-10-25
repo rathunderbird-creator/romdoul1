@@ -1112,15 +1112,17 @@ const Orders: React.FC = () => {
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
     // Fixed table appearance (the old Appearance submenu is gone); saved
-    // values from localStorage still apply so existing setups don't jump.
+    // padding/height from localStorage still apply so existing setups don't
+    // jump. fontSize is pinned to 13px to match the filter bar's text size —
+    // no longer read from storage, so a stale saved value can't undo it.
     const [tableSettings] = useState<{ fontSize: number; padding: number; height: string }>(() => {
         const saved = localStorage.getItem('pos_table_settings');
         if (saved) {
             const parsed = JSON.parse(saved);
             if (parsed.height === '44px') parsed.height = '35px';
-            return parsed;
+            return { ...parsed, fontSize: 13 };
         }
-        return { fontSize: 12, padding: 5, height: 'auto' };
+        return { fontSize: 13, padding: 5, height: 'auto' };
     });
 
     useEffect(() => {
