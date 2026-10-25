@@ -177,6 +177,15 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.staffPerformance'), path: '/reports/staff', icon: Users },
                 { label: t('nav.shippingCompanies'), path: '/reports/shipping', icon: Truck },
                 { label: t('nav.purchaseCost'), path: '/reports/purchase-cost', icon: Banknote },
+                // These six point at the same Accounting pages reached from the
+                // Accounting section — not new routes, just a second way in for
+                // anyone who thinks of them as "reports" first.
+                { label: t('nav.financialDashboard'), path: '/accounting/financial-dashboard', icon: LayoutDashboard },
+                { label: t('nav.financialReports'), path: '/accounting/financial-reports', icon: FileText },
+                { label: t('nav.balanceSheet'), path: '/accounting/balance-sheet', icon: Scale },
+                { label: t('nav.incomeStatement'), path: '/accounting/income-statement', icon: TrendingUp },
+                { label: t('nav.cashInOut'), path: '/accounting/cash-in-out', icon: ArrowDownUp },
+                { label: t('nav.generalLedger'), path: '/accounting/general-ledger', icon: BookText },
             ]
         });
     }
