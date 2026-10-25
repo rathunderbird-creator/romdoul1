@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -147,10 +147,9 @@ export const useNavItems = (): NavItem[] => {
             label: t('nav.reportsCenter'),
             path: '/reports',
             subItems: [
-                { label: t('nav.salesOverview'), path: '/reports/sales', icon: BarChart3 },
-                { label: t('nav.topProducts'), path: '/reports/products', icon: Award },
-                { label: t('nav.inventory'), path: '/reports/inventory', icon: Package },
-                { label: t('nav.financials'), path: '/reports/financials', icon: DollarSign },
+                // Sales Overview, Top Products, Inventory and Financials are
+                // hidden from the menu; /reports/sales, /reports/products,
+                // /reports/inventory and /reports/financials stay reachable by URL.
                 { label: t('nav.staffPerformance'), path: '/reports/staff', icon: Users },
                 { label: t('nav.shippingCompanies'), path: '/reports/shipping', icon: Truck },
                 { label: t('nav.purchaseCost'), path: '/reports/purchase-cost', icon: Banknote },
