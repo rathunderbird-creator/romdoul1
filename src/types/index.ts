@@ -582,6 +582,9 @@ export interface CustomerPayment {
     notes?: string;
     received_in_account_id?: string; // chart-of-accounts cash/bank account (migrations/add_customer_payment_account.sql)
     created_at?: string;
+    // Joined field for UI (Wholesale Payments) — wholesale_orders has no
+    // direct customer FK, customer_name/invoice_number live on the order.
+    wholesale_order?: WholesaleOrder;
 }
 
 export interface WholesaleCustomer {
