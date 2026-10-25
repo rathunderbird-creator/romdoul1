@@ -69,6 +69,7 @@ const ChartOfAccountsPage = lazy(() => import('./pages/accounting/ChartOfAccount
 const FinancialDashboardPage = lazy(() => import('./pages/accounting/FinancialDashboardPage'));
 const FinancialReportsPage = lazy(() => import('./pages/accounting/FinancialReportsPage'));
 const BalanceSheetPage = lazy(() => import('./pages/accounting/BalanceSheetPage'));
+const IncomeStatementPage = lazy(() => import('./pages/accounting/IncomeStatementPage'));
 const CashInOutPage = lazy(() => import('./pages/accounting/CashInOutPage'));
 const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExpenseEntryPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
@@ -236,7 +237,7 @@ const ProtectedApp = () => {
           <Route path="/accounting/financial-dashboard" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialDashboardPage /></ProtectedRoute>} />
           <Route path="/accounting/financial-reports" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage /></ProtectedRoute>} />
           <Route path="/accounting/balance-sheet" element={<ProtectedRoute requiredPermission="manage_accounting"><BalanceSheetPage /></ProtectedRoute>} />
-          <Route path="/accounting/income-statement" element={<ProtectedRoute requiredPermission="manage_accounting"><FinancialReportsPage initialTab="income" /></ProtectedRoute>} />
+          <Route path="/accounting/income-statement" element={<ProtectedRoute requiredPermission="manage_accounting"><IncomeStatementPage /></ProtectedRoute>} />
           <Route path="/accounting/cash-in-out" element={<ProtectedRoute requiredPermission="manage_accounting"><CashInOutPage /></ProtectedRoute>} />
           <Route path="/accounting/journal-entries" element={<ProtectedRoute requiredPermission="manage_accounting"><JournalEntriesPage /></ProtectedRoute>} />
           <Route path="/accounting/general-ledger" element={<ProtectedRoute requiredPermission="manage_accounting"><GeneralLedgerPage /></ProtectedRoute>} />
