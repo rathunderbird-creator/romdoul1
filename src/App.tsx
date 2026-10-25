@@ -79,6 +79,7 @@ const AccountsReceivablePage = lazy(() => import('./pages/accounting/AccountsRec
 const WholesaleOrdersPage = lazy(() => import('./pages/accounting/WholesaleOrdersPage'));
 const WholesaleCustomersPage = lazy(() => import('./pages/accounting/WholesaleCustomersPage'));
 const WholesaleCustomerDetailsPage = lazy(() => import('./pages/accounting/WholesaleCustomerDetailsPage'));
+const WholesalePaymentsPage = lazy(() => import('./pages/accounting/WholesalePaymentsPage'));
 
 import { ToastProvider } from './context/ToastContext';
 import { HeaderProvider } from './context/HeaderContext';
@@ -172,6 +173,7 @@ const ProtectedApp = () => {
           <Route path="/wholesale/orders" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleOrdersPage /></ProtectedRoute>} />
           <Route path="/wholesale/customers" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomersPage /></ProtectedRoute>} />
           <Route path="/wholesale/customers/:id" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomerDetailsPage /></ProtectedRoute>} />
+          <Route path="/wholesale/payments" element={<ProtectedRoute requiredPermission="manage_orders"><WholesalePaymentsPage /></ProtectedRoute>} />
           <Route path="/wholesale/setup" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleSetupPage /></ProtectedRoute>} />
 
           {/* These pages seem to be work in progress or not fully guarded in Sidebar yet, 

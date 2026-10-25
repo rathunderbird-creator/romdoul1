@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer } from '../types';
+import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer, CustomerPayment } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../utils/dateRange';
@@ -115,8 +115,31 @@ export const useWholesale = () => {
     const { showToast } = useToast();
     const [wholesaleOrders, setWholesaleOrders] = useState<WholesaleOrder[]>([]);
     const [customers, setCustomers] = useState<WholesaleCustomer[]>([]);
+    const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [tableMissing, setTableMissing] = useState(false);
+
+    // Flat feed of every payment, independent of which order it settled —
+    // mirror of fetchSupplierPayments in useProcurement. wholesale_orders has
+    // no direct customer FK (customer_name is denormalized onto the order
+    // itself), so the join is through the order rather than a customer row.
+    const fetchCustomerPayments = useCallback(async (silent = false) => {
+        if (!silent) setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('customer_payments')
+                .select('*, wholesale_order:wholesale_orders(*)')
+                .order('payment_date', { ascending: false })
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            setCustomerPayments((data || []) as CustomerPayment[]);
+        } catch (error: any) {
+            console.error('Failed to fetch customer payments:', error);
+            showToast('Failed to fetch customer payments: ' + error.message, 'error');
+        } finally {
+            if (!silent) setIsLoading(false);
+        }
+    }, [showToast]);
 
     const fetchWholesaleOrders = useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
@@ -448,12 +471,13 @@ export const useWholesale = () => {
 
             showToast('Payment recorded', 'success');
             await fetchWholesaleOrders(true);
+            await fetchCustomerPayments(true);
         } catch (error: any) {
             console.error('Failed to record payment:', error);
             showToast('Failed to record payment: ' + error.message, 'error');
             throw error;
         }
-    }, [showToast, fetchWholesaleOrders]);
+    }, [showToast, fetchWholesaleOrders, fetchCustomerPayments]);
 
     // Change an order's status. Cancelling returns the stock to inventory and
     // removes the logged stock-out movements (mirror of how deleting does it);
@@ -512,11 +536,12 @@ export const useWholesale = () => {
             await supabase.from('transactions').delete().like('description', marker);
             showToast('Payment deleted', 'success');
             await fetchWholesaleOrders(true);
+            await fetchCustomerPayments(true);
         } catch (error: any) {
             showToast('Failed to delete payment: ' + error.message, 'error');
             throw error;
         }
-    }, [showToast, fetchWholesaleOrders]);
+    }, [showToast, fetchWholesaleOrders, fetchCustomerPayments]);
 
     // --- Customer directory (mirror of suppliers) ---
     const fetchCustomers = useCallback(async () => {
@@ -591,9 +616,11 @@ export const useWholesale = () => {
     return {
         wholesaleOrders,
         customers,
+        customerPayments,
         isLoading,
         tableMissing,
         fetchWholesaleOrders,
+        fetchCustomerPayments,
         nextInvoiceNumber,
         createWholesaleOrder,
         deleteWholesaleOrder,

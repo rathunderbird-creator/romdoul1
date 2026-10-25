@@ -4,12 +4,12 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
-import { useAccounting } from '../../hooks/useAccounting';
 import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
 import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 import DateRangePicker from '../../components/DateRangePicker';
+import { RecordCustomerPaymentModal } from '../../components';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -36,15 +36,6 @@ const WholesaleOrdersPage: React.FC = () => {
     const { showToast } = useToast();
     const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings } = useStore();
     const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
-    const { accounts, fetchAccounts } = useAccounting();
-
-    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
-
-    // Cash/bank ledger accounts for the "Received into" select.
-    const paymentAccounts = useMemo(
-        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
-        [accounts]
-    );
 
     const isMobile = useMobile();
     const [search, setSearch] = useState('');
@@ -69,13 +60,9 @@ const WholesaleOrdersPage: React.FC = () => {
     const [lines, setLines] = useState<Partial<WholesaleOrderItem>[]>([{ product_id: '', quantity: 1, unit_price: 0 }]);
     const [saving, setSaving] = useState(false);
 
-    // Payment modal
+    // Payment modal (the form itself is RecordCustomerPaymentModal, shared with
+    // Wholesale Payments — this page only tracks which order it's for).
     const [payOrder, setPayOrder] = useState<WholesaleOrder | null>(null);
-    const [payAmount, setPayAmount] = useState<number | string>('');
-    const [payMethod, setPayMethod] = useState('Bank Transfer');
-    const [payNote, setPayNote] = useState('');
-    const [payDate, setPayDate] = useState(today());
-    const [receiveAccountId, setReceiveAccountId] = useState('');
 
     // View-details modal
     const [viewOrder, setViewOrder] = useState<WholesaleOrder | null>(null);
@@ -240,28 +227,13 @@ const WholesaleOrdersPage: React.FC = () => {
         }
     };
 
-    const openPay = (o: WholesaleOrder) => {
-        setPayOrder(o);
-        setPayAmount(((o.total_amount || 0) - (o.amount_paid || 0)).toFixed(2));
-        setPayMethod('Bank Transfer'); setPayNote(''); setPayDate(today());
-        // Wholesale Setup's default payment account prefills "Received into".
-        const def = wholesaleSettings.defaultPaymentAccountId;
-        setReceiveAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
-    };
+    const openPay = (o: WholesaleOrder) => { setPayOrder(o); };
 
-    const submitPay = async () => {
+    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; receivedInAccountId?: string; receivedInAccountName?: string; notes?: string }) => {
         if (!payOrder) return;
-        const amount = Number(payAmount);
-        if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-        // "Received into" is required whenever cash/bank accounts exist to pick.
-        if (paymentAccounts.length > 0 && !receiveAccountId) {
-            showToast('Choose the account this payment is received into', 'error');
-            return;
-        }
         setSaving(true);
         try {
-            const acc = paymentAccounts.find(a => a.id === receiveAccountId);
-            await recordCustomerPayment(payOrder.id, amount, payMethod, payNote, payDate, currentUser?.name, receiveAccountId || undefined, acc?.account_name);
+            await recordCustomerPayment(payOrder.id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, currentUser?.name, data.receivedInAccountId, data.receivedInAccountName);
             setPayOrder(null);
         } catch { /* hook toasts */ } finally { setSaving(false); }
     };
@@ -1069,103 +1041,16 @@ const WholesaleOrdersPage: React.FC = () => {
                 );
             })()}
 
-            {/* Payment modal — styled like the Purchase Order payment popup */}
-            {payOrder && (() => {
-                const remaining = (payOrder.total_amount || 0) - (payOrder.amount_paid || 0);
-                return (
-                    <div style={{ ...modalOverlay, zIndex: 10000 }} onClick={() => setPayOrder(null)}>
-                        <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderRadius: '24px', width: '100%', maxWidth: '520px', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-                            {/* Header */}
-                            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(16,185,129,0.05), rgba(52,211,153,0.05))' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #10b981, #34d399)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                        <DollarSign size={18} />
-                                    </div>
-                                    <div>
-                                        <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Record Payment</h2>
-                                        <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>{payOrder.customer_name} · {payOrder.invoice_number || `WO-${payOrder.id.slice(0, 8).toUpperCase()}`}</p>
-                                    </div>
-                                </div>
-                                <button onClick={() => setPayOrder(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <X size={18} />
-                                </button>
-                            </div>
-
-                            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                {remaining > 0 && (
-                                    <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.12)', borderRadius: '12px', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Remaining Balance</span>
-                                        <span style={{ fontSize: '20px', fontWeight: 700, color: '#ef4444' }}>{fmt(remaining)}</span>
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label style={fieldLabel}>Amount to Pay *</label>
-                                    <input type="number" style={{ ...fieldInput, fontSize: '16px', fontWeight: 600 }} value={payAmount} onChange={e => setPayAmount(e.target.value === '' ? '' : parseFloat(e.target.value))} min="0" step="0.01" />
-                                    {remaining > 0 && (
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
-                                            {[
-                                                { label: 'Full', pct: 1, color: '#10b981' },
-                                                { label: '75%', pct: 0.75, color: '#3b82f6' },
-                                                { label: '50%', pct: 0.5, color: '#f59e0b' },
-                                                { label: '25%', pct: 0.25, color: '#8b5cf6' },
-                                            ].map(btn => {
-                                                const val = Math.round(remaining * btn.pct * 100) / 100;
-                                                const active = Number(payAmount) === val;
-                                                return (
-                                                    <button key={btn.label} onClick={() => setPayAmount(val)} style={{ padding: '8px 6px', fontSize: '12px', fontWeight: 700, border: '1px solid var(--color-border)', borderRadius: '8px', background: active ? btn.color : 'var(--color-bg)', color: active ? 'white' : btn.color, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                        <span>{btn.label}</span>
-                                                        <span style={{ fontSize: '10px', opacity: 0.8 }}>{fmt(val)}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                                    <div>
-                                        <label style={fieldLabel}>Payment Date *</label>
-                                        <input type="date" style={fieldInput} value={payDate} onChange={e => setPayDate(e.target.value)} />
-                                    </div>
-                                    <div>
-                                        <label style={fieldLabel}>Method</label>
-                                        <select style={fieldInput} value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-                                            <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label style={fieldLabel}>Received into *</label>
-                                    <select className="d2-khmer" style={fieldInput} value={receiveAccountId} onChange={e => setReceiveAccountId(e.target.value)}>
-                                        <option value="">Bank or cash account…</option>
-                                        {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
-                                    </select>
-                                    {paymentAccounts.length === 0 && (
-                                        <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                                            No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label style={fieldLabel}>Notes</label>
-                                    <textarea style={{ ...fieldInput, minHeight: '60px', resize: 'vertical' }} value={payNote} onChange={e => setPayNote(e.target.value)} placeholder="Optional payment notes..." />
-                                </div>
-                            </div>
-
-                            {/* Footer */}
-                            <div style={{ padding: '18px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(0,0,0,0.01)' }}>
-                                <button className="secondary-button" onClick={() => setPayOrder(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
-                                <button className="primary-button" onClick={submitPay} disabled={saving || !payAmount || Number(payAmount) <= 0} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <CheckCircle2 size={16} /> {saving ? 'Saving…' : 'Record Payment'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
+            {/* Payment modal — shared with Wholesale Payments */}
+            {payOrder && (
+                <RecordCustomerPaymentModal
+                    isOpen={!!payOrder}
+                    onClose={() => setPayOrder(null)}
+                    onConfirm={handleConfirmPayment}
+                    remainingBalance={(payOrder.total_amount || 0) - (payOrder.amount_paid || 0)}
+                    customerName={`${payOrder.customer_name} · ${payOrder.invoice_number || `WO-${payOrder.id.slice(0, 8).toUpperCase()}`}`}
+                />
+            )}
         </div>
     );
 };
