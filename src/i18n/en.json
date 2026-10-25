@@ -33,6 +33,8 @@
     "accounting": "Accounting",
     "chartOfAccounts": "Chart of Accounts",
     "journalEntries": "Journal Entries",
+    "financialDashboard": "Financial Dashboard",
+    "financialReports": "Financial Reports",
     "balanceSheet": "Balance Sheet",
     "incomeStatement": "Income Statement",
     "cashInOut": "Cash In / Out",
