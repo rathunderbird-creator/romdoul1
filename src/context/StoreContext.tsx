@@ -5,22 +5,24 @@ import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
 import { ALL_PERMISSIONS } from '../types';
 import type {
-    Product, 
-    CartItem, 
-    Sale, 
-    StoreContextType, 
-    Customer, 
-    User, 
-    Role, 
-    Permission, 
-    Restock, 
-    Transaction, 
-    TelegramConfig, 
+    Product,
+    CartItem,
+    Sale,
+    StoreContextType,
+    Customer,
+    User,
+    Role,
+    Permission,
+    Restock,
+    Transaction,
+    TelegramConfig,
     BlockedCustomer,
     Warehouse,
     WarehouseStock,
     PurchaseSettings,
-    WholesaleSettings
+    WholesaleSettings,
+    CustomDistrict,
+    CustomCommune
 } from '../types';
 
 interface ConfigState {
@@ -31,6 +33,10 @@ interface ConfigState {
     customerCare: string[];
     paymentMethods: string[];
     cities: string[];
+    customDistricts?: CustomDistrict[];
+    customCommunes?: CustomCommune[];
+    removedDistrictCodes?: string[];
+    removedCommuneCodes?: string[];
     pinnedProducts?: string[];
     pinnedOrderColumns?: string[]; // Added pinned order columns
     salesOrder?: string[]; // Added sales custom order
@@ -1076,7 +1082,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // whole keys. Every list the UI maps over must exist, or pages
                 // crash — e.g. Checkout's "Manage Shipping Companies" hits
                 // .includes()/.map() of undefined.
-                for (const k of ['shippingCompanies', 'salesmen', 'categories', 'pages', 'customerCare', 'paymentMethods', 'cities']) {
+                for (const k of ['shippingCompanies', 'salesmen', 'categories', 'pages', 'customerCare', 'paymentMethods', 'cities', 'customDistricts', 'customCommunes', 'removedDistrictCodes', 'removedCommuneCodes']) {
                     if (!Array.isArray(loadedConfig[k])) loadedConfig[k] = [];
                 }
 
@@ -1328,6 +1334,40 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const removePage = (name: string) => {
         return updateConfig({ ...config, pages: (config.pages || []).filter(p => p !== name) });
+    };
+
+    // Districts/communes layered on top of the official src/data/cambodia.json
+    // hierarchy (Sales Setup's Provinces browser). A custom entry is ours to
+    // delete outright; an official one is only ever hidden via its code going
+    // onto the removed list, since the underlying JSON itself is read-only.
+    const addCustomDistrict = (provinceCode: string, name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) return Promise.resolve();
+        const entry = { code: `custom-${generateUUID()}`, provinceCode, khmer: trimmed, latin: trimmed };
+        return updateConfig({ ...config, customDistricts: [...(config.customDistricts || []), entry] });
+    };
+
+    const removeDistrictEntry = (code: string, isCustom: boolean) => {
+        if (isCustom) {
+            return updateConfig({ ...config, customDistricts: (config.customDistricts || []).filter(d => d.code !== code) });
+        }
+        if ((config.removedDistrictCodes || []).includes(code)) return Promise.resolve();
+        return updateConfig({ ...config, removedDistrictCodes: [...(config.removedDistrictCodes || []), code] });
+    };
+
+    const addCustomCommune = (districtCode: string, name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) return Promise.resolve();
+        const entry = { code: `custom-${generateUUID()}`, districtCode, khmer: trimmed, latin: trimmed };
+        return updateConfig({ ...config, customCommunes: [...(config.customCommunes || []), entry] });
+    };
+
+    const removeCommuneEntry = (code: string, isCustom: boolean) => {
+        if (isCustom) {
+            return updateConfig({ ...config, customCommunes: (config.customCommunes || []).filter(c => c.code !== code) });
+        }
+        if ((config.removedCommuneCodes || []).includes(code)) return Promise.resolve();
+        return updateConfig({ ...config, removedCommuneCodes: [...(config.removedCommuneCodes || []), code] });
     };
 
     const addCustomerCare = (name: string) => {
@@ -4412,6 +4452,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addPage,
             removePage,
             pages: config.pages || [],
+            customDistricts: config.customDistricts || [],
+            customCommunes: config.customCommunes || [],
+            removedDistrictCodes: config.removedDistrictCodes || [],
+            removedCommuneCodes: config.removedCommuneCodes || [],
+            addCustomDistrict,
+            removeDistrictEntry,
+            addCustomCommune,
+            removeCommuneEntry,
             customerCare,
             addCustomerCare,
             removeCustomerCare,

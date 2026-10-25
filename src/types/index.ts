@@ -144,6 +144,20 @@ export interface BlockedCustomer {
     blockedBy?: string;
 }
 
+export interface CustomDistrict {
+    code: string;
+    provinceCode: string;
+    khmer: string;
+    latin: string;
+}
+
+export interface CustomCommune {
+    code: string;
+    districtCode: string;
+    khmer: string;
+    latin: string;
+}
+
 export interface StoreContextType {
     products: Product[];
     cart: CartItem[];
@@ -222,6 +236,18 @@ export interface StoreContextType {
     cities: string[];
     addCity: (name: string) => Promise<void>;
     removeCity: (name: string) => Promise<void>;
+
+    // Custom districts/communes layered on top of the official data/cambodia.json
+    // hierarchy (Sales Setup's Provinces browser) — add a local one, or hide an
+    // official one that doesn't apply to this shop.
+    customDistricts: CustomDistrict[];
+    customCommunes: CustomCommune[];
+    removedDistrictCodes: string[];
+    removedCommuneCodes: string[];
+    addCustomDistrict: (provinceCode: string, name: string) => Promise<void>;
+    removeDistrictEntry: (code: string, isCustom: boolean) => Promise<void>;
+    addCustomCommune: (districtCode: string, name: string) => Promise<void>;
+    removeCommuneEntry: (code: string, isCustom: boolean) => Promise<void>;
 
     // Payment Methods
     paymentMethods: string[];
