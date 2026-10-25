@@ -100,17 +100,30 @@ const SetupListSection: React.FC<{
 const matchesQuery = (info: LocationInfo, q: string) =>
     !q || info.khmer.includes(q) || info.latin.toLowerCase().includes(q.toLowerCase());
 
-// Read-only browser over the same official province → district → commune
-// hierarchy CheckoutForm's address cascade already uses (src/data/cambodia.json,
+// A district or commune row, official or custom, tagged so the UI can tell
+// which "remove" semantics apply (splice vs. add-to-hidden-list).
+type DistrictRow = DistrictData & { isCustom: boolean };
+type CommuneRow = LocationInfo & { isCustom: boolean };
+
+// Browser over the official province → district → commune hierarchy
+// CheckoutForm's address cascade already uses (src/data/cambodia.json,
 // lazy-imported here the same way — it's ~85k lines, no reason to ship it in
-// the main bundle for pages that never open this section). Unlike Page Name /
-// Shipping Company this isn't a user-editable list: it's complete, official
-// data, so there's no add/remove — just search and drill down.
+// the main bundle for pages that never open this section). Provinces stay
+// fixed (official, complete), but districts/communes can be extended with
+// shop-specific entries or have an official one hidden — see
+// addCustomDistrict/removeDistrictEntry and their commune equivalents.
 const ProvincesBrowser: React.FC = () => {
+    const {
+        customDistricts, customCommunes, removedDistrictCodes, removedCommuneCodes,
+        addCustomDistrict, removeDistrictEntry, addCustomCommune, removeCommuneEntry
+    } = useStore();
+    const { showToast } = useToast();
     const [provincesData, setProvincesData] = useState<ProvinceData[] | null>(null);
     const [query, setQuery] = useState('');
     const [openProvinces, setOpenProvinces] = useState<Set<string>>(new Set());
     const [openDistricts, setOpenDistricts] = useState<Set<string>>(new Set());
+    const [districtDrafts, setDistrictDrafts] = useState<Record<string, string>>({});
+    const [communeDrafts, setCommuneDrafts] = useState<Record<string, string>>({});
 
     React.useEffect(() => {
         let cancelled = false;
@@ -120,10 +133,36 @@ const ProvincesBrowser: React.FC = () => {
         return () => { cancelled = true; };
     }, []);
 
+    const reportError = (err: any) => showToast('Failed to save: ' + (err?.message || 'unknown error'), 'error');
+
     const toggle = (set: Set<string>, setSet: (s: Set<string>) => void, code: string) => {
         const next = new Set(set);
         if (next.has(code)) next.delete(code); else next.add(code);
         setSet(next);
+    };
+
+    // Official districts (minus hidden ones) + this province's custom ones.
+    const districtsOf = (p: ProvinceData): DistrictRow[] => [
+        ...(p.districts || []).filter(d => !removedDistrictCodes.includes(d.code)).map(d => ({ ...d, isCustom: false })),
+        ...customDistricts.filter(cd => cd.provinceCode === p.code).map(cd => ({ code: cd.code, khmer: cd.khmer, latin: cd.latin, isCustom: true } as DistrictRow)),
+    ];
+    // Official communes (minus hidden ones) + this district's custom ones.
+    const communesOf = (d: DistrictData): CommuneRow[] => [
+        ...(d.communes || []).filter(c => !removedCommuneCodes.includes(c.code)).map(c => ({ ...c, isCustom: false })),
+        ...customCommunes.filter(cc => cc.districtCode === d.code).map(cc => ({ code: cc.code, khmer: cc.khmer, latin: cc.latin, isCustom: true })),
+    ];
+
+    const handleAddDistrict = (provinceCode: string) => {
+        const name = (districtDrafts[provinceCode] || '').trim();
+        if (!name) return;
+        Promise.resolve(addCustomDistrict(provinceCode, name)).catch(reportError);
+        setDistrictDrafts(prev => ({ ...prev, [provinceCode]: '' }));
+    };
+    const handleAddCommune = (districtCode: string) => {
+        const name = (communeDrafts[districtCode] || '').trim();
+        if (!name) return;
+        Promise.resolve(addCustomCommune(districtCode, name)).catch(reportError);
+        setCommuneDrafts(prev => ({ ...prev, [districtCode]: '' }));
     };
 
     const q = query.trim();
@@ -134,30 +173,34 @@ const ProvincesBrowser: React.FC = () => {
         if (!q || !provincesData) return null;
         const codes = new Set<string>();
         for (const p of provincesData) {
-            const districts = p.districts || [];
+            const districts = districtsOf(p);
             const hit = matchesQuery(p, q) || districts.some(d =>
-                matchesQuery(d, q) || (d.communes || []).some(c => matchesQuery(c, q)));
+                matchesQuery(d, q) || communesOf(d).some(c => matchesQuery(c, q)));
             if (hit) codes.add(p.code);
         }
         return codes;
-    }, [provincesData, q]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [provincesData, q, customDistricts, customCommunes, removedDistrictCodes, removedCommuneCodes]);
     const matchingDistrictCodes = React.useMemo(() => {
         if (!q || !provincesData) return null;
         const codes = new Set<string>();
         for (const p of provincesData) {
-            for (const d of p.districts || []) {
-                if (matchesQuery(d, q) || (d.communes || []).some(c => matchesQuery(c, q))) codes.add(d.code);
+            for (const d of districtsOf(p)) {
+                if (matchesQuery(d, q) || communesOf(d).some(c => matchesQuery(c, q))) codes.add(d.code);
             }
         }
         return codes;
-    }, [provincesData, q]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [provincesData, q, customDistricts, customCommunes, removedDistrictCodes, removedCommuneCodes]);
+
+    const smallBtn: React.CSSProperties = { background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' };
 
     return (
         <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
                 <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>Provinces</div>
                 <div style={{ ...helpStyle, marginTop: '4px' }}>
-                    The full official hierarchy — same data the address fields use when placing an order. Reference only; this isn't an editable list.
+                    The official hierarchy — same data the address fields use when placing an order. Provinces themselves are fixed, but you can add a district or commune of your own, or remove one that doesn't apply.
                 </div>
             </div>
             <div style={{ position: 'relative' }}>
@@ -176,6 +219,8 @@ const ProvincesBrowser: React.FC = () => {
                         .filter(p => !matchingProvinceCodes || matchingProvinceCodes.has(p.code))
                         .map(p => {
                             const isOpen = q ? true : openProvinces.has(p.code);
+                            const districts = districtsOf(p)
+                                .filter(d => !matchingDistrictCodes || matchingDistrictCodes.has(d.code));
                             return (
                                 <div key={p.code} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                     <button
@@ -184,34 +229,71 @@ const ProvincesBrowser: React.FC = () => {
                                     >
                                         {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                                         <span>{p.khmer} ({p.latin})</span>
-                                        <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{(p.districts || []).length} districts</span>
+                                        <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{districts.length} districts</span>
                                     </button>
-                                    {isOpen && (p.districts || [])
-                                        .filter(d => !matchingDistrictCodes || matchingDistrictCodes.has(d.code))
-                                        .map(d => {
-                                            const dOpen = q ? true : openDistricts.has(d.code);
-                                            return (
-                                                <div key={d.code} style={{ paddingLeft: '22px', borderTop: '1px solid var(--color-border)' }}>
+                                    {isOpen && districts.map(d => {
+                                        const dOpen = q ? true : openDistricts.has(d.code);
+                                        const communes = communesOf(d).filter(c => !q || matchesQuery(c, q));
+                                        return (
+                                            <div key={d.code} style={{ paddingLeft: '22px', borderTop: '1px solid var(--color-border)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <button
                                                         onClick={() => toggle(openDistricts, setOpenDistricts, d.code)}
-                                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '12.5px', fontWeight: 500, color: 'var(--color-text-main)' }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0, padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '12.5px', fontWeight: 500, color: 'var(--color-text-main)' }}
                                                     >
                                                         {dOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                                                        <span>{d.khmer} ({d.latin})</span>
-                                                        <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--color-text-secondary)' }}>{(d.communes || []).length} communes</span>
+                                                        <span>{d.khmer === d.latin ? d.khmer : `${d.khmer} (${d.latin})`}</span>
+                                                        {d.isCustom && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '1px 6px', borderRadius: '999px' }}>Custom</span>}
+                                                        <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--color-text-secondary)' }}>{communes.length} communes</span>
                                                     </button>
-                                                    {dOpen && (
-                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '4px 10px', padding: '2px 12px 10px 28px' }}>
-                                                            {(d.communes || [])
-                                                                .filter(c => !q || matchesQuery(c, q))
-                                                                .map(c => (
-                                                                    <div key={c.code} style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{c.khmer} ({c.latin})</div>
-                                                                ))}
-                                                        </div>
-                                                    )}
+                                                    <button onClick={() => removeDistrictEntry(d.code, d.isCustom).catch(reportError)} title={`Remove ${d.latin}`} style={{ ...smallBtn, color: '#ef4444', marginRight: '8px' }}>
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 </div>
-                                            );
-                                        })}
+                                                {dOpen && (
+                                                    <>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '4px 10px', padding: '2px 12px 6px 28px' }}>
+                                                            {communes.map(c => (
+                                                                <div key={c.code} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.khmer === c.latin ? c.khmer : `${c.khmer} (${c.latin})`}</span>
+                                                                    {c.isCustom && <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-primary)', flexShrink: 0 }}>•custom</span>}
+                                                                    <button onClick={() => removeCommuneEntry(c.code, c.isCustom).catch(reportError)} title={`Remove ${c.latin}`} style={{ ...smallBtn, color: '#ef4444', flexShrink: 0 }}>
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: '6px', padding: '0 12px 10px 28px' }}>
+                                                            <input
+                                                                type="text" value={communeDrafts[d.code] || ''} placeholder="Add a commune..." className="search-input"
+                                                                onChange={e => setCommuneDrafts(prev => ({ ...prev, [d.code]: e.target.value }))}
+                                                                onKeyDown={e => { if (e.key === 'Enter') handleAddCommune(d.code); }}
+                                                                style={{ flex: 1, padding: '6px 10px', fontSize: '12px' }}
+                                                            />
+                                                            <button onClick={() => handleAddCommune(d.code)} disabled={!(communeDrafts[d.code] || '').trim()} className="primary-button"
+                                                                style={{ padding: '0 10px', cursor: (communeDrafts[d.code] || '').trim() ? 'pointer' : 'not-allowed', opacity: (communeDrafts[d.code] || '').trim() ? 1 : 0.6 }}>
+                                                                <Plus size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {isOpen && (
+                                        <div style={{ display: 'flex', gap: '6px', padding: '0 12px 10px 22px' }}>
+                                            <input
+                                                type="text" value={districtDrafts[p.code] || ''} placeholder="Add a district..." className="search-input"
+                                                onChange={e => setDistrictDrafts(prev => ({ ...prev, [p.code]: e.target.value }))}
+                                                onKeyDown={e => { if (e.key === 'Enter') handleAddDistrict(p.code); }}
+                                                style={{ flex: 1, padding: '7px 10px', fontSize: '12.5px' }}
+                                            />
+                                            <button onClick={() => handleAddDistrict(p.code)} disabled={!(districtDrafts[p.code] || '').trim()} className="primary-button"
+                                                style={{ padding: '0 10px', cursor: (districtDrafts[p.code] || '').trim() ? 'pointer' : 'not-allowed', opacity: (districtDrafts[p.code] || '').trim() ? 1 : 0.6 }}>
+                                                <Plus size={14} />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
