@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, CalendarClock, Briefcase, HeartHandshake, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, CalendarOff, UserPlus, MessageSquare, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Award, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -137,32 +137,9 @@ export const useNavItems = (): NavItem[] => {
         });
     }
 
-    if (hasPermission('manage_hr') || hasPermission('manage_attendance')) {
-        navItems.push({
-            icon: Briefcase,
-            label: t('nav.hrPayroll'),
-            path: '/hr',
-            subItems: [
-                { label: t('nav.attendance'), path: '/hr/attendance', icon: CalendarClock },
-                { label: t('nav.employees'), path: '/hr/employees', icon: Users },
-                { label: t('nav.leaves'), path: '/hr/leaves', icon: CalendarOff },
-                { label: t('nav.payroll'), path: '/hr/payroll', icon: Banknote }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_crm')) {
-        navItems.push({
-            icon: HeartHandshake,
-            label: t('nav.crm'),
-            path: '/crm',
-            subItems: [
-                { label: t('nav.leads'), path: '/crm/leads', icon: UserPlus },
-                { label: t('nav.interactions'), path: '/crm/interactions', icon: MessageSquare },
-                { label: t('nav.quotations'), path: '/crm/quotations', icon: FileText }
-            ]
-        });
-    }
+    // HR & Payroll and CRM are hidden from the menu; /hr/attendance,
+    // /hr/employees, /hr/leaves, /hr/payroll, /crm/leads, /crm/interactions
+    // and /crm/quotations all stay reachable by URL.
 
     if (hasPermission('view_reports')) {
         navItems.push({
