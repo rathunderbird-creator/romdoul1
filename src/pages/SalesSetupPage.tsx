@@ -7,7 +7,7 @@
 import React, { useId, useState } from 'react';
 import {
     SlidersHorizontal, Tag, Tags, Users, MapPin, Percent, Truck, Ban, Landmark,
-    Megaphone, Building2, Plus, Trash2
+    Megaphone, Building2, Plus, Trash2, ChevronRight, ChevronDown, Search
 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
@@ -33,7 +33,12 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'provinces']);
+
+interface LocationInfo { code: string; khmer: string; latin: string }
+type CommuneData = LocationInfo;
+interface DistrictData extends LocationInfo { communes?: CommuneData[] }
+interface ProvinceData extends LocationInfo { districts?: DistrictData[] }
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -87,6 +92,131 @@ const SetupListSection: React.FC<{
                     </div>
                 ))}
             </div>
+        </div>
+    );
+};
+
+// Khmer or Latin, case-insensitive substring.
+const matchesQuery = (info: LocationInfo, q: string) =>
+    !q || info.khmer.includes(q) || info.latin.toLowerCase().includes(q.toLowerCase());
+
+// Read-only browser over the same official province → district → commune
+// hierarchy CheckoutForm's address cascade already uses (src/data/cambodia.json,
+// lazy-imported here the same way — it's ~85k lines, no reason to ship it in
+// the main bundle for pages that never open this section). Unlike Page Name /
+// Shipping Company this isn't a user-editable list: it's complete, official
+// data, so there's no add/remove — just search and drill down.
+const ProvincesBrowser: React.FC = () => {
+    const [provincesData, setProvincesData] = useState<ProvinceData[] | null>(null);
+    const [query, setQuery] = useState('');
+    const [openProvinces, setOpenProvinces] = useState<Set<string>>(new Set());
+    const [openDistricts, setOpenDistricts] = useState<Set<string>>(new Set());
+
+    React.useEffect(() => {
+        let cancelled = false;
+        import('../data/cambodia.json').then(mod => {
+            if (!cancelled) setProvincesData(mod.default as ProvinceData[]);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    const toggle = (set: Set<string>, setSet: (s: Set<string>) => void, code: string) => {
+        const next = new Set(set);
+        if (next.has(code)) next.delete(code); else next.add(code);
+        setSet(next);
+    };
+
+    const q = query.trim();
+    // While searching, auto-expand every province/district that contains a
+    // match anywhere below it — otherwise a hit stays hidden inside a
+    // collapsed node and the search box would look broken.
+    const matchingProvinceCodes = React.useMemo(() => {
+        if (!q || !provincesData) return null;
+        const codes = new Set<string>();
+        for (const p of provincesData) {
+            const districts = p.districts || [];
+            const hit = matchesQuery(p, q) || districts.some(d =>
+                matchesQuery(d, q) || (d.communes || []).some(c => matchesQuery(c, q)));
+            if (hit) codes.add(p.code);
+        }
+        return codes;
+    }, [provincesData, q]);
+    const matchingDistrictCodes = React.useMemo(() => {
+        if (!q || !provincesData) return null;
+        const codes = new Set<string>();
+        for (const p of provincesData) {
+            for (const d of p.districts || []) {
+                if (matchesQuery(d, q) || (d.communes || []).some(c => matchesQuery(c, q))) codes.add(d.code);
+            }
+        }
+        return codes;
+    }, [provincesData, q]);
+
+    return (
+        <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>Provinces</div>
+                <div style={{ ...helpStyle, marginTop: '4px' }}>
+                    The full official hierarchy — same data the address fields use when placing an order. Reference only; this isn't an editable list.
+                </div>
+            </div>
+            <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                <input
+                    type="text" value={query} placeholder="Search province, district or commune..." className="search-input"
+                    onChange={e => setQuery(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px 9px 34px', boxSizing: 'border-box' }}
+                />
+            </div>
+            {!provincesData ? (
+                <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Loading…</div>
+            ) : (
+                <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', maxHeight: '520px', overflowY: 'auto' }}>
+                    {provincesData
+                        .filter(p => !matchingProvinceCodes || matchingProvinceCodes.has(p.code))
+                        .map(p => {
+                            const isOpen = q ? true : openProvinces.has(p.code);
+                            return (
+                                <div key={p.code} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                    <button
+                                        onClick={() => toggle(openProvinces, setOpenProvinces, p.code)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}
+                                    >
+                                        {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                                        <span>{p.khmer} ({p.latin})</span>
+                                        <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{(p.districts || []).length} districts</span>
+                                    </button>
+                                    {isOpen && (p.districts || [])
+                                        .filter(d => !matchingDistrictCodes || matchingDistrictCodes.has(d.code))
+                                        .map(d => {
+                                            const dOpen = q ? true : openDistricts.has(d.code);
+                                            return (
+                                                <div key={d.code} style={{ paddingLeft: '22px', borderTop: '1px solid var(--color-border)' }}>
+                                                    <button
+                                                        onClick={() => toggle(openDistricts, setOpenDistricts, d.code)}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '12.5px', fontWeight: 500, color: 'var(--color-text-main)' }}
+                                                    >
+                                                        {dOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                                        <span>{d.khmer} ({d.latin})</span>
+                                                        <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--color-text-secondary)' }}>{(d.communes || []).length} communes</span>
+                                                    </button>
+                                                    {dOpen && (
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '4px 10px', padding: '2px 12px 10px 28px' }}>
+                                                            {(d.communes || [])
+                                                                .filter(c => !q || matchesQuery(c, q))
+                                                                .map(c => (
+                                                                    <div key={c.code} style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{c.khmer} ({c.latin})</div>
+                                                                ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            );
+                        })}
+                </div>
+            )}
         </div>
     );
 };
@@ -296,6 +426,9 @@ const SalesSetupPage: React.FC = () => {
                 <SetupListSection title="Shipping Company" placeholder="Add a shipping company..." items={shippingCompanies}
                     onAdd={addShippingCompany} onRemove={removeShippingCompany} />
             )}
+
+            {/* ── Provinces: read-only browse of the official admin hierarchy. ── */}
+            {section === 'provinces' && <ProvincesBrowser />}
 
             {/* ── Every other section: placeholder until its own data model exists. ── */}
             {section !== 'defaults' && !LIST_SECTIONS.has(section) && (
