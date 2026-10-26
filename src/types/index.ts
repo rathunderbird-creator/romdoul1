@@ -452,15 +452,40 @@ export interface ChartOfAccount {
 }
 
 // ── Purchasing setup (defaults for new buy-side documents) ────────────────
+// Kept simple — Wholesale Setup's own payment terms reuse this exact shape
+// (WholesaleSettings.paymentTerms), so it's not the place to add the richer
+// code/fallsDueType/active fields Purchase Setup's own terms need; see
+// PurchasePaymentTerm below for that.
 export interface PurchaseTermPreset {
     name: string;
     days: number;
 }
 
+export type FallsDueType = 'receipt' | 'net' | 'eom' | 'eom_plus';
+
+// Purchase Setup's own named terms — richer than PurchaseTermPreset (a code,
+// a falls-due TYPE rather than just days, an active flag).
+export interface PurchasePaymentTerm {
+    code: string;
+    name: string;
+    fallsDueType: FallsDueType;
+    days?: number; // used by 'net' and 'eom_plus'
+    active: boolean;
+}
+
+// One unpaid supplier invoice carried over from a previous system. Loading it
+// creates a real Received purchase_orders row (so it shows up in Supplier
+// Bills / Accounts Payable / Purchase Dashboard exactly like any other bill)
+// — purchase_order_id links back to that row once loaded.
 export interface PurchaseOpeningBalance {
     supplier_id: string;
+    purchase_order_id?: string;
+    invoice_number: string;
+    bill_date: string; // YYYY-MM-DD
+    due_date: string;  // YYYY-MM-DD
     amount: number;
-    as_of?: string; // YYYY-MM-DD
+    as_of: string;     // YYYY-MM-DD — the date the balances were loaded as of
+    offset_account_id?: string;
 }
 
 export interface PurchaseSettings {
@@ -477,7 +502,7 @@ export interface PurchaseSettings {
         payRequests?: string;
         opening?: string;
     };
-    paymentTerms?: PurchaseTermPreset[];
+    paymentTerms?: PurchasePaymentTerm[];
     apOpeningBalances?: PurchaseOpeningBalance[];
 }
 

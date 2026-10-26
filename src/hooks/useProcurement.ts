@@ -128,6 +128,101 @@ export const postPurchaseReceiptEntry = async (
     }
 };
 
+// Loading an AP opening balance (Purchase Setup → AP Opening Balances): the
+// invoice itself is a real Received purchase_orders row (so it shows up in
+// Supplier Bills / Accounts Payable / Purchase Dashboard like any other
+// bill), but unlike a normal receive this does NOT touch Inventory — it's
+// not real goods arriving, just a payable carried over from a previous
+// system. Posts Dr [offset account, e.g. Opening Balance Equity] /
+// Cr Accounts Payable, Draft like every other auto-posted entry in this app,
+// reference 'PO-<id>' so it reads the same as any other bill's entry
+// (PurchaseDashboardPage's billStatusOf() looks it up this same way).
+export const postOpeningBalanceEntry = async (
+    poId: string,
+    totalAmount: number,
+    offsetAccountId: string,
+    supplierName: string,
+    showToast: ToastFn
+): Promise<boolean> => {
+    try {
+        const amount = Math.round((Number(totalAmount) || 0) * 100) / 100;
+        if (amount <= 0) return false;
+
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('id').eq('reference_id', 'PO-' + poId).limit(1).maybeSingle();
+        if (exErr) { console.error('Could not check for an existing opening-balance entry:', exErr); return false; }
+        if (existing) return true; // Already posted for this PO.
+
+        const { data: coa } = await supabase.from('chart_of_accounts')
+            .select('id, account_code, account_name, account_type').eq('is_active', true);
+        const pool = coa || [];
+        const offsetAcc = pool.find(a => a.id === offsetAccountId);
+        const apAcc = pool.find(a => a.account_code === '2000')
+            || pool.find(a => a.account_type === 'Liability' && /payable/i.test(a.account_name));
+        if (!offsetAcc || !apAcc) {
+            showToast('Opening balance saved, but no Accounts Payable account exists in the Chart of Accounts — no ledger entry was posted.', 'info');
+            return false;
+        }
+
+        const date = dayKeyFromDate(new Date());
+        const entryNumber = await nextJournalEntryNumber('OPA', date);
+        const entryPayload: Record<string, unknown> = {
+            date,
+            description: `${supplierName} · opening balance`,
+            reference_id: 'PO-' + poId,
+            status: 'Draft',
+        };
+        if (entryNumber) entryPayload.entry_number = entryNumber;
+
+        let entry: { id: string } | null | undefined;
+        let jeErr: { message?: string } | null | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
+            if (!jeErr) break;
+            const msg = jeErr.message || '';
+            if (/entry_number/i.test(msg) && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
+            break;
+        }
+        if (jeErr && /status/i.test(jeErr.message || '')) {
+            showToast('Opening balance saved — run migrations/add_entry_status.sql on this instance to also post the ledger entry as a draft.', 'info');
+            return false;
+        }
+        if (jeErr || !entry) {
+            console.error('Failed to post the opening-balance ledger entry:', jeErr);
+            showToast('Opening balance saved, but the ledger entry failed to post.', 'error');
+            return false;
+        }
+        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
+            { journal_entry_id: entry.id, account_id: offsetAcc.id, debit: amount, credit: 0 },
+            { journal_entry_id: entry.id, account_id: apAcc.id, debit: 0, credit: amount },
+        ]);
+        if (lErr) {
+            console.error('Failed to post the opening-balance ledger entry lines:', lErr);
+            await supabase.from('journal_entries').delete().eq('id', entry.id);
+            showToast('Opening balance saved, but the ledger entry failed to post.', 'error');
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error('Failed to post the opening-balance ledger entry:', e);
+        return false;
+    }
+};
+
+// Reversing a loaded opening balance: deletes its PO and journal entry
+// outright (never offered once a real payment has been recorded against it —
+// same "can't silently reverse something money has already touched"
+// philosophy as Stock Adjustments refusing to delete a Posted adjustment).
+export const reverseOpeningBalance = async (poId: string): Promise<void> => {
+    const { data: je } = await supabase.from('journal_entries').select('id').eq('reference_id', 'PO-' + poId).maybeSingle();
+    if (je) {
+        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', je.id);
+        await supabase.from('journal_entries').delete().eq('id', je.id);
+    }
+    await supabase.from('purchase_order_items').delete().eq('purchase_order_id', poId);
+    await supabase.from('purchase_orders').delete().eq('id', poId);
+};
+
 // Cancelling a received PO takes the goods (and the debt) back off the books:
 // a still-Draft receive entry is deleted outright; a Posted one is final, so
 // the user is told to reverse it manually.
