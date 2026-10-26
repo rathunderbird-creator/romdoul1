@@ -99,12 +99,12 @@ export const useNavItems = (): NavItem[] => {
             path: '/procurement',
             subItems: [
                 { label: t('nav.purchaseDashboard'), path: '/procurement/dashboard', icon: LayoutDashboard },
-                { label: t('nav.purchaseReports'), path: '/procurement/purchase-reports', icon: Clock },
                 { label: t('nav.purchaseOrders'), path: '/procurement/purchase-orders', icon: FileCheck },
                 { label: t('nav.receiving'), path: '/procurement/receiving', icon: PackageCheck },
                 { label: t('nav.supplierBills'), path: '/procurement/supplier-bills', icon: Receipt },
                 { label: t('nav.supplierPayments'), path: '/procurement/payments', icon: CreditCard },
                 { label: t('nav.suppliers'), path: '/procurement/suppliers', icon: Building2 },
+                { label: t('nav.purchaseReports'), path: '/procurement/purchase-reports', icon: Clock },
                 { label: t('nav.purchaseSetup'), path: '/procurement/setup', icon: SlidersHorizontal }
             ]
         });
