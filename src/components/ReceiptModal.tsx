@@ -94,24 +94,24 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
             <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse', marginBottom: '16px', marginTop: '16px' }}>
                 <thead>
                     <tr style={{ borderBottom: '1px solid #eee' }}>
-                        <th style={{ textAlign: 'left', padding: '8px 0' }}>Item</th>
-                        <th style={{ textAlign: 'center', padding: '8px 0' }}>Qty</th>
-                        <th style={{ textAlign: 'right', padding: '8px 0' }}>Price</th>
+                        <th style={{ textAlign: 'left', padding: '3px 0' }}>Item</th>
+                        <th style={{ textAlign: 'center', padding: '3px 0' }}>Qty</th>
+                        <th style={{ textAlign: 'right', padding: '3px 0' }}>Price</th>
                     </tr>
                 </thead>
                 <tbody>
                     {sale.items.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px dashed #eee' }}>
-                            <td style={{ padding: '8px 0', wordBreak: 'break-word', whiteSpace: 'normal', paddingRight: '4px' }}>{item.name}</td>
-                            <td style={{ textAlign: 'center', padding: '8px 0', whiteSpace: 'nowrap' }}>{item.quantity}</td>
-                            <td style={{ textAlign: 'right', padding: '8px 0' }}>${(item.price * item.quantity).toFixed(2)}</td>
+                            <td style={{ padding: '3px 0', wordBreak: 'break-word', whiteSpace: 'normal', paddingRight: '4px' }}>{item.name}</td>
+                            <td style={{ textAlign: 'center', padding: '3px 0', whiteSpace: 'nowrap' }}>{item.quantity}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 0' }}>${(item.price * item.quantity).toFixed(2)}</td>
                         </tr>
                     ))}
                 </tbody>
             </table>
 
             <div style={{ borderTop: '2px solid #000', paddingTop: '12px', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: '16px' }}>
                     <span>TOTAL</span>
                     <span>${sale.total.toFixed(2)}</span>
                 </div>
