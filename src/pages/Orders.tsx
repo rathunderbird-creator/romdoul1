@@ -29,7 +29,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import * as XLSX from 'xlsx';
-import type { Sale } from '../types';
+import type { Sale, CartItem } from '../types';
 
 type SortConfig = {
     key: string;
@@ -62,7 +62,7 @@ const ShippingModalComponent: React.FC<{
     order: Sale | null;
     targetStatus?: 'Confirmed' | 'Shipped';
 }> = ({ isOpen, onClose, order, targetStatus = 'Shipped' }) => {
-    const { shippingCompanies, customerCare, updateOrder, updateOrderStatus, khrExchangeRate } = useStore();
+    const { shippingCompanies, customerCare, products, updateOrder, updateOrderStatus, khrExchangeRate } = useStore();
     const { showToast } = useToast();
 
     const [selectedCompany, setSelectedCompany] = useState<string>('');
@@ -70,10 +70,12 @@ const ShippingModalComponent: React.FC<{
     const [shippingAddress, setShippingAddress] = useState<string>('');
     const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
     const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
+    const [items, setItems] = useState<CartItem[]>([]);
     const [deposit, setDeposit] = useState<string>('0');
     // '' = auto-compute from the total/deposit — stays live until the user
     // types a KHR figure of their own, same pattern the Receipt used to have.
     const [customKhr, setCustomKhr] = useState<string>('');
+    const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
 
     const handleShippingPointSelect = (data: any) => {
         const parts = [data.addressDetail || data.customName, data.commune, data.district, data.province].filter(Boolean);
@@ -92,6 +94,7 @@ const ShippingModalComponent: React.FC<{
             setShippingRemark(order.remark || '');
             setShippingAddress(order.customer?.address || '');
             setShippingCustomerCare(order.customerCare || '');
+            setItems((order.items || []).map(i => ({ ...i })));
             setDeposit((order.depositAmount || 0).toString());
             setCustomKhr('');
         }
@@ -99,10 +102,19 @@ const ShippingModalComponent: React.FC<{
 
     if (!order) return null;
 
+    const computedTotal = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
     const depositNum = parseFloat(deposit) || 0;
-    const remainingAmount = Math.max(0, (order.total || 0) - depositNum);
-    const khrBase = depositNum > 0 ? remainingAmount : (order.total || 0);
+    const remainingAmount = Math.max(0, computedTotal - depositNum);
+    const khrBase = depositNum > 0 ? remainingAmount : computedTotal;
     const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * (khrExchangeRate || 4100)).toString();
+
+    const updateItem = (idx: number, patch: Partial<CartItem>) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+    const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+    const addItem = () => {
+        const p = activeProducts[0];
+        if (!p) { showToast('No active products to add', 'error'); return; }
+        setItems(prev => [...prev, { ...p, quantity: 1 }]);
+    };
 
     return (
         <>
@@ -129,61 +141,6 @@ const ShippingModalComponent: React.FC<{
                         )}
                     </div>
                     <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
-                </div>
-                {/* What they owe, and what the driver collects on COD */}
-                <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px', background: 'var(--color-bg)' }}>
-                    <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse', marginBottom: '10px' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Item</th>
-                                <th style={{ textAlign: 'center', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Qty</th>
-                                <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Price</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {(order.items || []).map((item, idx) => (
-                                <tr key={idx} style={{ borderBottom: '1px dashed var(--color-border)' }}>
-                                    <td className="d2-khmer" style={{ padding: '4px 0', color: 'var(--color-text-main)' }}>{item.name}</td>
-                                    <td style={{ textAlign: 'center', padding: '4px 0' }}>{item.quantity}</td>
-                                    <td style={{ textAlign: 'right', padding: '4px 0' }}>${(item.price * item.quantity).toFixed(2)}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', borderTop: '2px solid var(--color-text-main)', paddingTop: '8px' }}>
-                        <span>TOTAL</span>
-                        <span>${(order.total || 0).toFixed(2)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', marginTop: '6px' }}>
-                        <span>Deposit</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span>$</span>
-                            <input
-                                type="number"
-                                value={deposit}
-                                onChange={(e) => setDeposit(e.target.value)}
-                                style={{ width: '80px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', outline: 'none' }}
-                                onClick={(e) => (e.target as HTMLInputElement).select()}
-                            />
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
-                        <span>REMAINING AMOUNT</span>
-                        <span>${remainingAmount.toFixed(2)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>
-                        <span>{depositNum > 0 ? 'REMAINING KH(៛)' : 'TOTAL KH(៛)'}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <input
-                                type="number"
-                                value={displayKhr}
-                                onChange={(e) => setCustomKhr(e.target.value)}
-                                style={{ width: '90px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', fontWeight: 700, outline: 'none' }}
-                                onClick={(e) => (e.target as HTMLInputElement).select()}
-                            />
-                            <span>៛</span>
-                        </div>
-                    </div>
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
@@ -256,6 +213,107 @@ const ShippingModalComponent: React.FC<{
                         ))}
                     </select>
                 </div>
+                {/* What they owe, and what the driver collects on COD */}
+                <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px', background: 'var(--color-bg)' }}>
+                    <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse', marginBottom: '10px' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Item</th>
+                                <th style={{ textAlign: 'center', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)', width: '56px' }}>Qty</th>
+                                <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)', width: '80px' }}>Price</th>
+                                <th style={{ width: '24px' }}></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items.map((item, idx) => (
+                                <tr key={idx} style={{ borderBottom: '1px dashed var(--color-border)' }}>
+                                    <td style={{ padding: '4px 4px 4px 0' }}>
+                                        <select
+                                            className="d2-khmer"
+                                            value={item.id}
+                                            onChange={(e) => {
+                                                const p = activeProducts.find(p => p.id === e.target.value);
+                                                if (p) updateItem(idx, { ...p, quantity: item.quantity });
+                                            }}
+                                            style={{ width: '100%', padding: '4px', borderRadius: '4px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', outline: 'none' }}
+                                        >
+                                            {!activeProducts.some(p => p.id === item.id) && (
+                                                <option value={item.id}>{item.name}</option>
+                                            )}
+                                            {activeProducts.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={item.quantity}
+                                            onChange={(e) => updateItem(idx, { quantity: Math.max(1, parseFloat(e.target.value) || 1) })}
+                                            style={{ width: '100%', textAlign: 'center', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px', fontSize: '13px', outline: 'none' }}
+                                        />
+                                    </td>
+                                    <td style={{ padding: '4px' }}>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={item.price}
+                                            onChange={(e) => updateItem(idx, { price: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                            style={{ width: '100%', textAlign: 'right', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px', fontSize: '13px', outline: 'none' }}
+                                        />
+                                    </td>
+                                    <td style={{ padding: '4px', textAlign: 'center' }}>
+                                        <button onClick={() => removeItem(idx)} title="Remove item" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: '2px', display: 'flex' }}>
+                                            <X size={14} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <button
+                        onClick={addItem}
+                        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}
+                    >
+                        + Add Item
+                    </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', borderTop: '2px solid var(--color-text-main)', paddingTop: '8px' }}>
+                        <span>TOTAL</span>
+                        <span>${computedTotal.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', marginTop: '6px' }}>
+                        <span>Deposit</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>$</span>
+                            <input
+                                type="number"
+                                value={deposit}
+                                onChange={(e) => setDeposit(e.target.value)}
+                                style={{ width: '80px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', outline: 'none' }}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
+                        <span>REMAINING AMOUNT</span>
+                        <span>${remainingAmount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>
+                        <span>{depositNum > 0 ? 'REMAINING KH(៛)' : 'TOTAL KH(៛)'}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input
+                                type="number"
+                                value={displayKhr}
+                                onChange={(e) => setCustomKhr(e.target.value)}
+                                style={{ width: '90px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', fontWeight: 700, outline: 'none' }}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                            <span>៛</span>
+                        </div>
+                    </div>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                     <button
                         onClick={onClose}
@@ -273,12 +331,20 @@ const ShippingModalComponent: React.FC<{
                                 showToast('Please select a shipping company', 'error');
                                 return;
                             }
+                            if (items.length === 0) {
+                                showToast('The order needs at least one item', 'error');
+                                return;
+                            }
                             try {
                                 const updates: Partial<Sale> = {};
                                 if (shippingRemark !== (order.remark || '')) updates.remark = shippingRemark;
                                 if (shippingCustomerCare !== (order.customerCare || '')) updates.customerCare = shippingCustomerCare;
                                 if (shippingAddress !== (order.customer?.address || '')) {
                                     updates.customer = { ...order.customer, address: shippingAddress } as any;
+                                }
+                                if (JSON.stringify(items) !== JSON.stringify(order.items || [])) {
+                                    updates.items = items;
+                                    updates.total = computedTotal;
                                 }
                                 if (depositNum !== (order.depositAmount || 0)) {
                                     updates.depositAmount = depositNum;
@@ -297,12 +363,12 @@ const ShippingModalComponent: React.FC<{
                                 onClose();
                             }
                         }}
-                        disabled={!selectedCompany}
+                        disabled={!selectedCompany || items.length === 0}
                         className="primary-button"
                         style={{
                             padding: '10px 16px', borderRadius: '8px', border: 'none',
-                            background: selectedCompany ? 'var(--color-primary)' : 'var(--color-border)',
-                            color: 'white', cursor: selectedCompany ? 'pointer' : 'not-allowed',
+                            background: (selectedCompany && items.length > 0) ? 'var(--color-primary)' : 'var(--color-border)',
+                            color: 'white', cursor: (selectedCompany && items.length > 0) ? 'pointer' : 'not-allowed',
                             fontSize: '14px', fontWeight: 600
                         }}
                     >
