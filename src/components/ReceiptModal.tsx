@@ -260,9 +260,18 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
         @media print {
             @page {
                 size: 80mm auto;
-                margin: 0;
+                margin: 0 !important;
             }
-            
+
+            /* Chrome reserves margin for its own page title/date header and
+               footer even when @page sets margin: 0 — that reservation is
+               what shows up as blank paper above the receipt on a thermal
+               printer. Targeting :first explicitly is a stronger override
+               some print engines need to actually zero it out. */
+            @page :first {
+                margin: 0 !important;
+            }
+
             body, html {
                 background: white !important;
                 margin: 0 !important;
