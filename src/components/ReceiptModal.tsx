@@ -27,23 +27,23 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
     return (
         <div className="receipt-content-wrapper" style={{ padding: '12px', overflowY: 'visible', width: '100%', boxSizing: 'border-box' }}>
             {variant === 'full' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', textAlign: 'left' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', textAlign: 'left' }}>
                     {logo && (
                         <img
                             src={logo}
                             alt="Store Logo"
                             style={{
-                                width: '60px',
-                                height: '60px',
+                                width: '40px',
+                                height: '40px',
                                 objectFit: 'contain',
                                 flexShrink: 0
                             }}
                         />
                     )}
                     <div>
-                        <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'ROMDOUL STORE'}</h1>
-                        {storeAddress && <div style={{ fontSize: '14px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{storeAddress}</div>}
-                        {phone && <div style={{ fontSize: '14px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{phone}</div>}
+                        <h1 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'ROMDOUL STORE'}</h1>
+                        {storeAddress && <div style={{ fontSize: '11px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{storeAddress}</div>}
+                        {phone && <div style={{ fontSize: '11px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{phone}</div>}
                     </div>
                 </div>
             ) : (
