@@ -154,10 +154,12 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKh
                                 <span>{Number(displayKhr || 0).toLocaleString()} ៛</span>
                             )}
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666', marginTop: '8px' }}>
-                            <span>Payment Method</span>
-                            <span>{sale.paymentMethod}</span>
-                        </div>
+                        {sale.shipping?.company && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666', marginTop: '8px' }}>
+                                <span>Shipped By:</span>
+                                <span>{sale.shipping.company}</span>
+                            </div>
+                        )}
                     </>
                 )}
             </div>
