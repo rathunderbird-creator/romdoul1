@@ -120,7 +120,9 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.categories'), path: '/inventory/categories', icon: Tags },
                 { label: t('nav.warehouses'), path: '/inventory/warehouses', icon: Warehouse },
                 { label: t('nav.stockMovements'), path: '/inventory/stock-movements', icon: ArrowRightLeft },
-                { label: t('nav.adjustStock'), path: '/inventory/adjust-stock', icon: ClipboardEdit }
+                { label: t('nav.adjustStock'), path: '/inventory/adjust-stock', icon: ClipboardEdit },
+                { label: t('nav.inventoryReports'), path: '/inventory/reports', icon: BarChart3 },
+                { label: t('nav.inventorySettings'), path: '/inventory/settings', icon: SlidersHorizontal }
             ]
         });
     }

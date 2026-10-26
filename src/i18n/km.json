@@ -62,6 +62,8 @@
     "warehouses": "ឃ្លាំង",
     "stockMovements": "ចលនាស្តុក",
     "adjustStock": "កែតម្រូវស្តុក",
+    "inventoryReports": "របាយការណ៍ស្តុក",
+    "inventorySettings": "ការកំណត់ស្តុក",
     "accountsPayable": "គណនីត្រូវសង",
     "accountsReceivable": "គណនីត្រូវទទួល",
     "payments": "ការទូទាត់",
