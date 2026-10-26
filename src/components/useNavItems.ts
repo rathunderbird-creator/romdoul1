@@ -115,6 +115,7 @@ export const useNavItems = (): NavItem[] => {
             label: t('nav.inventory'),
             path: '/inventory',
             subItems: [
+                { label: t('nav.inventoryDashboard'), path: '/inventory/dashboard', icon: LayoutDashboard },
                 { label: t('nav.products'), path: '/inventory', icon: PackageSearch },
                 { label: t('nav.categories'), path: '/inventory/categories', icon: Tags },
                 { label: t('nav.warehouses'), path: '/inventory/warehouses', icon: Warehouse },
