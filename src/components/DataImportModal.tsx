@@ -6,9 +6,15 @@ import { useToast } from '../context/ToastContext';
 interface DataImportModalProps {
     isOpen: boolean;
     onClose: () => void;
-    type: 'product' | 'order';
+    type: 'product' | 'order' | 'stock-adjustment';
     onImport: (data: any[]) => Promise<void>;
 }
+
+const TYPE_LABEL: Record<DataImportModalProps['type'], string> = {
+    product: 'Products',
+    order: 'Orders',
+    'stock-adjustment': 'Adjustment Lines',
+};
 
 const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type, onImport }) => {
     const { showToast } = useToast();
@@ -60,6 +66,10 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
         if (type === 'product') {
             templateData = [
                 { Name: 'Example Product', Model: 'MDL-001', Price: 100, Stock: 50, Category: 'Portable' }
+            ];
+        } else if (type === 'stock-adjustment') {
+            templateData = [
+                { SKU: 'EXAMPLE-SKU', Quantity: 10, 'Unit Cost': 5.5, Bin: 'Default', Batch: '' }
             ];
         } else {
             templateData = [
@@ -145,7 +155,7 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                 {/* Header */}
                 <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Import {type === 'product' ? 'Products' : 'Orders'}</h3>
+                        <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Import {TYPE_LABEL[type]}</h3>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>Upload an Excel file to bulk import data</p>
                     </div>
                     <button onClick={handleClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>

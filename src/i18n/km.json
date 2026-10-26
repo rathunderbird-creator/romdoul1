@@ -60,6 +60,7 @@
     "categories": "ប្រភេទទំនិញ",
     "warehouses": "ឃ្លាំង",
     "stockMovements": "ចលនាស្តុក",
+    "adjustStock": "កែតម្រូវស្តុក",
     "accountsPayable": "គណនីត្រូវសង",
     "accountsReceivable": "គណនីត្រូវទទួល",
     "payments": "ការទូទាត់",

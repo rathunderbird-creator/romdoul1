@@ -1028,5 +1028,30 @@ ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS entry_number TEXT;
 -- add_journal_entry_line_description.sql).
 ALTER TABLE journal_entry_lines ADD COLUMN IF NOT EXISTS description TEXT;
 
+-- Stock Adjustments: opening balances, corrections and write-offs (see
+-- create_stock_adjustments.sql).
+CREATE TABLE IF NOT EXISTS stock_adjustments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    warehouse_id TEXT,
+    adjustment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    reason TEXT NOT NULL DEFAULT 'Other',
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'Draft',
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS stock_adjustment_lines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    adjustment_id UUID NOT NULL REFERENCES stock_adjustments(id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+    bin TEXT DEFAULT 'Default',
+    quantity NUMERIC NOT NULL,
+    unit_cost NUMERIC DEFAULT 0,
+    batch TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE stock_adjustments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_adjustment_lines DISABLE ROW LEVEL SECURITY;
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
