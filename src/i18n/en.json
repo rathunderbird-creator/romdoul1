@@ -64,6 +64,7 @@
     "categories": "Categories",
     "warehouses": "Warehouses",
     "stockMovements": "Stock Movements",
+    "adjustStock": "Adjust Stock",
     "accountsPayable": "Accounts Payable",
     "accountsReceivable": "Accounts Receivable",
     "payments": "Payments",

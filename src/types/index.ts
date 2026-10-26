@@ -352,6 +352,34 @@ export interface WarehouseStock {
     updatedAt?: string;
 }
 
+export type StockAdjustmentReason = 'Opening balance' | 'Stock correction' | 'Damaged goods' | 'Expired goods' | 'Theft / loss' | 'Sample / giveaway' | 'Other';
+
+export interface StockAdjustmentLine {
+    id: string;
+    adjustment_id: string;
+    product_id: string;
+    bin?: string;
+    quantity: number;
+    unit_cost: number;
+    batch?: string;
+    created_at?: string;
+    // Joined field for UI
+    product?: Product;
+}
+
+export interface StockAdjustment {
+    id: string;
+    warehouse_id?: string;
+    adjustment_date: string;
+    reason: StockAdjustmentReason;
+    notes?: string;
+    status: 'Draft' | 'Posted';
+    created_by?: string;
+    created_at?: string;
+    // Joined field for UI
+    lines?: StockAdjustmentLine[];
+}
+
 
 export type Permission =
     | 'view_dashboard'
