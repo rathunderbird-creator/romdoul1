@@ -41,9 +41,9 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                         />
                     )}
                     <div>
-                        <h1 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'ROMDOUL STORE'}</h1>
-                        {storeAddress && <div style={{ fontSize: '11px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{storeAddress}</div>}
-                        {phone && <div style={{ fontSize: '11px', color: '#000', fontWeight: 'bold', lineHeight: '1.2' }}>{phone}</div>}
+                        <h1 style={{ fontSize: '14px', fontWeight: 'normal', margin: '0 0 2px 0', color: '#000000', background: 'none', WebkitTextFillColor: 'black', lineHeight: '1.2' }}>{storeName || 'ROMDOUL STORE'}</h1>
+                        {storeAddress && <div style={{ fontSize: '11px', color: '#000', fontWeight: 'normal', lineHeight: '1.2' }}>{storeAddress}</div>}
+                        {phone && <div style={{ fontSize: '11px', color: '#000', fontWeight: 'normal', lineHeight: '1.2' }}>{phone}</div>}
                     </div>
                 </div>
             ) : (
