@@ -33,6 +33,7 @@ const CategoriesPage = lazy(() => import('./pages/inventory/CategoriesPage'));
 const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
 const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
 const AdjustStockPage = lazy(() => import('./pages/inventory/AdjustStockPage'));
+const InventoryDashboardPage = lazy(() => import('./pages/inventory/InventoryDashboardPage'));
 const Revenue = lazy(() => import('./pages/Revenue'));
 const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
 const PageIncomePrediction = lazy(() => import('./pages/pageIncomePrediction/PageIncomePredictionPage'));
@@ -146,6 +147,7 @@ const ProtectedApp = () => {
           <Route path="/todo" element={<ProtectedRoute requiredPermission="view_dashboard"><TodoPage /></ProtectedRoute>} />
           {/* <Route path="/pos" element={<ProtectedRoute requiredPermission="process_sales"><POS /></ProtectedRoute>} /> */}
           <Route path="/inventory" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><Inventory /></ProtectedRoute>} />
+          <Route path="/inventory/dashboard" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><InventoryDashboardPage /></ProtectedRoute>} />
           <Route path="/inventory/categories" element={<ProtectedRoute requiredPermission="manage_inventory"><CategoriesPage /></ProtectedRoute>} />
           <Route path="/inventory/warehouses" element={<ProtectedRoute requiredPermission="manage_inventory"><WarehousesPage /></ProtectedRoute>} />
           <Route path="/inventory/stock-movements" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockMovementsPage /></ProtectedRoute>} />
