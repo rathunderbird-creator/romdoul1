@@ -281,11 +281,16 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 max-width: 80mm;
                 margin: 0 auto;
             }
-            
+
             .receipt-content-wrapper {
                 padding: 10px !important;
+                /* Keep the single copy together — the sizes set inline already
+                   fit one page; this just guards against a printer/driver that
+                   doesn't fully honor "size: 80mm auto" above. */
+                page-break-inside: avoid;
+                break-inside: avoid;
             }
-            
+
             /* Ensure page breaks work */
             .page-break {
                 page-break-before: always !important;
@@ -294,13 +299,6 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                 height: 1px;
                 border: none;
                 margin: 0;
-            }
-
-            /* Adjust font sizes for thermal paper */
-            h1 { font-size: 18px !important; }
-            h3 { font-size: 16px !important; }
-            .print-only div, .print-only span, .print-only p, .print-only td, .print-only th {
-                font-size: 14px !important;
             }
         }
         
