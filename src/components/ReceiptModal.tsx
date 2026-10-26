@@ -83,18 +83,18 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKh
                                 <span style={{ maxWidth: '60%', textAlign: 'right' }}>{sale.customer.address}</span>
                             </div>
                         )}
-                        {variant === 'full' && sale.customer.city && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                                <span>City:</span>
-                                <span>{sale.customer.city}</span>
-                            </div>
-                        )}
                     </>
                 )}
                 {sale.salesman && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                         <span>Salesman:</span>
                         <span>{sale.salesman}</span>
+                    </div>
+                )}
+                {sale.remark && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span>Remark:</span>
+                        <span style={{ maxWidth: '60%', textAlign: 'right' }}>{sale.remark}</span>
                     </div>
                 )}
             </div>
