@@ -13,20 +13,21 @@ interface ReceiptModalProps {
 interface ReceiptContentProps {
     sale: Sale;
     variant: 'full' | 'simple';
-    customKhr?: string;
+    deposit?: string;
+    onDepositChange?: (val: string) => void;
+    customKhr?: string | null;
     onCustomKhrChange?: (val: string) => void;
 }
 
-const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKhr, onCustomKhrChange }) => {
+const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, deposit, onDepositChange, customKhr, onCustomKhrChange }) => {
     const { storeAddress, storeName, phone, logo, khrExchangeRate } = useStore();
-    // Deposit orders: the customer already paid part up front, so the receipt
-    // shows the deposit and the remaining balance — and the KHR line (what the
-    // driver collects on COD) is based on the balance, not the full total.
-    const depositActive = sale.paymentStatus === 'Deposit' && (sale.depositAmount || 0) > 0;
-    const deposit = depositActive ? (sale.depositAmount || 0) : 0;
-    const balanceDue = Math.max(0, sale.total - deposit);
-    const khrBase = depositActive ? balanceDue : sale.total;
-    const displayKhr = customKhr !== undefined ? customKhr : Math.round(khrBase * khrExchangeRate).toString();
+    // Deposit is editable at print time (defaults to the order's own stored
+    // deposit, if any) — the KHR line (what the driver collects on COD) is
+    // based on the remaining amount once a deposit is entered, not the full total.
+    const depositNum = deposit !== undefined ? (parseFloat(deposit) || 0) : (sale.depositAmount || 0);
+    const remainingAmount = Math.max(0, sale.total - depositNum);
+    const khrBase = depositNum > 0 ? remainingAmount : sale.total;
+    const displayKhr = (customKhr !== undefined && customKhr !== null) ? customKhr : Math.round(khrBase * khrExchangeRate).toString();
 
     return (
         <div className="receipt-content-wrapper" style={{ padding: '12px', overflowY: 'visible', width: '100%', boxSizing: 'border-box' }}>
@@ -58,12 +59,8 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKh
 
             <div style={{ marginTop: '16px', borderTop: '1px dashed #ccc', borderBottom: '1px dashed #ccc', padding: '8px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span>Date:</span>
-                    <span>{new Date(sale.date).toLocaleDateString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span>Order No:</span>
-                    <span>#{sale.id.slice(-6)}</span>
+                    <span>Date/Order No:</span>
+                    <span>{new Date(sale.date).toLocaleDateString()} / #{sale.id.slice(-6)}</span>
                 </div>
                 {sale.customer && (
                     <>
@@ -123,22 +120,31 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKh
                     <span>TOTAL</span>
                     <span>${sale.total.toFixed(2)}</span>
                 </div>
-                {depositActive && (
-                    <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '4px' }}>
-                            <span>DEPOSIT PAID{sale.depositDate ? ` (${new Date(sale.depositDate).toLocaleDateString()})` : ''}</span>
-                            <span>-${deposit.toFixed(2)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginTop: '4px', alignItems: 'center' }}>
+                    <span>Deposit</span>
+                    {onDepositChange ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>$</span>
+                            <input
+                                type="number"
+                                value={deposit ?? '0'}
+                                onChange={(e) => onDepositChange(e.target.value)}
+                                style={{ width: '90px', textAlign: 'right', border: '1px dashed #ccc', borderRadius: '4px', padding: '2px 4px', fontSize: '14px', outline: 'none' }}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px', marginTop: '4px', borderTop: '1px dashed #999', paddingTop: '4px' }}>
-                            <span>BALANCE DUE</span>
-                            <span>${balanceDue.toFixed(2)}</span>
-                        </div>
-                    </>
-                )}
+                    ) : (
+                        <span>${depositNum.toFixed(2)}</span>
+                    )}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px', marginTop: '4px', borderTop: '1px dashed #999', paddingTop: '4px' }}>
+                    <span>REMAINING AMOUNT</span>
+                    <span>${remainingAmount.toFixed(2)}</span>
+                </div>
                 {variant === 'full' && (
                     <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '4px', alignItems: 'center' }}>
-                            <span>{depositActive ? 'BALANCE KH(៛)' : 'TOTAL KH(៛)'}</span>
+                            <span>{depositNum > 0 ? 'REMAINING KH(៛)' : 'TOTAL KH(៛)'}</span>
                             {onCustomKhrChange ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <input 
@@ -168,13 +174,12 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant, customKh
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
-    const { updateOrder, khrExchangeRate } = useStore();
+    const { updateOrder } = useStore();
     const [printTwoCopies, setPrintTwoCopies] = React.useState(false);
-    // Deposit orders default the editable KHR figure to the remaining balance.
-    const khrBase = sale.paymentStatus === 'Deposit' && (sale.depositAmount || 0) > 0
-        ? Math.max(0, sale.total - (sale.depositAmount || 0))
-        : sale.total;
-    const [customKhr, setCustomKhr] = React.useState<string>(Math.round(khrBase * (khrExchangeRate || 4100)).toString());
+    const [deposit, setDeposit] = React.useState<string>((sale.depositAmount || 0).toString());
+    // null = auto-compute from the total/deposit, same as ReceiptContent's own
+    // fallback — stays live until the user types a KHR figure of their own.
+    const [customKhr, setCustomKhr] = React.useState<string | null>(null);
 
     const handlePrint = () => {
         updateOrder(sale.id, { isPrinted: true });
@@ -240,7 +245,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                     </div>
 
                     <div style={{ padding: '0', overflowY: 'auto' }}>
-                        <ReceiptContent sale={sale} variant="full" customKhr={customKhr} onCustomKhrChange={setCustomKhr} />
+                        <ReceiptContent sale={sale} variant="full" deposit={deposit} onDepositChange={setDeposit} customKhr={customKhr} onCustomKhrChange={setCustomKhr} />
 
                         {printTwoCopies && (
                             <div style={{ borderTop: '2px dashed #eee', margin: '20px', textAlign: 'center', color: '#888', fontSize: '12px', padding: '10px' }}>
@@ -275,11 +280,11 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
             {/* Hidden Print-Only Container, rendered into body via Portal */}
             {ReactDOM.createPortal(
                 <div id="printable-area" className="print-only">
-                    <ReceiptContent sale={sale} variant="full" customKhr={customKhr} />
+                    <ReceiptContent sale={sale} variant="full" deposit={deposit} customKhr={customKhr} />
                     {printTwoCopies && (
                         <>
                             <div className="page-break" style={{ pageBreakBefore: 'always', breakBefore: 'page', height: '1px', width: '100%', visibility: 'hidden' }}></div>
-                            <ReceiptContent sale={sale} variant="simple" customKhr={customKhr} />
+                            <ReceiptContent sale={sale} variant="simple" deposit={deposit} customKhr={customKhr} />
                         </>
                     )}
                 </div>,
