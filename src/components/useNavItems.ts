@@ -75,21 +75,6 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign }
             ]
         });
-        // The prediction pages and the CPA tracker live in their own section;
-        // the URLs stay under /income-expense/* so saved links keep working.
-        navItems.push({
-            icon: Target,
-            label: t('nav.profitCpa'),
-            path: '/income-expense/cpa-tracker',
-            subItems: [
-                { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
-                { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
-                { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
-                { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users },
-                { label: t('nav.cpaTracker'), path: '/income-expense/cpa-tracker', icon: Target },
-                { label: t('nav.creativeTesting'), path: '/income-expense/creative-testing', icon: FlaskConical }
-            ]
-        });
     }
 
     if (hasPermission('manage_procurement')) {
@@ -164,6 +149,24 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.incomeStatement'), path: '/accounting/income-statement', icon: TrendingUp },
                 { label: t('nav.cashInOut'), path: '/accounting/cash-in-out', icon: ArrowDownUp },
                 { label: t('nav.generalLedger'), path: '/accounting/general-ledger', icon: BookText },
+            ]
+        });
+    }
+
+    if (hasPermission('manage_income_expense')) {
+        // The prediction pages and the CPA tracker live in their own section;
+        // the URLs stay under /income-expense/* so saved links keep working.
+        navItems.push({
+            icon: Target,
+            label: t('nav.profitCpa'),
+            path: '/income-expense/cpa-tracker',
+            subItems: [
+                { label: t('nav.incomePrediction'), path: '/income-expense/prediction', icon: Calendar },
+                { label: t('nav.pagePrediction'), path: '/income-expense/page-prediction', icon: Megaphone },
+                { label: t('nav.productPrediction'), path: '/income-expense/product-prediction', icon: BarChart3 },
+                { label: t('nav.staffPrediction'), path: '/income-expense/staff-prediction', icon: Users },
+                { label: t('nav.cpaTracker'), path: '/income-expense/cpa-tracker', icon: Target },
+                { label: t('nav.creativeTesting'), path: '/income-expense/creative-testing', icon: FlaskConical }
             ]
         });
     }
