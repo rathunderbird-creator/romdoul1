@@ -66,6 +66,8 @@
     "warehouses": "Warehouses",
     "stockMovements": "Stock Movements",
     "adjustStock": "Adjust Stock",
+    "inventoryReports": "Inventory Reports",
+    "inventorySettings": "Inventory Settings",
     "accountsPayable": "Accounts Payable",
     "accountsReceivable": "Accounts Receivable",
     "payments": "Payments",

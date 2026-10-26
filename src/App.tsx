@@ -34,6 +34,8 @@ const WarehousesPage = lazy(() => import('./pages/inventory/WarehousesPage'));
 const StockMovementsPage = lazy(() => import('./pages/inventory/StockMovementsPage'));
 const AdjustStockPage = lazy(() => import('./pages/inventory/AdjustStockPage'));
 const InventoryDashboardPage = lazy(() => import('./pages/inventory/InventoryDashboardPage'));
+const InventoryReportsPage = lazy(() => import('./pages/inventory/InventoryReportsPage'));
+const InventorySettingsPage = lazy(() => import('./pages/inventory/InventorySettingsPage'));
 const Revenue = lazy(() => import('./pages/Revenue'));
 const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
 const PageIncomePrediction = lazy(() => import('./pages/pageIncomePrediction/PageIncomePredictionPage'));
@@ -152,6 +154,8 @@ const ProtectedApp = () => {
           <Route path="/inventory/warehouses" element={<ProtectedRoute requiredPermission="manage_inventory"><WarehousesPage /></ProtectedRoute>} />
           <Route path="/inventory/stock-movements" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><StockMovementsPage /></ProtectedRoute>} />
           <Route path="/inventory/adjust-stock" element={<ProtectedRoute requiredPermission="manage_inventory"><AdjustStockPage /></ProtectedRoute>} />
+          <Route path="/inventory/reports" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_inventory_stock']}><InventoryReportsPage /></ProtectedRoute>} />
+          <Route path="/inventory/settings" element={<ProtectedRoute requiredPermission="manage_inventory"><InventorySettingsPage /></ProtectedRoute>} />
           {/* Every income-expense route (this whole block) includes manage_income_expense
               alongside the legacy view permissions — an OR list, same as everywhere else in
               this router — because Sidebar.tsx shows this entire nav section on
