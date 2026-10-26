@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt, Clock } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -99,6 +99,7 @@ export const useNavItems = (): NavItem[] => {
             path: '/procurement',
             subItems: [
                 { label: t('nav.purchaseDashboard'), path: '/procurement/dashboard', icon: LayoutDashboard },
+                { label: t('nav.purchaseReports'), path: '/procurement/purchase-reports', icon: Clock },
                 { label: t('nav.purchaseOrders'), path: '/procurement/purchase-orders', icon: FileCheck },
                 { label: t('nav.receiving'), path: '/procurement/receiving', icon: PackageCheck },
                 { label: t('nav.supplierBills'), path: '/procurement/supplier-bills', icon: Receipt },
