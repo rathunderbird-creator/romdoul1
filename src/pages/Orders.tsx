@@ -62,7 +62,7 @@ const ShippingModalComponent: React.FC<{
     order: Sale | null;
     targetStatus?: 'Confirmed' | 'Shipped';
 }> = ({ isOpen, onClose, order, targetStatus = 'Shipped' }) => {
-    const { shippingCompanies, customerCare, updateOrder, updateOrderStatus } = useStore();
+    const { shippingCompanies, customerCare, updateOrder, updateOrderStatus, khrExchangeRate } = useStore();
     const { showToast } = useToast();
 
     const [selectedCompany, setSelectedCompany] = useState<string>('');
@@ -70,6 +70,10 @@ const ShippingModalComponent: React.FC<{
     const [shippingAddress, setShippingAddress] = useState<string>('');
     const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
     const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
+    const [deposit, setDeposit] = useState<string>('0');
+    // '' = auto-compute from the total/deposit — stays live until the user
+    // types a KHR figure of their own, same pattern the Receipt used to have.
+    const [customKhr, setCustomKhr] = useState<string>('');
 
     const handleShippingPointSelect = (data: any) => {
         const parts = [data.addressDetail || data.customName, data.commune, data.district, data.province].filter(Boolean);
@@ -88,10 +92,17 @@ const ShippingModalComponent: React.FC<{
             setShippingRemark(order.remark || '');
             setShippingAddress(order.customer?.address || '');
             setShippingCustomerCare(order.customerCare || '');
+            setDeposit((order.depositAmount || 0).toString());
+            setCustomKhr('');
         }
     }, [isOpen, order, shippingCompanies]);
 
     if (!order) return null;
+
+    const depositNum = parseFloat(deposit) || 0;
+    const remainingAmount = Math.max(0, (order.total || 0) - depositNum);
+    const khrBase = depositNum > 0 ? remainingAmount : (order.total || 0);
+    const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * (khrExchangeRate || 4100)).toString();
 
     return (
         <>
@@ -118,6 +129,61 @@ const ShippingModalComponent: React.FC<{
                         )}
                     </div>
                     <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
+                </div>
+                {/* What they owe, and what the driver collects on COD */}
+                <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px', background: 'var(--color-bg)' }}>
+                    <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse', marginBottom: '10px' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Item</th>
+                                <th style={{ textAlign: 'center', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Qty</th>
+                                <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(order.items || []).map((item, idx) => (
+                                <tr key={idx} style={{ borderBottom: '1px dashed var(--color-border)' }}>
+                                    <td className="d2-khmer" style={{ padding: '4px 0', color: 'var(--color-text-main)' }}>{item.name}</td>
+                                    <td style={{ textAlign: 'center', padding: '4px 0' }}>{item.quantity}</td>
+                                    <td style={{ textAlign: 'right', padding: '4px 0' }}>${(item.price * item.quantity).toFixed(2)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', borderTop: '2px solid var(--color-text-main)', paddingTop: '8px' }}>
+                        <span>TOTAL</span>
+                        <span>${(order.total || 0).toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', marginTop: '6px' }}>
+                        <span>Deposit</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>$</span>
+                            <input
+                                type="number"
+                                value={deposit}
+                                onChange={(e) => setDeposit(e.target.value)}
+                                style={{ width: '80px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', outline: 'none' }}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
+                        <span>REMAINING AMOUNT</span>
+                        <span>${remainingAmount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>
+                        <span>{depositNum > 0 ? 'REMAINING KH(៛)' : 'TOTAL KH(៛)'}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input
+                                type="number"
+                                value={displayKhr}
+                                onChange={(e) => setCustomKhr(e.target.value)}
+                                style={{ width: '90px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', fontWeight: 700, outline: 'none' }}
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                            <span>៛</span>
+                        </div>
+                    </div>
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
@@ -213,6 +279,10 @@ const ShippingModalComponent: React.FC<{
                                 if (shippingCustomerCare !== (order.customerCare || '')) updates.customerCare = shippingCustomerCare;
                                 if (shippingAddress !== (order.customer?.address || '')) {
                                     updates.customer = { ...order.customer, address: shippingAddress } as any;
+                                }
+                                if (depositNum !== (order.depositAmount || 0)) {
+                                    updates.depositAmount = depositNum;
+                                    if (depositNum > 0) updates.depositDate = new Date().toISOString().split('T')[0];
                                 }
 
                                 if (Object.keys(updates).length > 0) {
