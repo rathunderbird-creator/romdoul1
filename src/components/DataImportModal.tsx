@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext';
 interface DataImportModalProps {
     isOpen: boolean;
     onClose: () => void;
-    type: 'product' | 'order' | 'stock-adjustment';
+    type: 'product' | 'order' | 'stock-adjustment' | 'purchase-opening-balance';
     onImport: (data: any[]) => Promise<void>;
 }
 
@@ -14,6 +14,7 @@ const TYPE_LABEL: Record<DataImportModalProps['type'], string> = {
     product: 'Products',
     order: 'Orders',
     'stock-adjustment': 'Adjustment Lines',
+    'purchase-opening-balance': 'Opening Balances',
 };
 
 const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type, onImport }) => {
@@ -70,6 +71,10 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
         } else if (type === 'stock-adjustment') {
             templateData = [
                 { SKU: 'EXAMPLE-SKU', Quantity: 10, 'Unit Cost': 5.5, Bin: 'Default', Batch: '' }
+            ];
+        } else if (type === 'purchase-opening-balance') {
+            templateData = [
+                { Supplier: 'Example Supplier', 'Their Invoice': 'INV-0001', 'Bill Date': '2026-01-01', 'Due Date': '2026-01-31', Amount: 100 }
             ];
         } else {
             templateData = [
