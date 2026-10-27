@@ -513,7 +513,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                         <SectionCard title="Liabilities" color={RED} rows={balanceSheet.liabilities} totalLabel="Total Liabilities" total={balanceSheet.totals.liabilities} prevTotal={balanceSheet.prevTotals?.liabilities} />
                         <SectionCard title="Equity" color={PURPLE} rows={balanceSheet.equity} totalLabel="Total Equity" total={balanceSheet.totals.equity} prevTotal={balanceSheet.prevTotals?.equity} />
                         <div style={{ ...cardStyle, padding: '12px 20px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px' }}>
-                            <span style={{ color: 'var(--color-text-main)' }}>Total Liabilities & Equity</span>
+                            <span style={{ color: 'var(--color-text-main)' }}>Liabilities + Equity</span>
                             {amountText(balanceSheet.totals.liabilities + balanceSheet.totals.equity, true)}
                         </div>
                     </div>
