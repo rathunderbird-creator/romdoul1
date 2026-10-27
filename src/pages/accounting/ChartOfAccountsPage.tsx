@@ -42,7 +42,7 @@ const signedBalance = (type: ChartOfAccount['account_type'], s: { debit: number;
 const SUB_TYPES: Record<ChartOfAccount['account_type'], string[]> = {
     Asset: ['Current Asset', 'Fixed Asset', 'Other Asset'],
     Liability: ['Current Liability', 'Long-term Liability'],
-    Equity: ['Equity'],
+    Equity: ['Equity', 'Contributed Capital', 'Other Equity', 'Retained Earnings'],
     Revenue: ['Operating Revenue', 'Other Revenue'],
     Expense: ['Operating Expense', 'Cost of Goods Sold', 'Other Expense'],
 };
