@@ -10,7 +10,6 @@ const Dashboard2 = lazy(() => import('./pages/dashboard2/Dashboard2Page'));
 const OrdersManagement2 = lazy(() => import('./pages/ordersManagement2/OrdersManagement2Page'));
 const TodoPage = lazy(() => import('./pages/TodoPage'));
 const Inventory = lazy(() => import('./pages/Inventory'));
-const IncomeExpense = lazy(() => import('./pages/IncomeExpense'));
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'));
 const StoreProfileSettings = lazy(() => import('./pages/settings/StoreProfileSettings'));
 const GeneralSettings = lazy(() => import('./pages/settings/GeneralSettings'));
@@ -36,7 +35,6 @@ const AdjustStockPage = lazy(() => import('./pages/inventory/AdjustStockPage'));
 const InventoryDashboardPage = lazy(() => import('./pages/inventory/InventoryDashboardPage'));
 const InventoryReportsPage = lazy(() => import('./pages/inventory/InventoryReportsPage'));
 const InventorySettingsPage = lazy(() => import('./pages/inventory/InventorySettingsPage'));
-const Revenue = lazy(() => import('./pages/Revenue'));
 const IncomePrediction = lazy(() => import('./pages/IncomePrediction'));
 const PageIncomePrediction = lazy(() => import('./pages/pageIncomePrediction/PageIncomePredictionPage'));
 const ProductIncomePrediction = lazy(() => import('./pages/productIncomePrediction/ProductIncomePredictionPage'));
@@ -165,10 +163,6 @@ const ProtectedApp = () => {
               inventory/reporting roles) — this route guard has never been exclusive to
               manage_income_expense, and narrowing it would be a real access-policy change,
               not a bug fix. */}
-          <Route path="/income-expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomeExpense /></ProtectedRoute>} />
-          <Route path="/income-expense/income" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomeExpense /></ProtectedRoute>} />
-          <Route path="/income-expense/expense" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomeExpense /></ProtectedRoute>} />
-          <Route path="/income-expense/revenue" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><Revenue /></ProtectedRoute>} />
           <Route path="/income-expense/prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><IncomePrediction /></ProtectedRoute>} />
           <Route path="/income-expense/page-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><PageIncomePrediction /></ProtectedRoute>} />
           <Route path="/income-expense/product-prediction" element={<ProtectedRoute requiredPermissions={['manage_inventory', 'view_reports', 'view_inventory_stock', 'manage_income_expense']}><ProductIncomePrediction /></ProtectedRoute>} />
