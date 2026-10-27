@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, DollarSign, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt, Clock, ClipboardEdit } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt, Clock, ClipboardEdit } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -59,20 +59,6 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
                 { label: t('nav.accountsReceivable'), path: '/accounting/receivable', icon: HandCoins },
                 { label: t('nav.payments'), path: '/accounting/payments', icon: CreditCard }
-            ]
-        });
-    }
-
-    if (hasPermission('manage_income_expense')) {
-        navItems.push({
-            icon: Wallet,
-            label: t('nav.incomeExpense'),
-            path: '/income-expense',
-            subItems: [
-                { label: t('nav.allTransactions'), path: '/income-expense', icon: ArrowRightLeft },
-                { label: t('nav.income'), path: '/income-expense/income', icon: TrendingUp },
-                { label: t('nav.expense'), path: '/income-expense/expense', icon: TrendingDown },
-                { label: t('nav.revenue'), path: '/income-expense/revenue', icon: DollarSign }
             ]
         });
     }
