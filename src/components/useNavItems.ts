@@ -53,9 +53,6 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.generalLedger'), path: '/accounting/general-ledger', icon: BookText },
                 { label: t('nav.revenue'), path: '/accounting/revenue', icon: CircleDollarSign },
                 { label: t('nav.expense'), path: '/accounting/expense', icon: TrendingDown },
-                { label: t('nav.balanceSheet'), path: '/accounting/balance-sheet', icon: Scale },
-                { label: t('nav.incomeStatement'), path: '/accounting/income-statement', icon: TrendingUp },
-                { label: t('nav.cashInOut'), path: '/accounting/cash-in-out', icon: ArrowDownUp },
                 { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
                 { label: t('nav.accountsReceivable'), path: '/accounting/receivable', icon: HandCoins },
                 { label: t('nav.payments'), path: '/accounting/payments', icon: CreditCard }
