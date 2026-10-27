@@ -22,7 +22,9 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
     const depositNum = sale.depositAmount || 0;
     const remainingAmount = Math.max(0, sale.total - depositNum);
     const khrBase = depositNum > 0 ? remainingAmount : sale.total;
-    const displayKhr = Math.round(khrBase * khrExchangeRate).toString();
+    const displayKhr = (sale.customKhrAmount !== undefined && sale.customKhrAmount !== null
+        ? Math.round(sale.customKhrAmount)
+        : Math.round(khrBase * khrExchangeRate)).toString();
 
     return (
         <div className="receipt-content-wrapper" style={{ padding: '12px', overflowY: 'visible', width: '100%', boxSizing: 'border-box' }}>

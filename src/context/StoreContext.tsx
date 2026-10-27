@@ -3030,6 +3030,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.depositDate !== undefined) dbUpdates.deposit_date = updates.depositDate || null;
         if (updates.depositMethod !== undefined) dbUpdates.deposit_method = updates.depositMethod || null;
         if (updates.depositAccountId !== undefined) dbUpdates.deposit_account_id = updates.depositAccountId || null;
+        if (updates.customKhrAmount !== undefined) dbUpdates.custom_khr_amount = updates.customKhrAmount;
         if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) {
@@ -3065,6 +3066,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     delete dbUpdatesWithoutAccount.deposit_account_id;
                     ({ error } = await supabase.from('sales').update(dbUpdatesWithoutAccount).eq('id', id));
                     if (!error) console.info('Saved without the Deposit-into account — run migrations/add_sales_deposit_account.sql to store it');
+                }
+                // Same degrade-and-retry for the KH(៛) override, needs migrations/add_sales_custom_khr.sql.
+                if (error && /custom_khr_amount/i.test(error.message || '')) {
+                    const dbUpdatesWithoutKhr = { ...dbUpdates };
+                    delete dbUpdatesWithoutKhr.custom_khr_amount;
+                    ({ error } = await supabase.from('sales').update(dbUpdatesWithoutKhr).eq('id', id));
+                    if (!error) console.info('Saved without the custom KH(៛) override — run migrations/add_sales_custom_khr.sql to store it');
                 }
                 if (error) throw error;
             }

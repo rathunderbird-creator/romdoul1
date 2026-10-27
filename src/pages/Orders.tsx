@@ -96,7 +96,10 @@ const ShippingModalComponent: React.FC<{
             setShippingCustomerCare(order.customerCare || '');
             setItems((order.items || []).map(i => ({ ...i })));
             setDeposit((order.depositAmount || 0).toString());
-            setCustomKhr('');
+            // Pre-fill from whatever override is already saved, so reopening
+            // the popup shows (and re-saves) the same figure the receipt is
+            // actually printing — '' only when there truly is no override.
+            setCustomKhr(order.customKhrAmount !== undefined && order.customKhrAmount !== null ? String(order.customKhrAmount) : '');
         }
     }, [isOpen, order, shippingCompanies]);
 
@@ -349,6 +352,14 @@ const ShippingModalComponent: React.FC<{
                                 if (depositNum !== (order.depositAmount || 0)) {
                                     updates.depositAmount = depositNum;
                                     if (depositNum > 0) updates.depositDate = new Date().toISOString().split('T')[0];
+                                }
+                                // '' means "no override, keep computing it live" — that's the
+                                // same as an unset existing value, so only a real change (either
+                                // a new figure, or clearing one that was set) needs saving.
+                                const newKhr = customKhr !== '' ? Number(customKhr) : null;
+                                const existingKhr = order.customKhrAmount ?? null;
+                                if (newKhr !== existingKhr) {
+                                    updates.customKhrAmount = newKhr as any;
                                 }
 
                                 if (Object.keys(updates).length > 0) {

@@ -61,6 +61,7 @@ export interface Sale {
     depositDate?: string;
     depositMethod?: string;
     depositAccountId?: string; // chart-of-accounts cash/bank account the settlement is deposited into (persisted: sales.deposit_account_id)
+    customKhrAmount?: number; // manual override for the receipt's TOTAL/REMAINING KH(៛); undefined = computed live from the exchange rate (persisted: sales.custom_khr_amount)
     depositAccountName?: string; // transient, UI-only: resolved account name passed through updateOrder() for the income transaction's "Pay by" — never persisted to the sales table itself
     receiptReference?: string; // transient, UI-only: cheque/transfer reference passed through updateOrder() for the income transaction — never persisted to the sales table
     receiptNotes?: string; // transient, UI-only: note passed through updateOrder() for the income transaction — never persisted to the sales table
