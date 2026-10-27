@@ -85,6 +85,7 @@ const PaymentsPage = lazy(() => import('./pages/accounting/PaymentsPage'));
 const AccountsPayablePage = lazy(() => import('./pages/accounting/AccountsPayablePage'));
 const AccountsReceivablePage = lazy(() => import('./pages/accounting/AccountsReceivablePage'));
 const WholesaleOrdersPage = lazy(() => import('./pages/accounting/WholesaleOrdersPage'));
+const WholesaleGoodsShippedPage = lazy(() => import('./pages/accounting/WholesaleGoodsShippedPage'));
 const WholesaleCustomersPage = lazy(() => import('./pages/accounting/WholesaleCustomersPage'));
 const WholesaleCustomerDetailsPage = lazy(() => import('./pages/accounting/WholesaleCustomerDetailsPage'));
 const WholesalePaymentsPage = lazy(() => import('./pages/accounting/WholesalePaymentsPage'));
@@ -183,6 +184,7 @@ const ProtectedApp = () => {
           <Route path="/orders/setup" element={<ProtectedRoute requiredPermission="manage_orders"><SalesSetupPage /></ProtectedRoute>} />
           <Route path="/orders/:id" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrderDetailPage /></ProtectedRoute>} />
           <Route path="/wholesale/orders" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleOrdersPage /></ProtectedRoute>} />
+          <Route path="/wholesale/goods-shipped" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleGoodsShippedPage /></ProtectedRoute>} />
           <Route path="/wholesale/customers" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomersPage /></ProtectedRoute>} />
           <Route path="/wholesale/customers/:id" element={<ProtectedRoute requiredPermission="manage_orders"><WholesaleCustomerDetailsPage /></ProtectedRoute>} />
           <Route path="/wholesale/payments" element={<ProtectedRoute requiredPermission="manage_orders"><WholesalePaymentsPage /></ProtectedRoute>} />
