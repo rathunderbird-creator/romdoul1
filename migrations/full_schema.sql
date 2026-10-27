@@ -1053,5 +1053,9 @@ CREATE TABLE IF NOT EXISTS stock_adjustment_lines (
 ALTER TABLE stock_adjustments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_adjustment_lines DISABLE ROW LEVEL SECURITY;
 
+-- Sales: an optional manual override for the receipt's TOTAL/REMAINING
+-- KH(₭) figure (see add_sales_custom_khr.sql).
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS custom_khr_amount NUMERIC;
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
