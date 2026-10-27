@@ -58,6 +58,7 @@
     "receiving": "Goods Receipts",
     "wholesale": "Wholesale",
     "wholesaleOrders": "Wholesale Orders",
+    "wholesaleGoodsShipped": "Goods Shipped",
     "wholesaleCustomers": "Wholesale Customers",
     "wholesalePayments": "Wholesale Payment",
     "inventoryDashboard": "Inventory Dashboard",

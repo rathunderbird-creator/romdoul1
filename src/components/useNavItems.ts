@@ -85,6 +85,7 @@ export const useNavItems = (): NavItem[] => {
             path: '/wholesale',
             subItems: [
                 { label: t('nav.wholesaleOrders'), path: '/wholesale/orders', icon: ShoppingCart },
+                { label: t('nav.wholesaleGoodsShipped'), path: '/wholesale/goods-shipped', icon: Truck },
                 { label: t('nav.wholesaleCustomers'), path: '/wholesale/customers', icon: Users },
                 { label: t('nav.wholesalePayments'), path: '/wholesale/payments', icon: CreditCard },
                 { label: t('nav.wholesaleSetup'), path: '/wholesale/setup', icon: SlidersHorizontal }
