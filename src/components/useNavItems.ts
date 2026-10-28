@@ -16,9 +16,6 @@ export const useNavItems = (): NavItem[] => {
     const navItems: NavItem[] = [];
 
     if (hasPermission('view_dashboard')) {
-        // One dashboard entry: / is the merged dashboard (Dashboard 2 + every
-        // classic card section); /dashboard-classic stays reachable by URL.
-        navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
         // Price List is hidden from the menu; /price-list stays reachable by URL.
         navItems.push({ icon: CheckSquare, label: t('nav.todo'), path: '/todo' });
     }
@@ -29,6 +26,10 @@ export const useNavItems = (): NavItem[] => {
             label: t('nav.orders'),
             path: '/orders',
             subItems: [
+                // The merged dashboard (Dashboard 2 + every classic card
+                // section), pinned to the top — it's also the default landing
+                // page at / for every user except Admin.
+                { label: t('nav.salesDashboard'), path: '/sales-dashboard', icon: LayoutDashboard },
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
                 // Orders Management 2 is hidden from the menu; /orders-management-2 stays reachable by URL.
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
