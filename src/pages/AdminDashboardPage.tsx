@@ -53,8 +53,11 @@ const KpiCard: React.FC<{
     </div>
 );
 
-const EquationBox: React.FC<{ label: string; value: string; color: string }> = ({ label, value, color }) => (
-    <div style={{ border: `1px solid ${color}`, borderRadius: '10px', padding: '16px 18px', background: `${color}0d` }}>
+const EquationBox: React.FC<{ label: string; value: string; color: string; fill?: boolean }> = ({ label, value, color, fill }) => (
+    <div style={{
+        border: `1px solid ${color}`, borderRadius: '10px', padding: '16px 18px', background: `${color}0d`,
+        ...(fill ? { height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', boxSizing: 'border-box' } : null)
+    }}>
         <div style={{ fontSize: '12px', color, fontWeight: 600 }}>{label}</div>
         <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
@@ -164,8 +167,8 @@ const AdminDashboardPage: React.FC = () => {
                 <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
                     Accounting Equation: Assets = Liabilities + Equity
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: '16px', alignItems: 'center' }}>
-                    <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: '16px', alignItems: 'stretch' }}>
+                    <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} fill />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <EquationBox label="Liabilities" value={fmt(totalLiabilities)} color={RED} />
                         <EquationBox label="Equity" value={fmt(totalEquity)} color={PURPLE} />
