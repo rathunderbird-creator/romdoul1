@@ -144,7 +144,7 @@ const AdminDashboardPage: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ flex: isMobile ? undefined : '7 1 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '6 1 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button className="secondary-button" onClick={() => { fetchAccounts(); fetchJournalEntries(); }}>
                         <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
@@ -267,8 +267,8 @@ const AdminDashboardPage: React.FC = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ flex: '1.5 1 0' }} />
-                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
                 </>
             )}
         </div>
