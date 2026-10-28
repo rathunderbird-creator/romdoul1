@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2, Eye, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, ChevronLeft, ChevronRight, Copy, PackageCheck, Ban, Printer, FilterX } from 'lucide-react';
+import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2, Eye, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, ChevronLeft, ChevronRight, Copy, PackageCheck, Ban, Printer, FilterX, Pencil } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -35,7 +35,8 @@ const WholesaleOrdersPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings } = useStore();
-    const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
+    const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, updateWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
+    const isAdmin = currentUser?.roleId === 'admin';
 
     const isMobile = useMobile();
     const [search, setSearch] = useState('');
@@ -47,8 +48,9 @@ const WholesaleOrdersPage: React.FC = () => {
     // Mobile: filters live in a right-side drawer (same pattern as Orders).
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
-    // Create modal
+    // Create/Edit modal (shared — editingOrder is set only in edit mode)
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [editingOrder, setEditingOrder] = useState<WholesaleOrder | null>(null);
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [warehouseId, setWarehouseId] = useState('');
@@ -145,10 +147,29 @@ const WholesaleOrdersPage: React.FC = () => {
         }
         setInvoiceNumber(''); setOrderStatus('Open'); setNotes('');
         setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);
+        setEditingOrder(null);
         setIsCreateOpen(true);
         // Prefill the next sequential invoice number (still editable).
         nextInvoiceNumber(wholesaleSettings.numbering?.orders || 'WO').then(setInvoiceNumber);
     };
+
+    // Admin only (enforced by the caller hiding the Edit action).
+    const openEdit = (o: WholesaleOrder) => {
+        setCustomerName(o.customer_name || ''); setCustomerPhone(o.customer_phone || '');
+        setWarehouseId(o.warehouse_id || '');
+        setOrderDate((o.order_date || '').slice(0, 10) || today());
+        setDueDate((o.due_date || '').slice(0, 10));
+        setInvoiceNumber(o.invoice_number || '');
+        setOrderStatus(o.status === 'Delivered' ? 'Delivered' : 'Open');
+        setNotes(o.notes || '');
+        setLines((o.items && o.items.length > 0)
+            ? o.items.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
+            : [{ product_id: '', quantity: 1, unit_price: 0 }]);
+        setEditingOrder(o);
+        setIsCreateOpen(true);
+    };
+
+    const closeOrderModal = () => { setIsCreateOpen(false); setEditingOrder(null); };
 
     const lineTotal = (l: Partial<WholesaleOrderItem>) => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
     const orderTotal = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines]);
@@ -170,15 +191,24 @@ const WholesaleOrdersPage: React.FC = () => {
                 quantity: Number(l.quantity) || 0,
                 unit_price: Number(l.unit_price) || 0
             }));
-            // If the field was cleared, still assign the next number at save time.
-            const inv = invoiceNumber.trim() || await nextInvoiceNumber(wholesaleSettings.numbering?.orders || 'WO');
-            await createWholesaleOrder(
-                { invoice_number: inv, customer_name: customerName.trim(), customer_phone: customerPhone.trim(), warehouse_id: warehouseId, order_date: orderDate, due_date: dueDate, status: orderStatus, notes },
-                items,
-                currentUser?.name
-            );
-            setIsCreateOpen(false);
-            refreshData(true); // keep in-memory product stock in sync after the deduction
+            if (editingOrder) {
+                await updateWholesaleOrder(
+                    editingOrder,
+                    { customer_name: customerName.trim(), customer_phone: customerPhone.trim(), warehouse_id: warehouseId, order_date: orderDate, due_date: dueDate, status: orderStatus, invoice_number: invoiceNumber.trim(), notes },
+                    items,
+                    currentUser?.name
+                );
+            } else {
+                // If the field was cleared, still assign the next number at save time.
+                const inv = invoiceNumber.trim() || await nextInvoiceNumber(wholesaleSettings.numbering?.orders || 'WO');
+                await createWholesaleOrder(
+                    { invoice_number: inv, customer_name: customerName.trim(), customer_phone: customerPhone.trim(), warehouse_id: warehouseId, order_date: orderDate, due_date: dueDate, status: orderStatus, notes },
+                    items,
+                    currentUser?.name
+                );
+            }
+            closeOrderModal();
+            refreshData(true); // keep in-memory product stock in sync after the deduction/reconciliation
         } catch { /* hook toasts */ } finally { setSaving(false); }
     };
 
@@ -537,6 +567,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                 style={{ borderBottom: '1px solid var(--color-border)' }}
                                 actions={[
                                     { icon: Eye, label: 'View', color: '#6366F1', onClick: () => setViewOrder(o) },
+                                    ...(isAdmin && o.status !== 'Cancelled' ? [{ icon: Pencil, label: 'Edit', color: '#8B5CF6', onClick: () => openEdit(o) }] : []),
                                     canPay
                                         ? { icon: DollarSign, label: 'Pay', color: '#10B981', onClick: () => openPay(o) }
                                         : { icon: Printer, label: 'Invoice', color: '#2563EB', onClick: () => handlePrintInvoice(o) },
@@ -681,6 +712,11 @@ const WholesaleOrdersPage: React.FC = () => {
                                                 <button onClick={() => setViewOrder(o)} title="View Details" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Eye size={15} />
                                                 </button>
+                                                {isAdmin && o.status !== 'Cancelled' && (
+                                                    <button onClick={() => openEdit(o)} title="Edit Order" style={{ background: 'rgba(139,92,246,0.1)', border: 'none', cursor: 'pointer', color: '#8b5cf6', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                        <Pencil size={15} />
+                                                    </button>
+                                                )}
                                                 <button onClick={() => handleCopyOrder(o)} title="Copy Details" style={{ background: 'rgba(107,114,128,0.08)', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Copy size={15} />
                                                 </button>
@@ -752,9 +788,9 @@ const WholesaleOrdersPage: React.FC = () => {
                 </div>
             )}
 
-            {/* Create modal — styled like the Purchase Order popup */}
+            {/* Create/Edit modal — styled like the Purchase Order popup */}
             {isCreateOpen && (
-                <div style={{ ...modalOverlay, padding: isMobile ? '10px' : (modalOverlay as any).padding }} onClick={() => setIsCreateOpen(false)}>
+                <div style={{ ...modalOverlay, padding: isMobile ? '10px' : (modalOverlay as any).padding }} onClick={closeOrderModal}>
                     <div
                         onClick={e => e.stopPropagation()}
                         style={{ background: 'var(--color-surface)', borderRadius: isMobile ? '16px' : '24px', width: '100%', maxWidth: '940px', maxHeight: isMobile ? '96vh' : '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
@@ -763,14 +799,14 @@ const WholesaleOrdersPage: React.FC = () => {
                         <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05))' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                 <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                    <ShoppingCart size={20} />
+                                    {editingOrder ? <Pencil size={20} /> : <ShoppingCart size={20} />}
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>New Wholesale Order</h2>
-                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Sale on credit — stock leaves now, payment comes later</p>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>{editingOrder ? `Edit ${editingOrder.invoice_number || 'Wholesale Order'}` : 'New Wholesale Order'}</h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{editingOrder ? 'Changing products or quantities reconciles stock and the cost-of-goods entry' : 'Sale on credit — stock leaves now, payment comes later'}</p>
                                 </div>
                             </div>
-                            <button onClick={() => setIsCreateOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <button onClick={closeOrderModal} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <X size={18} />
                             </button>
                         </div>
@@ -901,9 +937,9 @@ const WholesaleOrdersPage: React.FC = () => {
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
-                                <button className="secondary-button" onClick={() => setIsCreateOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                                <button className="secondary-button" onClick={closeOrderModal} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
                                 <button className="primary-button" onClick={submitCreate} disabled={saving} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
-                                    <CheckCircle2 size={16} /> {saving ? 'Saving…' : 'Create Order'}
+                                    <CheckCircle2 size={16} /> {saving ? 'Saving…' : (editingOrder ? 'Save Changes' : 'Create Order')}
                                 </button>
                             </div>
                         </div>
@@ -1028,6 +1064,11 @@ const WholesaleOrdersPage: React.FC = () => {
                                     {viewOrder.status !== 'Cancelled' && balance > 0.005 && (
                                         <button className="primary-button" onClick={() => { const o = viewOrder; setViewOrder(null); openPay(o); }} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <DollarSign size={16} /> Record Payment
+                                        </button>
+                                    )}
+                                    {isAdmin && viewOrder.status !== 'Cancelled' && (
+                                        <button className="secondary-button" onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Pencil size={15} /> Edit
                                         </button>
                                     )}
                                     <button className="secondary-button" onClick={() => handleCopyOrder(viewOrder)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
