@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Wallet, HandCoins, Scale, TrendingUp, ArrowDownUp, BookOpen, ClipboardList, LayoutDashboard } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { useHeader } from '../../context/HeaderContext';
+import { useMobile } from '../../hooks/useMobile';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useWholesale } from '../../hooks/useWholesale';
 import { supabase } from '../../lib/supabase';
@@ -73,6 +74,7 @@ const FinancialDashboardPage: React.FC = () => {
     const navigate = useNavigate();
     const { purchaseOrders, fetchPurchaseOrders } = useProcurement();
     const { wholesaleOrders, fetchWholesaleOrders } = useWholesale();
+    const isMobile = useMobile();
 
     useEffect(() => {
         setHeaderContent({
@@ -253,120 +255,131 @@ const FinancialDashboardPage: React.FC = () => {
     }, [bills, today]);
 
     return (
-        <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Filter */}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
-                <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Ending month</label>
-                    <input type="month" value={endingMonth} max={monthKeyOf(today)} onChange={e => setEndingMonth(e.target.value || monthKeyOf(today))} style={inputStyle} />
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '7 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {/* Filter */}
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Ending month</label>
+                        <input type="month" value={endingMonth} max={monthKeyOf(today)} onChange={e => setEndingMonth(e.target.value || monthKeyOf(today))} style={inputStyle} />
+                    </div>
+                    <button onClick={() => { fetchPurchaseOrders(); fetchWholesaleOrders(); setRefreshKey(k => k + 1); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                        <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
+                    </button>
                 </div>
-                <button onClick={() => { fetchPurchaseOrders(); fetchWholesaleOrders(); setRefreshKey(k => k + 1); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
-                    <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
-                </button>
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                Income Statement: {monthLabel(startMonth)} – {monthLabel(endingMonth)} · Balance Sheet: as of {today} · Amounts in USD, posted entries only
-            </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                    Income Statement: {monthLabel(startMonth)} – {monthLabel(endingMonth)} · Balance Sheet: as of {today} · Amounts in USD, posted entries only
+                </div>
 
-            {/* KPI row 1 — the period */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                <KpiCard label="Revenue" value={fmt(revenue)} sub={monthLabel(endingMonth)} color={GREEN} loading={isLoading} />
-                <KpiCard label="Expenses" value={fmt(expenses)} sub={monthLabel(endingMonth)} color={RED} loading={isLoading} />
-                <KpiCard label="Net income" value={fmt(netIncome)} sub={netIncome >= 0 ? 'Profit' : 'Loss'} color={netIncome >= 0 ? GREEN : RED} loading={isLoading} />
-                <KpiCard label="Cash position" value={fmt(cashPosition)} sub="All cash & bank accounts, today" color={BLUE} loading={isLoading} />
-            </div>
+                {/* KPI row 1 — the period */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                    <KpiCard label="Revenue" value={fmt(revenue)} sub={monthLabel(endingMonth)} color={GREEN} loading={isLoading} />
+                    <KpiCard label="Expenses" value={fmt(expenses)} sub={monthLabel(endingMonth)} color={RED} loading={isLoading} />
+                    <KpiCard label="Net income" value={fmt(netIncome)} sub={netIncome >= 0 ? 'Profit' : 'Loss'} color={netIncome >= 0 ? GREEN : RED} loading={isLoading} />
+                    <KpiCard label="Cash position" value={fmt(cashPosition)} sub="All cash & bank accounts, today" color={BLUE} loading={isLoading} />
+                </div>
 
-            {/* KPI row 2 — Balance Sheet snapshot */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                <KpiCard label="Total assets" value={fmt(totalAssets)} sub="As of today" loading={isLoading} />
-                <KpiCard label="Total liabilities" value={fmt(totalLiabilities)} sub="As of today" color={totalLiabilities > 0 ? AMBER : undefined} loading={isLoading} />
-                <KpiCard label="Total equity" value={fmt(totalEquity)} sub="Including retained earnings" color={PURPLE} loading={isLoading} />
-                <KpiCard label="Receivable" value={fmt(receivable.outstanding)} sub={`${openReceivables.length} order${openReceivables.length === 1 ? '' : 's'} open`} color={receivable.overdue > 0 ? RED : GREEN} loading={isLoading} />
-            </div>
+                {/* KPI row 2 — Balance Sheet snapshot */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                    <KpiCard label="Total assets" value={fmt(totalAssets)} sub="As of today" loading={isLoading} />
+                    <KpiCard label="Total liabilities" value={fmt(totalLiabilities)} sub="As of today" color={totalLiabilities > 0 ? AMBER : undefined} loading={isLoading} />
+                    <KpiCard label="Total equity" value={fmt(totalEquity)} sub="Including retained earnings" color={PURPLE} loading={isLoading} />
+                    <KpiCard label="Receivable" value={fmt(receivable.outstanding)} sub={`${openReceivables.length} order${openReceivables.length === 1 ? '' : 's'} open`} color={receivable.overdue > 0 ? RED : GREEN} loading={isLoading} />
+                </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
-                {/* Receivables */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
+                    {/* Receivables */}
+                    <div style={{ ...cardStyle, padding: '18px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                            <HandCoins size={16} color={GREEN} />
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Receivables</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed by customers as of today. Wholesale credit sales only.</span>
+                            <button onClick={() => navigate('/accounting/receivable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                            <Tile label="Overdue" value={receivable.overdue} color={RED} />
+                            <Tile label="Due in 7 days" value={receivable.within7} color={AMBER} />
+                            <Tile label="Due in 30 days" value={receivable.within30} color={BLUE} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Outstanding</span>
+                            <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{fmt(receivable.outstanding)}</span>
+                        </div>
+                    </div>
+
+                    {/* Payables */}
+                    <div style={{ ...cardStyle, padding: '18px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                            <Wallet size={16} color={AMBER} />
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Payables</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed to suppliers as of today.</span>
+                            <button onClick={() => navigate('/accounting/payable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                            <Tile label="Overdue" value={payable.overdue} color={RED} />
+                            <Tile label="Due in 7 days" value={payable.within7} color={AMBER} />
+                            <Tile label="Due in 30 days" value={payable.within30} color={BLUE} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Outstanding</span>
+                            <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{fmt(payable.outstanding)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Revenue vs Expense by month */}
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                        <HandCoins size={16} color={GREEN} />
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Receivables</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed by customers as of today. Wholesale credit sales only.</span>
-                        <button onClick={() => navigate('/accounting/receivable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                        <Tile label="Overdue" value={receivable.overdue} color={RED} />
-                        <Tile label="Due in 7 days" value={receivable.within7} color={AMBER} />
-                        <Tile label="Due in 30 days" value={receivable.within30} color={BLUE} />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
-                        <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Outstanding</span>
-                        <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{fmt(receivable.outstanding)}</span>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Revenue vs. Expense by month</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Posted journal entries only, in USD.</div>
+                    <div style={{ height: '280px' }}>
+                        {isLoading ? (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={byMonth} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                                    <XAxis dataKey="month" stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => fmt(Number(v))} />
+                                    <Tooltip
+                                        contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                        formatter={((value: any, name: any) => [fmt(Number(value)), name]) as any}
+                                    />
+                                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                                    <Bar dataKey="revenue" name="Revenue" fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                                    <Bar dataKey="expense" name="Expense" fill={RED} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
                     </div>
                 </div>
 
-                {/* Payables */}
+                {/* Quick links into the full reports */}
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                        <Wallet size={16} color={AMBER} />
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Payables</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed to suppliers as of today.</span>
-                        <button onClick={() => navigate('/accounting/payable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                        <Tile label="Overdue" value={payable.overdue} color={RED} />
-                        <Tile label="Due in 7 days" value={payable.within7} color={AMBER} />
-                        <Tile label="Due in 30 days" value={payable.within30} color={BLUE} />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
-                        <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Outstanding</span>
-                        <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{fmt(payable.outstanding)}</span>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '12px' }}>Reports</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                        <ReportLink label="Financial Reports" icon={ClipboardList} path="/accounting/financial-reports" onClick={navigate} />
+                        <ReportLink label="Balance Sheet" icon={Scale} path="/accounting/balance-sheet" onClick={navigate} />
+                        <ReportLink label="Income Statement" icon={TrendingUp} path="/accounting/income-statement" onClick={navigate} />
+                        <ReportLink label="Cash In / Out" icon={ArrowDownUp} path="/accounting/cash-in-out" onClick={navigate} />
+                        <ReportLink label="General Ledger" icon={BookOpen} path="/accounting/general-ledger" onClick={navigate} />
+                        <ReportLink label="Journal Entries" icon={LayoutDashboard} path="/accounting/journal-entries" onClick={navigate} />
                     </div>
                 </div>
             </div>
 
-            {/* Revenue vs Expense by month */}
-            <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Revenue vs. Expense by month</div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Posted journal entries only, in USD.</div>
-                <div style={{ height: '280px' }}>
-                    {isLoading ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
-                    ) : (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={byMonth} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                                <XAxis dataKey="month" stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
-                                <YAxis stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => fmt(Number(v))} />
-                                <Tooltip
-                                    contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    formatter={((value: any, name: any) => [fmt(Number(value)), name]) as any}
-                                />
-                                <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                <Bar dataKey="revenue" name="Revenue" fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={28} />
-                                <Bar dataKey="expense" name="Expense" fill={RED} radius={[4, 4, 0, 0]} maxBarSize={28} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    )}
-                </div>
-            </div>
-
-            {/* Quick links into the full reports */}
-            <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '12px' }}>Reports</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-                    <ReportLink label="Financial Reports" icon={ClipboardList} path="/accounting/financial-reports" onClick={navigate} />
-                    <ReportLink label="Balance Sheet" icon={Scale} path="/accounting/balance-sheet" onClick={navigate} />
-                    <ReportLink label="Income Statement" icon={TrendingUp} path="/accounting/income-statement" onClick={navigate} />
-                    <ReportLink label="Cash In / Out" icon={ArrowDownUp} path="/accounting/cash-in-out" onClick={navigate} />
-                    <ReportLink label="General Ledger" icon={BookOpen} path="/accounting/general-ledger" onClick={navigate} />
-                    <ReportLink label="Journal Entries" icon={LayoutDashboard} path="/accounting/journal-entries" onClick={navigate} />
-                </div>
-            </div>
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
+                <>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
+                </>
+            )}
         </div>
     );
 };
