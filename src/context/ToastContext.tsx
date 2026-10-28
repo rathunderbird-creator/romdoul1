@@ -36,9 +36,9 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             {children}
             <div style={{
                 position: 'fixed',
-                bottom: '24px',
+                top: '50%',
                 left: '50%',
-                transform: 'translateX(-50%)',
+                transform: 'translate(-50%, -50%)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
@@ -52,8 +52,8 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             </div>
             <style>{`
         @keyframes slideIn {
-          from { transform: translateY(100%); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
+          from { transform: scale(0.9); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
         }
       `}</style>
         </ToastContext.Provider>
