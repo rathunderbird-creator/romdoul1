@@ -53,13 +53,21 @@ const KpiCard: React.FC<{
     </div>
 );
 
-const EquationBox: React.FC<{ label: string; value: string; color: string; fill?: boolean }> = ({ label, value, color, fill }) => (
+const EquationBox: React.FC<{ label: string; value: string; color: string; fill?: boolean; grow?: boolean }> = ({ label, value, color, fill, grow }) => (
     <div style={{
         border: `1px solid ${color}`, borderRadius: '10px', padding: '16px 18px', background: `${color}0d`,
+        ...(grow ? { flex: '1 1 260px' } : null),
         ...(fill ? { height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', boxSizing: 'border-box' } : null)
     }}>
         <div style={{ fontSize: '12px', color, fontWeight: 600 }}>{label}</div>
         <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    </div>
+);
+
+// The "+" / "-" shown between equation boxes.
+const Operator: React.FC<{ symbol: string }> = ({ symbol }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', fontSize: '26px', fontWeight: 800, color: 'var(--color-text-muted)' }}>
+        {symbol}
     </div>
 );
 
@@ -167,9 +175,10 @@ const AdminDashboardPage: React.FC = () => {
                 <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
                     Accounting Equation: Assets = Liabilities + Equity
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: '16px', alignItems: 'stretch' }}>
-                    <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} fill />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'stretch', justifyContent: 'center' }}>
+                    <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} fill grow />
+                    <Operator symbol="+" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: '1 1 260px' }}>
                         <EquationBox label="Liabilities" value={fmt(totalLiabilities)} color={RED} />
                         <EquationBox label="Equity" value={fmt(totalEquity)} color={PURPLE} />
                     </div>
@@ -187,13 +196,14 @@ const AdminDashboardPage: React.FC = () => {
                 <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
                     Income Statement: Revenue - Expenses = Net Income
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: '16px', alignItems: 'center' }}>
-                    <EquationBox label="Revenue" value={fmt(revenue)} color={BLUE} />
-                    <EquationBox label="Expenses" value={fmt(expenses)} color={AMBER} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
+                    <EquationBox label="Revenue" value={fmt(revenue)} color={BLUE} grow />
+                    <Operator symbol="-" />
+                    <EquationBox label="Expenses" value={fmt(expenses)} color={AMBER} grow />
                 </div>
                 <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Net Income:</div>
-                    <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: netIncome >= 0 ? BLUE : RED, fontWeight: 700, fontSize: '13px' }}>
+                    <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: netIncome >= 0 ? BLUE : RED, fontWeight: 700, fontSize: '20px' }}>
                         {fmt(netIncome)}
                     </div>
                 </div>
