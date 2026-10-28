@@ -57,7 +57,7 @@ const EquationBox: React.FC<{ label: string; value: string; color: string; fill?
     <div style={{
         border: `1px solid ${color}`, borderRadius: '10px', padding: '16px 18px', background: `${color}0d`,
         ...(grow ? { flex: '1 1 260px' } : null),
-        ...(fill ? { height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', boxSizing: 'border-box' } : null)
+        ...(fill ? { display: 'flex', flexDirection: 'column', justifyContent: 'center', boxSizing: 'border-box' } : null)
     }}>
         <div style={{ fontSize: '12px', color, fontWeight: 600 }}>{label}</div>
         <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
