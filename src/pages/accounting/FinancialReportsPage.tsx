@@ -3,6 +3,7 @@
 // Income Statement and Cash In / Out entries open this page on that statement.
 import React, { useState, useEffect } from 'react';
 import { useHeader } from '../../context/HeaderContext';
+import { useMobile } from '../../hooks/useMobile';
 import DateRangePicker from '../../components/DateRangePicker';
 import FinancialStatements, { type TabKey } from './FinancialStatements';
 
@@ -22,6 +23,7 @@ const todayYmd = (): string => {
 
 const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab }) => {
     const { setHeaderContent } = useHeader();
+    const isMobile = useMobile();
     const [range, setRange] = useState<{ start: string; end: string }>(() => {
         try {
             const saved = JSON.parse(localStorage.getItem('financial_reports_range') || 'null');
@@ -47,11 +49,22 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
     }, [setHeaderContent, range.end]);
 
     return (
-        <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <DateRangePicker value={range} onChange={setRange} />
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '7 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <DateRangePicker value={range} onChange={setRange} />
+                </div>
+                <FinancialStatements startDate={range.start} endDate={range.end} initialTab={initialTab} />
             </div>
-            <FinancialStatements startDate={range.start} endDate={range.end} initialTab={initialTab} />
+
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
+                <>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
+                </>
+            )}
         </div>
     );
 };

@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Printer, Download, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useMobile } from '../../hooks/useMobile';
 import { supabase } from '../../lib/supabase';
 import type { ChartOfAccount } from '../../types';
 
@@ -85,6 +86,7 @@ const SECTION_COLOR: Record<string, string> = { 'REVENUE': GREEN, 'COST OF SALES
 
 const IncomeStatementPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const isMobile = useMobile();
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
     const [lines, setLines] = useState<LedgerLine[] | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
@@ -270,85 +272,96 @@ const IncomeStatementPage: React.FC = () => {
     };
 
     return (
-        <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
-                    <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} style={{ accentColor: GREEN, cursor: 'pointer' }} />
-                    Compare with previous period
-                </label>
-                <select value={granularity} onChange={e => setGranularity(e.target.value as Granularity)} style={selectStyle}>
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="annual">Annual</option>
-                </select>
-                <select value={year} onChange={e => setYear(Number(e.target.value))} style={selectStyle}>
-                    {years.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <button onClick={printReport} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print / PDF</button>
-                <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> CSV</button>
-                <button onClick={() => setRefreshKey(k => k + 1)} title="Reload the ledger" style={{ ...btnStyle, padding: '7px 10px' }}>
-                    <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-                </button>
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All figures are in USD.</div>
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px', flex: isMobile ? undefined : '7 1 0', minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} style={{ accentColor: GREEN, cursor: 'pointer' }} />
+                        Compare with previous period
+                    </label>
+                    <select value={granularity} onChange={e => setGranularity(e.target.value as Granularity)} style={selectStyle}>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="annual">Annual</option>
+                    </select>
+                    <select value={year} onChange={e => setYear(Number(e.target.value))} style={selectStyle}>
+                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <button onClick={printReport} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print / PDF</button>
+                    <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> CSV</button>
+                    <button onClick={() => setRefreshKey(k => k + 1)} title="Reload the ledger" style={{ ...btnStyle, padding: '7px 10px' }}>
+                        <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+                    </button>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All figures are in USD.</div>
 
-            <div style={{ ...cardStyle, overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                        <tr>
-                            <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>Account</th>
-                            {columns.map(c => (
-                                <th key={c.key} style={{ textAlign: 'right', padding: '10px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', background: c.key.startsWith('ytd') ? 'var(--color-bg)' : undefined, fontWeight: c.key.startsWith('ytd') ? 700 : 500, whiteSpace: 'nowrap' }}>{c.label}</th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading ? (
-                            <tr><td colSpan={columns.length + 1} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading the ledger…</td></tr>
-                        ) : reportRows.map((r, idx) => {
-                            if (r.kind === 'section') {
-                                const color = SECTION_COLOR[String(r.cells[1])] || 'var(--color-text-main)';
+                <div style={{ ...cardStyle, overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead>
+                            <tr>
+                                <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>Account</th>
+                                {columns.map(c => (
+                                    <th key={c.key} style={{ textAlign: 'right', padding: '10px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', background: c.key.startsWith('ytd') ? 'var(--color-bg)' : undefined, fontWeight: c.key.startsWith('ytd') ? 700 : 500, whiteSpace: 'nowrap' }}>{c.label}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                <tr><td colSpan={columns.length + 1} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading the ledger…</td></tr>
+                            ) : reportRows.map((r, idx) => {
+                                if (r.kind === 'section') {
+                                    const color = SECTION_COLOR[String(r.cells[1])] || 'var(--color-text-main)';
+                                    return (
+                                        <tr key={idx}>
+                                            <td colSpan={columns.length + 1} style={{ padding: '16px 16px 6px', fontSize: '12px', fontWeight: 800, letterSpacing: '0.6px', color, background: String(r.cells[1]) === 'COST OF SALES' ? 'rgba(245,158,11,0.08)' : 'var(--color-bg)' }}>{r.cells[1]}</td>
+                                        </tr>
+                                    );
+                                }
+                                if (r.kind === 'group') {
+                                    return (
+                                        <tr key={idx}>
+                                            <td colSpan={columns.length + 1} style={{ padding: '8px 16px 4px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.cells[1]}</td>
+                                        </tr>
+                                    );
+                                }
+                                const isKeyTotal = r.kind === 'keyTotal';
+                                const isTotal = r.kind === 'subtotal' || r.kind === 'total' || isKeyTotal;
+                                const keyTotalValue = isKeyTotal ? Number(r.cells[2]) : 0;
+                                const keyTotalColor = isKeyTotal ? (keyTotalValue < 0 ? RED : GREEN) : undefined;
                                 return (
-                                    <tr key={idx}>
-                                        <td colSpan={columns.length + 1} style={{ padding: '16px 16px 6px', fontSize: '12px', fontWeight: 800, letterSpacing: '0.6px', color, background: String(r.cells[1]) === 'COST OF SALES' ? 'rgba(245,158,11,0.08)' : 'var(--color-bg)' }}>{r.cells[1]}</td>
+                                    <tr key={idx} style={{
+                                        borderTop: isKeyTotal ? `2px solid ${keyTotalColor}` : r.kind === 'total' ? '2px solid var(--color-border)' : r.kind === 'subtotal' ? '1px solid var(--color-border)' : 'none',
+                                        background: isKeyTotal ? (keyTotalColor === RED ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)') : r.kind === 'total' ? 'var(--color-bg)' : undefined,
+                                    }}>
+                                        <td style={{ padding: '7px 16px', paddingLeft: r.kind === 'account' ? '28px' : '16px', fontWeight: isTotal ? 700 : 400, whiteSpace: 'nowrap' }}>
+                                            {r.kind === 'account' && r.cells[0] ? <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>{r.cells[0]}</span> : null}
+                                            <span style={{ color: isKeyTotal ? keyTotalColor : 'var(--color-text-main)' }}>{r.cells[1]}</span>
+                                        </td>
+                                        {columns.map((c, i) => {
+                                            const raw = r.cells[2 + i];
+                                            if (typeof raw !== 'number') return <td key={c.key} />;
+                                            return (
+                                                <td key={c.key} style={{ padding: '7px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: isTotal ? 700 : 400, color: isKeyTotal ? (raw < 0 ? RED : GREEN) : raw < -0.005 ? RED : 'var(--color-text-main)', background: c.key.startsWith('ytd') && !isKeyTotal ? 'var(--color-bg)' : undefined }}>
+                                                    {cellText(raw)}
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                 );
-                            }
-                            if (r.kind === 'group') {
-                                return (
-                                    <tr key={idx}>
-                                        <td colSpan={columns.length + 1} style={{ padding: '8px 16px 4px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.cells[1]}</td>
-                                    </tr>
-                                );
-                            }
-                            const isKeyTotal = r.kind === 'keyTotal';
-                            const isTotal = r.kind === 'subtotal' || r.kind === 'total' || isKeyTotal;
-                            const keyTotalValue = isKeyTotal ? Number(r.cells[2]) : 0;
-                            const keyTotalColor = isKeyTotal ? (keyTotalValue < 0 ? RED : GREEN) : undefined;
-                            return (
-                                <tr key={idx} style={{
-                                    borderTop: isKeyTotal ? `2px solid ${keyTotalColor}` : r.kind === 'total' ? '2px solid var(--color-border)' : r.kind === 'subtotal' ? '1px solid var(--color-border)' : 'none',
-                                    background: isKeyTotal ? (keyTotalColor === RED ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)') : r.kind === 'total' ? 'var(--color-bg)' : undefined,
-                                }}>
-                                    <td style={{ padding: '7px 16px', paddingLeft: r.kind === 'account' ? '28px' : '16px', fontWeight: isTotal ? 700 : 400, whiteSpace: 'nowrap' }}>
-                                        {r.kind === 'account' && r.cells[0] ? <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>{r.cells[0]}</span> : null}
-                                        <span style={{ color: isKeyTotal ? keyTotalColor : 'var(--color-text-main)' }}>{r.cells[1]}</span>
-                                    </td>
-                                    {columns.map((c, i) => {
-                                        const raw = r.cells[2 + i];
-                                        if (typeof raw !== 'number') return <td key={c.key} />;
-                                        return (
-                                            <td key={c.key} style={{ padding: '7px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: isTotal ? 700 : 400, color: isKeyTotal ? (raw < 0 ? RED : GREEN) : raw < -0.005 ? RED : 'var(--color-text-main)', background: c.key.startsWith('ytd') && !isKeyTotal ? 'var(--color-bg)' : undefined }}>
-                                                {cellText(raw)}
-                                            </td>
-                                        );
-                                    })}
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
+
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
+                <>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
+                </>
+            )}
         </div>
     );
 };

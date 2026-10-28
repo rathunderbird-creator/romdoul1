@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck, DollarSign } from 'lucide-react';
 import { DateRangePicker } from '../../components';
+import { useMobile } from '../../hooks/useMobile';
 import { supabase } from '../../lib/supabase';
 import { mapSaleEntity } from '../../utils/mapper';
 import { fetchAll } from '../../utils/fetchAll';
@@ -9,7 +10,8 @@ import type { Sale, Transaction } from '../../types';
 
 const ReportsLayout: React.FC = () => {
     const location = useLocation();
-    
+    const isMobile = useMobile();
+
     // Global Date State (Default to This Month)
     const [dateRange, setDateRange] = useState(() => {
         const now = new Date();
@@ -89,31 +91,42 @@ const ReportsLayout: React.FC = () => {
     const currentTab = tabs.find(t => location.pathname.includes(t.path));
 
     return (
-        <div style={{ padding: '24px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Header Area */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
-                <div>
-                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 4px 0', color: 'var(--color-primary)' }}>
-                        {currentTab ? currentTab.label : 'Reports Center'}
-                    </h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '13px' }}>Analyze your business metrics, sales, inventory, and financials.</p>
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div style={{ padding: '24px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px', flex: isMobile ? undefined : '7 1 0', minWidth: 0 }}>
+                {/* Header Area */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
+                    <div>
+                        <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 4px 0', color: 'var(--color-primary)' }}>
+                            {currentTab ? currentTab.label : 'Reports Center'}
+                        </h1>
+                        <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '13px' }}>Analyze your business metrics, sales, inventory, and financials.</p>
+                    </div>
+
+                    {/* Global Date Filter */}
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                    </div>
                 </div>
-                
-                {/* Global Date Filter */}
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+
+                {/* Content Area */}
+                <div style={{ flex: 1, animation: 'fadeIn 0.3s ease-out', position: 'relative' }}>
+                    {isLoadingReports && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', zIndex: 10, display: 'flex', justifyContent: 'center', paddingTop: '100px', backdropFilter: 'blur(2px)' }}>
+                            <div className="loader">Loading Data...</div>
+                        </div>
+                    )}
+                    <Outlet context={{ startDate: dateRange.start, endDate: dateRange.end, reportSales, reportTransactions }} />
                 </div>
             </div>
 
-            {/* Content Area */}
-            <div style={{ flex: 1, animation: 'fadeIn 0.3s ease-out', position: 'relative' }}>
-                {isLoadingReports && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', zIndex: 10, display: 'flex', justifyContent: 'center', paddingTop: '100px', backdropFilter: 'blur(2px)' }}>
-                        <div className="loader">Loading Data...</div>
-                    </div>
-                )}
-                <Outlet context={{ startDate: dateRange.start, endDate: dateRange.end, reportSales, reportTransactions }} />
-            </div>
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
+                <>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
+                </>
+            )}
         </div>
     );
 };
