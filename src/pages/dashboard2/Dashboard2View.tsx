@@ -96,143 +96,167 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
     if (loading) {
         // Skeletons that match the final layout — no spinners, no layout shift (§8).
         return (
-            <div className="d2" aria-busy="true">
-                {toolbar}
-                <div className="d2-hero" style={{ marginBottom: 14 }}>
-                    {[0, 1, 2, 3].map(i => <Skeleton key={i} height={104} style={{ borderRadius: 12 }} />)}
+            <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div className="d2" aria-busy="true" style={{ flex: isMobile ? undefined : '7 1 0' }}>
+                    {toolbar}
+                    <div className="d2-hero" style={{ marginBottom: 14 }}>
+                        {[0, 1, 2, 3].map(i => <Skeleton key={i} height={104} style={{ borderRadius: 12 }} />)}
+                    </div>
+                    <Skeleton height={48} style={{ borderRadius: 12, marginBottom: 14 }} />
+                    <div className="d2-alerts" style={{ marginBottom: 14 }}>
+                        <Skeleton height={120} style={{ borderRadius: 12 }} />
+                        <Skeleton height={120} style={{ borderRadius: 12 }} />
+                    </div>
+                    <Skeleton height={230} style={{ borderRadius: 12, marginBottom: 14 }} />
+                    <Skeleton height={320} style={{ borderRadius: 12 }} />
                 </div>
-                <Skeleton height={48} style={{ borderRadius: 12, marginBottom: 14 }} />
-                <div className="d2-alerts" style={{ marginBottom: 14 }}>
-                    <Skeleton height={120} style={{ borderRadius: 12 }} />
-                    <Skeleton height={120} style={{ borderRadius: 12 }} />
-                </div>
-                <Skeleton height={230} style={{ borderRadius: 12, marginBottom: 14 }} />
-                <Skeleton height={320} style={{ borderRadius: 12 }} />
+
+                {/* Reserved for future widgets — intentionally empty, and
+                    left out entirely on mobile since there's nothing in it
+                    to show. Present in the skeleton too so there's no
+                    layout shift once real content replaces it (§6). */}
+                {!isMobile && (
+                    <>
+                        <div style={{ flex: '1.5 1 0' }} />
+                        <div style={{ flex: '1.5 1 0' }} />
+                    </>
+                )}
             </div>
         );
     }
 
     return (
-        <div className="d2">
-            {toolbar}
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="d2" style={{ flex: isMobile ? undefined : '7 1 0' }}>
+                {toolbar}
 
-            {salesError && (
-                <div style={{ marginBottom: 14 }}>
-                    <ErrorInline message={`${t('dashboard2.loadError')} ${salesError.message}`} onRetry={salesError.retry} retryLabel={t('dashboard2.retry')} />
-                </div>
-            )}
-
-            {isEmpty && (
-                <div style={{ marginBottom: 14 }}>
-                    <EmptyState
-                        icon={<ShoppingBag size={40} />}
-                        title={t('dashboard2.emptyTitle')}
-                        hint={t('dashboard2.emptyHint')}
-                        actionLabel={t('dashboard2.createFirstOrder')}
-                        onAction={actions.onNewOrder}
-                    />
-                </div>
-            )}
-
-            {/* Everything from the classic dashboard first (per request), on the
-                same range and the same already-fetched orders (no extra
-                queries); the Dashboard 2 sections follow below. */}
-            {!salesError && !isEmpty && (
-                <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
-                    {/* Tinted well, not a white card: the classic cards are white
-                        .glass-panels and disappear on a white background. */}
-                    <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
-                        <SectionHeader
-                            title={t('dashboard2.classicCards')}
-                            icon={LayoutGrid}
-                            collapsed={classicCollapsed}
-                            onToggle={() => setClassicCollapsed(c => !c)}
-                            id={CLASSIC_BODY_ID}
-                        />
-                        {!classicCollapsed && (
-                            <div id={CLASSIC_BODY_ID}>
-                                <ClassicDashboardSections
-                                    orders={orders}
-                                    products={products}
-                                    getFileGlobal={getFile ?? { count: 0, total: 0 }}
-                                    stockIn={stockIn}
-                                    stockOut={stockOut}
-                                    dateRange={range}
-                                    t={t}
-                                    onOpenOrders={actions.onOpenOrders}
-                                    onOpenInventory={actions.onOpenInventory}
-                                    onOpenStockIn={actions.onOpenStockIn}
-                                    onOpenStockOut={actions.onOpenStockOut}
-                                />
-                            </div>
-                        )}
-                    </div>
-                </section>
-            )}
-
-            {!salesError && !isEmpty && (
-                <>
+                {salesError && (
                     <div style={{ marginBottom: 14 }}>
-                        <HeroKpis kpis={derived.kpis} previousKpis={derived.previousKpis} previousLabel={previousLabel} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
+                        <ErrorInline message={`${t('dashboard2.loadError')} ${salesError.message}`} onRetry={salesError.retry} retryLabel={t('dashboard2.retry')} />
                     </div>
-                    <div style={{ marginBottom: 14 }}>
-                        <Pipeline counts={derived.pipeline} other={derived.otherStatuses} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
-                    </div>
-                </>
-            )}
+                )}
 
-            {/* Payments (classic dashboard's Payment Status cards). Rendered even
-                on an empty day when files still await settlement — Get File is an
-                all-time pipeline, not a range statistic. */}
-            {!salesError && (
-                <div style={{ marginBottom: 14 }}>
-                    <PaymentsStrip rows={isEmpty ? [] : derived.pay} getFile={getFile} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
-                </div>
-            )}
-
-            {/* Attention: hides itself entirely when nothing is wrong. Critical
-                stock is not order-scoped, so it still shows on an empty day. */}
-            <AttentionSection
-                lowStock={derived.lowStock}
-                pending={salesError ? [] : derived.pending}
-                missingTracking={salesError ? [] : derived.missingTracking}
-                missingTrackingCouriers={derived.missingTrackingCouriers}
-                range={range}
-                onOpenOrders={actions.onOpenOrders}
-                onOpenInventory={actions.onOpenInventory}
-                t={t}
-            />
-
-            {!salesError && !isEmpty && (
-                <>
+                {isEmpty && (
                     <div style={{ marginBottom: 14 }}>
-                        <CollectionChart series={derived.series} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
-                    </div>
-                    <div style={{ marginBottom: 14 }}>
-                        <PerformancePanel
-                            orders={orders}
-                            products={products}
-                            range={range}
-                            onOpenOrders={actions.onOpenOrders}
-                            onOpenInventory={actions.onOpenInventory}
-                            t={t}
-                            isMobile={isMobile}
-                            groupOrders={groupOrders}
-                            productRows={productRows}
+                        <EmptyState
+                            icon={<ShoppingBag size={40} />}
+                            title={t('dashboard2.emptyTitle')}
+                            hint={t('dashboard2.emptyHint')}
+                            actionLabel={t('dashboard2.createFirstOrder')}
+                            onAction={actions.onNewOrder}
                         />
                     </div>
+                )}
+
+                {/* Everything from the classic dashboard first (per request), on the
+                    same range and the same already-fetched orders (no extra
+                    queries); the Dashboard 2 sections follow below. */}
+                {!salesError && !isEmpty && (
+                    <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
+                        {/* Tinted well, not a white card: the classic cards are white
+                            .glass-panels and disappear on a white background. */}
+                        <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
+                            <SectionHeader
+                                title={t('dashboard2.classicCards')}
+                                icon={LayoutGrid}
+                                collapsed={classicCollapsed}
+                                onToggle={() => setClassicCollapsed(c => !c)}
+                                id={CLASSIC_BODY_ID}
+                            />
+                            {!classicCollapsed && (
+                                <div id={CLASSIC_BODY_ID}>
+                                    <ClassicDashboardSections
+                                        orders={orders}
+                                        products={products}
+                                        getFileGlobal={getFile ?? { count: 0, total: 0 }}
+                                        stockIn={stockIn}
+                                        stockOut={stockOut}
+                                        dateRange={range}
+                                        t={t}
+                                        onOpenOrders={actions.onOpenOrders}
+                                        onOpenInventory={actions.onOpenInventory}
+                                        onOpenStockIn={actions.onOpenStockIn}
+                                        onOpenStockOut={actions.onOpenStockOut}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                )}
+
+                {!salesError && !isEmpty && (
+                    <>
+                        <div style={{ marginBottom: 14 }}>
+                            <HeroKpis kpis={derived.kpis} previousKpis={derived.previousKpis} previousLabel={previousLabel} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
+                        </div>
+                        <div style={{ marginBottom: 14 }}>
+                            <Pipeline counts={derived.pipeline} other={derived.otherStatuses} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
+                        </div>
+                    </>
+                )}
+
+                {/* Payments (classic dashboard's Payment Status cards). Rendered even
+                    on an empty day when files still await settlement — Get File is an
+                    all-time pipeline, not a range statistic. */}
+                {!salesError && (
+                    <div style={{ marginBottom: 14 }}>
+                        <PaymentsStrip rows={isEmpty ? [] : derived.pay} getFile={getFile} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
+                    </div>
+                )}
+
+                {/* Attention: hides itself entirely when nothing is wrong. Critical
+                    stock is not order-scoped, so it still shows on an empty day. */}
+                <AttentionSection
+                    lowStock={derived.lowStock}
+                    pending={salesError ? [] : derived.pending}
+                    missingTracking={salesError ? [] : derived.missingTracking}
+                    missingTrackingCouriers={derived.missingTrackingCouriers}
+                    range={range}
+                    onOpenOrders={actions.onOpenOrders}
+                    onOpenInventory={actions.onOpenInventory}
+                    t={t}
+                />
+
+                {!salesError && !isEmpty && (
+                    <>
+                        <div style={{ marginBottom: 14 }}>
+                            <CollectionChart series={derived.series} range={range} onOpenOrders={actions.onOpenOrders} t={t} />
+                        </div>
+                        <div style={{ marginBottom: 14 }}>
+                            <PerformancePanel
+                                orders={orders}
+                                products={products}
+                                range={range}
+                                onOpenOrders={actions.onOpenOrders}
+                                onOpenInventory={actions.onOpenInventory}
+                                t={t}
+                                isMobile={isMobile}
+                                groupOrders={groupOrders}
+                                productRows={productRows}
+                            />
+                        </div>
+                    </>
+                )}
+
+                <InventoryDetail
+                    products={products}
+                    lowStockCount={derived.lowStock.length}
+                    stockIn={stockIn}
+                    stockOut={stockOut}
+                    error={inventoryError}
+                    onOpenInventory={actions.onOpenInventory}
+                    t={t}
+                />
+            </div>
+
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
+                <>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
                 </>
             )}
-
-            <InventoryDetail
-                products={products}
-                lowStockCount={derived.lowStock.length}
-                stockIn={stockIn}
-                stockOut={stockOut}
-                error={inventoryError}
-                onOpenInventory={actions.onOpenInventory}
-                t={t}
-            />
         </div>
     );
 };
