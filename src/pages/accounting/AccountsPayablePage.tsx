@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DollarSign, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { DollarSign, RefreshCw, FileCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -19,14 +20,27 @@ const daysOverdue = (due?: string): number | null => {
     return Math.round((today.getTime() - d.getTime()) / 86400000);
 };
 
+// Flat row for the payables table — one per open purchase order.
+interface Payable {
+    key: string;
+    date?: string;
+    party: string;
+    desc: string;
+    due_date?: string;
+    total: number;
+    paid: number;
+    balance: number;
+    po: PurchaseOrder & { outstanding: number };
+}
+
 const AccountsPayablePage: React.FC = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const navigate = useNavigate();
     const { currentUser } = useStore();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, recordSupplierPayment } = useProcurement();
 
-    const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [payPO, setPayPO] = useState<PurchaseOrder | null>(null);
     const [payAmount, setPayAmount] = useState<number | string>('');
     const [payMethod, setPayMethod] = useState('Cash');
@@ -70,19 +84,21 @@ const AccountsPayablePage: React.FC = () => {
 
     const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'Unknown supplier';
 
-    // Group open POs by supplier.
-    const groups = useMemo(() => {
-        const map = new Map<string, { supplierId: string; name: string; total: number; overdue: number; pos: (PurchaseOrder & { outstanding: number })[] }>();
-        for (const po of openPOs) {
-            const key = po.supplier_id || 'none';
-            if (!map.has(key)) map.set(key, { supplierId: key, name: supplierName(po.supplier_id), total: 0, overdue: 0, pos: [] });
-            const g = map.get(key)!;
-            g.total += po.outstanding;
-            const od = daysOverdue(po.payment_due_date);
-            if (od !== null && od > 0) g.overdue += po.outstanding;
-            g.pos.push(po);
-        }
-        return Array.from(map.values()).sort((a, b) => b.total - a.total);
+    // Build the unified payables list — one row per open purchase order, newest first.
+    const payables = useMemo<Payable[]>(() => {
+        return openPOs
+            .map(po => ({
+                key: po.id,
+                date: po.order_date,
+                party: supplierName(po.supplier_id),
+                desc: po.invoice_number || `PO-${po.id.slice(0, 8)}`,
+                due_date: po.payment_due_date,
+                total: po.total_amount || 0,
+                paid: po.amount_paid || 0,
+                balance: po.outstanding,
+                po
+            }))
+            .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
     }, [openPOs, suppliers]);
 
     const totals = useMemo(() => {
@@ -91,16 +107,8 @@ const AccountsPayablePage: React.FC = () => {
             const od = daysOverdue(po.payment_due_date);
             return s + (od !== null && od > 0 ? po.outstanding : 0);
         }, 0);
-        return { totalPayable, overdue, suppliers: groups.length };
-    }, [openPOs, groups]);
-
-    const toggle = (id: string) => {
-        setExpanded(prev => {
-            const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
-            return next;
-        });
-    };
+        return { totalPayable, overdue, count: openPOs.length };
+    }, [openPOs]);
 
     const openPay = (po: PurchaseOrder & { outstanding: number }) => {
         setPayPO(po);
@@ -135,116 +143,89 @@ const AccountsPayablePage: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
                 <SummaryCard color="#EF4444" label="Total Payable" value={fmt(totals.totalPayable)} />
                 <SummaryCard color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
-                <SummaryCard color="#3B82F6" label="Suppliers Owed" value={String(totals.suppliers)} />
+                <SummaryCard color="#3B82F6" label="Open Items" value={String(totals.count)} />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <button className="secondary-button" onClick={() => { fetchPurchaseOrders(); fetchSuppliers(); }}>
                     <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
                 </button>
+                <button className="secondary-button" onClick={() => navigate('/procurement/purchase-orders')}>
+                    <FileCheck size={18} /> New Purchase Order
+                </button>
             </div>
 
-            {groups.length === 0 ? (
+            {payables.length === 0 ? (
                 <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <DollarSign size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
                     <p>No outstanding payables. All purchase orders are paid. 🎉</p>
                 </div>
-            ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {groups.map(g => {
-                        const isOpen = expanded.has(g.supplierId);
+            ) : isMobile ? (
+                // Phones: one card per payable — no sideways scrolling.
+                <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                    {payables.map(p => {
+                        const od = daysOverdue(p.due_date);
                         return (
-                            <div key={g.supplierId} style={{ ...cardStyle, borderLeft: '4px solid #EF4444', overflow: 'hidden' }}>
-                                <div
-                                    onClick={() => toggle(g.supplierId)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', cursor: 'pointer', flexWrap: 'wrap' }}
-                                >
-                                    {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600 }}>{g.name}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{g.pos.length} open order{g.pos.length === 1 ? '' : 's'}</div>
-                                    </div>
-                                    {g.overdue > 0 && (
-                                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#D97706', background: 'rgba(217,119,6,0.1)', padding: '3px 10px', borderRadius: '20px' }}>
-                                            {fmt(g.overdue)} overdue
-                                        </span>
-                                    )}
-                                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#EF4444' }}>{fmt(g.total)}</div>
+                            <div key={p.key} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{p.desc}</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{p.date ? new Date(p.date).toLocaleDateString() : '—'}</span>
                                 </div>
-
-                                {isOpen && isMobile ? (
-                                    // Phones: one card per open purchase order.
-                                    <div style={{ borderTop: '1px solid var(--color-border)' }}>
-                                        {g.pos.map(po => {
-                                            const od = daysOverdue(po.payment_due_date);
-                                            return (
-                                                <div key={po.id} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                                        <span style={{ fontSize: '12px', color: 'var(--color-text-main)' }}>{po.invoice_number || `PO-${po.id.slice(0, 8)}`}</span>
-                                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{po.order_date ? new Date(po.order_date).toLocaleDateString() : '—'}</span>
-                                                    </div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '5px 0' }}>
-                                                        {po.payment_due_date ? <>Due {new Date(po.payment_due_date).toLocaleDateString()}</> : 'No due date'}
-                                                        {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
-                                                        {' · '}{fmt(po.total_amount || 0)} − {fmt(po.amount_paid || 0)} paid
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                                                        <span style={{ fontWeight: 700, color: '#EF4444', fontVariantNumeric: 'tabular-nums' }}>{fmt(po.outstanding)}</span>
-                                                        <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openPay(po)}>Record Payment</button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ) : isOpen && (
-                                    <div style={{ borderTop: '1px solid var(--color-border)', overflowX: 'auto' }}>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
-                                            <thead>
-                                                <tr style={{ background: 'var(--color-bg)' }}>
-                                                    <th style={thStyle}>Invoice / PO</th>
-                                                    <th style={thStyle}>Order Date</th>
-                                                    <th style={thStyle}>Due Date</th>
-                                                    <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
-                                                    <th style={{ ...thStyle, textAlign: 'right' }}>Paid</th>
-                                                    <th style={{ ...thStyle, textAlign: 'right' }}>Balance</th>
-                                                    <th style={{ ...thStyle, textAlign: 'right' }}></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {g.pos.map(po => {
-                                                    const od = daysOverdue(po.payment_due_date);
-                                                    return (
-                                                        <tr key={po.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                                                            <td style={tdStyle}>
-                                                                <span style={{ fontSize: '12px' }}>
-                                                                    {po.invoice_number || `PO-${po.id.slice(0, 8)}`}
-                                                                </span>
-                                                            </td>
-                                                            <td style={tdStyle}>{po.order_date ? new Date(po.order_date).toLocaleDateString() : '—'}</td>
-                                                            <td style={tdStyle}>
-                                                                {po.payment_due_date ? new Date(po.payment_due_date).toLocaleDateString() : '—'}
-                                                                {od !== null && od > 0 && (
-                                                                    <span style={{ marginLeft: '6px', fontSize: '11px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>
-                                                                )}
-                                                            </td>
-                                                            <td style={{ ...tdStyle, textAlign: 'right' }}>{fmt(po.total_amount || 0)}</td>
-                                                            <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--color-text-secondary)' }}>{fmt(po.amount_paid || 0)}</td>
-                                                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#EF4444' }}>{fmt(po.outstanding)}</td>
-                                                            <td style={{ ...tdStyle, textAlign: 'right' }}>
-                                                                <button className="primary-button" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => openPay(po)}>
-                                                                    Record Payment
-                                                                </button>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                                <div className="d2-khmer" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text-main)', margin: '6px 0 2px' }}>{p.party}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                    {p.due_date ? <>Due {new Date(p.due_date).toLocaleDateString()}</> : 'No due date'}
+                                    {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', gap: '10px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {fmt(p.total)} − {fmt(p.paid)} = <span style={{ fontWeight: 700, color: '#EF4444' }}>{fmt(p.balance)}</span>
+                                    </span>
+                                    <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openPay(p.po)}>Record Payment</button>
+                                </div>
                             </div>
                         );
                     })}
+                </div>
+            ) : (
+                <div style={{ ...cardStyle, overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '780px' }}>
+                        <thead>
+                            <tr style={{ background: 'var(--color-bg)' }}>
+                                <th style={thStyle}>Date</th>
+                                <th style={thStyle}>Supplier</th>
+                                <th style={thStyle}>Invoice / PO</th>
+                                <th style={thStyle}>Due</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Paid</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Balance</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {payables.map(p => {
+                                const od = daysOverdue(p.due_date);
+                                return (
+                                    <tr key={p.key} style={{ borderTop: '1px solid var(--color-border)' }}>
+                                        <td style={tdStyle}>{p.date ? new Date(p.date).toLocaleDateString() : '—'}</td>
+                                        <td style={tdStyle}>{p.party}</td>
+                                        <td style={tdStyle}>{p.desc}</td>
+                                        <td style={tdStyle}>
+                                            {p.due_date ? new Date(p.due_date).toLocaleDateString() : '—'}
+                                            {od !== null && od > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                        </td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{fmt(p.total)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--color-text-secondary)' }}>{fmt(p.paid)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#EF4444' }}>{fmt(p.balance)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                            <button className="primary-button" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => openPay(p.po)}>
+                                                Record Payment
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             )}
 
