@@ -53,6 +53,25 @@ const getTimeAgo = (dateStr: string): string => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+interface HeaderTodo {
+    id: string;
+    title: string;
+    due_date: string | null;
+    status: string;
+    remind_at: string | null;
+    priority: number;
+    updated_at: string;
+    created_at: string;
+    repeat_rule: string | null;
+    description: string | null;
+    project: string | null;
+}
+
+// Open tasks first, completed ones pushed to the bottom — shared by the
+// initial fetch and every optimistic local update so a just-completed task
+// moves down immediately instead of waiting for a refetch.
+const byCompletedLast = (a: HeaderTodo, b: HeaderTodo) => (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0);
+
 const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const { headerContent } = useHeader();
     const { currentUser, roles, logout, refreshData, hasPermission } = useStore();
@@ -97,19 +116,6 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     };
 
     // --- Today's Tasks drawer (right-side popup fed by the Todo page's table) ---
-    interface HeaderTodo {
-        id: string;
-        title: string;
-        due_date: string | null;
-        status: string;
-        remind_at: string | null;
-        priority: number;
-        updated_at: string;
-        created_at: string;
-        repeat_rule: string | null;
-        description: string | null;
-        project: string | null;
-    }
     const [isTasksOpen, setIsTasksOpen] = React.useState(false);
     const [isCalcOpen, setIsCalcOpen] = React.useState(false);
     const [tasks, setTasks] = React.useState<HeaderTodo[]>([]);
@@ -140,7 +146,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                 return (!!t.due_date && t.due_date <= today) || (!t.due_date && localYMD(new Date(t.created_at)) === today);
             };
             const list = ((data || []) as HeaderTodo[]).filter(isTodayTask);
-            list.sort((a, b) => (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0));
+            list.sort(byCompletedLast);
             setTasks(list);
             setOpenTaskCount(list.filter(t => t.status !== 'completed').length);
         } catch (e) {
@@ -171,7 +177,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const toggleTask = async (t: HeaderTodo) => {
         const newStatus = t.status === 'completed' ? 'open' : 'completed';
         const now = new Date().toISOString();
-        setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: newStatus, repeat_rule: newStatus === 'completed' ? null : x.repeat_rule, updated_at: now } : x));
+        setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: newStatus, repeat_rule: newStatus === 'completed' ? null : x.repeat_rule, updated_at: now } : x).sort(byCompletedLast));
         setOpenTaskCount(prev => Math.max(0, prev + (newStatus === 'completed' ? -1 : 1)));
         try {
             if (newStatus === 'completed' && t.repeat_rule) {
