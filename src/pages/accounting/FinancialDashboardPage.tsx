@@ -256,7 +256,7 @@ const FinancialDashboardPage: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ flex: isMobile ? undefined : '7 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '6 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 {/* Filter */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                     <div>
@@ -376,8 +376,8 @@ const FinancialDashboardPage: React.FC = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ flex: '1.5 1 0' }} />
-                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
                 </>
             )}
         </div>
