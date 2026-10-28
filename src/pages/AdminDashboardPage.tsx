@@ -232,7 +232,13 @@ const AdminDashboardPage: React.FC = () => {
                                     <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{type}</div>
                                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{typeCounts[type]} account{typeCounts[type] === 1 ? '' : 's'}</div>
                                 </div>
-                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmt(typeTotals[type])}</div>
+                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
+                                    {/* Equity shows the same balance-sheet total as the Accounting
+                                        Equation card above (ledger Equity + unclosed retained
+                                        earnings) rather than the raw ledger sum, so the same label
+                                        never shows two different numbers on one screen. */}
+                                    {fmt(type === 'Equity' ? totalEquity : typeTotals[type])}
+                                </div>
                             </div>
                         ))}
                     </div>
