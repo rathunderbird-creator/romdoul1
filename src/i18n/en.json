@@ -2,6 +2,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "dashboard2": "Dashboard 2",
+    "salesDashboard": "Sales Dashboard",
     "orders": "Sales",
     "allOrders": "All Orders",
     "ordersManagement2": "Orders Management 2",
@@ -304,7 +305,7 @@
     "classicCards": "Classic dashboard cards",
     "getFileAllTime": "All time, awaiting settlement — opens the order list with the date filter cleared",
     "pay": { "Unpaid": "Unpaid", "Deposit": "Deposit", "Paid": "Paid", "Cancel": "Cancel", "Get File": "Get File" },
-    "title": "Dashboard",
+    "title": "Sales Dashboard",
     "subtitle": "Cash-on-delivery overview",
     "newOrder": "New Order",
     "refresh": "Refresh",

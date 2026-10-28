@@ -7,6 +7,7 @@ import Login from './pages/Login';
 // Lazy Load Pages
 const Dashboard = lazy(() => import('./pages/DashboardPage'));
 const Dashboard2 = lazy(() => import('./pages/dashboard2/Dashboard2Page'));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 const OrdersManagement2 = lazy(() => import('./pages/ordersManagement2/OrdersManagement2Page'));
 const TodoPage = lazy(() => import('./pages/TodoPage'));
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -105,6 +106,7 @@ const LoadingFallback = () => (
 
 const ProtectedApp = () => {
   const { currentUser, isLoading, refreshData } = useStore();
+  const isAdmin = currentUser?.roleId === 'admin';
 
   // refreshData is recreated on every store render; depending on it directly
   // reset the 20-minute countdown on every state change, so on an actively
@@ -137,12 +139,16 @@ const ProtectedApp = () => {
       <TodoReminderService />
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
-          {/* The merged dashboard: Dashboard 2's sections with every classic
-              card section underneath (ClassicDashboardSections). /dashboard2
-              bookmarks land on / and the classic-only page stays reachable at
-              /dashboard-classic. */}
-          <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard2 /></ProtectedRoute>} />
-          <Route path="/dashboard2" element={<Navigate to="/" replace />} />
+          {/* Default landing page: the Sales Dashboard (Dashboard 2's sections
+              with every classic card section underneath, ClassicDashboardSections)
+              for every user except Admin, who instead lands on the financial
+              Admin Dashboard. The Sales Dashboard itself stays reachable at
+              /sales-dashboard regardless of role (that's what its nav link under
+              Sales points to), /dashboard2 bookmarks land there too, and the
+              classic-only page stays reachable at /dashboard-classic. */}
+          <Route path="/" element={<ProtectedRoute requiredPermission="view_dashboard">{isAdmin ? <AdminDashboardPage /> : <Dashboard2 />}</ProtectedRoute>} />
+          <Route path="/sales-dashboard" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard2 /></ProtectedRoute>} />
+          <Route path="/dashboard2" element={<Navigate to="/sales-dashboard" replace />} />
           <Route path="/dashboard-classic" element={<ProtectedRoute requiredPermission="view_dashboard"><Dashboard /></ProtectedRoute>} />
           <Route path="/price-list" element={<ProtectedRoute requiredPermission="view_dashboard"><PriceListPage /></ProtectedRoute>} />
           <Route path="/todo" element={<ProtectedRoute requiredPermission="view_dashboard"><TodoPage /></ProtectedRoute>} />
