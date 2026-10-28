@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HandCoins, Plus, RefreshCw, ArrowRight, Database, ShoppingCart } from 'lucide-react';
+import { HandCoins, Plus, RefreshCw, ArrowRight, Database, ShoppingCart, Search, FilterX } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -90,6 +90,13 @@ const AccountsReceivablePage: React.FC = () => {
     const [receiptNote, setReceiptNote] = useState('');
     const [receiveAccountId, setReceiveAccountId] = useState('');
 
+    // Filters
+    const [search, setSearch] = useState('');
+    const [sourceFilter, setSourceFilter] = useState<'all' | 'wholesale' | 'transfer'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'overdue'>('all');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+
     useEffect(() => {
         setHeaderContent({
             title: (
@@ -152,6 +159,25 @@ const AccountsReceivablePage: React.FC = () => {
         const overdue = receivables.reduce((s, r) => { const od = daysOverdue(r.due_date); return s + (od !== null && od > 0 ? r.balance : 0); }, 0);
         return { totalReceivable, overdue, count: receivables.length };
     }, [receivables]);
+
+    const filteredReceivables = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return receivables.filter(r => {
+            if (sourceFilter !== 'all' && r.source !== sourceFilter) return false;
+            if (statusFilter === 'overdue') {
+                const od = daysOverdue(r.due_date);
+                if (od === null || od <= 0) return false;
+            }
+            const d = (r.date || '').slice(0, 10);
+            if (dateFrom && d < dateFrom) return false;
+            if (dateTo && d > dateTo) return false;
+            if (q && !(r.party.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q))) return false;
+            return true;
+        });
+    }, [receivables, search, sourceFilter, statusFilter, dateFrom, dateTo]);
+
+    const hasActiveFilters = !!search || sourceFilter !== 'all' || statusFilter !== 'all' || !!dateFrom || !!dateTo;
+    const clearFilters = () => { setSearch(''); setSourceFilter('all'); setStatusFilter('all'); setDateFrom(''); setDateTo(''); };
 
     const adjustWarehouseStock = async (warehouseId: string, pid: string, delta: number) => {
         if (!warehouseId || !pid) return;
@@ -266,6 +292,33 @@ const AccountsReceivablePage: React.FC = () => {
                 </button>
             </div>
 
+            {/* Filters */}
+            <div style={{ ...cardStyle, padding: '14px 16px', marginBottom: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '180px' }}>
+                    <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                    <input className="search-input d2-khmer" style={{ width: '100%', paddingLeft: '32px' }} placeholder="Search customer, details…" value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+                <select className="search-input" style={{ width: 'auto' }} value={sourceFilter} onChange={e => setSourceFilter(e.target.value as 'all' | 'wholesale' | 'transfer')}>
+                    <option value="all">All Types</option>
+                    <option value="wholesale">Wholesale</option>
+                    <option value="transfer">Transfer</option>
+                </select>
+                <select className="search-input" style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | 'overdue')}>
+                    <option value="all">All Items</option>
+                    <option value="overdue">Overdue Only</option>
+                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input type="date" className="search-input" style={{ width: 'auto' }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
+                    <input type="date" className="search-input" style={{ width: 'auto' }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                </div>
+                {hasActiveFilters && (
+                    <button className="secondary-button" style={{ padding: '7px 12px', fontSize: '12px' }} onClick={clearFilters}>
+                        <FilterX size={14} /> Clear
+                    </button>
+                )}
+            </div>
+
             {bothMissing ? (
                 <div style={{ ...cardStyle, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
@@ -279,10 +332,18 @@ const AccountsReceivablePage: React.FC = () => {
                     <HandCoins size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
                     <p>No outstanding receivables. Everything is collected. 🎉</p>
                 </div>
+            ) : filteredReceivables.length === 0 ? (
+                <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                    <Search size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
+                    <p>No receivables match your filters.</p>
+                    <button className="secondary-button" style={{ marginTop: '12px' }} onClick={clearFilters}>
+                        <FilterX size={14} /> Clear filters
+                    </button>
+                </div>
             ) : isMobile ? (
                 // Phones: one card per receivable — no sideways scrolling.
                 <div style={{ ...cardStyle, overflow: 'hidden' }}>
-                    {receivables.map(r => {
+                    {filteredReceivables.map(r => {
                         const od = daysOverdue(r.due_date);
                         const isWholesale = r.source === 'wholesale';
                         return (
@@ -326,7 +387,7 @@ const AccountsReceivablePage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {receivables.map(r => {
+                            {filteredReceivables.map(r => {
                                 const od = daysOverdue(r.due_date);
                                 const isWholesale = r.source === 'wholesale';
                                 return (
