@@ -44,7 +44,7 @@ const KpiCard: React.FC<{
                 <Icon size={17} color="#fff" />
             </div>
         </div>
-        <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '14px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        <div style={{ fontSize: '27px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '14px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
         {/* Sub and trend rows always render — hidden via visibility rather than
             omitted — so every card reserves the same height whether or not it
             has a sub-label or trend to show. */}
