@@ -25,6 +25,8 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
             case 'Returned': return { bg: 'var(--color-surface-hover)', color: '#DC2626', border: '#D1D5DB' }; // Red text, Gray bg
             case 'ReStock': return { bg: '#E9D5FF', color: '#7E22CE', border: '#C084FC' }; // Purple
             case 'Drafted': return { bg: 'var(--color-surface-hover)', color: '#111827', border: '#E5E7EB' }; // Gray/Neutral
+            case 'Active': return { bg: '#D1FAE5', color: '#059669', border: '#6EE7B7' }; // Green
+            case 'Inactive': return { bg: 'var(--color-surface-hover)', color: '#6B7280', border: '#D1D5DB' }; // Gray
             default: return { bg: 'var(--color-surface-hover)', color: '#4B5563', border: '#D1D5DB' };
         }
     };
