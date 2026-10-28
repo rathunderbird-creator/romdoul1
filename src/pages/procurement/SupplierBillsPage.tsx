@@ -171,6 +171,12 @@ const SupplierBillsPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bills, search, statusFilter, supplierFilter, jeByPoId, supplierById]);
 
+    // Footer sums react to the active filters, same as the rest of the page.
+    const billTotals = useMemo(() => ({
+        totalAmount: filteredBills.reduce((s, po) => s + (po.total_amount || 0), 0),
+        totalOutstanding: filteredBills.reduce((s, po) => s + ((po.total_amount || 0) - (po.amount_paid || 0)), 0),
+    }), [filteredBills]);
+
     const hasActiveFilters = search !== '' || statusFilter !== 'All' || supplierFilter !== 'All';
 
     // ── New / Edit Bill modal ──
@@ -526,6 +532,16 @@ const SupplierBillsPage = () => {
                                     );
                                 })}
                             </tbody>
+                            <tfoot>
+                                <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
+                                    <td colSpan={3} style={{ padding: '12px 20px', fontSize: '12.5px', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                        Total Records: {filteredBills.length}
+                                    </td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'var(--color-text-main)' }}>{fmtUsd(billTotals.totalAmount)}</td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: billTotals.totalOutstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>{fmtUsd(billTotals.totalOutstanding)}</td>
+                                    <td colSpan={2}></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>
