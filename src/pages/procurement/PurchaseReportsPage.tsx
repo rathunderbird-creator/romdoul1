@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock, FileText, PackageSearch, RefreshCw, Printer, Download } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useProcurement } from '../../hooks/useProcurement';
+import { useMobile } from '../../hooks/useMobile';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { PurchaseOrder } from '../../types';
 
@@ -49,6 +50,7 @@ const PurchaseReportsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { suppliers, purchaseOrders, supplierPayments, isLoading, fetchSuppliers, fetchPurchaseOrders, fetchSupplierPayments } = useProcurement();
     const [tab, setTab] = useState<TabKey>('aging');
+    const isMobile = useMobile();
 
     useEffect(() => {
         setHeaderContent({
@@ -201,222 +203,233 @@ const PurchaseReportsPage: React.FC = () => {
     };
 
     return (
-        <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
-                {TABS.map(({ key, label, icon: Icon }) => (
-                    <button key={key} onClick={() => setTab(key)} style={{
-                        display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '9px', border: 'none',
-                        background: tab === key ? 'var(--color-surface)' : 'transparent',
-                        color: tab === key ? BLUE : 'var(--color-text-secondary)',
-                        fontWeight: tab === key ? 700 : 500, fontSize: '13px', cursor: 'pointer',
-                        boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s',
-                    }}>
-                        <Icon size={15} /> {label}
-                    </button>
-                ))}
-            </div>
-
-            {tab === 'aging' && (
-                <>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap' }}>
-                        <div>
-                            <label style={labelStyle}>As at</label>
-                            <input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} style={inputStyle} />
-                        </div>
-                        <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
-                            <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '7 1 0', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
+                    {TABS.map(({ key, label, icon: Icon }) => (
+                        <button key={key} onClick={() => setTab(key)} style={{
+                            display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '9px', border: 'none',
+                            background: tab === key ? 'var(--color-surface)' : 'transparent',
+                            color: tab === key ? BLUE : 'var(--color-text-secondary)',
+                            fontWeight: tab === key ? 700 : 500, fontSize: '13px', cursor: 'pointer',
+                            boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s',
+                        }}>
+                            <Icon size={15} /> {label}
                         </button>
-                        <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                        <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
-                        <button disabled title="Coming soon" style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><FileText size={14} /> Print for approval</button>
-                        <button disabled title="Coming soon" style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><Download size={14} style={{ transform: 'rotate(180deg)' }} /> Request payment</button>
-                    </div>
+                    ))}
+                </div>
 
-                    <div style={cardStyle}>
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Current</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>1–30</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>31–60</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>61–90</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>90+</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Credit</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {loading ? (
-                                        <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
-                                    ) : aging.rows.length === 0 ? (
-                                        <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No outstanding bills.</td></tr>
-                                    ) : aging.rows.map(r => (
-                                        <tr key={r.supplierId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 20px' }}>
-                                                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{r.supplierName}</div>
-                                                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{r.code}</div>
-                                            </td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.current)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.d1_30)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.d31_60)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.d61_90)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.d90plus > 0.005 ? RED : 'var(--color-text-main)' }}>{cellText(r.d90plus)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: BLUE }}>{cellText(r.credit)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>USD {fmt(r.total)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                {!loading && aging.rows.length > 0 && (
-                                    <tfoot>
-                                        <tr style={{ background: 'var(--color-bg)' }}>
-                                            <td style={{ padding: '12px 20px', fontWeight: 700 }}>Total · USD</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.current)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d1_30)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d31_60)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d61_90)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d90plus)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: BLUE }}>{cellText(aging.totals.credit)}</td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(aging.totals.total)}</td>
-                                        </tr>
-                                    </tfoot>
-                                )}
-                            </table>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {tab === 'statement' && (
-                <>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap' }}>
-                        <div>
-                            <label style={labelStyle}>Supplier</label>
-                            <select value={statementSupplierId} onChange={e => setStatementSupplierId(e.target.value)} style={{ ...inputStyle, maxWidth: '260px', cursor: 'pointer' }}>
-                                <option value="">Select a supplier…</option>
-                                {[...suppliers].sort((a, b) => (supplierCodes.get(a.id) || '').localeCompare(supplierCodes.get(b.id) || '')).map(s => (
-                                    <option key={s.id} value={s.id}>{supplierCodes.get(s.id)} · {s.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label style={labelStyle}>From</label>
-                            <input type="date" value={statementFrom} onChange={e => setStatementFrom(e.target.value)} style={inputStyle} />
-                        </div>
-                        <div>
-                            <label style={labelStyle}>To</label>
-                            <input type="date" value={statementTo} onChange={e => setStatementTo(e.target.value)} style={inputStyle} />
-                        </div>
-                        <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
-                            <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-                        </button>
-                        <button onClick={printList} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                        <button onClick={exportCsv} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
-                    </div>
-
-                    {!statementSupplierId ? (
-                        <div style={{ ...cardStyle, padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                            Pick a supplier above to see their statement.
-                        </div>
-                    ) : (
-                        <div style={cardStyle}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '14px 20px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{statementSupplier?.name}</span>
-                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{supplierCodes.get(statementSupplierId)}</span>
-                                </div>
-                                <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                                    Closing balance: <strong style={{ color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</strong>
-                                </span>
+                {tab === 'aging' && (
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap' }}>
+                            <div>
+                                <label style={labelStyle}>As at</label>
+                                <input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} style={inputStyle} />
                             </div>
+                            <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                                <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+                            </button>
+                            <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
+                            <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                            <button disabled title="Coming soon" style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><FileText size={14} /> Print for approval</button>
+                            <button disabled title="Coming soon" style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><Download size={14} style={{ transform: 'rotate(180deg)' }} /> Request payment</button>
+                        </div>
+
+                        <div style={cardStyle}>
                             <div style={{ overflowX: 'auto' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
-                                            <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
-                                            <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Description</th>
-                                            <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
-                                            <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Balance</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Current</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>1–30</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>31–60</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>61–90</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>90+</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Credit</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '10px 20px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Opening balance</td>
-                                            <td></td><td></td><td></td>
-                                            <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: statement.opening < -0.005 ? BLUE : 'var(--color-text-secondary)' }}>{fmt(statement.opening)}</td>
-                                        </tr>
-                                        {statement.rows.map((r, i) => (
-                                            <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <td style={{ padding: '10px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{r.date}</td>
-                                                <td style={{ padding: '10px 20px', whiteSpace: 'nowrap' }}><span style={refBadgeStyle}>{r.ref}</span></td>
-                                                <td style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{r.description}</td>
-                                                <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.amount < 0 ? BLUE : 'var(--color-text-main)' }}>{r.amount < 0 ? `(${fmt(-r.amount)})` : fmt(r.amount)}</td>
-                                                <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.balance < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(r.balance)}</td>
+                                        {loading ? (
+                                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                        ) : aging.rows.length === 0 ? (
+                                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No outstanding bills.</td></tr>
+                                        ) : aging.rows.map(r => (
+                                            <tr key={r.supplierId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                <td style={{ padding: '12px 20px' }}>
+                                                    <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{r.supplierName}</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{r.code}</div>
+                                                </td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.current)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.d1_30)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.d31_60)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cellText(r.d61_90)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.d90plus > 0.005 ? RED : 'var(--color-text-main)' }}>{cellText(r.d90plus)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: BLUE }}>{cellText(r.credit)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>USD {fmt(r.total)}</td>
                                             </tr>
                                         ))}
-                                        {statement.rows.length === 0 && (
-                                            <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No activity in this range.</td></tr>
-                                        )}
-                                        <tr style={{ background: 'var(--color-bg)' }}>
-                                            <td style={{ padding: '10px 20px', fontWeight: 700, color: 'var(--color-text-main)' }}>Closing balance</td>
-                                            <td></td><td></td><td></td>
-                                            <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</td>
+                                    </tbody>
+                                    {!loading && aging.rows.length > 0 && (
+                                        <tfoot>
+                                            <tr style={{ background: 'var(--color-bg)' }}>
+                                                <td style={{ padding: '12px 20px', fontWeight: 700 }}>Total · USD</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.current)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d1_30)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d31_60)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d61_90)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d90plus)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: BLUE }}>{cellText(aging.totals.credit)}</td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(aging.totals.total)}</td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
+                                </table>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {tab === 'statement' && (
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap' }}>
+                            <div>
+                                <label style={labelStyle}>Supplier</label>
+                                <select value={statementSupplierId} onChange={e => setStatementSupplierId(e.target.value)} style={{ ...inputStyle, maxWidth: '260px', cursor: 'pointer' }}>
+                                    <option value="">Select a supplier…</option>
+                                    {[...suppliers].sort((a, b) => (supplierCodes.get(a.id) || '').localeCompare(supplierCodes.get(b.id) || '')).map(s => (
+                                        <option key={s.id} value={s.id}>{supplierCodes.get(s.id)} · {s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>From</label>
+                                <input type="date" value={statementFrom} onChange={e => setStatementFrom(e.target.value)} style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>To</label>
+                                <input type="date" value={statementTo} onChange={e => setStatementTo(e.target.value)} style={inputStyle} />
+                            </div>
+                            <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                                <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+                            </button>
+                            <button onClick={printList} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
+                            <button onClick={exportCsv} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                        </div>
+
+                        {!statementSupplierId ? (
+                            <div style={{ ...cardStyle, padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                                Pick a supplier above to see their statement.
+                            </div>
+                        ) : (
+                            <div style={cardStyle}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '14px 20px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{statementSupplier?.name}</span>
+                                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{supplierCodes.get(statementSupplierId)}</span>
+                                    </div>
+                                    <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                                        Closing balance: <strong style={{ color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</strong>
+                                    </span>
+                                </div>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Description</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Balance</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                <td style={{ padding: '10px 20px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Opening balance</td>
+                                                <td></td><td></td><td></td>
+                                                <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: statement.opening < -0.005 ? BLUE : 'var(--color-text-secondary)' }}>{fmt(statement.opening)}</td>
+                                            </tr>
+                                            {statement.rows.map((r, i) => (
+                                                <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                    <td style={{ padding: '10px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{r.date}</td>
+                                                    <td style={{ padding: '10px 20px', whiteSpace: 'nowrap' }}><span style={refBadgeStyle}>{r.ref}</span></td>
+                                                    <td style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{r.description}</td>
+                                                    <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.amount < 0 ? BLUE : 'var(--color-text-main)' }}>{r.amount < 0 ? `(${fmt(-r.amount)})` : fmt(r.amount)}</td>
+                                                    <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.balance < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(r.balance)}</td>
+                                                </tr>
+                                            ))}
+                                            {statement.rows.length === 0 && (
+                                                <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No activity in this range.</td></tr>
+                                            )}
+                                            <tr style={{ background: 'var(--color-bg)' }}>
+                                                <td style={{ padding: '10px 20px', fontWeight: 700, color: 'var(--color-text-main)' }}>Closing balance</td>
+                                                <td></td><td></td><td></td>
+                                                <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {tab === 'open' && (
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                            <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                                <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+                            </button>
+                            <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
+                            <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                        </div>
+
+                        <div style={cardStyle}>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Order Date</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Expected Delivery</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
                                         </tr>
+                                    </thead>
+                                    <tbody>
+                                        {loading ? (
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                        ) : openOrders.length === 0 ? (
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No open orders — everything has arrived.</td></tr>
+                                        ) : openOrders.map(po => (
+                                            <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                <td style={{ padding: '12px 20px' }}><span style={refBadgeStyle}>{poRef(po)}</span></td>
+                                                <td style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{suppliers.find(s => s.id === po.supplier_id)?.name || 'Unknown supplier'}</td>
+                                                <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{po.order_date}</td>
+                                                <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{po.expected_delivery_date || '—'}</td>
+                                                <td style={{ padding: '12px 20px' }}>
+                                                    <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: po.status === 'Sent' ? 'rgba(59,130,246,0.12)' : 'var(--color-bg)', color: po.status === 'Sent' ? '#3B82F6' : 'var(--color-text-secondary)' }}>{po.status}</span>
+                                                </td>
+                                                <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(po.total_amount || 0)}</td>
+                                            </tr>
+                                        ))}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-                    )}
-                </>
-            )}
+                    </>
+                )}
+            </div>
 
-            {tab === 'open' && (
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
                 <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                        <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
-                            <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-                        </button>
-                        <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                        <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
-                    </div>
-
-                    <div style={cardStyle}>
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Order Date</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Expected Delivery</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
-                                        <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {loading ? (
-                                        <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
-                                    ) : openOrders.length === 0 ? (
-                                        <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No open orders — everything has arrived.</td></tr>
-                                    ) : openOrders.map(po => (
-                                        <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 20px' }}><span style={refBadgeStyle}>{poRef(po)}</span></td>
-                                            <td style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{suppliers.find(s => s.id === po.supplier_id)?.name || 'Unknown supplier'}</td>
-                                            <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{po.order_date}</td>
-                                            <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{po.expected_delivery_date || '—'}</td>
-                                            <td style={{ padding: '12px 20px' }}>
-                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: po.status === 'Sent' ? 'rgba(59,130,246,0.12)' : 'var(--color-bg)', color: po.status === 'Sent' ? '#3B82F6' : 'var(--color-text-secondary)' }}>{po.status}</span>
-                                            </td>
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(po.total_amount || 0)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
                 </>
             )}
         </div>
