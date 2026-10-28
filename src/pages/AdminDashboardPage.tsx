@@ -10,6 +10,7 @@ import React, { useEffect, useMemo } from 'react';
 import { RefreshCw, BarChart3, TrendingDown, PieChart, TrendingUp, Activity, Calendar, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useAccounting } from '../hooks/useAccounting';
+import { useMobile } from '../hooks/useMobile';
 import type { ChartOfAccount, JournalEntry } from '../types';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -75,6 +76,7 @@ const Operator: React.FC<{ symbol: string }> = ({ symbol }) => (
 const AdminDashboardPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
+    const isMobile = useMobile();
 
     useEffect(() => {
         setHeaderContent({
@@ -141,8 +143,8 @@ const AdminDashboardPage: React.FC = () => {
     const recentEntries = useMemo(() => journalEntries.slice(0, 5), [journalEntries]);
 
     return (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ flex: '3 1 600px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '7 1 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button className="secondary-button" onClick={() => { fetchAccounts(); fetchJournalEntries(); }}>
                         <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
@@ -261,10 +263,14 @@ const AdminDashboardPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Reserved for future widgets — intentionally empty, collapses
-                away on narrow screens since there's nothing in it to show. */}
-            <div style={{ flex: '1 1 200px' }} />
-            <div style={{ flex: '1 1 200px' }} />
+            {/* Reserved for future widgets — intentionally empty, and left
+                out entirely on mobile since there's nothing in it to show. */}
+            {!isMobile && (
+                <>
+                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ flex: '1.5 1 0' }} />
+                </>
+            )}
         </div>
     );
 };
