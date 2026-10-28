@@ -316,6 +316,154 @@ export const useWholesale = () => {
         }
     }, [showToast, fetchWholesaleOrders]);
 
+    // Edit an existing order (Admin only, enforced in the UI): fully reverses
+    // the stock/ledger effect this order currently holds — same restore the
+    // Cancel/Delete paths use — then re-applies it for the edited fields and
+    // items, exactly as creation does. This keeps the math simple (no per-line
+    // delta reconciliation) at the cost of re-dating the stock movements and
+    // COGS entry to the edit time rather than the original order time, which
+    // already matches how Cancel/Delete rewrite history today.
+    const updateWholesaleOrder = useCallback(async (
+        order: WholesaleOrder,
+        updates: { customer_name: string; customer_phone?: string; warehouse_id?: string; order_date: string; due_date?: string; status?: WholesaleOrder['status']; invoice_number?: string; notes?: string },
+        items: Partial<WholesaleOrderItem>[],
+        editedBy?: string
+    ) => {
+        try {
+            if (order.status === 'Cancelled') throw new Error('Cannot edit a cancelled order');
+
+            // Availability check BEFORE anything is written, same approach as
+            // createWholesaleOrder — except stock this order ALREADY holds
+            // counts as available again (it's about to be restored below).
+            const neededByProduct = new Map<string, { qty: number; name: string }>();
+            for (const i of items) {
+                if (!i.product_id || !i.quantity) continue;
+                const cur = neededByProduct.get(i.product_id) || { qty: 0, name: i.product_name || 'product' };
+                cur.qty += i.quantity;
+                neededByProduct.set(i.product_id, cur);
+            }
+            const oldQtyByProduct = new Map<string, number>();
+            for (const i of order.items || []) {
+                if (!i.product_id || !i.quantity) continue;
+                oldQtyByProduct.set(i.product_id, (oldQtyByProduct.get(i.product_id) || 0) + i.quantity);
+            }
+            const warehouseUnchanged = (order.warehouse_id || null) === (updates.warehouse_id || null);
+            for (const [productId, need] of neededByProduct) {
+                const { data: prod } = await supabase.from('products').select('stock, name').eq('id', productId).single();
+                const reserved = oldQtyByProduct.get(productId) || 0;
+                const available = (prod?.stock || 0) + reserved;
+                if (need.qty > available) {
+                    throw new Error(`Insufficient stock for ${prod?.name || need.name}: have ${available}, need ${need.qty}`);
+                }
+                if (updates.warehouse_id) {
+                    const { data: ws } = await supabase.from('warehouse_stock')
+                        .select('quantity').eq('warehouse_id', updates.warehouse_id).eq('product_id', productId).maybeSingle();
+                    if (ws) {
+                        const wsAvailable = (ws.quantity || 0) + (warehouseUnchanged ? reserved : 0);
+                        if (need.qty > wsAvailable) {
+                            throw new Error(`Insufficient warehouse stock for ${prod?.name || need.name}: have ${wsAvailable}, need ${need.qty}`);
+                        }
+                    }
+                }
+            }
+
+            // Reverse what this order currently holds (mirror of delete/cancel).
+            for (const i of order.items || []) {
+                if (!i.product_id || !i.quantity) continue;
+                await adjustProductStock(i.product_id, i.quantity);
+                if (order.warehouse_id) await adjustWarehouseStock(order.warehouse_id, i.product_id, i.quantity);
+            }
+            await supabase.from('stock_movements').delete().eq('reference_id', order.id).eq('type', 'out');
+            // Stock is (about to be) back, so the old cost-of-goods entry comes
+            // off the books too — same bail-if-Posted guard as Cancel.
+            await removeWholesaleCogsEntry(order.id, showToast);
+
+            const total = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
+            const paid = order.amount_paid || 0;
+            const paymentStatus = paid <= 0.005 ? 'Unpaid' : (paid >= total - 0.005 ? 'Paid' : 'Partial');
+
+            const { error: uErr } = await supabase.from('wholesale_orders').update({
+                customer_name: updates.customer_name,
+                customer_phone: updates.customer_phone || null,
+                warehouse_id: updates.warehouse_id || null,
+                order_date: updates.order_date,
+                due_date: updates.due_date || null,
+                status: updates.status || order.status,
+                invoice_number: updates.invoice_number || null,
+                notes: updates.notes || null,
+                total_amount: total,
+                payment_status: paymentStatus
+            }).eq('id', order.id);
+            if (uErr) throw uErr;
+
+            // Replace the line items wholesale.
+            const { error: delErr } = await supabase.from('wholesale_order_items').delete().eq('wholesale_order_id', order.id);
+            if (delErr) throw delErr;
+            const itemsPayload = items.filter(i => i.product_id && i.quantity).map(i => ({
+                wholesale_order_id: order.id,
+                product_id: i.product_id,
+                product_name: i.product_name || '',
+                quantity: i.quantity || 0,
+                unit_price: i.unit_price || 0
+            }));
+            if (itemsPayload.length > 0) {
+                const { error: iErr } = await supabase.from('wholesale_order_items').insert(itemsPayload);
+                if (iErr) throw iErr;
+            }
+
+            // Re-apply the (edited) stock effect.
+            for (const i of items) {
+                if (!i.product_id || !i.quantity) continue;
+                await adjustProductStock(i.product_id, -(i.quantity));
+                if (updates.warehouse_id) await adjustWarehouseStock(updates.warehouse_id, i.product_id, -(i.quantity));
+            }
+
+            const localDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+            const baseMovements = items
+                .filter(i => i.product_id && i.quantity)
+                .map(i => ({
+                    product_id: i.product_id,
+                    product_name: i.product_name || '',
+                    type: 'out',
+                    quantity: i.quantity,
+                    unit_price: i.unit_price || 0,
+                    source: 'Wholesale Order',
+                    reason: 'Wholesale Sale',
+                    reference_id: order.id,
+                    customer_name: updates.customer_name || '',
+                    customer_phone: updates.customer_phone || '',
+                    note: `Wholesale ${updates.invoice_number || 'WO-' + order.id.slice(0, 8)}`,
+                    movement_date: localDate,
+                    created_by: editedBy || 'System'
+                }));
+            if (baseMovements.length > 0) {
+                const withWarehouse = baseMovements.map(m => ({ ...m, warehouse_id: updates.warehouse_id || null }));
+                let { error: mErr } = await supabase.from('stock_movements').insert(withWarehouse);
+                if (mErr) {
+                    ({ error: mErr } = await supabase.from('stock_movements').insert(baseMovements));
+                }
+                if (mErr) {
+                    console.error('Failed to log wholesale stock-out movements:', mErr);
+                    showToast('Order saved, but logging to Stock Movements failed: ' + mErr.message, 'error');
+                }
+            }
+
+            await postWholesaleCogsEntry(
+                order.id,
+                `${updates.customer_name || 'Wholesale'} · ${updates.invoice_number || 'WO-' + String(order.id).slice(0, 8).toUpperCase()}`,
+                items,
+                showToast
+            );
+
+            showToast('Wholesale order updated', 'success');
+            await fetchWholesaleOrders(true);
+        } catch (error: any) {
+            console.error('Failed to update wholesale order:', error);
+            showToast('Failed to update wholesale order: ' + error.message, 'error');
+            throw error;
+        }
+    }, [showToast, fetchWholesaleOrders]);
+
     const deleteWholesaleOrder = useCallback(async (order: WholesaleOrder) => {
         try {
             // Restore stock that was deducted at creation (only for non-cancelled orders).
@@ -623,6 +771,7 @@ export const useWholesale = () => {
         fetchCustomerPayments,
         nextInvoiceNumber,
         createWholesaleOrder,
+        updateWholesaleOrder,
         deleteWholesaleOrder,
         updateWholesaleOrderStatus,
         recordCustomerPayment,
