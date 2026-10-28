@@ -10,10 +10,17 @@ export interface NavSubItem { label: string; path: string; icon: LucideIcon }
 export interface NavItem { icon: LucideIcon; label: string; path: string; subItems?: NavSubItem[] }
 
 export const useNavItems = (): NavItem[] => {
-    const { hasPermission } = useStore();
+    const { hasPermission, currentUser } = useStore();
     const { t } = useLanguage();
 
     const navItems: NavItem[] = [];
+
+    if (currentUser?.roleId === 'admin') {
+        // The financial Admin Dashboard (AdminDashboardPage) — Admin's own
+        // default landing page at /, see ProtectedApp in App.tsx. Not shown
+        // to other roles since they land on the Sales Dashboard instead.
+        navItems.push({ icon: LayoutDashboard, label: t('nav.dashboard'), path: '/' });
+    }
 
     if (hasPermission('view_dashboard')) {
         // Price List is hidden from the menu; /price-list stays reachable by URL.
