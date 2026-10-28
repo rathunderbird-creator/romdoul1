@@ -44,12 +44,13 @@ const KpiCard: React.FC<{
             </div>
         </div>
         <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '14px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-        {sub && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{sub}</div>}
-        {trend && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '10px', fontSize: '12px', fontWeight: 600, color: trend === 'up' ? GREEN : RED }}>
-                {trend === 'up' ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />} {trendLabel}
-            </div>
-        )}
+        {/* Sub and trend rows always render — hidden via visibility rather than
+            omitted — so every card reserves the same height whether or not it
+            has a sub-label or trend to show. */}
+        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', visibility: sub ? 'visible' : 'hidden' }}>{sub || ' '}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '10px', fontSize: '12px', fontWeight: 600, color: trend === 'up' ? GREEN : RED, visibility: trend ? 'visible' : 'hidden' }}>
+            {trend === 'down' ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />} {trendLabel || ' '}
+        </div>
     </div>
 );
 
