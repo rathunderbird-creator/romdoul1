@@ -141,123 +141,130 @@ const AdminDashboardPage: React.FC = () => {
     const recentEntries = useMemo(() => journalEntries.slice(0, 5), [journalEntries]);
 
     return (
-        <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="secondary-button" onClick={() => { fetchAccounts(); fetchJournalEntries(); }}>
-                    <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
-                </button>
-            </div>
-
-            {/* KPI row 1 — Balance Sheet snapshot */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-                <KpiCard label="Total Assets" value={fmt(totalAssets)} color={BLUE} icon={BarChart3} />
-                <KpiCard label="Total Liabilities" value={fmt(totalLiabilities)} color={RED} icon={TrendingDown} />
-                <KpiCard label="Total Equity" value={fmt(totalEquity)} color={PURPLE} icon={PieChart} />
-            </div>
-
-            {/* KPI row 2 — performance indicators */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-                <KpiCard
-                    label="Net Income" value={fmt(netIncome)} color={BLUE} icon={TrendingUp}
-                    trend={netIncome >= 0 ? 'up' : 'down'} trendLabel={netIncome >= 0 ? 'Positive trend' : 'Negative trend'}
-                />
-                <KpiCard
-                    label="Current Ratio" value={currentRatio === null ? '—' : currentRatio.toFixed(2)} sub="Assets/Liabilities" color={AMBER} icon={Activity}
-                    trend={currentRatio !== null && currentRatio >= 1 ? 'up' : 'down'} trendLabel={currentRatio !== null && currentRatio >= 1 ? 'Positive trend' : 'Negative trend'}
-                />
-                <KpiCard
-                    label="Net Profit Margin" value={`${netProfitMargin.toFixed(1)}%`} sub="Income/Revenue" color={TEAL} icon={TrendingUp}
-                    trend={netProfitMargin >= 0 ? 'up' : 'down'} trendLabel={netProfitMargin >= 0 ? 'Positive trend' : 'Negative trend'}
-                />
-            </div>
-
-            {/* Accounting equation */}
-            <div style={{ ...cardStyle, padding: '20px 24px' }}>
-                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
-                    Accounting Equation: Assets = Liabilities + Equity
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'flex-start' }}>
+            <div className="acct-page" style={{ flex: '3 1 600px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="secondary-button" onClick={() => { fetchAccounts(); fetchJournalEntries(); }}>
+                        <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
+                    </button>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'stretch', justifyContent: 'center' }}>
-                    <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} fill grow />
-                    <Operator symbol="+" />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: '1 1 260px' }}>
-                        <EquationBox label="Liabilities" value={fmt(totalLiabilities)} color={RED} />
-                        <EquationBox label="Equity" value={fmt(totalEquity)} color={PURPLE} />
+
+                {/* KPI row 1 — Balance Sheet snapshot */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                    <KpiCard label="Total Assets" value={fmt(totalAssets)} color={BLUE} icon={BarChart3} />
+                    <KpiCard label="Total Liabilities" value={fmt(totalLiabilities)} color={RED} icon={TrendingDown} />
+                    <KpiCard label="Total Equity" value={fmt(totalEquity)} color={PURPLE} icon={PieChart} />
+                </div>
+
+                {/* KPI row 2 — performance indicators */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                    <KpiCard
+                        label="Net Income" value={fmt(netIncome)} color={BLUE} icon={TrendingUp}
+                        trend={netIncome >= 0 ? 'up' : 'down'} trendLabel={netIncome >= 0 ? 'Positive trend' : 'Negative trend'}
+                    />
+                    <KpiCard
+                        label="Current Ratio" value={currentRatio === null ? '—' : currentRatio.toFixed(2)} sub="Assets/Liabilities" color={AMBER} icon={Activity}
+                        trend={currentRatio !== null && currentRatio >= 1 ? 'up' : 'down'} trendLabel={currentRatio !== null && currentRatio >= 1 ? 'Positive trend' : 'Negative trend'}
+                    />
+                    <KpiCard
+                        label="Net Profit Margin" value={`${netProfitMargin.toFixed(1)}%`} sub="Income/Revenue" color={TEAL} icon={TrendingUp}
+                        trend={netProfitMargin >= 0 ? 'up' : 'down'} trendLabel={netProfitMargin >= 0 ? 'Positive trend' : 'Negative trend'}
+                    />
+                </div>
+
+                {/* Accounting equation */}
+                <div style={{ ...cardStyle, padding: '20px 24px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
+                        Accounting Equation: Assets = Liabilities + Equity
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'stretch', justifyContent: 'center' }}>
+                        <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} fill grow />
+                        <Operator symbol="+" />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: '1 1 260px' }}>
+                            <EquationBox label="Liabilities" value={fmt(totalLiabilities)} color={RED} />
+                            <EquationBox label="Equity" value={fmt(totalEquity)} color={PURPLE} />
+                        </div>
+                    </div>
+                    <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Equation Balance:</div>
+                        <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: isBalanced ? BLUE : RED, fontWeight: 700, fontSize: '13px' }}>
+                            {isBalanced ? '✓ Balanced (A = L + E)' : '✗ Out of balance'}
+                        </div>
                     </div>
                 </div>
-                <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Equation Balance:</div>
-                    <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: isBalanced ? BLUE : RED, fontWeight: 700, fontSize: '13px' }}>
-                        {isBalanced ? '✓ Balanced (A = L + E)' : '✗ Out of balance'}
-                    </div>
-                </div>
-            </div>
 
-            {/* Income statement */}
-            <div style={{ ...cardStyle, padding: '20px 24px' }}>
-                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
-                    Income Statement: Revenue - Expenses = Net Income
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
-                    <EquationBox label="Revenue" value={fmt(revenue)} color={BLUE} grow />
-                    <Operator symbol="-" />
-                    <EquationBox label="Expenses" value={fmt(expenses)} color={AMBER} grow />
-                </div>
-                <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Net Income:</div>
-                    <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: netIncome >= 0 ? BLUE : RED, fontWeight: 700, fontSize: '20px' }}>
-                        {fmt(netIncome)}
+                {/* Income statement */}
+                <div style={{ ...cardStyle, padding: '20px 24px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
+                        Income Statement: Revenue - Expenses = Net Income
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
+                        <EquationBox label="Revenue" value={fmt(revenue)} color={BLUE} grow />
+                        <Operator symbol="-" />
+                        <EquationBox label="Expenses" value={fmt(expenses)} color={AMBER} grow />
+                    </div>
+                    <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Net Income:</div>
+                        <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: netIncome >= 0 ? BLUE : RED, fontWeight: 700, fontSize: '20px' }}>
+                            {fmt(netIncome)}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Recent journal entries + account summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
-                <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                        <Calendar size={16} color={BLUE} />
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Recent Journal Entries</span>
-                    </div>
-                    {recentEntries.length === 0 ? (
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>No journal entries yet.</div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {recentEntries.map(e => (
-                                <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
-                                    <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{displayIdOf(e)}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description || '—'}</div>
+                {/* Recent journal entries + account summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
+                    <div style={{ ...cardStyle, padding: '18px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                            <Calendar size={16} color={BLUE} />
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Recent Journal Entries</span>
+                        </div>
+                        {recentEntries.length === 0 ? (
+                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>No journal entries yet.</div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {recentEntries.map(e => (
+                                    <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{displayIdOf(e)}</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description || '—'}</div>
+                                        </div>
+                                        {statusChip(e.status)}
                                     </div>
-                                    {statusChip(e.status)}
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div style={{ ...cardStyle, padding: '18px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                            <Activity size={16} color={TEAL} />
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Account Summary</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {ACCOUNT_TYPES.map(type => (
+                                <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{type}</div>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{typeCounts[type]} account{typeCounts[type] === 1 ? '' : 's'}</div>
+                                    </div>
+                                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {/* Equity shows the same balance-sheet total as the Accounting
+                                            Equation card above (ledger Equity + unclosed retained
+                                            earnings) rather than the raw ledger sum, so the same label
+                                            never shows two different numbers on one screen. */}
+                                        {fmt(type === 'Equity' ? totalEquity : typeTotals[type])}
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                    )}
-                </div>
-
-                <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                        <Activity size={16} color={TEAL} />
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Account Summary</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {ACCOUNT_TYPES.map(type => (
-                            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
-                                <div>
-                                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{type}</div>
-                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{typeCounts[type]} account{typeCounts[type] === 1 ? '' : 's'}</div>
-                                </div>
-                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
-                                    {/* Equity shows the same balance-sheet total as the Accounting
-                                        Equation card above (ledger Equity + unclosed retained
-                                        earnings) rather than the raw ledger sum, so the same label
-                                        never shows two different numbers on one screen. */}
-                                    {fmt(type === 'Equity' ? totalEquity : typeTotals[type])}
-                                </div>
-                            </div>
-                        ))}
                     </div>
                 </div>
             </div>
+
+            {/* Reserved for future widgets — intentionally empty, collapses
+                away on narrow screens since there's nothing in it to show. */}
+            <div style={{ flex: '1 1 200px' }} />
+            <div style={{ flex: '1 1 200px' }} />
         </div>
     );
 };
