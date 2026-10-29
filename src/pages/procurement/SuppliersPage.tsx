@@ -180,7 +180,7 @@ const SuppliersPage = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="page-container fade-in" style={{ flex: isMobile ? undefined : '6 1 0' }}>
+            <div className="page-container fade-in" style={{ flex: isMobile ? undefined : '6 1 0', minWidth: 0 }}>
                 {/* Summary Stats Bar — mobile: four compact cards on one row */}
                 {isMobile ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
