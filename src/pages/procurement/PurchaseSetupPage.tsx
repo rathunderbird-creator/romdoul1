@@ -295,7 +295,7 @@ const PurchaseSetupPage: React.FC = () => {
                     console.error('Failed to load an opening balance:', error);
                     continue;
                 }
-                await postOpeningBalanceEntry(po.id, amount, offsetAccountId, supplier?.name || 'Supplier', showToast);
+                await postOpeningBalanceEntry(po.id, amount, offsetAccountId, supplier?.name || 'Supplier', showToast, r.their_invoice.trim());
                 newEntries.push({
                     supplier_id: r.supplier_id,
                     purchase_order_id: po.id,

@@ -51,3 +51,12 @@ export async function nextJournalEntryNumber(type: JournalEntryTypeCode, date: s
         return null;
     }
 }
+
+// The {TYPE}-{YYYYMMDD}-{dailySeq} tail of an entry_number, with the
+// "JE-{globalSeq}-" prefix stripped — e.g. "JE-37-OPA-20261026-005" becomes
+// "OPA-20261026-005". Used to echo a short, readable reference inside an
+// entry's own description text, next to its human-readable type label.
+export function entryNumberRef(entryNumber: string | null | undefined): string | null {
+    if (!entryNumber) return null;
+    return entryNumber.replace(/^JE-\d+-/, '');
+}
