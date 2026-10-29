@@ -13,6 +13,15 @@
     color: var(--d2-ink);
     font-variant-numeric: tabular-nums;
     padding-bottom: 32px;
+    /* This is a flex item (the reserved-columns layout) with flex-basis: 0.
+       Without this, its default min-width: auto makes the browser size it to
+       its widest UNWRAPPED descendant instead of its allotted flex space —
+       with Lifetime selected, the classic cards' flex-wrap rows have enough
+       status badges that their max-content width balloons to 10000px+, and
+       main's overflow: hidden silently clips everything past the viewport
+       (the date picker's label, New Order, Refresh). min-width: 0 lets this
+       shrink to its real column width so flex-wrap can actually wrap. */
+    min-width: 0;
 }
 
 /* Khmer script is taller than Latin and wraps differently (spec §5). Any
