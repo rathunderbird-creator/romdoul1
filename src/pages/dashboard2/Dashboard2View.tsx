@@ -97,7 +97,7 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
         // Skeletons that match the final layout — no spinners, no layout shift (§8).
         return (
             <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-                <div className="d2" aria-busy="true" style={{ flex: isMobile ? undefined : '6 1 0' }}>
+                <div className="d2" aria-busy="true" style={{ flex: isMobile ? undefined : '78 1 0' }}>
                     {toolbar}
                     <div className="d2-hero" style={{ marginBottom: 14 }}>
                         {[0, 1, 2, 3].map(i => <Skeleton key={i} height={104} style={{ borderRadius: 12 }} />)}
@@ -117,8 +117,8 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                     layout shift once real content replaces it (§6). */}
                 {!isMobile && (
                     <>
-                        <div style={{ flex: '1 1 0' }} />
-                        <div style={{ flex: '1 1 0' }} />
+                        <div style={{ flex: '11 1 0' }} />
+                        <div style={{ flex: '11 1 0' }} />
                     </>
                 )}
             </div>
@@ -127,7 +127,7 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="d2" style={{ flex: isMobile ? undefined : '6 1 0' }}>
+            <div className="d2" style={{ flex: isMobile ? undefined : '78 1 0' }}>
                 {toolbar}
 
                 {salesError && (
@@ -253,8 +253,8 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ flex: '1 1 0' }} />
-                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '11 1 0' }} />
+                    <div style={{ flex: '11 1 0' }} />
                 </>
             )}
         </div>

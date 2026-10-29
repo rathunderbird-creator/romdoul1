@@ -129,7 +129,7 @@ const WholesaleCustomersPage: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div style={{ padding: isMobile ? '12px' : '24px', flex: isMobile ? undefined : '6 1 0', minWidth: 0 }}>
+            <div style={{ padding: isMobile ? '12px' : '24px', flex: isMobile ? undefined : '78 1 0', minWidth: 0 }}>
                 {/* Summary cards — mobile: four compact cards on one row */}
                 {isMobile ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
@@ -389,8 +389,8 @@ const WholesaleCustomersPage: React.FC = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ flex: '1 1 0' }} />
-                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '11 1 0' }} />
+                    <div style={{ flex: '11 1 0' }} />
                 </>
             )}
         </div>
