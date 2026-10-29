@@ -5,7 +5,7 @@
 // supplier's outstanding bills oldest-due-first (recordSupplierPayment still
 // books one payment row per bill it settles, so the ledger stays per-bill).
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt } from 'lucide-react';
+import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt, Zap } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -185,7 +185,43 @@ const SupplierPaymentsPage: React.FC = () => {
     const [payRate, setPayRate] = useState('1');
     const [payNotes, setPayNotes] = useState('');
     const [paySaving, setPaySaving] = useState(false);
+    // Per-bill application amounts (USD), keyed by purchase order id.
+    const [allocations, setAllocations] = useState<Record<string, string>>({});
     const paySupplier = supplierOptions.find(s => s.id === paySupplierId);
+
+    // The selected supplier's open bills, oldest due date first.
+    const payBills = useMemo(() => {
+        if (!paySupplier) return [] as (PurchaseOrder & { outstanding: number })[];
+        return [...paySupplier.bills]
+            .map(po => ({ ...po, outstanding: Math.round(((po.total_amount || 0) - (po.amount_paid || 0)) * 100) / 100 }))
+            .sort((a, b) => (a.payment_due_date || a.order_date || '').localeCompare(b.payment_due_date || b.order_date || ''));
+    }, [paySupplier]);
+
+    // The books are kept in USD — a KHR amount converts at the given rate.
+    const payUsdAmount = useMemo(() => {
+        const entered = Number(payAmount) || 0;
+        if (payCurrency !== 'KHR') return entered;
+        const rate = Number(payRate);
+        return rate > 0 ? Math.round((entered / rate) * 100) / 100 : 0;
+    }, [payAmount, payCurrency, payRate]);
+
+    const appliedTotal = useMemo(
+        () => Math.round(payBills.reduce((s, po) => s + (Number(allocations[po.id]) || 0), 0) * 100) / 100,
+        [payBills, allocations]
+    );
+    const onAccount = Math.round((payUsdAmount - appliedTotal) * 100) / 100;
+
+    // Spread the entered amount across the bills, oldest due date first.
+    const fillOldestFirst = () => {
+        let remaining = payUsdAmount;
+        const next: Record<string, string> = {};
+        for (const po of payBills) {
+            const slice = Math.round(Math.min(Math.max(remaining, 0), po.outstanding) * 100) / 100;
+            next[po.id] = slice > 0 ? slice.toFixed(2) : '';
+            remaining -= slice;
+        }
+        setAllocations(next);
+    };
 
     const openPay = () => {
         setPaySupplierId('');
@@ -196,6 +232,7 @@ const SupplierPaymentsPage: React.FC = () => {
         setPayCurrency('USD');
         setPayRate('1');
         setPayNotes('');
+        setAllocations({});
         const def = purchaseSettings.defaultPaymentAccountId;
         setPayAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
         setIsPayOpen(true);
@@ -207,10 +244,16 @@ const SupplierPaymentsPage: React.FC = () => {
         if (!entered || entered <= 0) { showToast('Enter a valid amount', 'error'); return; }
         const rate = Number(payRate);
         if (payCurrency === 'KHR' && (!rate || rate <= 0)) { showToast('Enter the KHR exchange rate', 'error'); return; }
-        // The books are kept in USD — a KHR amount converts at the given rate.
-        const usd = payCurrency === 'KHR' ? Math.round((entered / rate) * 100) / 100 : entered;
-        if (usd > paySupplier.outstanding + 0.005) {
-            showToast(`Amount exceeds ${paySupplier.name}'s outstanding balance (${fmtUsd(paySupplier.outstanding)}) — unapplied credit isn't supported`, 'error');
+        const usd = payUsdAmount;
+        for (const po of payBills) {
+            if ((Number(allocations[po.id]) || 0) > po.outstanding + 0.005) {
+                showToast(`${po.invoice_number || poShortId(po.id)}: applied amount exceeds its ${fmtUsd(po.outstanding)} outstanding`, 'error');
+                return;
+            }
+        }
+        if (appliedTotal <= 0) { showToast('Apply the payment to at least one bill — use "Oldest first" to fill it automatically', 'error'); return; }
+        if (Math.abs(onAccount) > 0.005) {
+            showToast(`Applied ${fmtUsd(appliedTotal)} doesn't match the ${fmtUsd(usd)} amount — on-account credit isn't supported, so apply the full amount to bills`, 'error');
             return;
         }
         if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
@@ -222,16 +265,10 @@ const SupplierPaymentsPage: React.FC = () => {
         ].filter(Boolean).join(' · ');
         setPaySaving(true);
         try {
-            // Oldest due date first, so the payment settles what's been owed longest.
-            const bills = [...paySupplier.bills].sort((a, b) =>
-                (a.payment_due_date || a.order_date || '').localeCompare(b.payment_due_date || b.order_date || ''));
-            let remaining = usd;
-            for (const po of bills) {
-                if (remaining <= 0.005) break;
-                const out = (po.total_amount || 0) - (po.amount_paid || 0);
-                const slice = Math.round(Math.min(remaining, out) * 100) / 100;
+            for (const po of payBills) {
+                const slice = Math.round((Number(allocations[po.id]) || 0) * 100) / 100;
+                if (slice <= 0) continue;
                 await recordSupplierPayment(po.id, paySupplierId, slice, payMethod, note, payDate, undefined, payAccountId || undefined, acc?.account_name);
-                remaining -= slice;
             }
             setIsPayOpen(false);
         } catch {
@@ -394,15 +431,10 @@ const SupplierPaymentsPage: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
                         <label style={labelStyle}>Supplier <span style={{ color: '#ef4444' }}>*</span></label>
-                        <select className="d2-khmer" value={paySupplierId} onChange={e => setPaySupplierId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        <select className="d2-khmer" value={paySupplierId} onChange={e => { setPaySupplierId(e.target.value); setAllocations({}); }} style={{ ...inputStyle, cursor: 'pointer' }}>
                             <option value="">Select supplier…</option>
                             {supplierOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
-                        {paySupplier && (
-                            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                                Outstanding: {fmtUsd(paySupplier.outstanding)} across {paySupplier.bills.length} {paySupplier.bills.length === 1 ? 'bill' : 'bills'} — the payment settles the oldest bills first.
-                            </div>
-                        )}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                         <div>
@@ -453,6 +485,46 @@ const SupplierPaymentsPage: React.FC = () => {
                             <input type="number" min="0" step="any" value={payRate} onChange={e => setPayRate(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
+                    {paySupplier && (
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <label style={{ ...labelStyle, marginBottom: 0 }}>Apply to bills</label>
+                                <button
+                                    type="button"
+                                    onClick={fillOldestFirst}
+                                    title="Spread the amount across the oldest bills first"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 8px', borderRadius: '6px', border: 'none', background: 'transparent', color: '#4c5fd0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    <Zap size={13} /> Oldest first
+                                </button>
+                            </div>
+                            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                                {payBills.map(po => (
+                                    <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '10px 14px', borderBottom: '1px solid var(--color-border)' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>{poShortId(po.id)}</div>
+                                            <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {po.invoice_number || '—'} · due {String(po.payment_due_date || po.order_date || '').slice(0, 10) || '—'} · {po.outstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })} outstanding
+                                            </div>
+                                        </div>
+                                        <input
+                                            type="number" min="0" step="0.01" placeholder="0.00"
+                                            value={allocations[po.id] ?? ''}
+                                            onChange={e => setAllocations(prev => ({ ...prev, [po.id]: e.target.value }))}
+                                            style={{ ...inputStyle, width: '120px', textAlign: 'right', flexShrink: 0 }}
+                                        />
+                                    </div>
+                                ))}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--color-bg)', fontSize: '13px' }}>
+                                    <span style={{ color: 'var(--color-text-secondary)' }}>Applied <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{appliedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
+                                    {/* On-account credit has no backing in the books — it must land on 0. */}
+                                    <span style={{ color: Math.abs(onAccount) > 0.005 ? '#ef4444' : 'var(--color-text-secondary)' }}>
+                                        On account <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{onAccount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div>
                         <label style={labelStyle}>Notes</label>
                         <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} style={{ ...inputStyle, minHeight: '70px', resize: 'vertical', fontFamily: 'inherit' }} />
