@@ -1,18 +1,20 @@
 // Supplier Payments — "money paid out, and which bills it settled": a flat,
 // read-only ledger of every supplier_payments row, independent of which PO
-// each one happened to settle. Recording a payment here still requires
-// picking which outstanding bill it pays against (the same requirement
-// recordSupplierPayment has everywhere else), via a small picker step before
-// the shared RecordSupplierPaymentModal opens.
+// each one happened to settle. Recording a payment here is supplier-first:
+// pick the supplier and an amount, and the payment is applied against that
+// supplier's outstanding bills oldest-due-first (recordSupplierPayment still
+// books one payment row per bill it settles, so the ledger stays per-bill).
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useStore } from '../../context/StoreContext';
+import { useToast } from '../../context/ToastContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
-import { RecordSupplierPaymentModal } from '../../components';
 import Modal from '../../components/Modal';
-import type { SupplierPayment } from '../../types';
+import { dayKeyFromDate } from '../../utils/dateRange';
+import type { SupplierPayment, PurchaseOrder } from '../../types';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const fmtDate = (d?: string | null) => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB') : '—';
@@ -50,12 +52,21 @@ const PRINT_CSS = `
 
 const SupplierPaymentsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { purchaseSettings } = useStore();
+    const { showToast } = useToast();
     const {
         purchaseOrders, supplierPayments, isLoading,
         fetchPurchaseOrders, fetchSupplierPayments,
         recordSupplierPayment, deleteSupplierPayment,
     } = useProcurement();
-    const { journalEntries, fetchJournalEntries } = useAccounting();
+    const { journalEntries, fetchJournalEntries, accounts, fetchAccounts } = useAccounting();
+
+    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+    // Cash/bank ledger accounts for the "Paid from" select.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     useEffect(() => {
         setHeaderContent({
@@ -144,27 +155,89 @@ const SupplierPaymentsPage: React.FC = () => {
 
     const hasActiveFilters = search !== '' || statusFilter !== 'All';
 
-    // ── Record Payment: pick an outstanding bill, then the shared modal ──
+    // ── Record Payment: supplier-first form, applied oldest-bill-first ──
     const billableBills = useMemo(
         () => purchaseOrders
-            .filter(po => po.status === 'Received' && !!po.invoice_number && ((po.total_amount || 0) - (po.amount_paid || 0)) > 0.005)
-            .sort((a, b) => (b.payment_due_date || b.order_date || '').localeCompare(a.payment_due_date || a.order_date || '')),
+            .filter(po => po.status === 'Received' && !!po.invoice_number && ((po.total_amount || 0) - (po.amount_paid || 0)) > 0.005),
         [purchaseOrders]
     );
-    const [payTargetId, setPayTargetId] = useState('');
-    const [isPicking, setIsPicking] = useState(false);
-    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-    const payTarget = payTargetId ? poById.get(payTargetId) : undefined;
-    const payTargetOutstanding = payTarget ? (payTarget.total_amount || 0) - (payTarget.amount_paid || 0) : 0;
-    const closePayFlow = () => { setIsPicking(false); setIsPaymentModalOpen(false); setPayTargetId(''); };
+    const supplierOptions = useMemo(() => {
+        const bySupplier = new Map<string, { name: string; bills: PurchaseOrder[]; outstanding: number }>();
+        for (const po of billableBills) {
+            const g = bySupplier.get(po.supplier_id) || { name: po.supplier?.name || 'Unknown supplier', bills: [], outstanding: 0 };
+            g.bills.push(po);
+            g.outstanding += (po.total_amount || 0) - (po.amount_paid || 0);
+            bySupplier.set(po.supplier_id, g);
+        }
+        return [...bySupplier.entries()]
+            .map(([id, g]) => ({ id, ...g }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [billableBills]);
 
-    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; paidFromAccountId?: string; paidFromAccountName?: string; notes?: string }) => {
-        if (!payTarget) return;
+    const [isPayOpen, setIsPayOpen] = useState(false);
+    const [paySupplierId, setPaySupplierId] = useState('');
+    const [payDate, setPayDate] = useState('');
+    const [payAmount, setPayAmount] = useState('');
+    const [payAccountId, setPayAccountId] = useState('');
+    const [payMethod, setPayMethod] = useState('Bank transfer');
+    const [payReference, setPayReference] = useState('');
+    const [payCurrency, setPayCurrency] = useState<'USD' | 'KHR'>('USD');
+    const [payRate, setPayRate] = useState('1');
+    const [payNotes, setPayNotes] = useState('');
+    const [paySaving, setPaySaving] = useState(false);
+    const paySupplier = supplierOptions.find(s => s.id === paySupplierId);
+
+    const openPay = () => {
+        setPaySupplierId('');
+        setPayDate(dayKeyFromDate(new Date()));
+        setPayAmount('');
+        setPayMethod('Bank transfer');
+        setPayReference('');
+        setPayCurrency('USD');
+        setPayRate('1');
+        setPayNotes('');
+        const def = purchaseSettings.defaultPaymentAccountId;
+        setPayAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        setIsPayOpen(true);
+    };
+
+    const submitPayment = async () => {
+        if (!paySupplier) { showToast('Choose a supplier', 'error'); return; }
+        const entered = Number(payAmount);
+        if (!entered || entered <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        const rate = Number(payRate);
+        if (payCurrency === 'KHR' && (!rate || rate <= 0)) { showToast('Enter the KHR exchange rate', 'error'); return; }
+        // The books are kept in USD — a KHR amount converts at the given rate.
+        const usd = payCurrency === 'KHR' ? Math.round((entered / rate) * 100) / 100 : entered;
+        if (usd > paySupplier.outstanding + 0.005) {
+            showToast(`Amount exceeds ${paySupplier.name}'s outstanding balance (${fmtUsd(paySupplier.outstanding)}) — unapplied credit isn't supported`, 'error');
+            return;
+        }
+        if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
+        const acc = paymentAccounts.find(a => a.id === payAccountId);
+        const note = [
+            payReference.trim() ? `Ref: ${payReference.trim()}` : '',
+            payCurrency === 'KHR' ? `KHR ${entered.toLocaleString()} @ ${rate}` : '',
+            payNotes.trim(),
+        ].filter(Boolean).join(' · ');
+        setPaySaving(true);
         try {
-            await recordSupplierPayment(payTarget.id, payTarget.supplier_id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, undefined, data.paidFromAccountId, data.paidFromAccountName);
-            closePayFlow();
+            // Oldest due date first, so the payment settles what's been owed longest.
+            const bills = [...paySupplier.bills].sort((a, b) =>
+                (a.payment_due_date || a.order_date || '').localeCompare(b.payment_due_date || b.order_date || ''));
+            let remaining = usd;
+            for (const po of bills) {
+                if (remaining <= 0.005) break;
+                const out = (po.total_amount || 0) - (po.amount_paid || 0);
+                const slice = Math.round(Math.min(remaining, out) * 100) / 100;
+                await recordSupplierPayment(po.id, paySupplierId, slice, payMethod, note, payDate, undefined, payAccountId || undefined, acc?.account_name);
+                remaining -= slice;
+            }
+            setIsPayOpen(false);
         } catch {
             // toast handled in hook
+        } finally {
+            setPaySaving(false);
         }
     };
 
@@ -233,7 +306,7 @@ const SupplierPaymentsPage: React.FC = () => {
         <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
-                    onClick={() => { setPayTargetId(billableBills[0]?.id || ''); setIsPicking(true); }}
+                    onClick={openPay}
                     disabled={billableBills.length === 0}
                     title={billableBills.length === 0 ? 'No outstanding bills to pay' : undefined}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 'none', background: billableBills.length === 0 ? 'var(--color-border)' : '#4c5fd0', color: 'white', fontSize: '14px', fontWeight: 600, cursor: billableBills.length === 0 ? 'not-allowed' : 'pointer' }}
@@ -316,45 +389,84 @@ const SupplierPaymentsPage: React.FC = () => {
                 )}
             </div>
 
-            {/* Record Payment, step 1: pick which outstanding bill it's for */}
-            {isPicking && (
-                <div onClick={closePayFlow} style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-                    <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text-main)' }}>Which bill is this payment for?</h3>
-                        <label style={labelStyle}>Bill</label>
-                        <select value={payTargetId} onChange={e => setPayTargetId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            {billableBills.map(po => (
-                                <option key={po.id} value={po.id}>
-                                    {po.invoice_number} · {po.supplier?.name || '—'} · {fmtUsd((po.total_amount || 0) - (po.amount_paid || 0))} outstanding
-                                </option>
-                            ))}
+            {/* Record Payment — supplier-first form, applied oldest-bill-first */}
+            <Modal isOpen={isPayOpen} onClose={() => !paySaving && setIsPayOpen(false)} title="Record Supplier Payment" width="640px">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                        <label style={labelStyle}>Supplier <span style={{ color: '#ef4444' }}>*</span></label>
+                        <select className="d2-khmer" value={paySupplierId} onChange={e => setPaySupplierId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                            <option value="">Select supplier…</option>
+                            {supplierOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                            <button onClick={closePayFlow} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => { setIsPicking(false); setIsPaymentModalOpen(true); }}
-                                disabled={!payTargetId}
-                                style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: payTargetId ? 'pointer' : 'not-allowed', opacity: payTargetId ? 1 : 0.6 }}
-                            >
-                                Continue
-                            </button>
+                        {paySupplier && (
+                            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                Outstanding: {fmtUsd(paySupplier.outstanding)} across {paySupplier.bills.length} {paySupplier.bills.length === 1 ? 'bill' : 'bills'} — the payment settles the oldest bills first.
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div>
+                            <label style={labelStyle}>Payment date <span style={{ color: '#ef4444' }}>*</span></label>
+                            <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Amount <span style={{ color: '#ef4444' }}>*</span></label>
+                            <input type="number" min="0.01" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
+                    <div>
+                        <label style={labelStyle}>Paid from <span style={{ color: '#ef4444' }}>*</span></label>
+                        <select className="d2-khmer" value={payAccountId} onChange={e => setPayAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                            <option value="">Bank or cash account…</option>
+                            {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
+                        </select>
+                        {paymentAccounts.length === 0 && (
+                            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                                No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div>
+                            <label style={labelStyle}>Method</label>
+                            <select value={payMethod} onChange={e => setPayMethod(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                                <option value="Bank transfer">Bank transfer</option>
+                                <option value="Cash">Cash</option>
+                                <option value="Cheque">Cheque</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Reference</label>
+                            <input type="text" placeholder="Cheque or transfer no." value={payReference} onChange={e => setPayReference(e.target.value)} style={inputStyle} />
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div>
+                            <label style={labelStyle}>Currency</label>
+                            <select value={payCurrency} onChange={e => { const c = e.target.value as 'USD' | 'KHR'; setPayCurrency(c); if (c === 'USD') setPayRate('1'); }} style={{ ...inputStyle, cursor: 'pointer' }}>
+                                <option value="USD">USD</option>
+                                <option value="KHR">KHR</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Exchange rate</label>
+                            <input type="number" min="0" step="any" value={payRate} onChange={e => setPayRate(e.target.value)} style={inputStyle} />
+                        </div>
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Notes</label>
+                        <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} style={{ ...inputStyle, minHeight: '70px', resize: 'vertical', fontFamily: 'inherit' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
+                        <button onClick={() => setIsPayOpen(false)} disabled={paySaving} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
+                            Cancel
+                        </button>
+                        <button onClick={submitPayment} disabled={paySaving} style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', cursor: paySaving ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 600, opacity: paySaving ? 0.7 : 1 }}>
+                            {paySaving ? 'Saving…' : 'Record payment'}
+                        </button>
+                    </div>
                 </div>
-            )}
-
-            {/* Record Payment, step 2: the shared amount/date/method form */}
-            {isPaymentModalOpen && payTarget && (
-                <RecordSupplierPaymentModal
-                    isOpen={isPaymentModalOpen}
-                    onClose={closePayFlow}
-                    onConfirm={handleConfirmPayment}
-                    remainingBalance={payTargetOutstanding}
-                    supplierName={payTarget.supplier?.name}
-                />
-            )}
+            </Modal>
 
             {viewPayment && (
                 <Modal isOpen={!!viewPayment} onClose={() => setViewPayment(null)} title="Supplier Payment" width="420px">
