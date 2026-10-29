@@ -1,8 +1,8 @@
 // @ts-nocheck
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Filter, Download, Truck, CheckCircle2, User, CreditCard } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -24,7 +24,6 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { useClickOutside } from '../hooks/useClickOutside';
 import { useWholesale } from '../hooks/useWholesale';
 import MobileInventoryCard from '../components/MobileInventoryCard';
 import { supabase } from '../lib/supabase';
@@ -437,50 +436,11 @@ const Inventory: React.FC = () => {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     
-    // Column Filters
-    const [activeFilterColumn, setActiveFilterColumn] = useState<string | null>(null);
-    const filterMenuRef = useClickOutside<HTMLDivElement>(() => setActiveFilterColumn(null));
-    const [columnFilters, setColumnFilters] = useState({
-        categories: new Set<string>(),
-        priceMin: '',
-        priceMax: '',
-        stockMin: '',
-        stockMax: ''
-    });
+    // Filters
+    const [categoryFilter, setCategoryFilter] = useState<string>('All');
+    const [supplierFilter, setSupplierFilter] = useState<string>('All');
+    const [statusFilter, setStatusFilter] = useState<'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'>('All');
     const [sortConfig, setSortConfig] = useState<SortConfig>(null);
-
-    // Column resize state
-    const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-    const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
-
-    const handleResizeStart = useCallback((key: string, e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const th = (e.target as HTMLElement).closest('th');
-        if (!th) return;
-        const startWidth = th.getBoundingClientRect().width;
-        resizingRef.current = { key, startX: e.clientX, startWidth };
-
-        const handleMouseMove = (ev: MouseEvent) => {
-            if (!resizingRef.current) return;
-            const diff = ev.clientX - resizingRef.current.startX;
-            const newWidth = Math.max(60, resizingRef.current.startWidth + diff);
-            setColumnWidths(prev => ({ ...prev, [resizingRef.current!.key]: newWidth }));
-        };
-
-        const handleMouseUp = () => {
-            resizingRef.current = null;
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-    }, []);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -513,8 +473,6 @@ const Inventory: React.FC = () => {
     }), [categories]);
     const [formData, setFormData] = useState<ProductFormState>(initialFormState);
 
-    const allCategories = ['All', ...categories];
-
     // Mobile Expansion State
     const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set());
 
@@ -528,6 +486,13 @@ const Inventory: React.FC = () => {
         setExpandedProductIds(newExpanded);
     };
 
+    // A product's stock badge/filter bucket — shared so the two can't drift apart.
+    const getStockStatus = (p: Product): 'Out of Stock' | 'Low Stock' | 'In Stock' => {
+        if (p.stock === 0) return 'Out of Stock';
+        if (p.stock < (p.lowStockThreshold || 5)) return 'Low Stock';
+        return 'In Stock';
+    };
+
     // Derived State
     const filteredAndSortedProducts = useMemo(() => {
         let result = products.filter(product => {
@@ -537,18 +502,12 @@ const Inventory: React.FC = () => {
 
             const matchesSearch = productName.toLowerCase().includes(searchQuery) ||
                 productModel.toLowerCase().includes(searchQuery);
-            
-            const matchesCategory = columnFilters.categories.size === 0 || columnFilters.categories.has(product.category);
-            
-            const pMin = columnFilters.priceMin ? Number(columnFilters.priceMin) : -Infinity;
-            const pMax = columnFilters.priceMax ? Number(columnFilters.priceMax) : Infinity;
-            const matchesPrice = product.price >= pMin && product.price <= pMax;
 
-            const sMin = columnFilters.stockMin ? Number(columnFilters.stockMin) : -Infinity;
-            const sMax = columnFilters.stockMax ? Number(columnFilters.stockMax) : Infinity;
-            const matchesStock = product.stock >= sMin && product.stock <= sMax;
+            const matchesCategory = categoryFilter === 'All' || product.category === categoryFilter;
+            const matchesSupplier = supplierFilter === 'All' || (product.supplier || '') === supplierFilter;
+            const matchesStatus = statusFilter === 'All' || getStockStatus(product) === statusFilter;
 
-            return matchesSearch && matchesCategory && matchesPrice && matchesStock;
+            return matchesSearch && matchesCategory && matchesSupplier && matchesStatus;
         });
 
         if (sortConfig) {
@@ -580,7 +539,7 @@ const Inventory: React.FC = () => {
         }
 
         return result;
-    }, [products, searchTerm, columnFilters, sortConfig, productOrder]);
+    }, [products, searchTerm, categoryFilter, supplierFilter, statusFilter, sortConfig, productOrder]);
 
     // Every product currently has an empty SKU, and a column of "N/A" in the leading
     // position costs width and reads as missing data. Show it only once a SKU exists.
@@ -749,12 +708,6 @@ const Inventory: React.FC = () => {
         }
     };
 
-    // Render Helpers
-    const SortIcon = ({ columnKey }: { columnKey: keyof Product | 'totalValue' }) => {
-        if (sortConfig?.key !== columnKey) return <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />;
-        return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
-    };
-
     const handleExportCSV = () => {
         if (filteredAndSortedProducts.length === 0) {
             showToast('No products to export', 'error');
@@ -794,117 +747,17 @@ const Inventory: React.FC = () => {
         document.body.removeChild(link);
     };
 
-    const renderHeader = (label: string, key: keyof Product | 'totalValue', width?: string, filterable?: boolean) => {
-        const isFilterActive = activeFilterColumn === key;
-        const hasActiveFilter = (key === 'category' && columnFilters.categories.size > 0) ||
-                                (key === 'price' && (columnFilters.priceMin || columnFilters.priceMax)) ||
-                                (key === 'stock' && (columnFilters.stockMin || columnFilters.stockMax));
-
-        return (
-            <th style={{ width: columnWidths[key] ? `${columnWidths[key]}px` : width, position: 'relative', minWidth: '60px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <div onClick={() => handleSort(key)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}>
-                        {label}
-                        <SortIcon columnKey={key} />
-                    </div>
-                    {filterable && (
-                        <div style={{ position: 'relative' }} ref={isFilterActive ? (filterMenuRef as any) : null}>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveFilterColumn(activeFilterColumn === key ? null : key);
-                                }}
-                                style={{
-                                    background: 'none', border: 'none', cursor: 'pointer',
-                                    color: hasActiveFilter ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                    padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    borderRadius: '4px', backgroundColor: isFilterActive ? 'var(--color-bg)' : 'transparent'
-                                }}
-                            >
-                                <Filter size={14} />
-                            </button>
-                            {isFilterActive && (
-                                <div className="glass-panel" style={{
-                                    position: 'absolute', top: '100%', left: 0, marginTop: '8px',
-                                    padding: '12px', minWidth: '200px', zIndex: 100, display: 'flex', flexDirection: 'column', gap: '8px',
-                                    boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
-                                }}>
-                                    {key === 'category' && (
-                                        <>
-                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Filter Categories</div>
-                                            <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                {allCategories.filter(c => c !== 'All').map(cat => (
-                                                    <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={columnFilters.categories.has(cat)}
-                                                            onChange={() => {
-                                                                const newSet = new Set(columnFilters.categories);
-                                                                if (newSet.has(cat)) newSet.delete(cat);
-                                                                else newSet.add(cat);
-                                                                setColumnFilters(prev => ({ ...prev, categories: newSet }));
-                                                            }}
-                                                            style={{ cursor: 'pointer' }}
-                                                        />
-                                                        {cat}
-                                                    </label>
-                                                ))}
-                                            </div>
-                                            <button 
-                                                onClick={() => setColumnFilters(prev => ({ ...prev, categories: new Set() }))}
-                                                style={{ fontSize: '12px', color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', marginTop: '4px', padding: 0 }}
-                                            >
-                                                Clear all
-                                            </button>
-                                        </>
-                                    )}
-                                    {(key === 'price' || key === 'stock') && (
-                                        <>
-                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
-                                                Filter {key === 'price' ? 'Price' : 'Stock'}
-                                            </div>
-                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                <input
-                                                    type="number"
-                                                    placeholder="Min"
-                                                    value={key === 'price' ? columnFilters.priceMin : columnFilters.stockMin}
-                                                    onChange={(e) => setColumnFilters(prev => ({ ...prev, [key === 'price' ? 'priceMin' : 'stockMin']: e.target.value }))}
-                                                    style={{ width: '80px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--color-border)', outline: 'none' }}
-                                                />
-                                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>-</span>
-                                                <input
-                                                    type="number"
-                                                    placeholder="Max"
-                                                    value={key === 'price' ? columnFilters.priceMax : columnFilters.stockMax}
-                                                    onChange={(e) => setColumnFilters(prev => ({ ...prev, [key === 'price' ? 'priceMax' : 'stockMax']: e.target.value }))}
-                                                    style={{ width: '80px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--color-border)', outline: 'none' }}
-                                                />
-                                            </div>
-                                            <button 
-                                                onClick={() => setColumnFilters(prev => ({ ...prev, [key === 'price' ? 'priceMin' : 'stockMin']: '', [key === 'price' ? 'priceMax' : 'stockMax']: '' }))}
-                                                style={{ fontSize: '12px', color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', marginTop: '4px', padding: 0 }}
-                                            >
-                                                Clear
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-                <div
-                    onMouseDown={(e) => handleResizeStart(key, e)}
-                    style={{
-                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '5px',
-                        cursor: 'col-resize', zIndex: 31,
-                        background: 'transparent'
-                    }}
-                    onMouseEnter={(e) => { (e.target as HTMLElement).style.background = 'var(--color-primary)'; (e.target as HTMLElement).style.opacity = '0.4'; }}
-                    onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; (e.target as HTMLElement).style.opacity = '1'; }}
-                />
-            </th>
-        );
+    const filterSelectStyle: React.CSSProperties = {
+        height: '42px',
+        padding: '0 12px',
+        borderRadius: '8px',
+        border: '1px solid var(--color-border)',
+        background: 'var(--color-surface)',
+        color: 'var(--color-text-main)',
+        fontSize: '13px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        flexShrink: 0
     };
 
     return (
@@ -967,13 +820,39 @@ const Inventory: React.FC = () => {
                 )}
             </div>
 
-            {/* Simple Search Bar */}
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '24px' }}>
-                <div style={{ flex: 1, position: 'relative', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+            {/* Filters + Search Bar */}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>
+                <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    style={filterSelectStyle}
+                >
+                    <option value="All">All Categories</option>
+                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                <select
+                    value={supplierFilter}
+                    onChange={(e) => setSupplierFilter(e.target.value)}
+                    style={filterSelectStyle}
+                >
+                    <option value="All">All Suppliers</option>
+                    {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+                <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                    style={filterSelectStyle}
+                >
+                    <option value="All">All Statuses</option>
+                    <option value="In Stock">In Stock</option>
+                    <option value="Low Stock">Low Stock</option>
+                    <option value="Out of Stock">Out of Stock</option>
+                </select>
+                <div style={{ flex: 1, minWidth: '200px', position: 'relative', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                     <Search size={18} color="var(--color-text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input 
-                        type="text" 
-                        placeholder="Search products by name or SKU..." 
+                    <input
+                        type="text"
+                        placeholder="Search products by name or SKU..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         style={{ width: '100%', padding: '12px 16px 12px 44px', background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', color: '#111827' }}
@@ -1053,8 +932,9 @@ const Inventory: React.FC = () => {
                     </thead>
                     <tbody>
                         {paginatedProducts.map((product) => {
-                            const isOutOfStock = product.stock === 0;
-                            const isLowStock = product.stock > 0 && product.stock < (product.lowStockThreshold || 5);
+                            const stockStatus = getStockStatus(product);
+                            const isOutOfStock = stockStatus === 'Out of Stock';
+                            const isLowStock = stockStatus === 'Low Stock';
                             return (
                                 <tr key={product.id} style={{
                                     borderBottom: '1px solid var(--color-border)',
