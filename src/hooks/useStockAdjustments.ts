@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
-import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryNumberRef } from '../utils/journalEntryNumber';
 import type { StockAdjustment, StockAdjustmentLine, StockAdjustmentReason } from '../types';
 
 // Reasons that correct the books rather than record a real-world loss: an
@@ -188,7 +188,7 @@ async function postStockAdjustmentEntry(
         const entryNumber = await nextJournalEntryNumber('ADJ', adjustment.adjustment_date);
         const entryPayload: Record<string, unknown> = {
             date: adjustment.adjustment_date,
-            description: `Stock adjustment · ${adjustment.reason}${adjustment.notes ? ' · ' + adjustment.notes : ''}`,
+            description: `Stock adjustment ${entryNumberRef(entryNumber) || 'ADJ'}`,
             reference_id: 'ADJ-' + adjustment.id,
             status: 'Draft',
         };

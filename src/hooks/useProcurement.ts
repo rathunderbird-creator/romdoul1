@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../types';
 import { useToast } from '../context/ToastContext';
-import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryNumberRef } from '../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -142,7 +142,8 @@ export const postOpeningBalanceEntry = async (
     totalAmount: number,
     offsetAccountId: string,
     supplierName: string,
-    showToast: ToastFn
+    showToast: ToastFn,
+    invoiceNumber?: string
 ): Promise<boolean> => {
     try {
         const amount = Math.round((Number(totalAmount) || 0) * 100) / 100;
@@ -166,9 +167,11 @@ export const postOpeningBalanceEntry = async (
 
         const date = dayKeyFromDate(new Date());
         const entryNumber = await nextJournalEntryNumber('OPA', date);
+        const ref = entryNumberRef(entryNumber) || 'OPA';
+        const invoiceLabel = invoiceNumber?.trim() || 'NO-INV';
         const entryPayload: Record<string, unknown> = {
             date,
-            description: `${supplierName} · opening balance`,
+            description: `Opening AP balance ${ref} (${invoiceLabel}) — ${supplierName}`,
             reference_id: 'PO-' + poId,
             status: 'Draft',
         };
@@ -629,7 +632,8 @@ export const useProcurement = () => {
                     const cashAccId = paidFromAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
                     if (debitAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('SPP', payDate);
-                        const entryPayload: Record<string, unknown> = { date: payDate, description, reference_id: 'TX-' + txId, status: 'Draft' };
+                        const jeDescription = `Payment ${entryNumberRef(entryNumber) || 'SPP'} — ${supplier?.name || 'Supplier'}`;
+                        const entryPayload: Record<string, unknown> = { date: payDate, description: jeDescription, reference_id: 'TX-' + txId, status: 'Draft' };
                         if (entryNumber) entryPayload.entry_number = entryNumber;
                         let { data: entry, error: jeErr } = await supabase.from('journal_entries')
                             .insert([entryPayload])
