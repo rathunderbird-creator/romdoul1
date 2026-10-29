@@ -904,35 +904,52 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                     🎉 No tasks for today
                                 </div>
                             ) : (
-                                tasks.map(t => {
-                                    const done = t.status === 'completed';
+                                (() => {
                                     const today = localYMD(new Date());
-                                    const overdue = !done && !!t.due_date && t.due_date < today;
-                                    return (
-                                        <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 16px', borderBottom: '1px solid var(--color-border)' }}>
-                                            <button
-                                                onClick={() => toggleTask(t)}
-                                                title={done ? 'Mark as open' : 'Mark as done'}
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '1px', color: done ? '#10B981' : 'var(--color-text-muted)', display: 'flex', flexShrink: 0 }}
-                                            >
-                                                {done ? <CheckCircle2 size={19} /> : <Circle size={19} />}
-                                            </button>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: '13px', fontWeight: 500, color: done ? 'var(--color-text-muted)' : 'var(--color-text-main)', textDecoration: done ? 'line-through' : 'none', wordBreak: 'break-word', lineHeight: 1.4 }}>
-                                                    {t.title}
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '8px', marginTop: '3px', fontSize: '11px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                    {overdue ? (
-                                                        <span style={{ color: '#DC2626', fontWeight: 700 }}>Overdue · {t.due_date}</span>
-                                                    ) : t.due_date ? (
-                                                        <span style={{ color: 'var(--color-text-muted)' }}>{t.due_date === today ? 'Today' : t.due_date}</span>
-                                                    ) : null}
-                                                    {t.remind_at && <span style={{ color: 'var(--color-text-muted)' }}>⏰ {t.remind_at}</span>}
+                                    const renderTask = (t: HeaderTodo) => {
+                                        const done = t.status === 'completed';
+                                        const overdue = !done && !!t.due_date && t.due_date < today;
+                                        return (
+                                            <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 16px', borderBottom: '1px solid var(--color-border)' }}>
+                                                <button
+                                                    onClick={() => toggleTask(t)}
+                                                    title={done ? 'Mark as open' : 'Mark as done'}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '1px', color: done ? '#10B981' : 'var(--color-text-muted)', display: 'flex', flexShrink: 0 }}
+                                                >
+                                                    {done ? <CheckCircle2 size={19} /> : <Circle size={19} />}
+                                                </button>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '13px', fontWeight: 500, color: done ? 'var(--color-text-muted)' : 'var(--color-text-main)', textDecoration: done ? 'line-through' : 'none', wordBreak: 'break-word', lineHeight: 1.4 }}>
+                                                        {t.title}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '8px', marginTop: '3px', fontSize: '11px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        {overdue ? (
+                                                            <span style={{ color: '#DC2626', fontWeight: 700 }}>Overdue · {t.due_date}</span>
+                                                        ) : t.due_date ? (
+                                                            <span style={{ color: 'var(--color-text-muted)' }}>{t.due_date === today ? 'Today' : t.due_date}</span>
+                                                        ) : null}
+                                                        {t.remind_at && <span style={{ color: 'var(--color-text-muted)' }}>⏰ {t.remind_at}</span>}
+                                                    </div>
                                                 </div>
                                             </div>
+                                        );
+                                    };
+                                    const ongoingTasks = tasks.filter(t => t.status !== 'completed');
+                                    const completedTasks = tasks.filter(t => t.status === 'completed');
+                                    const sectionLabel = (label: string) => (
+                                        <div style={{ padding: '10px 16px 4px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                            {label}
                                         </div>
                                     );
-                                })
+                                    return (
+                                        <>
+                                            {ongoingTasks.length > 0 && sectionLabel('Ongoing')}
+                                            {ongoingTasks.map(renderTask)}
+                                            {completedTasks.length > 0 && sectionLabel('Completed')}
+                                            {completedTasks.map(renderTask)}
+                                        </>
+                                    );
+                                })()
                             )}
                         </div>
 
