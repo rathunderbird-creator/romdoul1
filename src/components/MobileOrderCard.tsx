@@ -284,9 +284,11 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                 <div className="moc-status-control">
                                     <StatusBadge
                                         status={order.shipping?.status || 'Pending'}
-                                        // Admins may reopen a ReStock order (to Drafted only).
-                                        readOnly={!canEdit || ((order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel') && !(isAdmin && order.shipping?.status === 'ReStock'))}
-                                        disabledOptions={((order.shipping?.status === 'Shipped')
+                                        unrestricted={isAdmin}
+                                        // Admins are never locked out — the store warns them (with a
+                                        // confirm) before any transition that skips the stock flow.
+                                        readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'))}
+                                        disabledOptions={isAdmin ? (canRestock ? [] : ['ReStock']) : ((order.shipping?.status === 'Shipped')
                                             ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
                                             : (order.shipping?.status === 'Delivered')
                                                 ? ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']

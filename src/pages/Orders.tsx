@@ -497,9 +497,12 @@ const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
 // would re-open the payment flow and re-run accounting on an order that is already settled.
 const canEnterPostDispatch = (order: Sale, target?: string) => {
     const cur = order.shipping?.status || 'Pending';
-    // Returned is also allowed from Delivered: real post-delivery returns, and the
-    // correction path when Delivered was selected by mistake.
-    return cur === 'Shipped' || (target === 'Returned' && cur === 'Delivered');
+    // Returned and Delivered are also allowed from each other: real post-delivery
+    // returns, and the correction path when either was selected by mistake. Stock is
+    // counted out in both states, so the flip is stock-neutral.
+    return cur === 'Shipped' ||
+        (target === 'Returned' && cur === 'Delivered') ||
+        (target === 'Delivered' && cur === 'Returned');
 };
 
 // Always-visible chip group for the mobile filter drawer (no hidden dropdowns).
@@ -3409,8 +3412,9 @@ const Orders: React.FC = () => {
                                         onUpdateStatus={(id, status) => {
                                             // Checked before any modal opens — the store rejects these
                                             // transitions anyway, and it's needless to make someone fill
-                                            // in payment details first.
-                                            if (POST_DISPATCH_STATUSES.includes(status) && !canEnterPostDispatch(order, status)) {
+                                            // in payment details first. Admins fall through: the store
+                                            // shows them a confirm and lets them force the change.
+                                            if (!isAdmin && POST_DISPATCH_STATUSES.includes(status) && !canEnterPostDispatch(order, status)) {
                                                 showToast(postDispatchMessage(order.shipping?.status || 'Pending', status), 'error');
                                                 return;
                                             }
@@ -3872,9 +3876,11 @@ const Orders: React.FC = () => {
                                                                         <StatusBadge
                                                                             status={order.shipping?.status || 'Pending'}
                                                                             bold={false}
-                                                                            // Admins may reopen a ReStock order (to Drafted only).
-                                                                            readOnly={!canEdit || ((order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel') && !(isAdmin && order.shipping?.status === 'ReStock'))}
-                                                                            disabledOptions={((order.shipping?.status === 'Shipped')
+                                                                            unrestricted={isAdmin}
+                                                                            // Admins are never locked out — the store warns them (with a
+                                                                            // confirm) before any transition that skips the stock flow.
+                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel'))}
+                                                                            disabledOptions={isAdmin ? (canRestock ? [] : ['ReStock']) : ((order.shipping?.status === 'Shipped')
                                                                                 ? ['Drafted', 'Pending', 'Confirmed', 'Cancelled', 'Shipped']
                                                                                 : (order.shipping?.status === 'Delivered')
                                                                                     // From Delivered only a return is allowed (post-delivery
@@ -3888,8 +3894,9 @@ const Orders: React.FC = () => {
                                                                             onChange={(newStatus: string) => {
                                                                                 // Backstop for the disabledOptions above, and it also covers
                                                                                 // 'Returned' — reaching it without shipping would credit
-                                                                                // stock on delete that was never deducted.
-                                                                                if (POST_DISPATCH_STATUSES.includes(newStatus) && !canEnterPostDispatch(order, newStatus)) {
+                                                                                // stock on delete that was never deducted. Admins fall
+                                                                                // through: the store confirms and lets them force it.
+                                                                                if (!isAdmin && POST_DISPATCH_STATUSES.includes(newStatus) && !canEnterPostDispatch(order, newStatus)) {
                                                                                     showToast(postDispatchMessage(order.shipping?.status || 'Pending', newStatus), 'error');
                                                                                     return;
                                                                                 }

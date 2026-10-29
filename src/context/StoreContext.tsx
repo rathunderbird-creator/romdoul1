@@ -524,13 +524,15 @@ const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(st
 // stock on deletion that was never deducted in the first place.
 const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
 
-// 'Shipped' is the valid predecessor for both. 'Returned' may additionally be entered
-// from 'Delivered' — a customer can return goods after receiving them (and it's also
-// the correction path when Delivered was picked by mistake). Stock stays consistent:
-// both states have stock counted out, and restocking only happens via the Restock
-// button. 'Delivered' itself remains reachable only from 'Shipped'.
+// 'Shipped' is the valid predecessor for both. 'Returned' and 'Delivered' may also be
+// entered from each other — a customer can return goods after receiving them, and each
+// is the correction path when the other was picked by mistake. Stock stays consistent
+// either way: both states have stock counted out (a restocked order sits at 'ReStock',
+// not 'Returned'), and restocking only happens via the Restock button.
 const canEnterPostDispatch = (currentStatus: string, targetStatus?: string) =>
-    currentStatus === 'Shipped' || (targetStatus === 'Returned' && currentStatus === 'Delivered');
+    currentStatus === 'Shipped' ||
+    (targetStatus === 'Returned' && currentStatus === 'Delivered') ||
+    (targetStatus === 'Delivered' && currentStatus === 'Returned');
 
 const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: string) =>
     `This order is "${currentStatus}" and cannot be marked ${targetStatus} directly.\n\n` +
@@ -538,6 +540,16 @@ const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: stri
     `inventory unchanged — and deleting the order later would add stock back that was ` +
     `never taken.\n\n` +
     `Set the order back to Drafted, then move it through Confirmed → Shipped.`;
+
+// Admins may force a transition the rule above rejects — but with eyes open: the
+// confirm spells out that a forced jump is a status-only change, so any stock the
+// skipped Shipped step would have counted out stays untouched.
+const ADMIN_FORCE_STATUS_MESSAGE = (currentStatus: string, targetStatus: string) =>
+    `Admin override — this order is "${currentStatus}", which normally cannot be marked ` +
+    `${targetStatus} directly (stock is counted out at the Shipped step).\n\n` +
+    `Forcing it changes the status ONLY: no stock will be deducted or restored by this ` +
+    `change.\n\n` +
+    `Change it to ${targetStatus} anyway?`;
 
 // Exported (not just the hook) so a dev-only preview harness can supply a
 // mock value directly via <StoreContext.Provider> without pulling in the
@@ -2165,8 +2177,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return;
             }
             if (!canEnterPostDispatch(currentStatus, status)) {
-                alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
-                return;
+                if (currentUser?.roleId !== 'admin') {
+                    alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
+                    return;
+                }
+                if (!confirm(ADMIN_FORCE_STATUS_MESSAGE(currentStatus, status))) return;
             }
         }
 
@@ -2460,13 +2475,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         //
         // Only an actual *change* is rejected here. Saving an edit to a delivered order
         // re-sends its current status unchanged, and treating that as a transition would
-        // make every delivered order impossible to edit.
+        // make every delivered order impossible to edit. Compared against the FRESH
+        // status read above, not the cached one — the badges run updateOrderStatus
+        // first and then this function with the same target, and the stale cache made
+        // that second call read as a brand-new transition (re-prompting an admin who
+        // had just confirmed a forced change).
         if (updates.shipping?.status && POST_DISPATCH_STATUSES.includes(updates.shipping.status)) {
-            const currentStatus = existingOrder?.shipping?.status || 'Pending';
+            const currentStatus = shippingStatusBeforeUpdate || 'Pending';
             const isRealChange = currentStatus !== updates.shipping.status;
             if (isRealChange && !canEnterPostDispatch(currentStatus, updates.shipping.status)) {
-                alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, updates.shipping.status));
-                return;
+                if (currentUser?.roleId !== 'admin') {
+                    alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, updates.shipping.status));
+                    return;
+                }
+                if (!confirm(ADMIN_FORCE_STATUS_MESSAGE(currentStatus, updates.shipping.status))) return;
             }
         }
 

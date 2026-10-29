@@ -8,9 +8,12 @@ interface StatusBadgeProps {
     readOnly?: boolean;
     disabledOptions?: string[];
     bold?: boolean;
+    // Lifts the built-in Delivered gating (admins — the store still shows them
+    // a confirm before any transition that skips the stock flow).
+    unrestricted?: boolean;
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true }) => {
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true, unrestricted = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -140,7 +143,11 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                 >
                     {options.filter(opt => opt !== 'ReStock' || status === 'ReStock' || status === 'Returned').map((opt) => {
                         const optStyle = getStatusStyle(opt);
-                        const isDisabled = (disabledOptions || []).includes(opt) || (opt === 'Delivered' && status !== 'Shipped' && status !== 'Delivered');
+                        // Delivered is reachable from Shipped, and from Returned (the
+                        // correction for a mistaken Returned — stock is counted out in
+                        // both states, so the flip is stock-neutral).
+                        const isDisabled = (disabledOptions || []).includes(opt) ||
+                            (!unrestricted && opt === 'Delivered' && !['Shipped', 'Delivered', 'Returned'].includes(status));
 
                         return (
                             <div
