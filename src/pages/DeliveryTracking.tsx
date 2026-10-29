@@ -1486,6 +1486,7 @@ const DeliveryTracking: React.FC = () => {
                                             status={order.shipping?.status || 'Pending'}
                                             onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock')}
                                             bold={false}
+                                            unrestricted={currentUser?.roleId === 'admin'}
                                         />
                                     </td>}
                                     {visibleColumns.includes('cost') && <td style={{ textAlign: 'right', width: `var(--col-delivery-cost-width, ${columnWidths.cost}px)` }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}

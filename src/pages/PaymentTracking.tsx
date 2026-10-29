@@ -36,6 +36,7 @@ const PaymentTracking: React.FC = () => {
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
+    const isAdmin = currentUser?.roleId === 'admin';
 
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
@@ -1240,12 +1241,15 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('orderStatus') && <td style={{ width: `var(--col-payment-orderStatus-width, ${columnWidths.orderStatus}px)`, padding: '8px' }}>
                                     <StatusBadge
                                         status={order.shipping?.status || 'Pending'}
-                                        readOnly={order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered'}
-                                        disabledOptions={
+                                        unrestricted={isAdmin}
+                                        // Admins are never locked out — the store warns them (with a
+                                        // confirm) before any transition that skips the stock flow.
+                                        readOnly={!isAdmin && (order.paymentStatus === 'Cancel' || order.shipping?.status === 'ReStock' || order.shipping?.status === 'Delivered')}
+                                        disabledOptions={isAdmin ? [] : (
                                             (order.shipping?.status === 'Shipped')
                                                 ? ['Drafted', 'Pending', 'Confirmed']
                                                 : ['Delivered', 'Returned']
-                                        }
+                                        )}
                                         onChange={(newStatus: string) => {
                                             // Awaited in sequence — see the Orders handlers: the second
                                             // call must observe the status the first one wrote.
@@ -1287,7 +1291,10 @@ const PaymentTracking: React.FC = () => {
                                             }
                                             updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })
                                         }}
-                                        readOnly={order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee'}
+                                        // Admins bypass the lock so they can correct mistakes (e.g.
+                                        // un-mark a wrong Paid); the store cleans up the logged
+                                        // income when leaving Paid.
+                                        readOnly={!isAdmin && (order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee')}
                                     />
                                 </td>}
                                 {visibleColumns.includes('remark') && <td style={{ width: `var(--col-payment-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}
