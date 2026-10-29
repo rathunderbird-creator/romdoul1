@@ -204,7 +204,7 @@ const PurchaseReportsPage: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ flex: isMobile ? undefined : '6 1 0', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '6 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
                     {TABS.map(({ key, label, icon: Icon }) => (
