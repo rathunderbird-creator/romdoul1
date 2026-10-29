@@ -50,6 +50,7 @@ const AccountsPayablePage: React.FC = () => {
 
     // Filters
     const [search, setSearch] = useState('');
+    const [supplierFilter, setSupplierFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState<'all' | 'overdue'>('all');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
@@ -116,9 +117,19 @@ const AccountsPayablePage: React.FC = () => {
         return { totalPayable, overdue, count: openPOs.length };
     }, [openPOs]);
 
+    // Only suppliers that actually have an open payable — a supplier with no
+    // balance would just be a dead option in the filter.
+    const payableSuppliers = useMemo(() => {
+        const ids = new Set(openPOs.map(po => po.supplier_id));
+        return suppliers
+            .filter(s => ids.has(s.id))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [openPOs, suppliers]);
+
     const filteredPayables = useMemo(() => {
         const q = search.trim().toLowerCase();
         return payables.filter(p => {
+            if (supplierFilter !== 'all' && p.po.supplier_id !== supplierFilter) return false;
             if (statusFilter === 'overdue') {
                 const od = daysOverdue(p.due_date);
                 if (od === null || od <= 0) return false;
@@ -129,10 +140,10 @@ const AccountsPayablePage: React.FC = () => {
             if (q && !(p.party.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q))) return false;
             return true;
         });
-    }, [payables, search, statusFilter, dateFrom, dateTo]);
+    }, [payables, search, supplierFilter, statusFilter, dateFrom, dateTo]);
 
-    const hasActiveFilters = !!search || statusFilter !== 'all' || !!dateFrom || !!dateTo;
-    const clearFilters = () => { setSearch(''); setStatusFilter('all'); setDateFrom(''); setDateTo(''); };
+    const hasActiveFilters = !!search || supplierFilter !== 'all' || statusFilter !== 'all' || !!dateFrom || !!dateTo;
+    const clearFilters = () => { setSearch(''); setSupplierFilter('all'); setStatusFilter('all'); setDateFrom(''); setDateTo(''); };
 
     const openPay = (po: PurchaseOrder & { outstanding: number }) => {
         setPayPO(po);
@@ -185,6 +196,10 @@ const AccountsPayablePage: React.FC = () => {
                     <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                     <input className="search-input d2-khmer" style={{ width: '100%', paddingLeft: '32px' }} placeholder="Search supplier, invoice…" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
+                <select className="search-input d2-khmer" style={{ width: 'auto', maxWidth: '220px' }} value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}>
+                    <option value="all">All Suppliers</option>
+                    {payableSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
                 <select className="search-input" style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | 'overdue')}>
                     <option value="all">All Items</option>
                     <option value="overdue">Overdue Only</option>
