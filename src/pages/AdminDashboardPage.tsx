@@ -7,9 +7,10 @@
 // fetch, since this page doesn't need FinancialDashboardPage's period picker
 // or monthly chart — just a current snapshot.
 import React, { useEffect, useMemo } from 'react';
-import { RefreshCw, BarChart3, TrendingDown, PieChart, TrendingUp, Activity, Calendar, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { RefreshCw, BarChart3, TrendingDown, PieChart, TrendingUp, Activity, Calendar, ArrowUpRight, ArrowDownRight, Package, Layers, AlertTriangle, XCircle, DollarSign } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useAccounting } from '../hooks/useAccounting';
+import { useStore } from '../context/StoreContext';
 import { useMobile } from '../hooks/useMobile';
 import type { ChartOfAccount, JournalEntry } from '../types';
 
@@ -76,6 +77,7 @@ const Operator: React.FC<{ symbol: string }> = ({ symbol }) => (
 const AdminDashboardPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
+    const { products } = useStore();
     const isMobile = useMobile();
 
     useEffect(() => {
@@ -141,6 +143,22 @@ const AdminDashboardPage: React.FC = () => {
     const netProfitMargin = revenue > 0.005 ? (netIncome / revenue) * 100 : 0;
 
     const recentEntries = useMemo(() => journalEntries.slice(0, 5), [journalEntries]);
+
+    const inventoryStats = useMemo(() => {
+        const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
+        const inventoryValue = products.reduce((sum, p) => sum + p.price * p.stock, 0);
+        const lowStock = products.filter(p => p.stock > 0 && p.stock < (p.lowStockThreshold || 5)).length;
+        const outOfStock = products.filter(p => p.stock === 0).length;
+        return { totalProducts: products.length, totalStock, inventoryValue, lowStock, outOfStock };
+    }, [products]);
+
+    // Most urgent first: out of stock, then lowest stock remaining.
+    const attentionProducts = useMemo(() => {
+        return products
+            .filter(p => p.stock === 0 || p.stock < (p.lowStockThreshold || 5))
+            .sort((a, b) => a.stock - b.stock)
+            .slice(0, 5);
+    }, [products]);
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
@@ -260,6 +278,45 @@ const AdminDashboardPage: React.FC = () => {
                             ))}
                         </div>
                     </div>
+                </div>
+
+                {/* Inventory Details */}
+                <div style={{ ...cardStyle, padding: '20px 24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                        <Package size={16} color={GREEN} />
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)' }}>Inventory Details</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: attentionProducts.length > 0 ? '20px' : 0 }}>
+                        <KpiCard label="Total Products" value={inventoryStats.totalProducts.toLocaleString()} color={BLUE} icon={Package} />
+                        <KpiCard label="Total Stock" value={inventoryStats.totalStock.toLocaleString()} color={TEAL} icon={Layers} />
+                        <KpiCard label="Low Stock" value={inventoryStats.lowStock.toLocaleString()} color={AMBER} icon={AlertTriangle} />
+                        <KpiCard label="Out of Stock" value={inventoryStats.outOfStock.toLocaleString()} color={RED} icon={XCircle} />
+                        <KpiCard label="Inventory Value" value={fmt(inventoryStats.inventoryValue)} color={PURPLE} icon={DollarSign} />
+                    </div>
+                    {attentionProducts.length > 0 && (
+                        <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                Needs Attention
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {attentionProducts.map(p => (
+                                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{p.category}</div>
+                                        </div>
+                                        <span style={{
+                                            padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, flexShrink: 0,
+                                            background: p.stock === 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                            color: p.stock === 0 ? RED : AMBER,
+                                        }}>
+                                            {p.stock === 0 ? 'Out of Stock' : `${p.stock} left`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
 
