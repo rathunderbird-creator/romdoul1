@@ -397,7 +397,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
             {/* The responsive card-grid rule the classic sections rely on. */}
             <style>{`
                 .dashboard-flex-container > * {
-                    flex: 1 1 calc(20% - 16px);
+                    flex: 1 1 calc(25% - 16px);
                     min-width: 200px;
                 }
                 @media (max-width: 768px) {
