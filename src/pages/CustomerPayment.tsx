@@ -1062,104 +1062,103 @@ const CustomerPaymentPage: React.FC = () => {
                 />
             </div>
 
-            {/* Filters */}
-            <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-                    <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                        <input
-                            type="text"
-                            placeholder="Search customer, phone, shipping co, reference..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="search-input"
-                            style={{ paddingLeft: '36px', width: '100%' }}
-                        />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Date:</span>
-                        <DateRangePicker value={dateRange} onChange={setDateRange} />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <button
-                            onClick={exportToExcel}
-                            disabled={filteredPayments.length === 0 || !showStats}
-                            className="secondary-button"
-                            style={{ ...iconButtonStyle, opacity: filteredPayments.length === 0 || !showStats ? 0.5 : 1 }}
-                            title="Export to Excel"
-                        >
-                            <Download size={18} />
-                        </button>
-                        <button
-                            onClick={refreshAll}
-                            disabled={isLoadingTransactions}
-                            className="secondary-button"
-                            style={iconButtonStyle}
-                            title="Refresh"
-                        >
-                            <RefreshCw size={18} style={{ animation: isLoadingTransactions ? 'spin 1s linear infinite' : 'none' }} />
-                        </button>
-                        {hasActiveFilters && (
-                            <button
-                                onClick={clearFilters}
-                                style={{
-                                    padding: '10px 16px', borderRadius: '8px', border: 'none',
-                                    background: '#EF4444', color: '#ffffff', cursor: 'pointer',
-                                    fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
-                                }}
-                                title="Clear Filters"
-                            >
-                                <X size={16} /> Clear
-                            </button>
-                        )}
-                    </div>
+            {/* Filters — one row on desktop: search, date, type tabs, status,
+                shipping, then the action buttons pushed to the right. Wraps
+                gracefully on narrower screens. */}
+            <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+                <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 240px', minWidth: '180px' }}>
+                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
+                    <input
+                        type="text"
+                        placeholder="Search customer, phone, shipping co, reference..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="search-input"
+                        style={{ paddingLeft: '36px', width: '100%' }}
+                    />
                 </div>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
-                        {(['All', 'Paid', 'Deposit'] as PayTypeFilter[]).map(opt => {
-                            const active = typeFilter === opt;
-                            const color = opt === 'Paid' ? '#059669' : opt === 'Deposit' ? '#7C3AED' : 'var(--color-text-main)';
-                            return (
-                                <button
-                                    key={opt}
-                                    onClick={() => setTypeFilter(opt)}
-                                    style={{
-                                        padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', flex: 1, cursor: 'pointer',
-                                        background: active ? 'var(--color-surface)' : 'transparent',
-                                        color: active ? color : 'var(--color-text-secondary)',
-                                        fontWeight: active ? 600 : 500, boxShadow: active ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
-                                    }}
-                                >
-                                    {opt === 'All' ? 'All Types' : opt}
-                                </button>
-                            );
-                        })}
-                    </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Date:</span>
+                    <DateRangePicker value={dateRange} onChange={setDateRange} />
+                </div>
 
-                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
-                        <Receipt size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} style={selectStyle}>
-                            <option value="All">All Statuses</option>
-                            <option value="Draft">Draft</option>
-                            <option value="Posted">Posted</option>
-                        </select>
-                        <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                    </div>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--color-background)', padding: '6px', borderRadius: '12px', flex: isMobile ? '1 1 100%' : 'none' }}>
+                    {(['All', 'Paid', 'Deposit'] as PayTypeFilter[]).map(opt => {
+                        const active = typeFilter === opt;
+                        const color = opt === 'Paid' ? '#059669' : opt === 'Deposit' ? '#7C3AED' : 'var(--color-text-main)';
+                        return (
+                            <button
+                                key={opt}
+                                onClick={() => setTypeFilter(opt)}
+                                style={{
+                                    padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', flex: 1, cursor: 'pointer',
+                                    background: active ? 'var(--color-surface)' : 'transparent',
+                                    color: active ? color : 'var(--color-text-secondary)',
+                                    fontWeight: active ? 600 : 500, boxShadow: active ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {opt === 'All' ? 'All Types' : opt}
+                            </button>
+                        );
+                    })}
+                </div>
 
-                    <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 200px', display: 'flex', alignItems: 'center' }}>
-                        <Truck size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                        <select value={shippingFilter} onChange={e => setShippingFilter(e.target.value)} style={selectStyle}>
-                            <option value="All">All Shipping Co</option>
-                            {/* Keep the active pick listed even when the current range has none of it. */}
-                            {(shippingFilter !== 'All' && !shippingOptions.includes(shippingFilter) ? [shippingFilter, ...shippingOptions] : shippingOptions).map(co => (
-                                <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
-                            ))}
-                        </select>
-                        <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
-                    </div>
+                <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 180px', minWidth: '150px', display: 'flex', alignItems: 'center' }}>
+                    <Receipt size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} style={selectStyle}>
+                        <option value="All">All Statuses</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Posted">Posted</option>
+                    </select>
+                    <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                </div>
+
+                <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 180px', minWidth: '150px', display: 'flex', alignItems: 'center' }}>
+                    <Truck size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                    <select value={shippingFilter} onChange={e => setShippingFilter(e.target.value)} style={selectStyle}>
+                        <option value="All">All Shipping Co</option>
+                        {/* Keep the active pick listed even when the current range has none of it. */}
+                        {(shippingFilter !== 'All' && !shippingOptions.includes(shippingFilter) ? [shippingFilter, ...shippingOptions] : shippingOptions).map(co => (
+                            <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
+                        ))}
+                    </select>
+                    <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: isMobile ? undefined : 'auto' }}>
+                    <button
+                        onClick={exportToExcel}
+                        disabled={filteredPayments.length === 0 || !showStats}
+                        className="secondary-button"
+                        style={{ ...iconButtonStyle, opacity: filteredPayments.length === 0 || !showStats ? 0.5 : 1 }}
+                        title="Export to Excel"
+                    >
+                        <Download size={18} />
+                    </button>
+                    <button
+                        onClick={refreshAll}
+                        disabled={isLoadingTransactions}
+                        className="secondary-button"
+                        style={iconButtonStyle}
+                        title="Refresh"
+                    >
+                        <RefreshCw size={18} style={{ animation: isLoadingTransactions ? 'spin 1s linear infinite' : 'none' }} />
+                    </button>
+                    {hasActiveFilters && (
+                        <button
+                            onClick={clearFilters}
+                            style={{
+                                padding: '10px 16px', borderRadius: '8px', border: 'none',
+                                background: '#EF4444', color: '#ffffff', cursor: 'pointer',
+                                fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
+                            }}
+                            title="Clear Filters"
+                        >
+                            <X size={16} /> Clear
+                        </button>
+                    )}
                 </div>
             </div>
 
