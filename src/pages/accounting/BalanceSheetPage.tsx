@@ -283,7 +283,7 @@ const BalanceSheetPage: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px', flex: isMobile ? undefined : '1 1 0', minWidth: 0 }}>
+            <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px', flex: isMobile ? undefined : '18 1 0', minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
                         <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} style={{ accentColor: BLUE, cursor: 'pointer' }} />
@@ -362,8 +362,8 @@ const BalanceSheetPage: React.FC = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ display: 'none' }} />
-                    <div style={{ display: 'none' }} />
+                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
                 </>
             )}
         </div>

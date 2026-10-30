@@ -50,7 +50,7 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ flex: isMobile ? undefined : '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div className="acct-page" style={{ flex: isMobile ? undefined : '18 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <DateRangePicker value={range} onChange={setRange} />
                 </div>
@@ -61,8 +61,8 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ display: 'none' }} />
-                    <div style={{ display: 'none' }} />
+                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
                 </>
             )}
         </div>
