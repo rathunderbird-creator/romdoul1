@@ -245,7 +245,7 @@ const GeneralLedgerPage = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)', flex: isMobile ? undefined : '17 1 0', minWidth: 0 }}>
+            <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)', flex: isMobile ? undefined : '1 1 0', minWidth: 0 }}>
                 {/* Filters */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', marginBottom: '14px', flexWrap: 'wrap' }}>
                     <div>
@@ -388,8 +388,8 @@ const GeneralLedgerPage = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ flex: '1.5 1 0' }} />
-                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ display: 'none' }} />
+                    <div style={{ display: 'none' }} />
                 </>
             )}
         </div>
