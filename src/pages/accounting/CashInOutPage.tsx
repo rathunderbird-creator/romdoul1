@@ -350,7 +350,7 @@ const CashInOutPage: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px', flex: isMobile ? undefined : '17 1 0', minWidth: 0 }}>
+            <div className="acct-page" style={{ display: 'flex', flexDirection: 'column', gap: '18px', flex: isMobile ? undefined : '1 1 0', minWidth: 0 }}>
                 {/* Filters */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
                     <div>
@@ -546,8 +546,8 @@ const CashInOutPage: React.FC = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ flex: '1.5 1 0' }} />
-                    <div style={{ flex: '1.5 1 0' }} />
+                    <div style={{ display: 'none' }} />
+                    <div style={{ display: 'none' }} />
                 </>
             )}
         </div>
