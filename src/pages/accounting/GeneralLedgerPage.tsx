@@ -5,6 +5,7 @@ import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
+import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import type { ChartOfAccount } from '../../types';
 
@@ -43,8 +44,11 @@ const GeneralLedgerPage = () => {
     // exactly as before.
     const [searchParams] = useSearchParams();
     const [accountFilter, setAccountFilter] = useState<string>(() => searchParams.get('account') || 'all');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
+    const [glDateRange, setGlDateRange] = usePersistedDateRange('general_ledger_range');
+    const dateFrom = glDateRange.start;
+    const dateTo = glDateRange.end;
+    const setDateFrom = (v: string) => setGlDateRange(r => ({ ...r, start: v }));
+    const setDateTo = (v: string) => setGlDateRange(r => ({ ...r, end: v }));
 
     useEffect(() => {
         setHeaderContent({

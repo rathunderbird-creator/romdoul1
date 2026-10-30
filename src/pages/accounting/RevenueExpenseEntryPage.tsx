@@ -12,6 +12,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../context/StoreContext';
 import { useAccounting } from '../../hooks/useAccounting';
+import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
 import type { ChartOfAccount } from '../../types';
@@ -490,8 +491,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
 
     // ── List filters: search, date range, status, origin (Auto/Manual) ──
     const [search, setSearch] = useState('');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
+    // One shared key for the Revenue and Expense modes: the two routes render
+    // this same component in place, so the live state already carries across a
+    // mode switch — a shared persisted range matches that exactly.
+    const [reDateRange, setReDateRange] = usePersistedDateRange('revenue_expense_entries_range');
+    const dateFrom = reDateRange.start;
+    const dateTo = reDateRange.end;
+    const setDateFrom = (v: string) => setReDateRange(r => ({ ...r, start: v }));
+    const setDateTo = (v: string) => setReDateRange(r => ({ ...r, end: v }));
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
     const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All');

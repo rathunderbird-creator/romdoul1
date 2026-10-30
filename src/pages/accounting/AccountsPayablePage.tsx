@@ -5,6 +5,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
+import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { Modal } from '../../components';
 import { useToast } from '../../context/ToastContext';
 import type { PurchaseOrder } from '../../types';
@@ -52,8 +53,11 @@ const AccountsPayablePage: React.FC = () => {
     const [search, setSearch] = useState('');
     const [supplierFilter, setSupplierFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState<'all' | 'overdue'>('all');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
+    const [apDateRange, setApDateRange] = usePersistedDateRange('accounts_payable_range');
+    const dateFrom = apDateRange.start;
+    const dateTo = apDateRange.end;
+    const setDateFrom = (v: string) => setApDateRange(r => ({ ...r, start: v }));
+    const setDateTo = (v: string) => setApDateRange(r => ({ ...r, end: v }));
 
     const { accounts, fetchAccounts } = useAccounting();
     const { purchaseSettings } = useStore();
