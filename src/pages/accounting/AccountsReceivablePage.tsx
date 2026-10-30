@@ -6,6 +6,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
 import { useAccounting } from '../../hooks/useAccounting';
+import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { Modal } from '../../components';
 import { supabase } from '../../lib/supabase';
 import { useMobile } from '../../hooks/useMobile';
@@ -94,8 +95,11 @@ const AccountsReceivablePage: React.FC = () => {
     const [search, setSearch] = useState('');
     const [sourceFilter, setSourceFilter] = useState<'all' | 'wholesale' | 'transfer'>('all');
     const [statusFilter, setStatusFilter] = useState<'all' | 'overdue'>('all');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
+    const [arDateRange, setArDateRange] = usePersistedDateRange('accounts_receivable_range');
+    const dateFrom = arDateRange.start;
+    const dateTo = arDateRange.end;
+    const setDateFrom = (v: string) => setArDateRange(r => ({ ...r, start: v }));
+    const setDateTo = (v: string) => setArDateRange(r => ({ ...r, end: v }));
 
     useEffect(() => {
         setHeaderContent({

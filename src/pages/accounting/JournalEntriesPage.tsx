@@ -8,6 +8,7 @@ import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
+import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../../utils/dateRange';
@@ -115,7 +116,7 @@ const JournalEntriesPage = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [dateRange, setDateRange] = usePersistedDateRange('journal_entries_range');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
     // Editing an existing draft reuses the entry modal; null = creating.
