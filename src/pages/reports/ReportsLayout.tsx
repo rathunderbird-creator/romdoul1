@@ -92,7 +92,7 @@ const ReportsLayout: React.FC = () => {
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-            <div style={{ padding: '24px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px', flex: isMobile ? undefined : '1 1 0', minWidth: 0 }}>
+            <div style={{ padding: '24px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px', flex: isMobile ? undefined : '18 1 0', minWidth: 0 }}>
                 {/* Header Area */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
                     <div>
@@ -123,8 +123,8 @@ const ReportsLayout: React.FC = () => {
                 out entirely on mobile since there's nothing in it to show. */}
             {!isMobile && (
                 <>
-                    <div style={{ display: 'none' }} />
-                    <div style={{ display: 'none' }} />
+                    <div style={{ flex: '1 1 0' }} />
+                    <div style={{ flex: '1 1 0' }} />
                 </>
             )}
         </div>
