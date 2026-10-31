@@ -77,7 +77,7 @@ const Operator: React.FC<{ symbol: string }> = ({ symbol }) => (
 const AdminDashboardPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
-    const { products } = useStore();
+    const { products, sales } = useStore();
     const isMobile = useMobile();
 
     useEffect(() => {
@@ -161,6 +161,23 @@ const AdminDashboardPage: React.FC = () => {
             .sort((a, b) => a.stock - b.stock)
             .slice(0, 5);
     }, [products]);
+
+    // Top sellers by units across Shipped/Delivered orders — the same counting
+    // rule as the Classic dashboard's Top Selling Products section.
+    const topSellingProducts = useMemo(() => {
+        const stats: Record<string, { id: string; name: string; quantity: number; revenue: number }> = {};
+        for (const sale of sales) {
+            if (sale.shipping?.status !== 'Shipped' && sale.shipping?.status !== 'Delivered') continue;
+            for (const item of sale.items) {
+                if (!stats[item.id]) stats[item.id] = { id: item.id, name: item.name, quantity: 0, revenue: 0 };
+                stats[item.id].quantity += item.quantity;
+                stats[item.id].revenue += item.price * item.quantity;
+            }
+        }
+        return Object.values(stats)
+            .sort((a, b) => b.quantity - a.quantity)
+            .slice(0, 5);
+    }, [sales]);
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
@@ -288,36 +305,67 @@ const AdminDashboardPage: React.FC = () => {
                         <Package size={16} color={GREEN} />
                         <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)' }}>Inventory Details</span>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: attentionProducts.length > 0 ? '20px' : 0 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: (topSellingProducts.length > 0 || attentionProducts.length > 0) ? '20px' : 0 }}>
                         <KpiCard label="Total Products" value={inventoryStats.totalProducts.toLocaleString()} color={BLUE} icon={Package} />
                         <KpiCard label="Total Stock" value={inventoryStats.totalStock.toLocaleString()} color={TEAL} icon={Layers} />
                         <KpiCard label="Low Stock" value={inventoryStats.lowStock.toLocaleString()} color={AMBER} icon={AlertTriangle} />
                         <KpiCard label="Out of Stock" value={inventoryStats.outOfStock.toLocaleString()} color={RED} icon={XCircle} />
                         <KpiCard label="Inventory Value" value={fmt(inventoryStats.inventoryValue)} color={PURPLE} icon={DollarSign} />
                     </div>
-                    {attentionProducts.length > 0 && (
-                        <>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                                Needs Attention
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {attentionProducts.map(p => (
-                                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
-                                        <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{p.category}</div>
-                                        </div>
-                                        <span style={{
-                                            padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, flexShrink: 0,
-                                            background: 'rgba(245, 158, 11, 0.12)',
-                                            color: AMBER,
-                                        }}>
-                                            {`${p.stock} left`}
-                                        </span>
+                    {(topSellingProducts.length > 0 || attentionProducts.length > 0) && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
+                            {topSellingProducts.length > 0 && (
+                                <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                        Top Selling Products
                                     </div>
-                                ))}
-                            </div>
-                        </>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        {topSellingProducts.map((p, i) => (
+                                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                                                    <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: `${GREEN}1f`, color: GREEN, fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{fmt(p.revenue)}</div>
+                                                    </div>
+                                                </div>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, flexShrink: 0,
+                                                    background: 'rgba(16, 185, 129, 0.12)',
+                                                    color: GREEN,
+                                                }}>
+                                                    {`${p.quantity.toLocaleString()} sold`}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {attentionProducts.length > 0 && (
+                                <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                        Needs Attention
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        {attentionProducts.map(p => (
+                                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{p.category}</div>
+                                                </div>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, flexShrink: 0,
+                                                    background: 'rgba(245, 158, 11, 0.12)',
+                                                    color: AMBER,
+                                                }}>
+                                                    {`${p.stock} left`}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
