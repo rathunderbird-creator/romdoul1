@@ -2503,6 +2503,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             !PAID_STATUSES.includes(updates.paymentStatus || '') &&
             existingOrder && PAID_STATUSES.includes(existingOrder.paymentStatus || '')
         ) {
+            // Un-marking Paid must also take back the Received amount — the badge
+            // paths pass only the status (the bulk edit passes its own amount, so
+            // the undefined check leaves it alone, same as PdFee's fee amount).
+            // Get File / Deposit keep a taken deposit visible, mirroring the bulk
+            // edit; Unpaid / Cancel reset to 0.
+            if (updates.amountReceived === undefined) {
+                const keepsDeposit = updates.paymentStatus === 'Get File' || updates.paymentStatus === 'Deposit';
+                updates.amountReceived = keepsDeposit ? (existingOrder.depositAmount || 0) : 0;
+            }
+            // The settle date belongs to the settled payment being taken back, so
+            // it goes too ('' maps to NULL in the DB write below).
+            if (updates.settleDate === undefined) {
+                updates.settleDate = '';
+            }
             const custName = existingOrder.customer?.name || 'Customer';
             // Deposit orders logged only the remainder as sales income — match that too.
             // Zero amounts are excluded: real income rows are always > 0 (the paid
