@@ -152,10 +152,12 @@ const AdminDashboardPage: React.FC = () => {
         return { totalProducts: products.length, totalStock, inventoryValue, lowStock, outOfStock };
     }, [products]);
 
-    // Most urgent first: out of stock, then lowest stock remaining.
+    // Low-stock products only (same rule as the Low Stock KPI), lowest first —
+    // out-of-stock products are excluded: they're past "attention" and already
+    // counted in their own KPI.
     const attentionProducts = useMemo(() => {
         return products
-            .filter(p => p.stock === 0 || p.stock < (p.lowStockThreshold || 5))
+            .filter(p => p.stock > 0 && p.stock < (p.lowStockThreshold || 5))
             .sort((a, b) => a.stock - b.stock)
             .slice(0, 5);
     }, [products]);
@@ -307,10 +309,10 @@ const AdminDashboardPage: React.FC = () => {
                                         </div>
                                         <span style={{
                                             padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, flexShrink: 0,
-                                            background: p.stock === 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                                            color: p.stock === 0 ? RED : AMBER,
+                                            background: 'rgba(245, 158, 11, 0.12)',
+                                            color: AMBER,
                                         }}>
-                                            {p.stock === 0 ? 'Out of Stock' : `${p.stock} left`}
+                                            {`${p.stock} left`}
                                         </span>
                                     </div>
                                 ))}
