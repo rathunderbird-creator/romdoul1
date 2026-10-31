@@ -1234,7 +1234,7 @@ const PaymentTracking: React.FC = () => {
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: getPaymentColor(order.paymentMethod) }}>{order.paymentMethod || '-'}</span>
                                     </div>
                                 </td>}
-                                {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)`, color: '#2563EB', fontWeight: 600 }}>${(order.amountReceived || order.total).toFixed(2)}</td>}
+                                {visibleColumns.includes('received') && <td style={{ textAlign: 'right', width: `var(--col-payment-received-width, ${columnWidths.received}px)`, color: '#2563EB', fontWeight: 600 }}>${(order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0)).toFixed(2)}</td>}
                                 {visibleColumns.includes('remaining') && <td style={{ color: '#059669', fontWeight: 600, textAlign: 'right', width: `var(--col-payment-remaining-width, ${columnWidths.remaining}px)` }}>
                                     ${(order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0))).toFixed(2)}
                                 </td>}
