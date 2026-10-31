@@ -3907,8 +3907,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('product_id, quantity, sale_id').in('sale_id', orderIds);
             if (itemsErr) throw itemsErr;
 
-            // Fetch customer info for all orders
-            const { data: orderDataList } = await supabase.from('sales').select('id, customer_snapshot').in('id', orderIds);
+            // Fetch customer info for all orders, plus the payment fields the
+            // leaving-Paid cleanup below needs to mirror updateOrder.
+            const { data: orderDataList } = await supabase.from('sales').select('id, customer_snapshot, payment_status, amount_received, settle_date, deposit_amount, total').in('id', orderIds);
             const orderCustomerMap: Record<string, { name: string; phone: string }> = {};
             (orderDataList || []).forEach(o => {
                 orderCustomerMap[o.id] = {
@@ -4030,6 +4031,58 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 : p
             ));
             
+            // Previously-Paid orders leaving Paid for Cancel get the same cleanup
+            // as updateOrder's leaving-Paid branch (this path bypasses updateOrder):
+            // remove the income logged when the order was marked Paid, plus any
+            // draft journal entry it posted, and take back the Received amount and
+            // settle date below. Matched the same way income is looked up there.
+            const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
+            const paidOrders = (orderDataList || []).filter(o => PAID_STATUSES.includes(o.payment_status || ''));
+            const removedTxnIds: string[] = [];
+            for (const paidOrder of paidOrders) {
+                const custName = paidOrder.customer_snapshot?.name || 'Customer';
+                // Deposit orders logged only the remainder as sales income — match
+                // that too. Zero amounts are excluded: real income rows are always
+                // > 0, and matching amount.eq.0 could only ever hit an unrelated
+                // row of the same customer.
+                const dep = Number(paidOrder.deposit_amount) || 0;
+                const received = Number(paidOrder.amount_received) || 0;
+                const total = Number(paidOrder.total) || 0;
+                const amountMatches = [received, total];
+                if (dep > 0) amountMatches.push(Math.max(0, received - dep), Math.max(0, total - dep));
+                const positiveMatches = amountMatches.filter(a => a > 0);
+                if (positiveMatches.length === 0) continue;
+                try {
+                    const { data: paidTxns } = await supabase.from('transactions')
+                        .select('id')
+                        .eq('type', 'Income')
+                        // Also match the pre-rename category so older rows still clean up.
+                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
+                        .eq('description', custName)
+                        .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
+                        .limit(1);
+                    if (paidTxns && paidTxns.length > 0) {
+                        await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
+                        removedTxnIds.push(paidTxns[0].id);
+
+                        // Also remove any Draft journal entry this payment posted.
+                        // Lines first, then the header, to satisfy the FK.
+                        const refId = 'TX-' + paidTxns[0].id;
+                        const { data: journalEntry } = await supabase.from('journal_entries')
+                            .select('id').eq('reference_id', refId).limit(1).maybeSingle();
+                        if (journalEntry) {
+                            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntry.id);
+                            await supabase.from('journal_entries').delete().eq('id', journalEntry.id);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to remove income for bulk-restocked paid order:', e);
+                }
+            }
+            if (removedTxnIds.length > 0) {
+                setTransactions(prev => prev.filter(t => !removedTxnIds.includes(t.id)));
+            }
+
             // 4. Update sales records to ReStock and Cancelled
             // DB Update — stamped as an edit, so the Last Edit column shows the
             // restock. Without the stamp a Returned order restocked today kept
@@ -4040,12 +4093,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 ...(currentUser ? { last_edited_at: now, last_edited_by: currentUser.name } : {})
             }).in('id', orderIds);
 
+            // The payment reset applies only to the previously-Paid orders — a
+            // non-paid order's Received (e.g. a kept deposit) is left alone, same
+            // as the single-order Cancel path.
+            const paidOrderIds = paidOrders.map(o => o.id);
+            if (paidOrderIds.length > 0) {
+                await supabase.from('sales').update({
+                    amount_received: 0,
+                    settle_date: null
+                }).in('id', paidOrderIds);
+            }
+
             // Local State Update
             setSales(prev => prev.map(sale =>
                 orderIds.includes(sale.id)
                 ? {
                     ...sale,
                     paymentStatus: 'Cancel',
+                    ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined } : {}),
                     lastEditedAt: currentUser ? now : sale.lastEditedAt,
                     lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
                     shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any }
