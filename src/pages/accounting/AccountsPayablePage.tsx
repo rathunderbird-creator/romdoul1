@@ -112,15 +112,6 @@ const AccountsPayablePage: React.FC = () => {
             .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
     }, [openPOs, suppliers]);
 
-    const totals = useMemo(() => {
-        const totalPayable = openPOs.reduce((s, po) => s + po.outstanding, 0);
-        const overdue = openPOs.reduce((s, po) => {
-            const od = daysOverdue(po.payment_due_date);
-            return s + (od !== null && od > 0 ? po.outstanding : 0);
-        }, 0);
-        return { totalPayable, overdue, count: openPOs.length };
-    }, [openPOs]);
-
     // Only suppliers that actually have an open payable — a supplier with no
     // balance would just be a dead option in the filter.
     const payableSuppliers = useMemo(() => {
@@ -145,6 +136,16 @@ const AccountsPayablePage: React.FC = () => {
             return true;
         });
     }, [payables, search, supplierFilter, statusFilter, dateFrom, dateTo]);
+
+    // Summary cards follow the active filters, so they total what the table shows.
+    const totals = useMemo(() => {
+        const totalPayable = filteredPayables.reduce((s, p) => s + p.balance, 0);
+        const overdue = filteredPayables.reduce((s, p) => {
+            const od = daysOverdue(p.due_date);
+            return s + (od !== null && od > 0 ? p.balance : 0);
+        }, 0);
+        return { totalPayable, overdue, count: filteredPayables.length };
+    }, [filteredPayables]);
 
     const hasActiveFilters = !!search || supplierFilter !== 'all' || statusFilter !== 'all' || !!dateFrom || !!dateTo;
     const clearFilters = () => { setSearch(''); setSupplierFilter('all'); setStatusFilter('all'); setDateFrom(''); setDateTo(''); };
