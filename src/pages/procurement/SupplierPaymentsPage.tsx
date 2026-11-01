@@ -11,6 +11,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
+import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
 import { dayKeyFromDate } from '../../utils/dateRange';
@@ -136,6 +137,24 @@ const SupplierPaymentsPage: React.FC = () => {
 
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'All' | PayStatus>('All');
+    const [supplierFilter, setSupplierFilter] = useState('all');
+    const [spDateRange, setSpDateRange] = usePersistedDateRange('supplier_payments_range');
+    const dateFrom = spDateRange.start;
+    const dateTo = spDateRange.end;
+    const setDateFrom = (v: string) => setSpDateRange(r => ({ ...r, start: v }));
+    const setDateTo = (v: string) => setSpDateRange(r => ({ ...r, end: v }));
+
+    // Only suppliers that actually have a payment — anyone else would just
+    // be a dead option in the filter.
+    const paymentSuppliers = useMemo(() => {
+        const byId = new Map<string, string>();
+        for (const p of supplierPayments) {
+            if (p.supplier_id && !byId.has(p.supplier_id)) byId.set(p.supplier_id, p.supplier?.name || 'Unknown supplier');
+        }
+        return [...byId.entries()]
+            .map(([id, name]) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [supplierPayments]);
 
     const filteredPayments = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -145,15 +164,35 @@ const SupplierPaymentsPage: React.FC = () => {
                 return (paymentStatus.get(p.id) || 'Draft') === statusFilter;
             })
             .filter(p => {
+                if (supplierFilter !== 'all' && p.supplier_id !== supplierFilter) return false;
+                const d = String(p.payment_date || '').slice(0, 10);
+                if (dateFrom && d < dateFrom) return false;
+                if (dateTo && d > dateTo) return false;
+                return true;
+            })
+            .filter(p => {
                 if (!q) return true;
                 const ref = (referenceOf.get(p.id) || '').toLowerCase();
                 const supplierName = (p.supplier?.name || '').toLowerCase();
                 return ref.includes(q) || supplierName.includes(q);
             })
             .sort((a, b) => (b.payment_date || '').localeCompare(a.payment_date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
-    }, [supplierPayments, search, statusFilter, paymentStatus, referenceOf]);
+    }, [supplierPayments, search, statusFilter, supplierFilter, dateFrom, dateTo, paymentStatus, referenceOf]);
 
-    const hasActiveFilters = search !== '' || statusFilter !== 'All';
+    const hasActiveFilters = search !== '' || statusFilter !== 'All' || supplierFilter !== 'all' || !!dateFrom || !!dateTo;
+    const clearFilters = () => { setSearch(''); setStatusFilter('All'); setSupplierFilter('all'); setDateFrom(''); setDateTo(''); };
+
+    // Summary cards follow the active filters, so they total what the table shows.
+    const totals = useMemo(() => {
+        let paid = 0, posted = 0, draft = 0, postedCount = 0, draftCount = 0;
+        for (const p of filteredPayments) {
+            const amt = p.amount || 0;
+            paid += amt;
+            if ((paymentStatus.get(p.id) || 'Draft') === 'Posted') { posted += amt; postedCount++; }
+            else { draft += amt; draftCount++; }
+        }
+        return { paid, posted, draft, count: filteredPayments.length, postedCount, draftCount };
+    }, [filteredPayments, paymentStatus]);
 
     // ── Record Payment: supplier-first form, applied oldest-bill-first ──
     const billableBills = useMemo(
@@ -352,22 +391,38 @@ const SupplierPaymentsPage: React.FC = () => {
                 </button>
             </div>
 
+            {/* Summary — same flat cards as the financial statements, totalling what the table shows */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
+                <SummaryCard color="#4c5fd0" label="Total Paid" value={fmtUsd(totals.paid)} sub={`${totals.count} payment${totals.count === 1 ? '' : 's'}`} />
+                <SummaryCard color="#10B981" label="Posted" value={fmtUsd(totals.posted)} sub={`${totals.postedCount} payment${totals.postedCount === 1 ? '' : 's'}`} />
+                <SummaryCard color="#D97706" label="Draft" value={fmtUsd(totals.draft)} sub={`${totals.draftCount} payment${totals.draftCount === 1 ? '' : 's'}`} />
+            </div>
+
             {/* Filters */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '340px' }}>
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input type="text" placeholder="Search reference or supplier…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
                 </div>
+                <select className="d2-khmer" value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '150px', maxWidth: '220px', cursor: 'pointer' }}>
+                    <option value="all">All suppliers</option>
+                    {paymentSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | PayStatus)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', cursor: 'pointer' }}>
                     <option value="All">All statuses</option>
                     <option value="Posted">Posted</option>
                     <option value="Draft">Draft</option>
                 </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+                </div>
                 <button onClick={() => { fetchSupplierPayments(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
-                    <button onClick={() => { setSearch(''); setStatusFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
+                    <button onClick={clearFilters} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
                         Clear
                     </button>
                 )}
@@ -573,5 +628,14 @@ const SupplierPaymentsPage: React.FC = () => {
         </div>
     );
 };
+
+// The flat card + big colored total used across the financial statements.
+const SummaryCard: React.FC<{ color: string; label: string; value: string; sub?: string }> = ({ color, label, value, sub }) => (
+    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '16px 20px' }}>
+        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: '26px', fontWeight: 800, color, marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        {sub && <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{sub}</div>}
+    </div>
+);
 
 export default SupplierPaymentsPage;
