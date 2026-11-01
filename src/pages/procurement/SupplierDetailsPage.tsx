@@ -41,6 +41,7 @@ const SupplierDetailsPage = () => {
     const isMobile = useMobile();
     const [dateStart, setDateStart] = useState('');
     const [dateEnd, setDateEnd] = useState('');
+    const [typeFilter, setTypeFilter] = useState<'All' | LedgerEntry['type']>('All');
 
     useEffect(() => {
         if (!supplier) {
@@ -188,14 +189,15 @@ const SupplierDetailsPage = () => {
         return finalizedLedger.reverse();
     }, [purchaseOrders, payments]);
 
-    // Filter by date range
+    // Filter by date range and entry type
     const filteredLedger = useMemo(() => {
         return ledger.filter(entry => {
+            if (typeFilter !== 'All' && entry.type !== typeFilter) return false;
             if (dateStart && entry.date < dateStart) return false;
             if (dateEnd && entry.date > dateEnd) return false;
             return true;
         });
-    }, [ledger, dateStart, dateEnd]);
+    }, [ledger, dateStart, dateEnd, typeFilter]);
 
     const stats = useMemo(() => {
         const totalDebt = ledger.reduce((sum, entry) => sum + entry.debt, 0);
@@ -360,9 +362,19 @@ const SupplierDetailsPage = () => {
                     className="input-field"
                     style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)', flex: isMobile ? 1 : undefined, minWidth: 0 }}
                 />
-                {(dateStart || dateEnd) && (
-                    <button 
-                        onClick={() => { setDateStart(''); setDateEnd(''); }}
+                <select
+                    className="d2-khmer"
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value as 'All' | LedgerEntry['type'])}
+                    style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer', flex: isMobile ? 1 : undefined, minWidth: 0 }}
+                >
+                    <option value="All">All types</option>
+                    <option value="Invoice">ជំពាក់ (Invoice)</option>
+                    <option value="Payment">សង (Payment)</option>
+                </select>
+                {(dateStart || dateEnd || typeFilter !== 'All') && (
+                    <button
+                        onClick={() => { setDateStart(''); setDateEnd(''); setTypeFilter('All'); }}
                         style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}
                     >
                         Clear
