@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../types';
 import { useToast } from '../context/ToastContext';
-import { nextJournalEntryNumber, entryNumberRef } from '../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -87,15 +87,14 @@ export const postPurchaseReceiptEntry = async (
         }
         const date = dayKeyFromDate(new Date());
         const entryNumber = await nextJournalEntryNumber('GRN', date);
-        // 'Stock received — GRN-20261102-001'. The supplier and PO stay
-        // reachable through reference_id; instances without the entry_number
-        // migration keep the older supplier · PO text, which still carries
-        // that context.
+        // 'Purchase - GRN-20261102-001 -- HOT GAME' (the unified area format);
+        // the PO stays reachable through reference_id. Instances without the
+        // entry_number migration keep the older supplier · PO text, which
+        // still carries that context.
         const entryPayload: Record<string, unknown> = {
             date,
-            description: entryNumber
-                ? `Stock received — ${entryNumberRef(entryNumber)}`
-                : `${supplierName} · PO-${poId.slice(0, 8).toUpperCase()} received`,
+            description: entryDescription(entryNumber, supplierName)
+                || `${supplierName} · PO-${poId.slice(0, 8).toUpperCase()} received`,
             reference_id: 'PO-' + poId,
             status: 'Draft',
         };
@@ -173,11 +172,11 @@ export const postOpeningBalanceEntry = async (
 
         const date = dayKeyFromDate(new Date());
         const entryNumber = await nextJournalEntryNumber('OPA', date);
-        const ref = entryNumberRef(entryNumber) || 'OPA';
         const invoiceLabel = invoiceNumber?.trim() || 'NO-INV';
         const entryPayload: Record<string, unknown> = {
             date,
-            description: `Opening AP balance ${ref} (${invoiceLabel}) — ${supplierName}`,
+            description: entryDescription(entryNumber, `${supplierName} (${invoiceLabel})`)
+                || `Opening AP balance OPA (${invoiceLabel}) — ${supplierName}`,
             reference_id: 'PO-' + poId,
             status: 'Draft',
         };
@@ -638,7 +637,8 @@ export const useProcurement = () => {
                     const cashAccId = paidFromAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
                     if (debitAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('SPP', payDate);
-                        const jeDescription = `Payment ${entryNumberRef(entryNumber) || 'SPP'} — ${supplier?.name || 'Supplier'}`;
+                        const jeDescription = entryDescription(entryNumber, supplier?.name || 'Supplier')
+                            || `Payment SPP — ${supplier?.name || 'Supplier'}`;
                         const entryPayload: Record<string, unknown> = { date: payDate, description: jeDescription, reference_id: 'TX-' + txId, status: 'Draft' };
                         if (entryNumber) entryPayload.entry_number = entryNumber;
                         let { data: entry, error: jeErr } = await supabase.from('journal_entries')
