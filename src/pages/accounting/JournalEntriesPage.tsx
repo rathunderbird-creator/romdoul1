@@ -11,6 +11,7 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, entryDescription, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
+import { pickCashBankAccount } from '../../utils/cashBankAccounts';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 // Brings the .pip-resize-handle grip styling the shared hook's handles rely on.
 import '../pageIncomePrediction/pageIncomePrediction.css';
@@ -174,15 +175,10 @@ const JournalEntriesPage = () => {
                 || byCode('5000') || byName(/cost of goods|cogs|purchas/i, 'Expense') || byCode('1300') || byName(/inventory/i, 'Asset');
             const salesRevenue = byCode('4000') || byName(/sales revenue/i, 'Revenue') || pool.find(a => a.account_type === 'Revenue');
             const payrollExp = byName(/payroll|salary/i, 'Expense') || byCode('6000') || pool.find(a => a.account_type === 'Expense');
-            const cashFor = (payBy: string) => {
-                const assets = pool.filter(a => a.account_type === 'Asset');
-                const p = payBy.toLowerCase();
-                const find = (re: RegExp) => assets.find(a => re.test(a.account_name.toLowerCase()));
-                if (p.includes('aba')) return find(/aba/) || find(/bank/);
-                if (p.includes('acleda')) return find(/acleda/) || find(/bank/);
-                if (/bank|transfer|card|cheque/.test(p)) return find(/bank/) || find(/cash/);
-                return find(/cash on hand/) || find(/cash/) || assets[0];
-            };
+            // Shared method-aware matcher — same resolution the live posting
+            // flows use, so an import lands in the same account a direct post
+            // would have.
+            const cashFor = (payBy: string) => pickCashBankAccount(pool, payBy);
 
             const candidates: ImportCandidate[] = [];
             let skipped = 0;

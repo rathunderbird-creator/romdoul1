@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer, CustomerPayment } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
+import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -581,7 +582,7 @@ export const useWholesale = () => {
                     const revenueAcc = pool.find(a => a.account_code === '4000')
                         || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
                         || pool.find(a => a.account_type === 'Revenue');
-                    const cashAccId = receivedInAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+                    const cashAccId = receivedInAccountId || pickCashBankAccount(pool, receivedInAccountName || paymentMethod)?.id;
                     if (revenueAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('WSP', payDate);
                         const entryPayload: Record<string, unknown> = {
