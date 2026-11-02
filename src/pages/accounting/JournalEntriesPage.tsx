@@ -11,6 +11,9 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, entryDescription, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
+import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
+// Brings the .pip-resize-handle grip styling the shared hook's handles rely on.
+import '../pageIncomePrediction/pageIncomePrediction.css';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { JournalEntry, JournalEntryLine } from '../../types';
 
@@ -286,6 +289,12 @@ const JournalEntriesPage = () => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkUnposting, setIsBulkUnposting] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    // Resizable list columns — same drag pattern (and localStorage persistence)
+    // as the prediction tables'. The select-all checkbox column stays fixed.
+    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('je_list', {
+        date: 110, reference: 200, description: 340, debits: 110, credits: 110, status: 160, actions: 180,
+    });
 
     // Delete a Draft entry (anyone), or an already-Posted one (admin only —
     // same gate as Unpost, since it changes finalized books). Edit/Post stay
@@ -881,7 +890,7 @@ const JournalEntriesPage = () => {
                     )
                 ) : (
                 <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '860px' }}>
+                <table style={{ width: totalWidth + 32, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <th style={{ padding: '14px 8px 14px 20px', width: '32px' }}>
@@ -895,13 +904,13 @@ const JournalEntriesPage = () => {
                                     style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                 />
                             </th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Date</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Reference</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Description</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Debits</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Credits</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Status</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Actions</th>
+                            <th style={{ ...widthStyle('date'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Date{resizeHandle('date')}</th>
+                            <th style={{ ...widthStyle('reference'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Reference{resizeHandle('reference')}</th>
+                            <th style={{ ...widthStyle('description'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Description{resizeHandle('description')}</th>
+                            <th style={{ ...widthStyle('debits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Debits{resizeHandle('debits')}</th>
+                            <th style={{ ...widthStyle('credits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Credits{resizeHandle('credits')}</th>
+                            <th style={{ ...widthStyle('status'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Status{resizeHandle('status')}</th>
+                            <th style={{ ...widthStyle('actions'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Actions{resizeHandle('actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -927,28 +936,28 @@ const JournalEntriesPage = () => {
                                                 style={{ cursor: busy ? 'not-allowed' : 'pointer' }}
                                             />
                                         </td>
-                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                                        <td style={{ ...widthStyle('date'), padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {fmtDate(entry.date)}
                                         </td>
-                                        <td style={{ padding: '14px 20px', color: 'var(--color-text-secondary)', fontSize: '12px', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
+                                        <td style={{ ...widthStyle('reference'), padding: '14px 20px', color: 'var(--color-text-secondary)', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={displayIdOf(entry)}>
                                             {displayIdOf(entry)}
                                         </td>
-                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-main)', fontWeight: '500', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.description || ''}>
+                                        <td className="d2-khmer" style={{ ...widthStyle('description'), padding: '14px 20px', color: 'var(--color-text-main)', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.description || ''}>
                                             {entry.description || 'No Description'}
                                         </td>
-                                        <td style={{ padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                                        <td style={{ ...widthStyle('debits'), padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             {fmtUsd(t.debit)}
                                         </td>
-                                        <td style={{ padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                                        <td style={{ ...widthStyle('credits'), padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             {fmtUsd(t.credit)}
                                         </td>
-                                        <td style={{ padding: '14px 20px' }}>
+                                        <td style={{ ...widthStyle('status'), padding: '14px 20px', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                                 {statusChip(entry.status || 'Posted')}
                                                 {originChip(isSystemEntry(entry))}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                                        <td style={{ ...widthStyle('actions'), padding: '10px 14px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                                                 <ActionBtn icon={Eye} label="View" onClick={() => setViewEntry(entry)} />
                                                 <ActionBtn icon={Printer} label="Print" onClick={() => printEntry(entry)} />
