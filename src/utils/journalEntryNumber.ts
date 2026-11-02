@@ -64,16 +64,19 @@ export function entryNumberRef(entryNumber: string | null | undefined): string |
 
 // The unified description format for auto-posted entries that have a
 // counterparty: '{Area} - {REF} — {Name}', e.g.
-//   'Purchase - SPP-20261024-001 — HOT GAME'
+//   'Payment - SPP-20261024-001 — HOT GAME'
+//   'Purchase - GRN-20260912-001 — HOT GAME'
 //   'Wholesale - WSP-20261024-002 — Meng Sethy'
 //   'Retail - RCP-20261024-003 — Sok Dara'
+// SPP entries settle a bill, so they read Payment — the purchase itself is
+// the receive entry's (GRN/PUR) label.
 // The area comes from the entry_number's type code, so every caller labels
 // consistently. Returns null when there is no entry number to echo or the
 // type has no business area (ADJ/MAN/PAY/REV/EXP keep their own text) —
 // callers then fall back to their older format, which still carries the
 // context on instances without the entry_number migration.
 const AREA_BY_TYPE: Record<string, string> = {
-    SPP: 'Purchase', GRN: 'Purchase', PUR: 'Purchase', OPA: 'Purchase',
+    SPP: 'Payment', GRN: 'Purchase', PUR: 'Purchase', OPA: 'Purchase',
     WSP: 'Wholesale',
     RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
 };
