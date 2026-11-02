@@ -1090,7 +1090,7 @@ const JournalEntriesPage = () => {
             </Modal>
 
             {/* View entry */}
-            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title="Journal Entry">
+            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title="Journal Entry" width="820px">
                 {viewEntry && (() => {
                     const t = entryTotals(viewEntry);
                     return (
