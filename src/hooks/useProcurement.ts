@@ -87,7 +87,7 @@ export const postPurchaseReceiptEntry = async (
         }
         const date = dayKeyFromDate(new Date());
         const entryNumber = await nextJournalEntryNumber('GRN', date);
-        // 'Purchase - GRN-20261102-001 -- HOT GAME' (the unified area format);
+        // 'Purchase - GRN-20261102-001 — HOT GAME' (the unified area format);
         // the PO stays reachable through reference_id. Instances without the
         // entry_number migration keep the older supplier · PO text, which
         // still carries that context.
