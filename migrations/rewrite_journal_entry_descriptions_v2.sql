@@ -1,7 +1,7 @@
 -- One-time DATA fix (no schema change): rewrite existing journal entry
 -- descriptions into the unified area format new entries now get:
 --   '{Area} - {REF} — {Name}'
---   Purchase  - SPP-20261024-001 — HOT GAME        (supplier payments)
+--   Payment   - SPP-20261024-001 — HOT GAME        (supplier payments)
 --   Purchase  - GRN-20260912-001 — HOT GAME        (stock received; legacy PUR too)
 --   Purchase  - OPA-20261026-005 — Hot Game (SA00875)  (AP opening balances)
 --   Wholesale - WSP-20261024-002 — Meng Sethy      (receipts and COGS entries)
@@ -16,11 +16,12 @@
 -- harmless: its guards skip rows this one rewrote). Not folded into
 -- full_schema.sql: this is a data backfill, not schema.
 
--- 1) Supplier payments (SPP): the supplier is the part of the linked
---    transaction's description before the first ' · ' separator
---    ('{Supplier} · PO-XXXXXXXX #SPP-xxxxxxxx').
+-- 1) Supplier payments (SPP): labeled Payment — they settle a bill, the
+--    purchase itself is the receive entry's label. The supplier is the part
+--    of the linked transaction's description before the first ' · '
+--    separator ('{Supplier} · PO-XXXXXXXX #SPP-xxxxxxxx').
 UPDATE journal_entries je
-SET description = 'Purchase - '
+SET description = 'Payment - '
     || regexp_replace(je.entry_number, '^JE-\d+-', '')
     || ' — '
     || COALESCE(NULLIF(trim(split_part(t.description, ' · ', 1)), ''), 'Supplier')
@@ -112,3 +113,10 @@ UPDATE journal_entries
 SET description = replace(description, ' -- ', ' — ')
 WHERE entry_number IS NOT NULL
   AND description LIKE '% -- %';
+
+-- 9) SPP entries rewritten by earlier revisions were labeled 'Purchase - ';
+--    the label settled on 'Payment - ' (see 1). Scoped to SPP numbers.
+UPDATE journal_entries
+SET description = 'Payment - ' || substr(description, length('Purchase - ') + 1)
+WHERE entry_number ~ '^JE-\d+-SPP-'
+  AND description LIKE 'Purchase - SPP-%';
