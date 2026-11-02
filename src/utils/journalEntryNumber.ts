@@ -61,3 +61,25 @@ export function entryNumberRef(entryNumber: string | null | undefined): string |
     if (!entryNumber) return null;
     return entryNumber.replace(/^JE-\d+-/, '');
 }
+
+// The unified description format for auto-posted entries that have a
+// counterparty: '{Area} - {REF} -- {Name}', e.g.
+//   'Purchase - SPP-20261024-001 -- HOT GAME'
+//   'Wholesale - WSP-20261024-002 -- Meng Sethy'
+//   'Retail - RCP-20261024-003 -- Sok Dara'
+// The area comes from the entry_number's type code, so every caller labels
+// consistently. Returns null when there is no entry number to echo or the
+// type has no business area (ADJ/MAN/PAY/REV/EXP keep their own text) —
+// callers then fall back to their older format, which still carries the
+// context on instances without the entry_number migration.
+const AREA_BY_TYPE: Record<string, string> = {
+    SPP: 'Purchase', GRN: 'Purchase', PUR: 'Purchase', OPA: 'Purchase',
+    WSP: 'Wholesale',
+    RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
+};
+export function entryDescription(entryNumber: string | null | undefined, name: string): string | null {
+    const ref = entryNumberRef(entryNumber);
+    if (!ref) return null;
+    const area = AREA_BY_TYPE[ref.split('-')[0]];
+    return area ? `${area} - ${ref} -- ${name}` : null;
+}

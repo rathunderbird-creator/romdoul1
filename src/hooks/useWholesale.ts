@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer, CustomerPayment } from '../types';
 import { useToast } from '../context/ToastContext';
-import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -52,7 +52,8 @@ const postWholesaleCogsEntry = async (
         const entryNumber = await nextJournalEntryNumber('WSP', date);
         const entryPayload: Record<string, unknown> = {
             date,
-            description: `${label} · cost of goods sold`,
+            description: entryDescription(entryNumber, `${label} · COGS`)
+                || `${label} · cost of goods sold`,
             reference_id: reference,
             status: 'Draft',
         };
@@ -583,7 +584,15 @@ export const useWholesale = () => {
                     const cashAccId = receivedInAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
                     if (revenueAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('WSP', payDate);
-                        const entryPayload: Record<string, unknown> = { date: payDate, description, reference_id: 'TX-' + txId, status: 'Draft' };
+                        const entryPayload: Record<string, unknown> = {
+                            date: payDate,
+                            // The Income & Expense row keeps the fuller
+                            // 'Customer · INV #WSP-…' text; the ledger entry
+                            // uses the unified area format.
+                            description: entryDescription(entryNumber, order.customer_name || 'Wholesale') || description,
+                            reference_id: 'TX-' + txId,
+                            status: 'Draft'
+                        };
                         if (entryNumber) entryPayload.entry_number = entryNumber;
                         let { data: entry, error: jeErr } = await supabase.from('journal_entries')
                             .insert([entryPayload])

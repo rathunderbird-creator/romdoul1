@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, useRef, type R
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
-import { nextJournalEntryNumber } from '../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -155,7 +155,12 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
         const cogs = await retailCogsLines(orderId, pool);
         if (!cogs) return;
         const entryNumber = await nextJournalEntryNumber('RCP', date);
-        const entryPayload: Record<string, unknown> = { date, description, reference_id: reference, status };
+        const entryPayload: Record<string, unknown> = {
+            date,
+            description: entryDescription(entryNumber, description) || description,
+            reference_id: reference,
+            status
+        };
         if (entryNumber) entryPayload.entry_number = entryNumber;
         let entry: { id: string } | null | undefined;
         let jeErr: { message?: string } | null | undefined;
@@ -216,7 +221,12 @@ async function postDeliveryFeeToLedger({
             return false;
         }
         const entryNumber = await nextJournalEntryNumber('DLV', date);
-        const entryPayload: Record<string, unknown> = { date, description, reference_id: 'TX-' + txId, status: 'Posted' };
+        const entryPayload: Record<string, unknown> = {
+            date,
+            description: entryDescription(entryNumber, description) || description,
+            reference_id: 'TX-' + txId,
+            status: 'Posted'
+        };
         if (entryNumber) entryPayload.entry_number = entryNumber;
         let entry: { id: string } | null | undefined;
         let jeErr: { message?: string } | null | undefined;
@@ -295,7 +305,12 @@ export async function postRetailSaleToLedger({
         const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId);
         if (revenueAcc && cashAccId) {
             const entryNumber = await nextJournalEntryNumber(type, date);
-            const entryPayload: Record<string, unknown> = { date, description, reference_id: 'TX-' + txId, status };
+            const entryPayload: Record<string, unknown> = {
+                date,
+                description: entryDescription(entryNumber, description) || description,
+                reference_id: 'TX-' + txId,
+                status
+            };
             if (entryNumber) entryPayload.entry_number = entryNumber;
             if (reference !== undefined) entryPayload.reference = reference;
             if (notes !== undefined) entryPayload.notes = notes;
@@ -438,7 +453,13 @@ export async function postOrFinalizeTransactionReceipt({
         // missing independently — strip only the column(s) the error actually
         // names and retry, so one missing column never also drops another,
         // still-valid one.
-        const attemptPayload: Record<string, unknown> = { date, description, status: 'Posted' };
+        const attemptPayload: Record<string, unknown> = {
+            date,
+            // Keep the entry's existing number in the rebuilt description —
+            // the caller only hands over the counterparty name.
+            description: entryDescription((existing as { entry_number?: string }).entry_number, description) || description,
+            status: 'Posted'
+        };
         if (reference !== undefined) attemptPayload.reference = reference;
         if (notes !== undefined) attemptPayload.notes = notes;
         let updErr: { message?: string } | null | undefined;

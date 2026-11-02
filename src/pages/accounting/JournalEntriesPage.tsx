@@ -10,7 +10,7 @@ import DateRangePicker from '../../components/DateRangePicker';
 import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
-import { nextJournalEntryNumber, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryDescription, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { JournalEntry, JournalEntryLine } from '../../types';
 
@@ -229,7 +229,16 @@ const JournalEntriesPage = () => {
         try {
             for (const c of importPreview.candidates) {
                 const entryNumber = await nextJournalEntryNumber(typeCodeForSource(c.source), c.date);
-                const payload: Record<string, unknown> = { date: c.date, description: c.description, reference_id: 'TX-' + c.txId, status: 'Draft' };
+                // Supplier/wholesale candidates lead with the counterparty
+                // ('{Name} · PO-… #SPP-…'); the unified format echoes just that
+                // name. Payroll (no business area) keeps the fuller text.
+                const counterparty = c.description.split(' · ')[0].trim();
+                const payload: Record<string, unknown> = {
+                    date: c.date,
+                    description: entryDescription(entryNumber, counterparty) || c.description,
+                    reference_id: 'TX-' + c.txId,
+                    status: 'Draft'
+                };
                 if (entryNumber) payload.entry_number = entryNumber;
                 let { data: entry, error } = await supabase.from('journal_entries').insert([payload]).select().single();
                 // entry_number arrives with migrations/add_journal_entry_number.sql;
