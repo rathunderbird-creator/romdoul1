@@ -63,10 +63,10 @@ export function entryNumberRef(entryNumber: string | null | undefined): string |
 }
 
 // The unified description format for auto-posted entries that have a
-// counterparty: '{Area} - {REF} -- {Name}', e.g.
-//   'Purchase - SPP-20261024-001 -- HOT GAME'
-//   'Wholesale - WSP-20261024-002 -- Meng Sethy'
-//   'Retail - RCP-20261024-003 -- Sok Dara'
+// counterparty: '{Area} - {REF} — {Name}', e.g.
+//   'Purchase - SPP-20261024-001 — HOT GAME'
+//   'Wholesale - WSP-20261024-002 — Meng Sethy'
+//   'Retail - RCP-20261024-003 — Sok Dara'
 // The area comes from the entry_number's type code, so every caller labels
 // consistently. Returns null when there is no entry number to echo or the
 // type has no business area (ADJ/MAN/PAY/REV/EXP keep their own text) —
@@ -81,5 +81,5 @@ export function entryDescription(entryNumber: string | null | undefined, name: s
     const ref = entryNumberRef(entryNumber);
     if (!ref) return null;
     const area = AREA_BY_TYPE[ref.split('-')[0]];
-    return area ? `${area} - ${ref} -- ${name}` : null;
+    return area ? `${area} - ${ref} — ${name}` : null;
 }
