@@ -8,12 +8,18 @@
 //
 // `payBy` is the payment's method/account hint as the transaction logs it
 // ('Bank', 'Cash', 'ABA', an exact account name, …). Resolution order:
-//   1. exact account-name match on the hint;
-//   2. hint-family match: aba/acleda → that bank, any bank-ish wording
+//   1. exact account-name match on the hint (a deliberately picked account
+//      always wins);
+//   2. with `preferBank` (revenue flows — retail/wholesale receipts,
+//      deposits, delivery fees): the first bank account, whatever the
+//      Method says — all revenue lands in the bank account by default
+//      (owner's rule: takings are deposited to ABA, so a 'Cash' Method is
+//      still bank money by the time it's bookkept);
+//   3. hint-family match: aba/acleda → that bank, any bank-ish wording
 //      ('bank', 'transfer', 'card', 'cheque') → first bank account,
 //      'cash' → Cash on Hand over other cash accounts (Petty Cash is a
 //      deliberate, manually-picked account, never an automatic target);
-//   3. no/unmatched hint → Cash on Hand, else the lowest account code.
+//   4. no/unmatched hint → Cash on Hand, else the lowest account code.
 // Candidates are sorted by account code so the fallback is deterministic
 // instead of whatever order the chart-of-accounts query returns rows in.
 export type CashBankCandidate = {
@@ -23,7 +29,11 @@ export type CashBankCandidate = {
     account_type: string;
 };
 
-export function pickCashBankAccount<T extends CashBankCandidate>(pool: T[], payBy?: string | null): T | undefined {
+export function pickCashBankAccount<T extends CashBankCandidate>(
+    pool: T[],
+    payBy?: string | null,
+    opts?: { preferBank?: boolean }
+): T | undefined {
     const candidates = pool
         .filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))
         .sort((a, b) => (a.account_code || '').localeCompare(b.account_code || ''));
@@ -33,6 +43,12 @@ export function pickCashBankAccount<T extends CashBankCandidate>(pool: T[], payB
     if (hint) {
         const exact = candidates.find(a => a.account_name.toLowerCase() === hint);
         if (exact) return exact;
+    }
+    if (opts?.preferBank) {
+        const bank = find(/aba/) || find(/bank/);
+        if (bank) return bank;
+    }
+    if (hint) {
         let hinted: T | undefined;
         if (hint.includes('aba')) hinted = find(/aba/) || find(/bank/);
         else if (hint.includes('acleda')) hinted = find(/acleda/) || find(/bank/);

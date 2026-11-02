@@ -864,9 +864,10 @@ const CustomerPaymentPage: React.FC = () => {
             if (form.accountId) return form.accountId;
             const existing = ledger.debitAccountByTx.get(r.id);
             if (existing) return existing;
-            // Method-aware pick ('Bank' → a bank account, 'Cash' → Cash on
-            // Hand), never raw row order — see pickCashBankAccount.
-            return pickCashBankAccount(accounts, r.pay_by)?.id;
+            // Revenue posting: an exact account-name Method is honored,
+            // anything else defaults to the bank account — see
+            // pickCashBankAccount's preferBank.
+            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true })?.id;
         };
         let ok = 0;
         let moved = 0;

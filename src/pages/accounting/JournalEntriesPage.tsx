@@ -177,8 +177,9 @@ const JournalEntriesPage = () => {
             const payrollExp = byName(/payroll|salary/i, 'Expense') || byCode('6000') || pool.find(a => a.account_type === 'Expense');
             // Shared method-aware matcher — same resolution the live posting
             // flows use, so an import lands in the same account a direct post
-            // would have.
-            const cashFor = (payBy: string) => pickCashBankAccount(pool, payBy);
+            // would have. Revenue (wholesale receipts) defaults to the bank
+            // account; outflows (supplier payments, payroll) stay method-aware.
+            const cashFor = (payBy: string, isRevenue: boolean) => pickCashBankAccount(pool, payBy, { preferBank: isRevenue });
 
             const candidates: ImportCandidate[] = [];
             let skipped = 0;
@@ -192,7 +193,7 @@ const JournalEntriesPage = () => {
                 else if (desc.includes('#WSP-')) { source = 'Wholesale receipt'; main = salesRevenue; }
                 else if (desc.includes('#PAY-')) { source = 'Payroll'; main = payrollExp; isExpense = true; }
                 else continue; // an Income & Expense row — stays out of the ledger
-                const cash = cashFor(String(t.pay_by || ''));
+                const cash = cashFor(String(t.pay_by || ''), source === 'Wholesale receipt');
                 const amount = Math.round((Number(t.amount) || 0) * 100) / 100;
                 if (!main || !cash || amount <= 0) { skipped++; continue; }
                 candidates.push({
