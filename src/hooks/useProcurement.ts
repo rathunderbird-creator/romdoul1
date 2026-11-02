@@ -86,10 +86,16 @@ export const postPurchaseReceiptEntry = async (
             if (supplier?.name) supplierName = supplier.name;
         }
         const date = dayKeyFromDate(new Date());
-        const entryNumber = await nextJournalEntryNumber('PUR', date);
+        const entryNumber = await nextJournalEntryNumber('GRN', date);
+        // 'Stock received — GRN-20261102-001'. The supplier and PO stay
+        // reachable through reference_id; instances without the entry_number
+        // migration keep the older supplier · PO text, which still carries
+        // that context.
         const entryPayload: Record<string, unknown> = {
             date,
-            description: `${supplierName} · PO-${poId.slice(0, 8).toUpperCase()} received`,
+            description: entryNumber
+                ? `Stock received — ${entryNumberRef(entryNumber)}`
+                : `${supplierName} · PO-${poId.slice(0, 8).toUpperCase()} received`,
             reference_id: 'PO-' + poId,
             status: 'Draft',
         };
