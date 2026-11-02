@@ -3,7 +3,7 @@
 // the cash/bank side posts a balanced journal entry, which the Journal
 // Entries page, Income Statement and Cash In / Out then all see.
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, AlertTriangle, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, AlertTriangle, Check, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil } from 'lucide-react';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
 import { useNavigate } from 'react-router-dom';
@@ -148,7 +148,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const navigate = useNavigate();
 
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; status: string; ref: string; refId: string }
+    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; lineDescription: string; status: string; ref: string; refId: string }
     const [lines, setLines] = useState<RawLine[] | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [isFetching, setIsFetching] = useState(false);
@@ -182,9 +182,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
 
                 const PAGE = 1000;
-                const loadPage = (from: number, withStatus: boolean, withEntryNumber: boolean, withCount: boolean) => supabase
+                const loadPage = (from: number, withStatus: boolean, withEntryNumber: boolean, withLineDesc: boolean, withCount: boolean) => supabase
                     .from('journal_entry_lines')
-                    .select(`account_id, journal_entry_id, debit, credit, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''})`, withCount ? { count: 'exact' } : undefined)
+                    .select(`account_id, journal_entry_id, debit, credit${withLineDesc ? ', description' : ''}, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''})`, withCount ? { count: 'exact' } : undefined)
                     .order('id', { ascending: true })
                     .range(from, from + PAGE - 1);
 
@@ -192,31 +192,42 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 // entry_number arrives with migrations/add_journal_entry_number.sql;
                 // instances that haven't run it yet fall back to reference_id.
                 let withEntryNumber = true;
+                // Per-line descriptions arrive with
+                // migrations/add_journal_entry_line_description.sql.
+                let withLineDesc = true;
                 // First page resolves the optional columns; the rest load in parallel.
-                let first = await loadPage(0, withStatus, withEntryNumber, true);
+                let first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
                 if (first.error && /entry_number/i.test(first.error.message || '')) {
                     withEntryNumber = false;
-                    first = await loadPage(0, withStatus, withEntryNumber, true);
+                    first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
                 }
                 // Instances that haven't run add_entry_status.sql have no
                 // status column — reload without it; everything is Posted.
                 if (first.error && /status/i.test(first.error.message || '')) {
                     withStatus = false;
-                    first = await loadPage(0, withStatus, withEntryNumber, true);
+                    first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
+                }
+                // The lines' own description column is optional too; the view
+                // popup then just shows '—' per line.
+                if (first.error && /description/i.test(first.error.message || '')) {
+                    withLineDesc = false;
+                    first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
                 }
                 if (first.error) throw first.error;
 
-                type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown } | null };
-                const pages: Row[][] = [(first.data || []) as Row[]];
+                type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; description?: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown } | null };
+                // The fully dynamic select string defeats supabase-js's
+                // literal-type parser, so the rows arrive untyped.
+                const pages: Row[][] = [(first.data || []) as unknown as Row[]];
                 const total = first.count ?? pages[0].length;
                 const step = pages[0].length;
                 if (step > 0 && step < total) {
                     const rest = await Promise.all(
-                        Array.from({ length: Math.ceil(total / step) - 1 }, (_, i) => loadPage((i + 1) * step, withStatus, withEntryNumber, false))
+                        Array.from({ length: Math.ceil(total / step) - 1 }, (_, i) => loadPage((i + 1) * step, withStatus, withEntryNumber, withLineDesc, false))
                     );
                     for (const page of rest) {
                         if (page.error) throw page.error;
-                        pages.push((page.data || []) as Row[]);
+                        pages.push((page.data || []) as unknown as Row[]);
                     }
                 }
 
@@ -230,6 +241,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     credit: Number(l.credit) || 0,
                     date: String(l.entry?.date || '').slice(0, 10),
                     description: String(l.entry?.description || ''),
+                    // The line's own description, distinct from the entry's.
+                    lineDescription: String(l.description || ''),
                     status: String(l.entry?.status || 'Posted'),
                     // Prefer the human-readable entry_number (see
                     // utils/journalEntryNumber.ts); older rows keep
@@ -1215,11 +1228,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             })()}
 
             {/* View entry modal */}
-            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title={`${cfg.title} Entry`}>
+            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title={`${cfg.title} Entry`} width="820px">
                 {viewEntry && (() => {
                     const ls = entryLinesOf(viewEntry.entryId);
                     const totalDebit = ls.reduce((s, l) => s + l.debit, 0);
                     const totalCredit = ls.reduce((s, l) => s + l.credit, 0);
+                    const balanced = Math.abs(totalDebit - totalCredit) < 0.005;
+                    const accent = balanced ? '#5469d4' : '#dc2626';
                     return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
@@ -1232,13 +1247,35 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Description</span>
                                 <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewEntry.description || '—'}</span>
                             </div>
+                            {/* Balance banner — blue when debits equal credits, red otherwise;
+                                same banner the create/edit forms show. */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                                padding: '12px 16px', borderRadius: '10px',
+                                border: `1.5px solid ${accent}`,
+                                background: `color-mix(in srgb, ${accent} 6%, var(--color-surface))`
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: 700, color: accent, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {balanced ? <>✓ Entry Balanced</> : <>Entry Not Balanced</>}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
+                                        Debits: {totalDebit.toFixed(2)} | Credits: {totalCredit.toFixed(2)}
+                                        {!balanced && <> · difference {Math.abs(totalDebit - totalCredit).toFixed(2)}</>}
+                                    </div>
+                                </div>
+                                {balanced
+                                    ? <Check size={20} color={accent} style={{ flexShrink: 0 }} />
+                                    : <AlertTriangle size={20} color={accent} style={{ flexShrink: 0 }} />}
+                            </div>
                             <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Account</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '100px' }}>Debit</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '100px' }}>Credit</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Description</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Debit</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Credit</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1250,6 +1287,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                     title="View in General Ledger"
                                                     style={{ padding: '8px 12px', color: 'var(--color-text-main)', cursor: 'pointer' }}
                                                 >{accountLabelOf(l.accountId)}</td>
+                                                <td className="d2-khmer" style={{ padding: '8px 12px', color: l.lineDescription ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.lineDescription || '—'}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: l.debit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.debit > 0 ? fmt(l.debit) : '—'}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: l.credit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.credit > 0 ? fmt(l.credit) : '—'}</td>
                                             </tr>
@@ -1257,7 +1295,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     </tbody>
                                     <tfoot>
                                         <tr style={{ background: 'var(--color-bg)', fontWeight: 700 }}>
-                                            <td style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
+                                            <td colSpan={2} style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(totalDebit)}</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(totalCredit)}</td>
                                         </tr>
