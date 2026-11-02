@@ -12,6 +12,7 @@ import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, entryDescription, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../../utils/cashBankAccounts';
+import { insertJournalLines } from '../../utils/journalEntryLines';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 // Brings the .pip-resize-handle grip styling the shared hook's handles rely on.
 import '../pageIncomePrediction/pageIncomePrediction.css';
@@ -254,9 +255,14 @@ const JournalEntriesPage = () => {
                     return;
                 }
                 if (error || !entry) { failed++; continue; }
-                const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-                    { journal_entry_id: entry.id, account_id: c.debitId, debit: c.amount, credit: 0 },
-                    { journal_entry_id: entry.id, account_id: c.creditId, debit: 0, credit: c.amount },
+                const lineDescs = c.source === 'Wholesale receipt'
+                    ? { debit: `Receipt — ${counterparty}`, credit: `Sales — ${counterparty}` }
+                    : c.source === 'Supplier payment'
+                        ? { debit: /payable/i.test(c.debitLabel) ? `Settle payable — ${counterparty}` : `Purchase — ${counterparty}`, credit: `Payment — ${counterparty}` }
+                        : { debit: `Payroll — ${counterparty}`, credit: `Payment — ${counterparty}` };
+                const { error: lErr } = await insertJournalLines([
+                    { journal_entry_id: entry.id, account_id: c.debitId, debit: c.amount, credit: 0, description: lineDescs.debit },
+                    { journal_entry_id: entry.id, account_id: c.creditId, debit: 0, credit: c.amount, description: lineDescs.credit },
                 ]);
                 if (lErr) {
                     await supabase.from('journal_entries').delete().eq('id', entry.id);

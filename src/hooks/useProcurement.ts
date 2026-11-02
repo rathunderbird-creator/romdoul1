@@ -4,6 +4,7 @@ import type { Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
+import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -50,8 +51,10 @@ export const postPurchaseReceiptEntry = async (
         if (existing) {
             // Keep a still-Draft entry in step with an edited PO total; a Posted
             // entry is final and only gets a heads-up.
+            // select('*') so each line's description (where the column exists)
+            // survives the rebuild below.
             const { data: oldLines, error: lnErr } = await supabase.from('journal_entry_lines')
-                .select('id, account_id, debit, credit').eq('journal_entry_id', existing.id);
+                .select('*').eq('journal_entry_id', existing.id);
             if (lnErr) return;
             const current = Math.round((oldLines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0) * 100) / 100;
             if (current === amount || amount <= 0) return;
@@ -62,14 +65,16 @@ export const postPurchaseReceiptEntry = async (
             if (!inventoryAcc || !apAcc) return;
             const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
             if (delErr) return;
-            const { error: insErr } = await supabase.from('journal_entry_lines').insert([
-                { journal_entry_id: existing.id, account_id: inventoryAcc.id, debit: amount, credit: 0 },
-                { journal_entry_id: existing.id, account_id: apAcc.id, debit: 0, credit: amount },
+            // Keep each line's existing description across the amount rebuild.
+            const oldDescOf = (accountId: string) => (oldLines || []).find(l => l.account_id === accountId)?.description || undefined;
+            const { error: insErr } = await insertJournalLines([
+                { journal_entry_id: existing.id, account_id: inventoryAcc.id, debit: amount, credit: 0, description: oldDescOf(inventoryAcc.id) },
+                { journal_entry_id: existing.id, account_id: apAcc.id, debit: 0, credit: amount, description: oldDescOf(apAcc.id) },
             ]);
             if (insErr) {
                 // Put the previous lines back rather than leaving the entry empty.
-                await supabase.from('journal_entry_lines').insert((oldLines || []).map(l => ({
-                    journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit,
+                await insertJournalLines((oldLines || []).map(l => ({
+                    journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit, description: l.description || undefined,
                 })));
                 showToast('PO saved, but its inventory ledger entry could not be updated — re-save the PO to retry.', 'error');
             }
@@ -120,9 +125,9 @@ export const postPurchaseReceiptEntry = async (
             showToast('PO received, but the inventory ledger entry failed to post — re-save the PO to retry.', 'error');
             return;
         }
-        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: amount, credit: 0 },
-            { journal_entry_id: entry.id, account_id: apAcc.id, debit: 0, credit: amount },
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: amount, credit: 0, description: `Stock received — ${supplierName}` },
+            { journal_entry_id: entry.id, account_id: apAcc.id, debit: 0, credit: amount, description: `Payable — ${supplierName}` },
         ]);
         if (lErr) {
             console.error('Failed to post the inventory entry lines for the received PO:', lErr);
@@ -201,9 +206,9 @@ export const postOpeningBalanceEntry = async (
             showToast('Opening balance saved, but the ledger entry failed to post.', 'error');
             return false;
         }
-        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-            { journal_entry_id: entry.id, account_id: offsetAcc.id, debit: amount, credit: 0 },
-            { journal_entry_id: entry.id, account_id: apAcc.id, debit: 0, credit: amount },
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: entry.id, account_id: offsetAcc.id, debit: amount, credit: 0, description: `Opening balance — ${supplierName} (${invoiceLabel})` },
+            { journal_entry_id: entry.id, account_id: apAcc.id, debit: 0, credit: amount, description: `Payable — ${supplierName} (${invoiceLabel})` },
         ]);
         if (lErr) {
             console.error('Failed to post the opening-balance ledger entry lines:', lErr);
@@ -659,9 +664,10 @@ export const useProcurement = () => {
                         } else if (jeErr || !entry) {
                             console.error('Failed to create journal entry for payment:', jeErr);
                         } else {
-                            const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-                                { journal_entry_id: entry.id, account_id: debitAcc.id, debit: Number(amount), credit: 0 },
-                                { journal_entry_id: entry.id, account_id: cashAccId, debit: 0, credit: Number(amount) },
+                            const supplierLabel = supplier?.name || 'Supplier';
+                            const { error: lErr } = await insertJournalLines([
+                                { journal_entry_id: entry.id, account_id: debitAcc.id, debit: Number(amount), credit: 0, description: apAcc ? `Settle payable — ${supplierLabel}` : `Purchase — ${supplierLabel}` },
+                                { journal_entry_id: entry.id, account_id: cashAccId, debit: 0, credit: Number(amount), description: `Payment — ${supplierLabel}` },
                             ]);
                             if (lErr) {
                                 console.error('Failed to create journal entry lines for payment:', lErr);

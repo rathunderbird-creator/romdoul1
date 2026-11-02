@@ -4,6 +4,7 @@ import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
+import { insertJournalLines } from '../utils/journalEntryLines';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -102,7 +103,7 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
 async function retailCogsLines(
     orderId: string,
     pool: { id: string; account_code: string; account_name: string; account_type: string }[]
-): Promise<{ account_id: string; debit: number; credit: number }[] | null> {
+): Promise<{ account_id: string; debit: number; credit: number; description?: string }[] | null> {
     try {
         const cogsAcc = pool.find(a => a.account_code === '5000')
             || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs/i.test(a.account_name));
@@ -121,8 +122,8 @@ async function retailCogsLines(
         const cost = Math.round(items.reduce((s, i) => s + (costOf.get(i.product_id) || 0) * (Number(i.quantity) || 0), 0) * 100) / 100;
         if (cost <= 0) return null;
         return [
-            { account_id: cogsAcc.id, debit: cost, credit: 0 },
-            { account_id: inventoryAcc.id, debit: 0, credit: cost },
+            { account_id: cogsAcc.id, debit: cost, credit: 0, description: 'Cost of goods sold' },
+            { account_id: inventoryAcc.id, debit: 0, credit: cost, description: 'Inventory at cost' },
         ];
     } catch (e) {
         console.error('Failed to compute COGS lines for order', orderId, e);
@@ -180,8 +181,7 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
             console.error('Failed to create the COGS entry for order', orderId, jeErr);
             return;
         }
-        const { error: lErr } = await supabase.from('journal_entry_lines')
-            .insert(cogs.map(l => ({ journal_entry_id: entry.id, ...l })));
+        const { error: lErr } = await insertJournalLines(cogs.map(l => ({ journal_entry_id: entry.id, ...l })));
         if (lErr) {
             console.error('Failed to create the COGS entry lines for order', orderId, lErr);
             await supabase.from('journal_entries').delete().eq('id', entry.id);
@@ -247,9 +247,9 @@ async function postDeliveryFeeToLedger({
             console.error('Failed to create journal entry for delivery fee:', jeErr);
             return false;
         }
-        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-            { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0 },
-            { journal_entry_id: entry.id, account_id: feeRevenueAcc.id, debit: 0, credit: amount },
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0, description: `Delivery fee — ${description}` },
+            { journal_entry_id: entry.id, account_id: feeRevenueAcc.id, debit: 0, credit: amount, description: `Delivery fee — ${description}` },
         ]);
         if (lErr) {
             console.error('Failed to create journal entry lines for delivery fee:', lErr);
@@ -349,9 +349,9 @@ export async function postRetailSaleToLedger({
                 // Deposits aren't a completed sale yet — COGS books once, on the
                 // Paid-transition (RCP) entry.
                 const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
-                const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-                    { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0 },
-                    { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: amount },
+                const { error: lErr } = await insertJournalLines([
+                    { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0, description: `${type === 'DEP' ? 'Deposit' : 'Receipt'} — ${description}` },
+                    { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: amount, description: `Sales — ${description}` },
                     ...(cogs || []).map(l => ({ journal_entry_id: entry.id, ...l })),
                 ]);
                 if (lErr) {
@@ -432,8 +432,10 @@ export async function postOrFinalizeTransactionReceipt({
         if (!revenueAcc || !cashAccId) {
             throw new Error('Could not resolve a Sales Revenue account and a cash/bank account in the Chart of Accounts.');
         }
+        // select('*') so each line's description rides along where that column
+        // exists, without failing where it doesn't.
         const { data: oldLines, error: oldErr } = await supabase.from('journal_entry_lines')
-            .select('account_id, debit, credit').eq('journal_entry_id', existing.id);
+            .select('*').eq('journal_entry_id', existing.id);
         if (oldErr) throw oldErr;
         const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
         // When COGS can't be recomputed (the page couldn't resolve the order),
@@ -452,10 +454,10 @@ export async function postOrFinalizeTransactionReceipt({
         const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
         if (delErr) throw delErr;
 
-        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-            { journal_entry_id: existing.id, account_id: cashAccId, debit: amount, credit: 0 },
-            { journal_entry_id: existing.id, account_id: revenueAcc.id, debit: 0, credit: amount },
-            ...(cogs || preserved).map(l => ({ journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit })),
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: existing.id, account_id: cashAccId, debit: amount, credit: 0, description: `${type === 'DEP' ? 'Deposit' : 'Receipt'} — ${description}` },
+            { journal_entry_id: existing.id, account_id: revenueAcc.id, debit: 0, credit: amount, description: `Sales — ${description}` },
+            ...(cogs || preserved).map(l => ({ journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit, description: (l as { description?: string }).description || undefined })),
         ]);
         if (lErr) throw lErr;
 
