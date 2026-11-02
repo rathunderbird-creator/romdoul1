@@ -582,7 +582,7 @@ export const useWholesale = () => {
                     const revenueAcc = pool.find(a => a.account_code === '4000')
                         || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
                         || pool.find(a => a.account_type === 'Revenue');
-                    const cashAccId = receivedInAccountId || pickCashBankAccount(pool, receivedInAccountName || paymentMethod)?.id;
+                    const cashAccId = receivedInAccountId || pickCashBankAccount(pool, receivedInAccountName || paymentMethod, { preferBank: true })?.id;
                     if (revenueAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('WSP', payDate);
                         const entryPayload: Record<string, unknown> = {

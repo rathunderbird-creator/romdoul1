@@ -88,7 +88,9 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
     const revenueAcc = pool.find(a => a.account_code === '4000')
         || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
         || pool.find(a => a.account_type === 'Revenue');
-    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy)?.id;
+    // Revenue flow: an explicitly picked account wins, otherwise all revenue
+    // lands in the bank account by default (see pickCashBankAccount).
+    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true })?.id;
     return { revenueAcc, cashAccId, pool };
 }
 
@@ -216,7 +218,7 @@ async function postDeliveryFeeToLedger({
         const pool = coa || [];
         const feeRevenueAcc = pool.find(a => a.account_code === '4005')
             || pool.find(a => a.account_type === 'Revenue' && /delivery fee/i.test(a.account_name));
-        const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy)?.id;
+        const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true })?.id;
         if (!feeRevenueAcc || !cashAccId) {
             console.error('Could not post the delivery fee: missing the Delivery Fee Revenue account (run migrations/add_delivery_fee_revenue_account.sql) or a cash/bank account');
             return false;
