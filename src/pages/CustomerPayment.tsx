@@ -19,8 +19,13 @@ import { fetchAll } from '../utils/fetchAll';
 import { addDays, dayKeyFromDate, parseDay } from '../utils/dateRange';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
+import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import type { Transaction, Customer } from '../types';
+
+// The cash/bank accounts offered by the bulk Post Now popup, with enough of
+// the chart row for pickCashBankAccount to match a payment's Method against.
+type BulkAccount = { id: string; account_code: string; account_name: string; account_type: string };
 
 // `reference` / `notes` were added by migrations/add_transaction_reference_notes.sql,
 // `order_id` / `customer_phone` by migrations/add_transaction_order_link.sql — none may
@@ -419,7 +424,7 @@ const CustomerPaymentPage: React.FC = () => {
     // accountId '' resolves the deposit account per payment (same defaults the
     // old confirm-based flow used); notes apply to every posted entry.
     const [bulkPostForm, setBulkPostForm] = useState<{ date: string; accountId: string; notes: string } | null>(null);
-    const [bulkAccounts, setBulkAccounts] = useState<{ id: string; account_name: string }[]>([]);
+    const [bulkAccounts, setBulkAccounts] = useState<BulkAccount[]>([]);
 
     // No matching entry at all is treated the same as an unposted (Draft) one.
     const statusOf = useCallback(
@@ -591,7 +596,10 @@ const CustomerPaymentPage: React.FC = () => {
             reference: receiptReference,
             notes: receiptNotes,
             // Lets an RCP posting also book COGS against the order's items.
-            orderId: orderIdByTxId.get(tx.id)
+            orderId: orderIdByTxId.get(tx.id),
+            // The modal's picked method beats the row's stored one — the post
+            // should land where the user just said the money went.
+            payBy: paymentMethod || tx.pay_by
         }).then(async () => {
             setPostedIds(s => new Set(s).add(tx.id));
             // A corrected Payment Date or Method moves the payment row itself too
@@ -792,16 +800,16 @@ const CustomerPaymentPage: React.FC = () => {
     // accounts — a submit racing the fetch must not silently skip pay_by
     // matching and let the server debit its generic first-cash/bank fallback.
     // A failed load resets the ref so the next open retries.
-    const bulkAccountsPromiseRef = useRef<Promise<{ id: string; account_name: string }[]> | null>(null);
+    const bulkAccountsPromiseRef = useRef<Promise<BulkAccount[]> | null>(null);
     const loadBulkAccounts = useCallback(() => {
         if (!bulkAccountsPromiseRef.current) {
             bulkAccountsPromiseRef.current = (async () => {
                 try {
-                    const { data, error } = await supabase.from('chart_of_accounts').select('id, account_name, account_type, is_active');
+                    const { data, error } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, is_active');
                     if (error) throw error;
-                    const accounts = ((data || []) as { id: string; account_name: string; account_type: string; is_active: boolean }[])
+                    const accounts = ((data || []) as (BulkAccount & { is_active: boolean })[])
                         .filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))
-                        .map(a => ({ id: a.id, account_name: a.account_name }));
+                        .map(a => ({ id: a.id, account_code: a.account_code, account_name: a.account_name, account_type: a.account_type }));
                     setBulkAccounts(accounts);
                     return accounts;
                 } catch {
@@ -855,10 +863,9 @@ const CustomerPaymentPage: React.FC = () => {
             if (form.accountId) return form.accountId;
             const existing = ledger.debitAccountByTx.get(r.id);
             if (existing) return existing;
-            const hint = (r.pay_by || '').trim().toLowerCase();
-            if (!hint || accounts.length === 0) return undefined;
-            return accounts.find(a => a.account_name.toLowerCase() === hint)?.id
-                || (hint.includes('cash') ? accounts.find(a => /cash/i.test(a.account_name))?.id : undefined);
+            // Method-aware pick ('Bank' → a bank account, 'Cash' → Cash on
+            // Hand), never raw row order — see pickCashBankAccount.
+            return pickCashBankAccount(accounts, r.pay_by)?.id;
         };
         let ok = 0;
         let moved = 0;
@@ -875,6 +882,7 @@ const CustomerPaymentPage: React.FC = () => {
                     type: isDepositRow(r) ? 'DEP' : 'RCP',
                     notes,
                     orderId: orderIdByTxId.get(r.id),
+                    payBy: r.pay_by,
                 });
                 ok++;
                 setPostedIds(prev => new Set(prev).add(r.id));

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
+import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -76,7 +77,7 @@ const generateUUID = () => {
 // Sales Revenue account, plus the cash/bank account for a given (optional)
 // `depositAccountId`. When no id is given, falls back to an active Asset-type
 // account whose name matches /cash|bank/i.
-async function resolveRetailLedgerAccounts(depositAccountId?: string): Promise<{
+async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: string | null): Promise<{
     revenueAcc: { id: string; account_code: string; account_name: string; account_type: string } | undefined;
     cashAccId: string | undefined;
     pool: { id: string; account_code: string; account_name: string; account_type: string }[];
@@ -87,8 +88,7 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string): Promise<{
     const revenueAcc = pool.find(a => a.account_code === '4000')
         || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
         || pool.find(a => a.account_type === 'Revenue');
-    const cashAccId = depositAccountId
-        || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy)?.id;
     return { revenueAcc, cashAccId, pool };
 }
 
@@ -201,12 +201,14 @@ async function postDeliveryFeeToLedger({
     date,
     description,
     depositAccountId,
+    payBy,
 }: {
     txId: string;
     amount: number;
     date: string;
     description: string;
     depositAccountId?: string;
+    payBy?: string | null;
 }): Promise<boolean> {
     try {
         const { data: coa } = await supabase.from('chart_of_accounts')
@@ -214,8 +216,7 @@ async function postDeliveryFeeToLedger({
         const pool = coa || [];
         const feeRevenueAcc = pool.find(a => a.account_code === '4005')
             || pool.find(a => a.account_type === 'Revenue' && /delivery fee/i.test(a.account_name));
-        const cashAccId = depositAccountId
-            || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+        const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy)?.id;
         if (!feeRevenueAcc || !cashAccId) {
             console.error('Could not post the delivery fee: missing the Delivery Fee Revenue account (run migrations/add_delivery_fee_revenue_account.sql) or a cash/bank account');
             return false;
@@ -284,7 +285,8 @@ export async function postRetailSaleToLedger({
     status = 'Draft',
     reference,
     notes,
-    orderId
+    orderId,
+    payBy
 }: {
     txId: string;
     amount: number;
@@ -300,9 +302,12 @@ export async function postRetailSaleToLedger({
     // The settled order, when the caller can resolve it: an RCP entry then
     // also books COGS (Dr Cost of Goods Sold, Cr Inventory) for its items.
     orderId?: string;
+    // The payment's method/account hint ('Bank', 'Cash', an account name, …)
+    // — steers the cash/bank account when no depositAccountId was picked.
+    payBy?: string | null;
 }): Promise<boolean> {
     try {
-        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId);
+        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy);
         if (revenueAcc && cashAccId) {
             const entryNumber = await nextJournalEntryNumber(type, date);
             const entryPayload: Record<string, unknown> = {
@@ -388,7 +393,8 @@ export async function postOrFinalizeTransactionReceipt({
     type,
     reference,
     notes,
-    orderId
+    orderId,
+    payBy
 }: {
     txId: string;
     amount: number;
@@ -400,6 +406,8 @@ export async function postOrFinalizeTransactionReceipt({
     notes?: string;
     // The settled order, when known — an RCP posting then also books COGS.
     orderId?: string;
+    // Method/account hint for the cash/bank side when no explicit account was picked.
+    payBy?: string | null;
 }): Promise<void> {
     // select('*') so status is read where that column exists without failing where it doesn't.
     const { data: existing, error: findErr } = await supabase
@@ -418,7 +426,7 @@ export async function postOrFinalizeTransactionReceipt({
         // Resolve the accounts (and COGS) BEFORE touching any existing lines —
         // if this fails, the entry's current (valid) lines must be left
         // untouched rather than deleted with nothing to replace them.
-        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId);
+        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy);
         if (!revenueAcc || !cashAccId) {
             throw new Error('Could not resolve a Sales Revenue account and a cash/bank account in the Chart of Accounts.');
         }
@@ -476,7 +484,7 @@ export async function postOrFinalizeTransactionReceipt({
         if (updErr) throw updErr;
         if (statusDropped) console.warn('Finalized the receipt, but this instance needs migrations/add_entry_status.sql to mark it Posted');
     } else {
-        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId });
+        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy });
         if (!ok) {
             throw new Error('Could not create a Posted journal entry — check that the Chart of Accounts has an active Sales Revenue account and a cash/bank account.');
         }
@@ -2759,7 +2767,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         description: customerName,
                         depositAccountId: (updates as Partial<Sale>).depositAccountId,
                         type: 'RCP',
-                        orderId: id
+                        orderId: id,
+                        payBy: newTransaction.pay_by
                     });
                 }
             } else if ((updates as Partial<Sale>).postToLedger === true) {
@@ -2837,6 +2846,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         date: normalizedDate,
                         description: customerName,
                         depositAccountId: (updates as Partial<Sale>).depositAccountId,
+                        payBy: newTransaction.pay_by,
                     });
                     if (!posted) {
                         console.error('Delivery fee logged to Income & Expense, but could not be posted to the ledger for order', id);
@@ -3066,7 +3076,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         date: localDayOf(rawDepDate),
                         description: depTxn.description,
                         depositAccountId: (updates as Partial<Sale>).depositAccountId,
-                        type: 'DEP'
+                        type: 'DEP',
+                        payBy: depTxn.pay_by
                     });
                 }
             }

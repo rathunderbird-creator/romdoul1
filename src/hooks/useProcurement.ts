@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
+import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -634,7 +635,7 @@ export const useProcurement = () => {
                         || pool.find(a => a.account_code === '5000')
                         || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs|purchas/i.test(a.account_name))
                         || pool.find(a => a.account_type === 'Expense');
-                    const cashAccId = paidFromAccountId || pool.find(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))?.id;
+                    const cashAccId = paidFromAccountId || pickCashBankAccount(pool, paidFromAccountName || paymentMethod)?.id;
                     if (debitAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('SPP', payDate);
                         const jeDescription = entryDescription(entryNumber, supplier?.name || 'Supplier')
