@@ -4,6 +4,7 @@ import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer, CustomerPay
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
+import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 const generateUUID = () => {
@@ -77,9 +78,9 @@ const postWholesaleCogsEntry = async (
             console.error('Failed to post the wholesale COGS entry:', jeErr);
             return;
         }
-        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-            { journal_entry_id: entry.id, account_id: cogsAcc.id, debit: cost, credit: 0 },
-            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: 0, credit: cost },
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: entry.id, account_id: cogsAcc.id, debit: cost, credit: 0, description: 'Cost of goods sold' },
+            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: 0, credit: cost, description: 'Inventory at cost' },
         ]);
         if (lErr) {
             console.error('Failed to post the wholesale COGS entry lines:', lErr);
@@ -612,9 +613,9 @@ export const useWholesale = () => {
                         } else if (jeErr || !entry) {
                             console.error('Failed to create journal entry for payment:', jeErr);
                         } else {
-                            const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-                                { journal_entry_id: entry.id, account_id: cashAccId, debit: Number(amount), credit: 0 },
-                                { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: Number(amount) },
+                            const { error: lErr } = await insertJournalLines([
+                                { journal_entry_id: entry.id, account_id: cashAccId, debit: Number(amount), credit: 0, description: `Receipt — ${order.customer_name || 'Wholesale'}` },
+                                { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: Number(amount), description: `Sales — ${order.customer_name || 'Wholesale'}` },
                             ]);
                             if (lErr) {
                                 console.error('Failed to create journal entry lines for payment:', lErr);
