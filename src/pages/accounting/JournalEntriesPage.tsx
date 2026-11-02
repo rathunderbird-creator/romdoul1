@@ -475,6 +475,7 @@ const JournalEntriesPage = () => {
         const linesHtml = (entry.lines || []).map(l => `
             <tr>
                 <td>${escapeHtml(accountLabelOf(l))}</td>
+                <td>${escapeHtml(l.description || '')}</td>
                 <td class="num">${(l.debit || 0) > 0 ? fmtUsd(l.debit || 0) : ''}</td>
                 <td class="num">${(l.credit || 0) > 0 ? fmtUsd(l.credit || 0) : ''}</td>
             </tr>`).join('');
@@ -487,9 +488,9 @@ const JournalEntriesPage = () => {
     <b>Description</b><span>${escapeHtml(entry.description || '—')}</span>
   </div>
   <table>
-    <thead><tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
+    <thead><tr><th>Account</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
     <tbody>${linesHtml}</tbody>
-    <tfoot><tr><td>Total</td><td class="num">${fmtUsd(totals.debit)}</td><td class="num">${fmtUsd(totals.credit)}</td></tr></tfoot>
+    <tfoot><tr><td colspan="2">Total</td><td class="num">${fmtUsd(totals.debit)}</td><td class="num">${fmtUsd(totals.credit)}</td></tr></tfoot>
   </table>
   <div class="foot">Printed ${new Date().toLocaleString()}</div>`);
     };
@@ -1112,6 +1113,7 @@ const JournalEntriesPage = () => {
                                     <thead>
                                         <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid #e2e8f0' }}>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Account</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Description</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Debit</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Credit</th>
                                         </tr>
@@ -1125,6 +1127,7 @@ const JournalEntriesPage = () => {
                                                     title={l.account ? 'View in General Ledger' : undefined}
                                                     style={{ padding: '8px 12px', color: 'var(--color-text-main)', cursor: l.account ? 'pointer' : 'default' }}
                                                 >{accountLabelOf(l)}</td>
+                                                <td className="d2-khmer" style={{ padding: '8px 12px', color: l.description ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.description || '—'}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (l.debit || 0) > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{(l.debit || 0) > 0 ? fmtUsd(l.debit || 0) : '—'}</td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (l.credit || 0) > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{(l.credit || 0) > 0 ? fmtUsd(l.credit || 0) : '—'}</td>
                                             </tr>
@@ -1132,7 +1135,7 @@ const JournalEntriesPage = () => {
                                     </tbody>
                                     <tfoot>
                                         <tr style={{ background: 'var(--color-bg)', fontWeight: 700 }}>
-                                            <td style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
+                                            <td colSpan={2} style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(t.debit)}</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(t.credit)}</td>
                                         </tr>
