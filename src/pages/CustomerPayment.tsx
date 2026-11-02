@@ -1,4 +1,5 @@
-// Customer Payment — every retail customer payment record (Record Receipt /
+// Retail Payment (formerly Customer Payment; file/route keep the old name) —
+// every retail customer payment record (Record Receipt /
 // Deposit entries posted from Payment Tracking and Orders) with its ledger
 // status; Draft rows can be finalized with Post Now. This is a dedicated
 // full-history listing page, so it runs its own Supabase queries (filtered
@@ -1002,8 +1003,8 @@ const CustomerPaymentPage: React.FC = () => {
         rows.push({ Customer: 'Total', Amount: stats.total });
         const ws = XLSX.utils.json_to_sheet(rows);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Customer Payments');
-        XLSX.writeFile(wb, `Customer_Payments_${dayKeyFromDate(new Date())}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, 'Retail Payments');
+        XLSX.writeFile(wb, `Retail_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
     const colCount = 10 + (hasNotesData ? 1 : 0);
@@ -1371,7 +1372,7 @@ const CustomerPaymentPage: React.FC = () => {
                             {loadError ? (
                                 <tr>
                                     <td colSpan={colCount} role="alert" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        <div style={{ marginBottom: '12px' }}>Couldn't load customer payments. {loadError}</div>
+                                        <div style={{ marginBottom: '12px' }}>Couldn't load retail payments. {loadError}</div>
                                         <button onClick={fetchRetailPayments} disabled={isLoadingTransactions} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px' }}>
                                             Retry
                                         </button>
@@ -1380,7 +1381,7 @@ const CustomerPaymentPage: React.FC = () => {
                             ) : isBusy ? (
                                 <tr>
                                     <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        Loading customer payments...
+                                        Loading retail payments...
                                     </td>
                                 </tr>
                             ) : statusFilterBlocked ? (
@@ -1395,7 +1396,7 @@ const CustomerPaymentPage: React.FC = () => {
                             ) : filteredPayments.length === 0 ? (
                                 <tr>
                                     <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        No customer payments found for these filters.
+                                        No retail payments found for these filters.
                                     </td>
                                 </tr>
                             ) : (
