@@ -97,7 +97,7 @@ const isSystemEntry = (entry: JournalEntry) => (entry.reference_id || '').starts
 const originChip = (isSystem: boolean) => (
     <span
         title={isSystem
-            ? 'Created automatically by a payment flow (Customer Payment, Procurement or Wholesale).'
+            ? 'Created automatically by a payment flow (Retail Payment, Procurement or Wholesale).'
             : 'Recorded directly on this page.'}
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',

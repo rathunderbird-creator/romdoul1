@@ -98,7 +98,7 @@ const StatusChip: React.FC<{ status: string }> = ({ status }) => (
 // supplier and wholesale payments) — viewable here, managed on their own page.
 const SystemChip: React.FC = () => (
     <span
-        title="Created automatically by a payment flow (Customer Payment, Procurement or Wholesale) — view and print it here, manage it from its own page."
+        title="Created automatically by a payment flow (Retail Payment, Procurement or Wholesale) — view and print it here, manage it from its own page."
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
             // Same blue as the app's primary accent, alpha-blended the same way
