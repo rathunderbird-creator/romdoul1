@@ -877,6 +877,24 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
                         </div>
                         <div>
+                            <label style={labelStyle}>Reference Number</label>
+                            <input
+                                type="text"
+                                value={editingEntry ? (editingEntry.ref || '—') : reference}
+                                onChange={e => setReference(e.target.value)}
+                                disabled={!!editingEntry}
+                                title={editingEntry ? "An existing entry's reference doesn't change here" : 'Auto-generated — edit it if you track your own numbers'}
+                                style={inputStyle}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Status</label>
+                            <select value={entryStatus} onChange={e => setEntryStatus(e.target.value as 'Posted' | 'Draft')} style={{ ...inputStyle, cursor: 'pointer' }}>
+                                <option value="Posted">Posted</option>
+                                <option value="Draft">Draft</option>
+                            </select>
+                        </div>
+                        <div>
                             <label style={labelStyle}>{cfg.accountLabel}</label>
                             <select value={accountId} onChange={e => setAccountId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {mainAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
@@ -909,25 +927,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 style={inputStyle}
                             />
                         </div>
-                        <div>
-                            <label style={labelStyle}>Status</label>
-                            <select value={entryStatus} onChange={e => setEntryStatus(e.target.value as 'Posted' | 'Draft')} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="Posted">Posted</option>
-                                <option value="Draft">Draft</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style={labelStyle}>Reference Number</label>
-                            <input
-                                type="text"
-                                value={editingEntry ? (editingEntry.ref || '—') : reference}
-                                onChange={e => setReference(e.target.value)}
-                                disabled={!!editingEntry}
-                                title={editingEntry ? "An existing entry's reference doesn't change here" : 'Auto-generated — edit it if you track your own numbers'}
-                                style={inputStyle}
-                            />
-                        </div>
-                        <div>
+                        <div style={{ gridColumn: '1 / -1' }}>
                             <label style={labelStyle}>Description (optional)</label>
                             <input
                                 type="text" className="d2-khmer" placeholder={`e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
