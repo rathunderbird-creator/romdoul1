@@ -90,6 +90,12 @@ export const useAccounting = () => {
         }
     }, [showToast]);
 
+    // Patch one entry in local state. Post only flips `status`, so refetching
+    // the whole ledger (and flashing the table's loading state) isn't warranted.
+    const patchJournalEntry = useCallback((id: string, patch: Partial<JournalEntry>) => {
+        setJournalEntries(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
+    }, []);
+
     const saveJournalEntry = useCallback(async (entry: Partial<JournalEntry>, lines: Partial<JournalEntryLine>[]) => {
         try {
             // Very simple transaction equivalent (Supabase JS doesn't do real multi-table transactions easily without an RPC,
@@ -174,6 +180,7 @@ export const useAccounting = () => {
         saveAccount,
         deleteAccount,
         fetchJournalEntries,
+        patchJournalEntry,
         saveJournalEntry
     };
 };
