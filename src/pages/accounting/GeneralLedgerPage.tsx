@@ -6,6 +6,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
+import DateRangePicker from '../../components/DateRangePicker';
 import { supabase } from '../../lib/supabase';
 import type { ChartOfAccount } from '../../types';
 
@@ -47,8 +48,6 @@ const GeneralLedgerPage = () => {
     const [glDateRange, setGlDateRange] = usePersistedDateRange('general_ledger_range');
     const dateFrom = glDateRange.start;
     const dateTo = glDateRange.end;
-    const setDateFrom = (v: string) => setGlDateRange(r => ({ ...r, start: v }));
-    const setDateTo = (v: string) => setGlDateRange(r => ({ ...r, end: v }));
 
     useEffect(() => {
         setHeaderContent({
@@ -249,12 +248,8 @@ const GeneralLedgerPage = () => {
                 {/* Filters */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', marginBottom: '14px', flexWrap: 'wrap' }}>
                     <div>
-                        <label style={labelStyle}>From</label>
-                        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={inputStyle} />
-                    </div>
-                    <div>
-                        <label style={labelStyle}>To</label>
-                        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} />
+                        <label style={labelStyle}>Date</label>
+                        <DateRangePicker value={{ start: dateFrom, end: dateTo }} onChange={(r) => setGlDateRange({ start: r.start, end: r.end })} />
                     </div>
                     <div>
                         <label style={labelStyle}>Account</label>
