@@ -48,6 +48,11 @@ const GeneralLedgerPage = () => {
     const [glDateRange, setGlDateRange] = usePersistedDateRange('general_ledger_range');
     const dateFrom = glDateRange.start;
     const dateTo = glDateRange.end;
+    // Drafts aren't in the books yet, so balances count Posted entries only —
+    // without this, the unposted payment drafts (credit-heavy by nature) drag
+    // cash/bank accounts far below their real balance. The toggle lets you
+    // preview what the ledger will look like once today's drafts are posted.
+    const [includeDrafts, setIncludeDrafts] = useState(false);
 
     useEffect(() => {
         setHeaderContent({
@@ -89,6 +94,7 @@ const GeneralLedgerPage = () => {
     const allRows = useMemo(() => {
         const rows: LedgerRow[] = [];
         for (const entry of journalEntries) {
+            if (!includeDrafts && entry.status === 'Draft') continue;
             for (const line of entry.lines || []) {
                 if (!line.account) continue; // the account was deleted
                 const debit = Number(line.debit) || 0;
@@ -125,7 +131,7 @@ const GeneralLedgerPage = () => {
         }
         rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
         return rows;
-    }, [journalEntries]);
+    }, [journalEntries, includeDrafts]);
 
     // The date range + account filter, each optional. Rows BEFORE the range
     // still matter for the opening balance, so filter in two steps.
@@ -208,7 +214,7 @@ const GeneralLedgerPage = () => {
             th{font-size:10px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #cbd5e1;padding:6px;text-align:left}
             th:nth-child(n+5){text-align:right}
             td{padding:5px 6px;border-bottom:1px solid #e2e8f0;font-variant-numeric:tabular-nums}
-        </style></head><body><h1>General Ledger</h1><p>${dateFrom || 'Inception'} – ${dateTo || 'today'} · All figures are in USD.</p>
+        </style></head><body><h1>General Ledger</h1><p>${dateFrom || 'Inception'} – ${dateTo || 'today'} · All figures are in USD.${includeDrafts ? ' · Draft entries included.' : ''}</p>
         ${accountBlocks}</body></html>`);
         w.document.close();
         w.focus();
@@ -265,6 +271,11 @@ const GeneralLedgerPage = () => {
                             ))}
                         </select>
                     </div>
+                    <label title="Drafts aren't in the books yet — turn this on to preview balances as if they were posted"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={includeDrafts} onChange={e => setIncludeDrafts(e.target.checked)} style={{ cursor: 'pointer' }} />
+                        Include drafts
+                    </label>
                     <button onClick={reload} title="Reload the ledger" style={{ ...btnStyle, padding: '9px 10px' }}>
                         <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
