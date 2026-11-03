@@ -874,7 +874,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 ) : (
                     // Fixed 3-across on desktop (Date/Account/Counter, then Amount/Status
                     // on their own row); one column stacked on mobile.
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', alignItems: 'end' }}>
+                    <div className="rev-exp-form" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', alignItems: 'end' }}>
                         <div>
                             <label style={labelStyle}>Date</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
@@ -1363,7 +1363,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 })()}
             </Modal>
 
-            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+            <style>{`
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                /* Focused form field reads as "being edited": blue border (the
+                   inputs set outline: none, so this is the focus cue). */
+                .rev-exp-form input:focus, .rev-exp-form select:focus { border-color: #5469d4 !important; }
+            `}</style>
         </div>
     );
 };
