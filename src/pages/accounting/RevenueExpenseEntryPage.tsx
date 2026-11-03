@@ -815,7 +815,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
     const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
     const inputStyle: React.CSSProperties = {
-        width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
+        width: '100%', padding: '9px 12px', borderRadius: '8px',
+        // Blue borders while editing an existing entry, so the form reads as
+        // "changing that entry", not "creating a new one".
+        border: editingEntry ? '1.5px solid #5469d4' : '1px solid var(--color-border)',
         background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '13px', outline: 'none',
     };
 
