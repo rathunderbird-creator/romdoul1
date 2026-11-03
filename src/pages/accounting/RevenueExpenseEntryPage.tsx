@@ -936,7 +936,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 style={inputStyle}
                             />
                         </div>
-                        {(!editingEntry || editSimple) && accountId && counterId && (() => {
+                        {(!editingEntry || editSimple) && accountId && counterId && amountNum > 0 && (() => {
                             // Live two-line preview of the entry about to be
                             // posted — Dr the money-in/expense side, Cr the
                             // revenue/payment side, exactly as handleSave books it.
