@@ -290,6 +290,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const defaultEntryStatus: 'Posted' | 'Draft' = 'Draft';
     const [entryStatus, setEntryStatus] = useState<'Posted' | 'Draft'>(defaultEntryStatus);
     const [isSaving, setIsSaving] = useState(false);
+    // Auto-generated reference number, same REV-/EXP-<timestamp> shape this
+    // page always saved as reference_id — now visible (and editable) up front.
+    const newReference = useCallback(() => `${CFG[mode].refPrefix}-${Date.now()}`, [mode]);
+    const [reference, setReference] = useState(newReference);
+    useEffect(() => { setReference(newReference()); }, [newReference]);
 
     // Picks "Bank Account (ABA)" specifically when it exists, else the same
     // cash/bank-first pick this page already used as a fallback.
@@ -452,11 +457,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             // null (missing migration) just omits it, like the sibling pages.
             const entryNumber = await nextJournalEntryNumber(cfg.refPrefix, date);
             await saveJournalEntry(
-                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
+                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: reference.trim() || `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
                 entryLines
             );
             setAmount('');
             setDescription('');
+            setReference(newReference());
             refetch();
         } catch {
             // saveJournalEntry already toasts the failure.
@@ -911,6 +917,17 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </select>
                         </div>
                         <div>
+                            <label style={labelStyle}>Reference Number</label>
+                            <input
+                                type="text"
+                                value={editingEntry ? (editingEntry.ref || '—') : reference}
+                                onChange={e => setReference(e.target.value)}
+                                disabled={!!editingEntry}
+                                title={editingEntry ? "An existing entry's reference doesn't change here" : 'Auto-generated — edit it if you track your own numbers'}
+                                style={inputStyle}
+                            />
+                        </div>
+                        <div>
                             <label style={labelStyle}>Description (optional)</label>
                             <input
                                 type="text" className="d2-khmer" placeholder={`e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
@@ -919,6 +936,28 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 style={inputStyle}
                             />
                         </div>
+                        {(!editingEntry || editSimple) && accountId && counterId && (() => {
+                            // Live two-line preview of the entry about to be
+                            // posted — Dr the money-in/expense side, Cr the
+                            // revenue/payment side, exactly as handleSave books it.
+                            const mainName = accountById.get(accountId)?.account_name || '?';
+                            const counterName = accountById.get(counterId)?.account_name || '?';
+                            const drName = mode === 'revenue' ? counterName : mainName;
+                            const crName = mode === 'revenue' ? mainName : counterName;
+                            return (
+                                <div style={{ gridColumn: '1 / -1', borderRadius: '10px', border: `1px solid color-mix(in srgb, ${cfg.color} 30%, var(--color-border))`, background: `color-mix(in srgb, ${cfg.color} 4%, var(--color-surface))`, padding: '10px 14px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: cfg.color, marginBottom: '4px' }}>Journal Entry Preview</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                                        <span className="d2-khmer">Dr. {drName}</span>
+                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountNum)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0 2px', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                                        <span className="d2-khmer" style={{ paddingLeft: '18px' }}>Cr. {crName}</span>
+                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountNum)}</span>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', alignItems: 'end', flexWrap: 'wrap' }}>
                             <button
                                 onClick={handleSave}
