@@ -895,6 +895,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </select>
                         </div>
                         <div>
+                            <label style={labelStyle}>Amount (USD)</label>
+                            <input
+                                type="number" min="0.01" step="0.01" placeholder="0.00" value={amount}
+                                onChange={e => setAmount(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                                disabled={!!editingEntry && !editSimple}
+                                style={inputStyle}
+                            />
+                        </div>
+                        <div>
                             <label style={labelStyle}>{cfg.accountLabel}</label>
                             <select value={accountId} onChange={e => setAccountId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {mainAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
@@ -916,16 +926,6 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     </>
                                 ) : counterAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                             </select>
-                        </div>
-                        <div>
-                            <label style={labelStyle}>Amount (USD)</label>
-                            <input
-                                type="number" min="0.01" step="0.01" placeholder="0.00" value={amount}
-                                onChange={e => setAmount(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
-                                disabled={!!editingEntry && !editSimple}
-                                style={inputStyle}
-                            />
                         </div>
                         <div style={{ gridColumn: '1 / -1' }}>
                             <label style={labelStyle}>Description (optional)</label>
