@@ -117,7 +117,7 @@ const JournalEntriesPage = () => {
     // Unposting rewinds finalized books, so it stays admin-only — same gate
     // as Customer Payment's and Revenue/Expense's bulk Unpost.
     const isAdmin = currentUser?.roleId === 'admin';
-    const { journalEntries, accounts, isLoading, fetchJournalEntries, fetchAccounts, saveJournalEntry } = useAccounting();
+    const { journalEntries, accounts, isLoading, fetchJournalEntries, patchJournalEntry, fetchAccounts, saveJournalEntry } = useAccounting();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -334,7 +334,9 @@ const JournalEntriesPage = () => {
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', entryId);
             if (error) throw error;
             showToast('Entry posted', 'success');
-            fetchJournalEntries();
+            // Only the status changed — update that one row in place instead of
+            // refetching the whole ledger (which flashes the table's loading state).
+            patchJournalEntry(entryId, { status: 'Posted' });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             showToast(/status/i.test(msg)
