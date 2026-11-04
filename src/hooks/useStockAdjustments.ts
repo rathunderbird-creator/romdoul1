@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
-import { nextJournalEntryNumber, entryNumberRef } from '../utils/journalEntryNumber';
+import { nextJournalEntryNumber, entryNumberRef, entryDescription } from '../utils/journalEntryNumber';
+import { insertJournalLines } from '../utils/journalEntryLines';
 import type { StockAdjustment, StockAdjustmentLine, StockAdjustmentReason } from '../types';
 
 // Reasons that correct the books rather than record a real-world loss: an
@@ -78,6 +79,27 @@ export function useStockAdjustments() {
         return adjustment.id as string;
     }, [fetchAdjustments]);
 
+    // Rewrites a Draft in place: header fields updated, lines replaced.
+    // Drafts have made no stock/ledger changes yet, so this is a plain
+    // rewrite; Posted is final (same rule as deleteAdjustment below).
+    const updateAdjustment = useCallback(async (
+        id: string,
+        header: { warehouse_id: string; adjustment_date: string; reason: StockAdjustmentReason; notes?: string | null },
+        lines: { product_id: string; bin?: string; quantity: number; unit_cost: number; batch?: string }[]
+    ) => {
+        const { error } = await supabase.from('stock_adjustments')
+            .update({ ...header, notes: header.notes ?? null })
+            .eq('id', id).eq('status', 'Draft');
+        if (error) throw new Error(errorMessage(error));
+        const { error: delErr } = await supabase.from('stock_adjustment_lines').delete().eq('adjustment_id', id);
+        if (delErr) throw new Error(errorMessage(delErr));
+        const { error: insErr } = await supabase.from('stock_adjustment_lines').insert(
+            lines.map(l => ({ ...l, adjustment_id: id }))
+        );
+        if (insErr) throw new Error(errorMessage(insErr));
+        await fetchAdjustments(true);
+    }, [fetchAdjustments]);
+
     // A Draft has made no stock/ledger changes yet, so deleting one is a
     // plain delete (lines cascade). Posted is final — same rule as every
     // other ledger-backed record in this app.
@@ -143,7 +165,7 @@ export function useStockAdjustments() {
         await fetchAdjustments(true);
     }, [fetchAdjustments, showToast]);
 
-    return { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, deleteAdjustment, postAdjustment };
+    return { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, updateAdjustment, deleteAdjustment, postAdjustment };
 }
 
 type ToastFn = (msg: string, kind: 'success' | 'error' | 'info') => void;
@@ -186,9 +208,13 @@ async function postStockAdjustmentEntry(
         }
 
         const entryNumber = await nextJournalEntryNumber('ADJ', adjustment.adjustment_date);
+        // Unified format with the reason in the counterparty slot —
+        // 'Inventory - ADJ-20261104-001 — Damaged goods'; instances without
+        // the entry_number migration keep the older plain label.
         const entryPayload: Record<string, unknown> = {
             date: adjustment.adjustment_date,
-            description: `Stock adjustment ${entryNumberRef(entryNumber) || 'ADJ'}`,
+            description: entryDescription(entryNumber, adjustment.reason)
+                || `Stock adjustment ${entryNumberRef(entryNumber) || 'ADJ'}`,
             reference_id: 'ADJ-' + adjustment.id,
             status: 'Draft',
         };
@@ -216,9 +242,9 @@ async function postStockAdjustmentEntry(
         const netPositive = netValue > 0;
         const debitInventory = netPositive ? amount : 0;
         const creditInventory = netPositive ? 0 : amount;
-        const { error: lErr } = await supabase.from('journal_entry_lines').insert([
-            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: debitInventory, credit: creditInventory },
-            { journal_entry_id: entry.id, account_id: balancingAcc.id, debit: creditInventory, credit: debitInventory },
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: debitInventory, credit: creditInventory, description: `Inventory adjustment — ${adjustment.reason}` },
+            { journal_entry_id: entry.id, account_id: balancingAcc.id, debit: creditInventory, credit: debitInventory, description: corrective ? `Stock adjustment — ${adjustment.reason}` : `Inventory write-off — ${adjustment.reason}` },
         ]);
         if (lErr) {
             console.error('Failed to post the adjustment ledger entry lines:', lErr);
