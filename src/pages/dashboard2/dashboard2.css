@@ -204,7 +204,11 @@
     .d2-inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 767px) {
-    .d2-hero { grid-template-columns: 1fr; }
+    /* Phones keep two KPI cards per row; the inline tier-1/tier-2 value
+       sizes (34/22px) are too wide for a half-width card, so cap them. */
+    .d2-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .d2-hero .d2-kpi-value { font-size: 19px !important; }
+    .d2-hero .d2-kpi-sub { font-size: 11px !important; }
     .d2-inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .d2-toolbar { flex-wrap: wrap; }
 }

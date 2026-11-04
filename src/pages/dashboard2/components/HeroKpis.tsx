@@ -61,8 +61,8 @@ const KpiCard: FC<KpiCardProps> = ({ label, hint, value, valueColor, size, accen
             <span style={labelText}>{label}</span>
             {hint && <span style={hintText}>{hint}</span>}
         </span>
-        <span style={valueStyle(size, valueColor, passive)}>{value}</span>
-        <span style={subLine}>{sub}</span>
+        <span className="d2-kpi-value" style={valueStyle(size, valueColor, passive)}>{value}</span>
+        <span className="d2-kpi-sub" style={subLine}>{sub}</span>
         {extra}
         <span style={deltaRow}>
             <DeltaBadge value={change} suffix={changeSuffix} invert={invert} />
