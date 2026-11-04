@@ -5,7 +5,7 @@
 // supplier's outstanding bills oldest-due-first (recordSupplierPayment still
 // books one payment row per bill it settles, so the ledger stays per-bill).
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt, Zap } from 'lucide-react';
+import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt, Zap, CheckCircle2, HelpCircle } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -60,7 +60,7 @@ const SupplierPaymentsPage: React.FC = () => {
         fetchPurchaseOrders, fetchSupplierPayments,
         recordSupplierPayment, deleteSupplierPayment,
     } = useProcurement();
-    const { journalEntries, fetchJournalEntries, accounts, fetchAccounts } = useAccounting();
+    const { journalEntries, fetchJournalEntries, patchJournalEntry, accounts, fetchAccounts } = useAccounting();
 
     useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
     // Cash/bank ledger accounts for the "Paid from" select.
@@ -96,24 +96,55 @@ const SupplierPaymentsPage: React.FC = () => {
     // entry, so the marker is the only way back to it (same trick
     // deleteSupplierPayment already uses to find what to clean up).
     const [paymentStatus, setPaymentStatus] = useState<Map<string, PayStatus>>(new Map());
+    // Each payment's ledger entry id (when one was found) — what the Post
+    // button below flips to Posted.
+    const [paymentEntryId, setPaymentEntryId] = useState<Map<string, string>>(new Map());
     useEffect(() => {
         let alive = true;
         (async () => {
-            if (supplierPayments.length === 0) { setPaymentStatus(new Map()); return; }
+            if (supplierPayments.length === 0) { setPaymentStatus(new Map()); setPaymentEntryId(new Map()); return; }
             const { data: txs } = await supabase.from('transactions').select('id, description').like('description', '%#SPP-%');
             if (!alive) return;
             const entryByRef = new Map(journalEntries.map(e => [e.reference_id, e]));
             const next = new Map<string, PayStatus>();
+            const ids = new Map<string, string>();
             for (const p of supplierPayments) {
                 const marker = `#SPP-${p.id.slice(0, 8)}`;
                 const tx = (txs || []).find(t => (t.description || '').includes(marker));
                 const entry = tx ? entryByRef.get('TX-' + tx.id) : undefined;
                 next.set(p.id, entry ? ((entry.status || 'Posted') === 'Draft' ? 'Draft' : 'Posted') : 'Draft');
+                if (entry) ids.set(p.id, entry.id);
             }
             setPaymentStatus(next);
+            setPaymentEntryId(ids);
         })();
         return () => { alive = false; };
     }, [supplierPayments, journalEntries]);
+
+    // ── Post (flips the payment's existing ledger entry to Posted, after a
+    // journal-entry-preview confirmation — same pattern as Supplier Bills) ──
+    const [confirmPostPayment, setConfirmPostPayment] = useState<SupplierPayment | null>(null);
+    const [postingId, setPostingId] = useState<string | null>(null);
+    const canPost = (p: SupplierPayment): boolean =>
+        (paymentStatus.get(p.id) || 'Draft') === 'Draft' && paymentEntryId.has(p.id);
+    const postPayment = async (p: SupplierPayment) => {
+        const entryId = paymentEntryId.get(p.id);
+        if (!entryId) { showToast('No ledger entry found for this payment — repost it from Journal Entries’ Import to Ledger.', 'info'); return; }
+        setPostingId(p.id);
+        try {
+            const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', entryId);
+            if (error) throw error;
+            showToast('Payment posted', 'success');
+            // Only the status changed — patch the one entry in place; the
+            // status map above recomputes from journalEntries.
+            patchJournalEntry(entryId, { status: 'Posted' });
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast('Failed to post payment: ' + msg, 'error');
+        } finally {
+            setPostingId(null);
+        }
+    };
 
     // "PAY-YYYYMMDD-NNN", computed for display only — supplier_payments has
     // no reference column of its own (unlike bills' invoice_number), so this
@@ -468,6 +499,11 @@ const SupplierPaymentsPage: React.FC = () => {
                                         <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft')}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                                                {canPost(p) && (
+                                                    <button onClick={() => setConfirmPostPayment(p)} disabled={postingId === p.id} title="Post to ledger" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === p.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === p.id ? 0.6 : 1 }}>
+                                                        {postingId === p.id ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={15} />}
+                                                    </button>
+                                                )}
                                                 <button onClick={() => setViewPayment(p)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
                                                 <button onClick={printList} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
                                                 <button onClick={() => handleDelete(p)} disabled={deletingId === p.id} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: deletingId === p.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: deletingId === p.id ? 0.6 : 1 }}><XCircle size={15} /></button>
@@ -622,9 +658,70 @@ const SupplierPaymentsPage: React.FC = () => {
                             <span style={{ fontWeight: 700 }}>Amount</span>
                             <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(viewPayment.amount)}</span>
                         </div>
+                        {canPost(viewPayment) && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button
+                                    onClick={() => { setConfirmPostPayment(viewPayment); setViewPayment(null); }}
+                                    disabled={postingId === viewPayment.id}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPayment.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPayment.id ? 0.6 : 1 }}
+                                >
+                                    <CheckCircle2 size={13} /> {postingId === viewPayment.id ? 'Posting…' : 'Post'}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </Modal>
             )}
+
+            {confirmPostPayment && (() => {
+                // Preview the entry Post will flip to Posted — its real lines,
+                // same panel as Supplier Bills' Post confirmation.
+                const previewJe = journalEntries.find(j => j.id === paymentEntryId.get(confirmPostPayment.id));
+                const fmtNum = (n: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const previewLines = (previewJe?.lines || [])
+                    .filter(l => (Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0)
+                    .map(l => ({ name: l.account?.account_name || '—', debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 }))
+                    .sort((a, b) => (b.debit > 0 ? 1 : 0) - (a.debit > 0 ? 1 : 0));
+                return (
+                <div onClick={() => setConfirmPostPayment(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '460px', padding: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(76,95,208,0.12)', color: '#4c5fd0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <HelpCircle size={22} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>Are you sure?</h3>
+                                <p className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
+                                    Post this {fmtUsd(confirmPostPayment.amount)} payment to {confirmPostPayment.supplier?.name || 'the supplier'}? This books the entry below.
+                                </p>
+                            </div>
+                        </div>
+                        {previewLines.length > 0 && (
+                            <div style={{ marginTop: '16px', borderRadius: '10px', border: '1px solid color-mix(in srgb, #4c5fd0 30%, var(--color-border))', background: 'color-mix(in srgb, #4c5fd0 4%, var(--color-surface))', padding: '10px 14px' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#4c5fd0', marginBottom: '4px' }}>Journal Entry Preview</div>
+                                {previewLines.map((l, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: i < previewLines.length - 1 ? '1px solid var(--color-border)' : 'none', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                                        <span className="d2-khmer" style={l.credit > 0 ? { paddingLeft: '18px' } : undefined}>{l.debit > 0 ? 'Dr.' : 'Cr.'} {l.name}</span>
+                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmtNum(l.debit > 0 ? l.debit : l.credit)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                            <button onClick={() => setConfirmPostPayment(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => { const p = confirmPostPayment; setConfirmPostPayment(null); postPayment(p); }}
+                                style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                                Post
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                );
+            })()}
         </div>
     );
 };
