@@ -685,9 +685,25 @@ const SupplierBillsPage = () => {
                 />
             )}
 
-            {confirmPostPO && (
+            {confirmPostPO && (() => {
+                // Preview the entry Post will flip to Posted — its real lines
+                // when the receipt entry already exists, else the Dr Inventory /
+                // Cr Accounts Payable pair postPurchaseReceiptEntry will create.
+                const previewJe = journalEntries.find(j => j.reference_id === 'PO-' + confirmPostPO.id);
+                const amount = Number(confirmPostPO.total_amount) || 0;
+                const fmtNum = (n: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const jeLines = (previewJe?.lines || [])
+                    .filter(l => (Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0)
+                    .map(l => ({ name: l.account?.account_name || '—', debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 }));
+                const previewLines = jeLines.length > 0
+                    ? [...jeLines].sort((a, b) => (b.debit > 0 ? 1 : 0) - (a.debit > 0 ? 1 : 0))
+                    : [
+                        { name: 'Inventory', debit: amount, credit: 0 },
+                        { name: 'Accounts Payable', debit: 0, credit: amount },
+                    ];
+                return (
                 <div onClick={() => setConfirmPostPO(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-                    <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px' }}>
+                    <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '460px', padding: '24px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
                             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(76,95,208,0.12)', color: '#4c5fd0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <HelpCircle size={22} />
@@ -695,9 +711,18 @@ const SupplierBillsPage = () => {
                             <div>
                                 <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>Are you sure?</h3>
                                 <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
-                                    Post {confirmPostPO.invoice_number || poShortId(confirmPostPO)}? This creates the payable.
+                                    Post {confirmPostPO.invoice_number || poShortId(confirmPostPO)}? This books the entry below and creates the payable.
                                 </p>
                             </div>
+                        </div>
+                        <div style={{ marginTop: '16px', borderRadius: '10px', border: '1px solid color-mix(in srgb, #4c5fd0 30%, var(--color-border))', background: 'color-mix(in srgb, #4c5fd0 4%, var(--color-surface))', padding: '10px 14px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#4c5fd0', marginBottom: '4px' }}>Journal Entry Preview</div>
+                            {previewLines.map((l, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: i < previewLines.length - 1 ? '1px solid var(--color-border)' : 'none', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                                    <span className="d2-khmer" style={l.credit > 0 ? { paddingLeft: '18px' } : undefined}>{l.debit > 0 ? 'Dr.' : 'Cr.'} {l.name}</span>
+                                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmtNum(l.debit > 0 ? l.debit : l.credit)}</span>
+                                </div>
+                            ))}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                             <button onClick={() => setConfirmPostPO(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
@@ -712,7 +737,8 @@ const SupplierBillsPage = () => {
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
         </div>
     );
 };
