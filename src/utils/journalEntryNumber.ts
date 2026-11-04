@@ -72,13 +72,14 @@ export function entryNumberRef(entryNumber: string | null | undefined): string |
 // the receive entry's (GRN/PUR) label.
 // The area comes from the entry_number's type code, so every caller labels
 // consistently. Returns null when there is no entry number to echo or the
-// type has no business area (ADJ/MAN/PAY/REV/EXP keep their own text) —
+// type has no business area (MAN/PAY/REV/EXP keep their own text) —
 // callers then fall back to their older format, which still carries the
 // context on instances without the entry_number migration.
 const AREA_BY_TYPE: Record<string, string> = {
     SPP: 'Payment', GRN: 'Purchase', PUR: 'Purchase', OPA: 'Purchase',
     WSP: 'Wholesale',
     RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
+    ADJ: 'Inventory', // Stock Adjustments; the "name" slot carries the reason
 };
 export function entryDescription(entryNumber: string | null | undefined, name: string): string | null {
     const ref = entryNumberRef(entryNumber);

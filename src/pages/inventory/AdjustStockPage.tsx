@@ -8,7 +8,7 @@
 // location or lot/batch-tracking system, so Bin is just "Default" and Batch
 // is free text, kept for whoever wants a note to find stock by later.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Search, RefreshCw, Printer, Download, Eye, X, Trash2, Upload } from 'lucide-react';
+import { Plus, Search, RefreshCw, Printer, Download, Eye, X, Trash2, Upload, Pencil } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -53,7 +53,7 @@ const emptyLine = (): DraftLine => ({ key: genKey(), product_id: '', bin: 'Defau
 const AdjustStockPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { products, warehouses, currentUser } = useStore();
-    const { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, deleteAdjustment, postAdjustment } = useStockAdjustments();
+    const { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, updateAdjustment, deleteAdjustment, postAdjustment } = useStockAdjustments();
     const { showToast } = useToast();
 
     useEffect(() => {
@@ -101,12 +101,35 @@ const AdjustStockPage: React.FC = () => {
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
+    // When set, the modal edits this Draft in place instead of creating a new one.
+    const [editingId, setEditingId] = useState<string | null>(null);
+
     const openCreate = () => {
+        setEditingId(null);
         setWarehouseId(warehouses[0]?.id || '');
         setDate(todayYmd());
         setReason('Opening balance');
         setNotes('');
         setLines([emptyLine()]);
+        setIsCreateOpen(true);
+    };
+
+    const openEdit = (a: StockAdjustment) => {
+        if (a.status !== 'Draft') { showToast('Posted adjustments can’t be edited — make a correcting adjustment instead.', 'info'); return; }
+        setEditingId(a.id);
+        setWarehouseId(a.warehouse_id || '');
+        setDate(a.adjustment_date);
+        setReason(a.reason);
+        setNotes(a.notes || '');
+        setLines((a.lines || []).map(l => ({
+            key: genKey(),
+            product_id: l.product_id || '',
+            bin: l.bin || 'Default',
+            quantity: String(l.quantity ?? ''),
+            unit_cost: String(l.unit_cost ?? ''),
+            batch: l.batch || '',
+        })));
+        setViewingId(null);
         setIsCreateOpen(true);
     };
 
@@ -185,9 +208,15 @@ const AdjustStockPage: React.FC = () => {
                     batch: l.batch || undefined,
                 };
             });
-            await saveAdjustment({ warehouse_id: warehouseId, adjustment_date: date, reason, notes: notes || undefined }, payloadLines, currentUser?.id);
-            showToast('Draft adjustment saved', 'success');
+            if (editingId) {
+                await updateAdjustment(editingId, { warehouse_id: warehouseId, adjustment_date: date, reason, notes: notes || null }, payloadLines);
+                showToast('Draft adjustment updated', 'success');
+            } else {
+                await saveAdjustment({ warehouse_id: warehouseId, adjustment_date: date, reason, notes: notes || undefined }, payloadLines, currentUser?.id);
+                showToast('Draft adjustment saved', 'success');
+            }
             setIsCreateOpen(false);
+            setEditingId(null);
         } catch (e) {
             showToast('Failed to save adjustment: ' + (e instanceof Error ? e.message : 'unknown error'), 'error');
         } finally {
@@ -358,6 +387,9 @@ const AdjustStockPage: React.FC = () => {
                                             </td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                                                 <button onClick={() => setViewingId(a.id)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Eye size={15} /></button>
+                                                {a.status === 'Draft' && (
+                                                    <button onClick={() => openEdit(a)} title="Edit draft" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Pencil size={15} /></button>
+                                                )}
                                                 <button onClick={() => printOne(a)} title="Print" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Printer size={15} /></button>
                                                 <button onClick={() => handleVoid(a)} disabled={isVoiding} title={a.status === 'Draft' ? 'Delete draft' : "Posted — can't be deleted"} style={{ background: 'none', border: 'none', cursor: a.status === 'Draft' ? 'pointer' : 'not-allowed', color: a.status === 'Draft' ? '#DC2626' : 'var(--color-text-muted)', padding: '4px', opacity: a.status === 'Draft' ? 1 : 0.5 }}><X size={15} /></button>
                                             </td>
@@ -375,7 +407,7 @@ const AdjustStockPage: React.FC = () => {
                 <div style={overlayStyle}>
                     <div style={{ ...modalStyle, maxWidth: '820px' }}>
                         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>New Stock Adjustment</h3>
+                            <h3 style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>{editingId ? 'Edit Stock Adjustment' : 'New Stock Adjustment'}</h3>
                             <button onClick={() => setIsCreateOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={20} /></button>
                         </div>
                         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
@@ -462,7 +494,7 @@ const AdjustStockPage: React.FC = () => {
                         </div>
                         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                             <button onClick={() => setIsCreateOpen(false)} style={{ ...btnStyle, background: 'var(--color-surface)' }}>Cancel</button>
-                            <button onClick={handleSaveDraft} disabled={isSaving} className="primary-button" style={{ padding: '10px 20px', opacity: isSaving ? 0.6 : 1 }}>{isSaving ? 'Saving…' : 'Save draft'}</button>
+                            <button onClick={handleSaveDraft} disabled={isSaving} className="primary-button" style={{ padding: '10px 20px', opacity: isSaving ? 0.6 : 1 }}>{isSaving ? 'Saving…' : editingId ? 'Save changes' : 'Save draft'}</button>
                         </div>
                     </div>
                 </div>
@@ -523,7 +555,10 @@ const AdjustStockPage: React.FC = () => {
                             <div style={{ display: 'flex', gap: '12px' }}>
                                 <button onClick={() => setViewingId(null)} style={{ ...btnStyle, background: 'var(--color-surface)' }}>Close</button>
                                 {viewing.status === 'Draft' && (
-                                    <button onClick={handlePost} disabled={isPosting} className="primary-button" style={{ padding: '10px 20px', opacity: isPosting ? 0.6 : 1 }}>{isPosting ? 'Posting…' : 'Post adjustment'}</button>
+                                    <>
+                                        <button onClick={() => openEdit(viewing)} style={btnStyle}><Pencil size={14} /> Edit</button>
+                                        <button onClick={handlePost} disabled={isPosting} className="primary-button" style={{ padding: '10px 20px', opacity: isPosting ? 0.6 : 1 }}>{isPosting ? 'Posting…' : 'Post adjustment'}</button>
+                                    </>
                                 )}
                             </div>
                         </div>
