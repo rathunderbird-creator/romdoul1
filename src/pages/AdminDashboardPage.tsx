@@ -37,15 +37,18 @@ const KpiCard: React.FC<{
     label: string; value: string; sub?: string; color: string;
     icon: React.ComponentType<{ size?: number; color?: string }>;
     trend?: 'up' | 'down'; trendLabel?: string;
-}> = ({ label, value, sub, color, icon: Icon, trend, trendLabel }) => (
-    <div style={{ background: `${color}14`, border: `1px solid ${color}33`, borderRadius: '14px', padding: '18px 20px' }}>
+    // Two-per-row phone layout: tighter paddings and a value size that keeps
+    // amounts like $32,270.27 inside a half-width card.
+    compact?: boolean;
+}> = ({ label, value, sub, color, icon: Icon, trend, trendLabel, compact }) => (
+    <div style={{ background: `${color}14`, border: `1px solid ${color}33`, borderRadius: '14px', padding: compact ? '14px 14px' : '18px 20px', minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</span>
-            <div style={{ width: '42px', height: '42px', borderRadius: '11px', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon size={21} color="#fff" />
+            <span style={{ fontSize: compact ? '12px' : '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</span>
+            <div style={{ width: compact ? '34px' : '42px', height: compact ? '34px' : '42px', borderRadius: compact ? '9px' : '11px', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon size={compact ? 17 : 21} color="#fff" />
             </div>
         </div>
-        <div style={{ fontSize: '30px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '14px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        <div style={{ fontSize: compact ? '20px' : '30px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: compact ? '10px' : '14px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{value}</div>
         {/* Sub and trend rows always render — hidden via visibility rather than
             omitted — so every card reserves the same height whether or not it
             has a sub-label or trend to show. */}
@@ -188,25 +191,26 @@ const AdminDashboardPage: React.FC = () => {
                     </button>
                 </div>
 
-                {/* KPI row 1 — Balance Sheet snapshot */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-                    <KpiCard label="Total Assets" value={fmt(totalAssets)} color={BLUE} icon={BarChart3} />
-                    <KpiCard label="Total Liabilities" value={fmt(totalLiabilities)} color={RED} icon={TrendingDown} />
-                    <KpiCard label="Total Equity" value={fmt(totalEquity)} color={PURPLE} icon={PieChart} />
+                {/* KPI row 1 — Balance Sheet snapshot. Phones get a fixed
+                    2-per-row grid (compact cards); desktop keeps auto-fit. */}
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: isMobile ? '12px' : '16px' }}>
+                    <KpiCard label="Total Assets" value={fmt(totalAssets)} color={BLUE} icon={BarChart3} compact={isMobile} />
+                    <KpiCard label="Total Liabilities" value={fmt(totalLiabilities)} color={RED} icon={TrendingDown} compact={isMobile} />
+                    <KpiCard label="Total Equity" value={fmt(totalEquity)} color={PURPLE} icon={PieChart} compact={isMobile} />
                 </div>
 
                 {/* KPI row 2 — performance indicators */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: isMobile ? '12px' : '16px' }}>
                     <KpiCard
-                        label="Net Income" value={fmt(netIncome)} color={BLUE} icon={TrendingUp}
+                        label="Net Income" value={fmt(netIncome)} color={BLUE} icon={TrendingUp} compact={isMobile}
                         trend={netIncome >= 0 ? 'up' : 'down'} trendLabel={netIncome >= 0 ? 'Positive trend' : 'Negative trend'}
                     />
                     <KpiCard
-                        label="Current Ratio" value={currentRatio === null ? '—' : currentRatio.toFixed(2)} sub="Assets/Liabilities" color={AMBER} icon={Activity}
+                        label="Current Ratio" value={currentRatio === null ? '—' : currentRatio.toFixed(2)} sub="Assets/Liabilities" color={AMBER} icon={Activity} compact={isMobile}
                         trend={currentRatio !== null && currentRatio >= 1 ? 'up' : 'down'} trendLabel={currentRatio !== null && currentRatio >= 1 ? 'Positive trend' : 'Negative trend'}
                     />
                     <KpiCard
-                        label="Net Profit Margin" value={`${netProfitMargin.toFixed(1)}%`} sub="Income/Revenue" color={TEAL} icon={TrendingUp}
+                        label="Net Profit Margin" value={`${netProfitMargin.toFixed(1)}%`} sub="Income/Revenue" color={TEAL} icon={TrendingUp} compact={isMobile}
                         trend={netProfitMargin >= 0 ? 'up' : 'down'} trendLabel={netProfitMargin >= 0 ? 'Positive trend' : 'Negative trend'}
                     />
                 </div>
