@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2, FileText, Users, AlertTriangle, DollarSign, ArrowUpDown } from 'lucide-react';
+import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2, FileText, Users, AlertTriangle, DollarSign, ArrowUpDown, Printer, Download, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
-import { Modal, StatusBadge } from '../../components';
+import { Modal } from '../../components';
 import { useProcurement } from '../../hooks/useProcurement';
 import type { Supplier } from '../../types';
 import { dayKeyFromDate, daysBetween } from '../../utils/dateRange';
@@ -30,6 +30,28 @@ const formatCurrency = (val: number) => {
 
 type StatusFilter = 'All' | 'Active' | 'Inactive';
 type SortOption = 'name' | 'balance' | 'newest';
+
+// Active/Inactive pill — same shape as Supplier Bills/Payments' status chips.
+const supplierChip = (active: boolean) => (
+    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: active ? 'rgba(16, 185, 129, 0.1)' : 'var(--color-bg)', color: active ? '#10b981' : 'var(--color-text-secondary)' }}>
+        {active ? 'Active' : 'Inactive'}
+    </span>
+);
+
+// The flat card + big colored total used across the procurement pages.
+const SummaryCard: React.FC<{ color: string; label: string; value: string; sub?: string }> = ({ color, label, value, sub }) => (
+    <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '16px 20px' }}>
+        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: '26px', fontWeight: 800, color, marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        {sub && <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{sub}</div>}
+    </div>
+);
+
+const toolbarBtnStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px',
+    border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)',
+    fontSize: '13px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+};
 
 const SuppliersPage = () => {
     const navigate = useNavigate();
@@ -172,6 +194,48 @@ const SuppliersPage = () => {
         }
     };
 
+    // Export/print the list as filtered — same conventions as Supplier
+    // Bills/Payments (BOM'd CSV, print window with the shared table CSS).
+    const exportCsv = () => {
+        const header = ['Supplier', 'Contact', 'Phone', 'Email', 'POs', 'Total Ordered', 'Paid', 'Balance', 'Overdue', 'Status'];
+        const rows = filteredSuppliers.map(s => {
+            const b = supplierBalances[s.id] || { totalAmount: 0, amountPaid: 0, balance: 0, overdue: false, overdueDays: 0, poCount: 0 };
+            return [s.name, s.contact_name || '', s.phone || '', s.email || '', b.poCount, b.totalAmount.toFixed(2), b.amountPaid.toFixed(2), b.balance.toFixed(2), b.overdue ? `${b.overdueDays}d` : '', s.is_active ? 'Active' : 'Inactive'];
+        });
+        const esc = (v: string | number) => { const str = String(v); return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str; };
+        const csv = [header, ...rows].map(r => r.map(esc).join(',')).join('\n');
+        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `suppliers-${dayKeyFromDate(new Date())}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    };
+
+    const escapeHtml = (s: string): string => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const printList = () => {
+        const w = window.open('', '_blank', 'width=1000,height=700');
+        if (!w) return;
+        const rowsHtml = filteredSuppliers.map(s => {
+            const b = supplierBalances[s.id] || { totalAmount: 0, amountPaid: 0, balance: 0, overdue: false, overdueDays: 0, poCount: 0 };
+            return `<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml([s.contact_name, s.phone, s.email].filter(Boolean).join(' · ') || '—')}</td>
+                <td style="text-align:right">${b.poCount}</td><td style="text-align:right">${formatCurrency(b.totalAmount)}</td>
+                <td style="text-align:right">${formatCurrency(b.amountPaid)}</td><td style="text-align:right">${formatCurrency(b.balance)}</td>
+                <td>${b.overdue ? `${b.overdueDays}d overdue` : ''}</td><td>${s.is_active ? 'Active' : 'Inactive'}</td></tr>`;
+        }).join('');
+        w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Suppliers</title><style>
+            body{font-family:Segoe UI,Arial,sans-serif;color:#1a1f36;padding:28px}
+            h1{font-size:20px;margin:0}p{color:#64748b;margin:4px 0 20px;font-size:13px}
+            table{width:100%;border-collapse:collapse;font-size:13px}
+            th{font-size:11px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #cbd5e1;padding:8px;text-align:left}
+            td{padding:7px 8px;border-bottom:1px solid #e2e8f0;font-variant-numeric:tabular-nums}
+        </style></head><body><h1>Suppliers</h1><p>Vendor directory with outstanding balances · All figures are in USD.</p>
+        <table><thead><tr><th>Supplier</th><th>Contact</th><th>POs</th><th>Total Ordered</th><th>Paid</th><th>Balance</th><th>Overdue</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
+        w.document.close();
+        w.focus();
+        w.print();
+    };
+
     const statusTabs: { label: string; value: StatusFilter; count: number }[] = [
         { label: 'All', value: 'All', count: summaryStats.total },
         { label: 'Active', value: 'Active', count: summaryStats.activeCount },
@@ -191,44 +255,10 @@ const SuppliersPage = () => {
                     </div>
                 ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
-                        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
-                            <Users size={20} />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Suppliers</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700 }}>{summaryStats.total}</div>
-                        </div>
-                    </div>
-                    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
-                        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #10b981, #34d399)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
-                            <Building2 size={20} />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Active</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#10b981' }}>{summaryStats.activeCount}</div>
-                        </div>
-                    </div>
-                    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
-                        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #f59e0b, #fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
-                            <AlertTriangle size={20} />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Overdue</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700, color: summaryStats.overdueCount > 0 ? '#ef4444' : 'var(--color-text)' }}>{summaryStats.overdueCount}</div>
-                        </div>
-                    </div>
-                    <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
-                        <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #ef4444, #f87171)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
-                            <DollarSign size={20} />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Outstanding Balance</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700, color: summaryStats.totalOutstanding > 0 ? '#ef4444' : '#10b981' }}>
-                                {formatCurrency(summaryStats.totalOutstanding)}
-                            </div>
-                        </div>
-                    </div>
+                    <SummaryCard color="#6366f1" label="Total Suppliers" value={String(summaryStats.total)} sub={`${summaryStats.activeCount} active · ${summaryStats.inactiveCount} inactive`} />
+                    <SummaryCard color="#10B981" label="Active" value={String(summaryStats.activeCount)} sub={`of ${summaryStats.total} suppliers`} />
+                    <SummaryCard color={summaryStats.overdueCount > 0 ? '#EF4444' : '#D97706'} label="Overdue" value={String(summaryStats.overdueCount)} sub={summaryStats.overdueCount === 1 ? 'supplier past due' : 'suppliers past due'} />
+                    <SummaryCard color={summaryStats.totalOutstanding > 0 ? '#EF4444' : '#10B981'} label="Outstanding Balance" value={formatCurrency(summaryStats.totalOutstanding)} sub="unpaid across all suppliers" />
                 </div>
                 )}
 
@@ -327,23 +357,28 @@ const SuppliersPage = () => {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                         {/* Search */}
-                        <div style={{ position: 'relative', width: '280px' }}>
+                        <div style={{ position: 'relative', width: '240px' }}>
                             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                            <input 
-                                type="text" 
-                                className="input-field" 
-                                placeholder="Search suppliers..." 
+                            <input
+                                type="text"
+                                className="input-field"
+                                placeholder="Search suppliers..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
                             />
                         </div>
-                        <button 
-                            className="primary-button" 
+                        <button onClick={() => { fetchSuppliers(); fetchPurchaseOrders(); }} title="Reload" style={{ ...toolbarBtnStyle, padding: '9px 10px' }}>
+                            <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
+                        </button>
+                        <button onClick={printList} disabled={isLoading} style={{ ...toolbarBtnStyle, opacity: isLoading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
+                        <button onClick={exportCsv} disabled={isLoading} style={{ ...toolbarBtnStyle, opacity: isLoading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                        <button
+                            className="primary-button"
                             onClick={() => handleOpenModal()}
-                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontWeight: 600, boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '10px', fontWeight: 600, boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}
                         >
                             <Plus size={18} /> New Supplier
                         </button>
@@ -396,17 +431,14 @@ const SuppliersPage = () => {
                         )}
                     </div>
                 ) : (
-                <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
-                    <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
+                <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', minWidth: '860px' }}>
                         <thead>
-                            <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Supplier</th>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Contact</th>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>POs</th>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Payment Progress</th>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Balance</th>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
-                                <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Actions</th>
+                            <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
+                                {['Supplier', 'Contact', 'POs', 'Payment Progress', 'Balance', 'Status', ''].map((h, i) => (
+                                    <th key={h || 'actions'} style={{ padding: '12px 20px', fontWeight: 700, fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: i === 4 || i === 6 ? 'right' : i === 2 ? 'center' : 'left' }}>{h}</th>
+                                ))}
                             </tr>
                         </thead>
                         <tbody>
@@ -448,16 +480,17 @@ const SuppliersPage = () => {
                                         >
                                             <td style={{ padding: '14px 20px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                                    <div style={{ 
-                                                        width: '40px', height: '40px', borderRadius: '10px', 
-                                                        background: `linear-gradient(135deg, ${stringToColor(supplier.name)}, ${stringToColor(supplier.name + 'x')})`, 
-                                                        color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        fontWeight: 'bold', fontSize: '13px', boxShadow: 'var(--shadow-sm)', flexShrink: 0,
+                                                    <div style={{
+                                                        width: '38px', height: '38px', borderRadius: '10px',
+                                                        background: `color-mix(in srgb, ${stringToColor(supplier.name)} 16%, var(--color-surface))`,
+                                                        border: `1px solid color-mix(in srgb, ${stringToColor(supplier.name)} 35%, var(--color-border))`,
+                                                        color: stringToColor(supplier.name), display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontWeight: 800, fontSize: '12px', flexShrink: 0,
                                                     }}>
                                                         {getInitials(supplier.name)}
                                                     </div>
                                                     <div>
-                                                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text)' }}>{supplier.name}</div>
+                                                        <div className="d2-khmer" style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--color-text-main)' }}>{supplier.name}</div>
                                                         {supplier.contact_name && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{supplier.contact_name}</div>}
                                                     </div>
                                                 </div>
@@ -511,33 +544,30 @@ const SuppliersPage = () => {
                                                 )}
                                             </td>
                                             <td style={{ padding: '14px 20px' }}>
-                                                <StatusBadge status={supplier.is_active ? 'Active' : 'Inactive'} readOnly />
+                                                {supplierChip(!!supplier.is_active)}
                                             </td>
-                                            <td style={{ padding: '14px 20px', textAlign: 'right' }}>
-                                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
-                                                    <button 
-                                                        className="primary-button" 
-                                                        style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}
                                                         onClick={() => navigate(`/procurement/suppliers/${supplier.id}`)}
-                                                        title="View Ledger"
+                                                        title="View ledger"
                                                     >
-                                                        <FileText size={13} /> Ledger
+                                                        <FileText size={15} />
                                                     </button>
-                                                    <button 
-                                                        className="secondary-button" 
-                                                        style={{ padding: '7px', borderRadius: '8px', background: 'var(--color-bg)' }}
+                                                    <button
+                                                        style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}
                                                         onClick={() => handleOpenModal(supplier)}
-                                                        title="Edit Supplier"
+                                                        title="Edit supplier"
                                                     >
-                                                        <Edit size={14} />
+                                                        <Edit size={15} />
                                                     </button>
-                                                    <button 
-                                                        className="danger-button" 
-                                                        style={{ padding: '7px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: 'none' }}
+                                                    <button
+                                                        style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}
                                                         onClick={(e) => handleDelete(supplier.id, e)}
-                                                        title="Delete Supplier"
+                                                        title="Delete supplier"
                                                     >
-                                                        <Trash2 size={14} />
+                                                        <Trash2 size={15} />
                                                     </button>
                                                 </div>
                                             </td>
@@ -547,6 +577,7 @@ const SuppliersPage = () => {
                             )}
                         </tbody>
                     </table>
+                    </div>
                 </div>
                 )}
 
