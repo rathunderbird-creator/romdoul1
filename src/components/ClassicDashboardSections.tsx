@@ -401,8 +401,10 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     min-width: 200px;
                 }
                 @media (max-width: 768px) {
+                    /* Phones: two cards per row instead of one full-width card each. */
                     .dashboard-flex-container > * {
-                        flex: 1 1 100%;
+                        flex: 1 1 calc(50% - 16px);
+                        min-width: 0;
                     }
                 }
             `}</style>
