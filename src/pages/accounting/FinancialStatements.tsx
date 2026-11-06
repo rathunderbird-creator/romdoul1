@@ -47,6 +47,18 @@ const BLUE = '#3B82F6', RED = '#EF4444', PURPLE = '#8B5CF6', GREEN = '#10B981', 
 // General Ledger — absent on synthetic lines like "Retained Earnings" below.
 interface StatementRow { id?: string; code: string; name: string; amount: number; prev?: number }
 
+// Income-statement bucket of a Revenue/Expense account, driven by sub_type
+// (same grouping as IncomeStatementPage). Accounts without one fall back by
+// name for COGS — instances whose chart predates sub_type (Romdoul 2/3) still
+// get a real Gross Profit — and to the Operating buckets otherwise.
+type IncomeBucket = 'revenue' | 'otherRevenue' | 'cogs' | 'opex' | 'otherExpense';
+const incomeBucketOf = (a: ChartOfAccount): IncomeBucket => {
+    if (a.account_type === 'Revenue') return a.sub_type === 'Other Revenue' ? 'otherRevenue' : 'revenue';
+    if (a.sub_type === 'Cost of Goods Sold' || (!a.sub_type && /cost of goods|cogs/i.test(a.account_name))) return 'cogs';
+    if (a.sub_type === 'Other Expense') return 'otherExpense';
+    return 'opex';
+};
+
 export interface FinancialStatementsProps {
     startDate: string;
     endDate: string;
@@ -182,21 +194,51 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [signedBalances, accounts, endDate, compare]);
 
-    // ── Income Statement (startDate → endDate) ──
+    // ── Income Statement (startDate → endDate), sectioned like a classic
+    // statement: Operating Revenue − Cost of Sales = Gross Profit; − Operating
+    // Expenses = Operating Profit; ± Other Revenue/Expenses = Net Income. ──
+    const [showEmpty, setShowEmpty] = useState(false);
     const incomeStatement = useMemo(() => {
         const inRange = signedBalances(l => l.date >= startDate && l.date <= endDate);
         const prevRange = compare
             ? signedBalances(l => l.date >= shiftYears(startDate, -1) && l.date <= shiftYears(endDate, -1))
             : undefined;
-        const revenue = rowsOfType('Revenue', inRange, prevRange);
-        const expenses = rowsOfType('Expense', inRange, prevRange);
-        return {
-            revenue, expenses,
-            totals: { revenue: sumOf(revenue), expenses: sumOf(expenses), net: sumOf(revenue) - sumOf(expenses) },
-            prevTotals: prevRange ? { revenue: sumPrev(revenue), expenses: sumPrev(expenses), net: sumPrev(revenue) - sumPrev(expenses) } : null,
+        const bucketRows = (bucket: IncomeBucket): StatementRow[] =>
+            accounts
+                .filter(a => (a.account_type === 'Revenue' || a.account_type === 'Expense') && incomeBucketOf(a) === bucket)
+                .filter(a => a.is_active || (inRange.get(a.id) || 0) !== 0 || (prevRange?.get(a.id) || 0) !== 0)
+                .filter(a => showEmpty || Math.abs(inRange.get(a.id) || 0) >= 0.005 || Math.abs(prevRange?.get(a.id) || 0) >= 0.005)
+                .map(a => ({ id: a.id, code: a.account_code, name: a.account_name, amount: inRange.get(a.id) || 0, ...(prevRange ? { prev: prevRange.get(a.id) || 0 } : {}) }));
+        // Totals from ALL accounts of the bucket (never affected by the
+        // hide-empty-rows display filter — zeros add nothing anyway, but the
+        // sums must not depend on what is shown).
+        const bucketTotal = (bucket: IncomeBucket, m: Map<string, number>): number =>
+            accounts.reduce((s, a) => s + ((a.account_type === 'Revenue' || a.account_type === 'Expense') && incomeBucketOf(a) === bucket ? (m.get(a.id) || 0) : 0), 0);
+        const totalsIn = (m: Map<string, number>) => {
+            const revenue = bucketTotal('revenue', m), cogs = bucketTotal('cogs', m), opex = bucketTotal('opex', m);
+            const otherRevenue = bucketTotal('otherRevenue', m), otherExpenses = bucketTotal('otherExpense', m);
+            return {
+                revenue, cogs, opex, otherRevenue, otherExpenses,
+                grossProfit: revenue - cogs,
+                operatingProfit: revenue - cogs - opex,
+                totalRevenue: revenue + otherRevenue,
+                expenses: cogs + opex + otherExpenses,
+                net: revenue + otherRevenue - cogs - opex - otherExpenses,
+            };
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [signedBalances, accounts, startDate, endDate, compare]);
+        return {
+            revenue: bucketRows('revenue'),
+            cogs: bucketRows('cogs'),
+            opex: bucketRows('opex'),
+            otherRevenue: bucketRows('otherRevenue'),
+            otherExpenses: bucketRows('otherExpense'),
+            // Other sections only exist when the chart has such accounts at all.
+            hasOtherRevenue: accounts.some(a => a.account_type === 'Revenue' && incomeBucketOf(a) === 'otherRevenue'),
+            hasOtherExpenses: accounts.some(a => a.account_type === 'Expense' && incomeBucketOf(a) === 'otherExpense'),
+            totals: totalsIn(inRange),
+            prevTotals: prevRange ? totalsIn(prevRange) : null,
+        };
+    }, [signedBalances, accounts, startDate, endDate, compare, showEmpty]);
 
     // ── Cash Flow (startDate → endDate): cash accounts = Asset accounts whose name
     // mentions cash/bank; each entry's cash delta is attributed to its other lines. ──
@@ -275,17 +317,25 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             };
         }
         if (tab === 'income') {
-            const section = (label: string, rows: StatementRow[], total: number) => [
+            const t = incomeStatement.totals, pt = incomeStatement.prevTotals;
+            const section = (label: string, rows: StatementRow[], total: number, prevTotal?: number) => [
                 ...rows.map(r => [r.code, `${label}: ${r.name}`, money(r.amount), ...(compare ? [money(r.prev || 0)] : [])]),
-                ['', `Total ${label}`, money(total), ...(compare ? [''] : [])],
+                ['', `Total ${label}`, money(total), ...(compare ? [pt ? money(prevTotal || 0) : ''] : [])],
             ];
+            const keyLine = (label: string, value: number, prevValue?: number) =>
+                [['', label, money(value), ...(compare ? [pt ? money(prevValue || 0) : ''] : [])]];
             return {
                 name: 'Income Statement', period: `${displayDate(startDate)} – ${displayDate(endDate)}`,
                 columns: ['Code', 'Account', 'This period', ...(compare ? ['Previous year'] : [])],
                 rows: [
-                    ...section('Revenue', incomeStatement.revenue, incomeStatement.totals.revenue),
-                    ...section('Expenses', incomeStatement.expenses, incomeStatement.totals.expenses),
-                    ['', 'Net Income', money(incomeStatement.totals.net), ...(compare ? [money(incomeStatement.prevTotals?.net || 0)] : [])],
+                    ...section('Revenue', incomeStatement.revenue, t.revenue, pt?.revenue),
+                    ...section('Cost of Sales', incomeStatement.cogs, t.cogs, pt?.cogs),
+                    ...keyLine('Gross Profit', t.grossProfit, pt?.grossProfit),
+                    ...section('Operating Expenses', incomeStatement.opex, t.opex, pt?.opex),
+                    ...keyLine('Operating Profit', t.operatingProfit, pt?.operatingProfit),
+                    ...(incomeStatement.hasOtherRevenue ? section('Other Revenue', incomeStatement.otherRevenue, t.otherRevenue, pt?.otherRevenue) : []),
+                    ...(incomeStatement.hasOtherExpenses ? section('Other Expenses', incomeStatement.otherExpenses, t.otherExpenses, pt?.otherExpenses) : []),
+                    ...keyLine(t.net >= 0 ? 'Net Income' : 'Net Loss', t.net, pt?.net),
                 ],
             };
         }
@@ -363,15 +413,15 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         </div>
     );
 
-    const SectionCard: React.FC<{ title: string; color: string; rows: StatementRow[]; totalLabel: string; total: number; prevTotal?: number }> =
-        ({ title, color, rows, totalLabel, total, prevTotal }) => (
+    const SectionCard: React.FC<{ title: string; color: string; rows: StatementRow[]; totalLabel: string; total: number; prevTotal?: number; emptyText?: string }> =
+        ({ title, color, rows, totalLabel, total, prevTotal, emptyText }) => (
             <div style={{ ...cardStyle, borderLeft: `4px solid ${color}`, overflow: 'hidden' }}>
                 <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color }}>{title}</span>
                     {compare && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>current · previous year</span>}
                 </div>
                 {rows.length === 0 ? (
-                    <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>No accounts of this type.</div>
+                    <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{emptyText || 'No accounts of this type.'}</div>
                 ) : rows.map((r, i) => (
                     <div
                         key={`${r.code}|${r.name}`}
@@ -407,7 +457,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         if (tab === 'income') return {
             ok: incomeStatement.totals.net >= 0,
             title: `${incomeStatement.totals.net >= 0 ? 'Net Income' : 'Net Loss'}: ${fmt(Math.abs(incomeStatement.totals.net))}`,
-            sub: 'Revenue − Expenses for the selected period',
+            sub: `Revenue ${fmt(incomeStatement.totals.totalRevenue)} − Expenses ${fmt(incomeStatement.totals.expenses)} · Gross Profit ${fmt(incomeStatement.totals.grossProfit)}`,
         };
         return {
             ok: cashFlow.net >= 0,
@@ -423,7 +473,8 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             { label: 'Total Equity', value: balanceSheet.totals.equity, prev: balanceSheet.prevTotals?.equity ?? null, color: PURPLE },
         ];
         if (tab === 'income') return [
-            { label: 'Total Revenue', value: incomeStatement.totals.revenue, prev: incomeStatement.prevTotals?.revenue ?? null, color: GREEN },
+            { label: 'Total Revenue', value: incomeStatement.totals.totalRevenue, prev: incomeStatement.prevTotals?.totalRevenue ?? null, color: GREEN },
+            { label: 'Gross Profit', value: incomeStatement.totals.grossProfit, prev: incomeStatement.prevTotals?.grossProfit ?? null, color: incomeStatement.totals.grossProfit < 0 ? RED : BLUE },
             { label: 'Total Expenses', value: incomeStatement.totals.expenses, prev: incomeStatement.prevTotals?.expenses ?? null, color: RED },
             { label: 'Net Income', value: incomeStatement.totals.net, prev: incomeStatement.prevTotals?.net ?? null, color: incomeStatement.totals.net < 0 ? RED : BLUE },
         ];
@@ -455,6 +506,12 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                         : <>From <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(startDate)}</strong> to <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(endDate)}</strong></>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    {tab === 'income' && (
+                        <label title="Also list accounts with no activity in the period" style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
+                            <input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} style={{ accentColor: BLUE, cursor: 'pointer' }} />
+                            Show empty accounts
+                        </label>
+                    )}
                     {(tab === 'balance' || tab === 'income') && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
                             <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} style={{ accentColor: BLUE, cursor: 'pointer' }} />
@@ -520,12 +577,40 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 </div>
             )}
 
-            {tab === 'income' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
-                    <SectionCard title="Revenue" color={GREEN} rows={incomeStatement.revenue} totalLabel="Total Revenue" total={incomeStatement.totals.revenue} prevTotal={incomeStatement.prevTotals?.revenue} />
-                    <SectionCard title="Expenses" color={RED} rows={incomeStatement.expenses} totalLabel="Total Expenses" total={incomeStatement.totals.expenses} prevTotal={incomeStatement.prevTotals?.expenses} />
-                </div>
-            )}
+            {tab === 'income' && (() => {
+                const t = incomeStatement.totals, pt = incomeStatement.prevTotals;
+                const noActivity = showEmpty ? undefined : 'No activity in this period.';
+                // Gross/Operating Profit and the closing Net line — the bars
+                // between sections that make the statement read top-down.
+                const KeyBar: React.FC<{ label: string; value: number; prevValue?: number; closing?: boolean }> = ({ label, value, prevValue, closing }) => {
+                    const color = value < 0 ? RED : closing ? GREEN : BLUE;
+                    return (
+                        <div style={{ ...cardStyle, borderLeft: `4px solid ${color}`, background: closing ? `color-mix(in srgb, ${color} 5%, var(--color-surface))` : undefined, padding: closing ? '16px 20px' : '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px' }}>
+                            <span style={{ fontWeight: 800, fontSize: closing ? '16px' : '14px', color: 'var(--color-text-main)' }}>{label}</span>
+                            <span style={{ display: 'flex', gap: '16px', alignItems: 'baseline' }}>
+                                {compare && prevValue !== undefined && <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{loading ? '…' : fmt(prevValue)}</span>}
+                                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 800, fontSize: closing ? '20px' : '15px', color }}>{loading ? '…' : fmt(value)}</span>
+                            </span>
+                        </div>
+                    );
+                };
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '880px' }}>
+                        <SectionCard title="Revenue" color={GREEN} rows={incomeStatement.revenue} totalLabel="Total Revenue" total={t.revenue} prevTotal={pt?.revenue} emptyText={noActivity} />
+                        <SectionCard title="Cost of Sales" color={AMBER} rows={incomeStatement.cogs} totalLabel="Total Cost of Sales" total={t.cogs} prevTotal={pt?.cogs} emptyText={noActivity} />
+                        <KeyBar label="Gross Profit" value={t.grossProfit} prevValue={pt?.grossProfit} />
+                        <SectionCard title="Operating Expenses" color={RED} rows={incomeStatement.opex} totalLabel="Total Operating Expenses" total={t.opex} prevTotal={pt?.opex} emptyText={noActivity} />
+                        <KeyBar label="Operating Profit" value={t.operatingProfit} prevValue={pt?.operatingProfit} />
+                        {incomeStatement.hasOtherRevenue && (
+                            <SectionCard title="Other Revenue" color={GREEN} rows={incomeStatement.otherRevenue} totalLabel="Total Other Revenue" total={t.otherRevenue} prevTotal={pt?.otherRevenue} emptyText={noActivity} />
+                        )}
+                        {incomeStatement.hasOtherExpenses && (
+                            <SectionCard title="Other Expenses" color={RED} rows={incomeStatement.otherExpenses} totalLabel="Total Other Expenses" total={t.otherExpenses} prevTotal={pt?.otherExpenses} emptyText={noActivity} />
+                        )}
+                        <KeyBar label={t.net >= 0 ? 'Net Income' : 'Net Loss'} value={t.net} prevValue={pt?.net} closing />
+                    </div>
+                );
+            })()}
 
             {tab === 'cashflow' && (
                 <div style={{ ...cardStyle, borderLeft: `4px solid ${BLUE}`, overflow: 'hidden' }}>

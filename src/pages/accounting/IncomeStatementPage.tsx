@@ -82,7 +82,12 @@ function signedBalancesInRange(lines: LedgerLine[], accounts: ChartOfAccount[], 
     return out;
 }
 
-const SECTION_COLOR: Record<string, string> = { 'REVENUE': GREEN, 'COST OF SALES': AMBER, 'OPERATING EXPENSES': RED };
+const SECTION_COLOR: Record<string, string> = { 'REVENUE': GREEN, 'COST OF SALES': AMBER, 'OPERATING EXPENSES': RED, 'OTHER REVENUE': GREEN, 'OTHER EXPENSES': RED };
+
+// COGS by sub_type, with a name fallback for instances whose chart predates
+// sub_type (Romdoul 2/3) so their 5000 still lands under Cost of Sales.
+const isCogsAccount = (a: ChartOfAccount): boolean =>
+    a.sub_type === 'Cost of Goods Sold' || (!a.sub_type && /cost of goods|cogs/i.test(a.account_name));
 
 const IncomeStatementPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
@@ -184,9 +189,14 @@ const IncomeStatementPage: React.FC = () => {
         return columns.map(col => signedBalancesInRange(src, accounts, col.startYmd, col.endYmd));
     }, [columns, lines, accounts]);
 
-    const revenueGroups = useMemo(() => buildGroupsBySubType(accounts, 'Revenue', () => true, 'Operating Revenue'), [accounts]);
-    const cogsGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && a.is_active !== false && a.sub_type === 'Cost of Goods Sold') }], [accounts]);
-    const opexGroups = useMemo(() => buildGroupsBySubType(accounts, 'Expense', a => a.sub_type !== 'Cost of Goods Sold', 'Operating Expense'), [accounts]);
+    const revenueGroups = useMemo(() => buildGroupsBySubType(accounts, 'Revenue', a => a.sub_type !== 'Other Revenue', 'Operating Revenue'), [accounts]);
+    const cogsGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && a.is_active !== false && isCogsAccount(a)) }], [accounts]);
+    const opexGroups = useMemo(() => buildGroupsBySubType(accounts, 'Expense', a => !isCogsAccount(a) && a.sub_type !== 'Other Expense', 'Operating Expense'), [accounts]);
+    // Below Operating Profit, like a classic statement: one-off income and
+    // expenses outside the core business. Sections render only when the chart
+    // has such accounts.
+    const otherRevenueGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Revenue' && a.is_active !== false && a.sub_type === 'Other Revenue') }], [accounts]);
+    const otherExpenseGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && a.is_active !== false && a.sub_type === 'Other Expense') }], [accounts]);
 
     const valueOf = useCallback((accountId: string, colIndex: number) => balancesByColumn[colIndex]?.get(accountId) || 0, [balancesByColumn]);
     const groupTotal = useCallback((group: AccountGroup, colIndex: number) => group.accounts.reduce((s, a) => s + valueOf(a.id, colIndex), 0), [valueOf]);
@@ -196,7 +206,10 @@ const IncomeStatementPage: React.FC = () => {
     const totalCogsAt = useCallback((i: number) => typeTotal(cogsGroups, i), [typeTotal, cogsGroups]);
     const grossProfitAt = useCallback((i: number) => totalRevenueAt(i) - totalCogsAt(i), [totalRevenueAt, totalCogsAt]);
     const totalOpexAt = useCallback((i: number) => typeTotal(opexGroups, i), [typeTotal, opexGroups]);
-    const netIncomeAt = useCallback((i: number) => grossProfitAt(i) - totalOpexAt(i), [grossProfitAt, totalOpexAt]);
+    const operatingProfitAt = useCallback((i: number) => grossProfitAt(i) - totalOpexAt(i), [grossProfitAt, totalOpexAt]);
+    const totalOtherRevenueAt = useCallback((i: number) => typeTotal(otherRevenueGroups, i), [typeTotal, otherRevenueGroups]);
+    const totalOtherExpenseAt = useCallback((i: number) => typeTotal(otherExpenseGroups, i), [typeTotal, otherExpenseGroups]);
+    const netIncomeAt = useCallback((i: number) => operatingProfitAt(i) + totalOtherRevenueAt(i) - totalOtherExpenseAt(i), [operatingProfitAt, totalOtherRevenueAt, totalOtherExpenseAt]);
 
     const reportRows = useMemo((): ReportRow[] => {
         const rows: ReportRow[] = [];
@@ -221,10 +234,22 @@ const IncomeStatementPage: React.FC = () => {
         emitSection('OPERATING EXPENSES');
         emitGroups(opexGroups);
         rows.push({ kind: 'total', cells: ['', 'Total Operating Expenses', ...columns.map((_, i) => totalOpexAt(i))] });
+        rows.push({ kind: 'keyTotal', cells: ['', 'Operating Profit', ...columns.map((_, i) => operatingProfitAt(i))] });
+
+        if (otherRevenueGroups.some(g => g.accounts.length > 0)) {
+            emitSection('OTHER REVENUE');
+            emitGroups(otherRevenueGroups);
+            rows.push({ kind: 'total', cells: ['', 'Total Other Revenue', ...columns.map((_, i) => totalOtherRevenueAt(i))] });
+        }
+        if (otherExpenseGroups.some(g => g.accounts.length > 0)) {
+            emitSection('OTHER EXPENSES');
+            emitGroups(otherExpenseGroups);
+            rows.push({ kind: 'total', cells: ['', 'Total Other Expenses', ...columns.map((_, i) => totalOtherExpenseAt(i))] });
+        }
         rows.push({ kind: 'keyTotal', cells: ['', 'Net Income', ...columns.map((_, i) => netIncomeAt(i))] });
 
         return rows;
-    }, [columns, revenueGroups, cogsGroups, opexGroups, valueOf, groupTotal, totalRevenueAt, totalCogsAt, grossProfitAt, totalOpexAt, netIncomeAt]);
+    }, [columns, revenueGroups, cogsGroups, opexGroups, otherRevenueGroups, otherExpenseGroups, valueOf, groupTotal, totalRevenueAt, totalCogsAt, grossProfitAt, totalOpexAt, operatingProfitAt, totalOtherRevenueAt, totalOtherExpenseAt, netIncomeAt]);
 
     const header = useMemo(() => ['Account', ...columns.map(c => c.label)], [columns]);
 
