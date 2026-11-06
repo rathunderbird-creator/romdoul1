@@ -91,27 +91,154 @@ const postWholesaleCogsEntry = async (
     }
 };
 
-// Cancelling or deleting a wholesale order puts the stock back, so its COGS
-// entry comes back off the books too: a still-Draft entry is deleted; a Posted
-// one is final, so the user is told to reverse it manually.
-const removeWholesaleCogsEntry = async (
+// The revenue side of the credit sale, booked at the same moment as the COGS
+// entry (the goods leave when the order is created): one Draft entry of
+// Dr Accounts Receivable / Cr Sales Revenue at the order total, reference
+// 'WSO-<id>-INV' so a retry never double-books. The receivable is then
+// settled by the per-payment WSP entries (Dr cash / Cr A/R below in
+// recordCustomerPayment). Non-fatal: the order exists either way.
+const postWholesaleInvoiceEntry = async (
     orderId: string,
+    label: string,
+    customerName: string,
+    total: number,
+    date: string,
+    showToast: (msg: string, kind: 'success' | 'error' | 'info') => void
+) => {
+    try {
+        const reference = `WSO-${orderId}-INV`;
+        const { data: existing, error: exErr } = await supabase.from('journal_entries')
+            .select('id').eq('reference_id', reference).limit(1).maybeSingle();
+        if (exErr || existing) return;
+        const amount = Math.round(total * 100) / 100;
+        if (amount <= 0) return;
+        const { data: coa } = await supabase.from('chart_of_accounts')
+            .select('id, account_code, account_name, account_type').eq('is_active', true);
+        const pool = coa || [];
+        const arAcc = pool.find(a => a.account_code === '1200')
+            || pool.find(a => a.account_type === 'Asset' && /receivable/i.test(a.account_name));
+        const revenueAcc = pool.find(a => a.account_code === '4000')
+            || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
+            || pool.find(a => a.account_type === 'Revenue');
+        if (!arAcc || !revenueAcc) return;
+        const entryNumber = await nextJournalEntryNumber('WSP', date);
+        const entryPayload: Record<string, unknown> = {
+            date,
+            description: entryDescription(entryNumber, `${label} · Invoice`)
+                || `${label} · invoice`,
+            reference_id: reference,
+            status: 'Draft',
+        };
+        if (entryNumber) entryPayload.entry_number = entryNumber;
+        let entry: { id: string } | null | undefined;
+        let jeErr: { message?: string } | null | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
+            if (!jeErr) break;
+            if (/entry_number/i.test(jeErr.message || '') && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
+            break;
+        }
+        // Never create an instantly-posted entry on an instance without the
+        // status column — same refusal as every other auto-posting flow.
+        if (jeErr && /status/i.test(jeErr.message || '')) {
+            showToast('Order saved — run migrations/add_entry_status.sql on this instance to also book its invoice entry as a draft.', 'info');
+            return;
+        }
+        if (jeErr || !entry) {
+            console.error('Failed to post the wholesale invoice entry:', jeErr);
+            return;
+        }
+        const { error: lErr } = await insertJournalLines([
+            { journal_entry_id: entry.id, account_id: arAcc.id, debit: amount, credit: 0, description: `Invoice — ${customerName}` },
+            { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: amount, description: `Sales — ${customerName}` },
+        ]);
+        if (lErr) {
+            console.error('Failed to post the wholesale invoice entry lines:', lErr);
+            await supabase.from('journal_entries').delete().eq('id', entry.id);
+        }
+    } catch (e) {
+        console.error('Failed to post the wholesale invoice entry:', e);
+    }
+};
+
+// Re-book an existing Draft invoice entry at an edited total IN PLACE: the
+// header is updated and the two lines replaced, but the reference row itself
+// is never deleted. Used when the order already has payments — their receipt
+// entries credit A/R against this entry, and a delete-then-recreate that
+// failed halfway would leave those credits dangling AND make the order read
+// as legacy (no INV + paid) on every later edit, unable to self-heal. A
+// failed line replace here keeps the reference row, so re-saving the edit
+// heals it. Throws on failure so the caller's toast reports it.
+const rebookWholesaleInvoiceInPlace = async (
+    entryId: string,
+    entryNumber: string,
+    label: string,
+    customerName: string,
+    total: number,
+    date: string
+): Promise<void> => {
+    const amount = Math.round(total * 100) / 100;
+    if (amount <= 0) throw new Error('The invoice entry needs a total above zero');
+    const { data: coa, error: coaErr } = await supabase.from('chart_of_accounts')
+        .select('id, account_code, account_name, account_type').eq('is_active', true);
+    if (coaErr) throw coaErr;
+    const pool = coa || [];
+    const arAcc = pool.find(a => a.account_code === '1200')
+        || pool.find(a => a.account_type === 'Asset' && /receivable/i.test(a.account_name));
+    const revenueAcc = pool.find(a => a.account_code === '4000')
+        || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
+        || pool.find(a => a.account_type === 'Revenue');
+    if (!arAcc || !revenueAcc) throw new Error('No active Accounts Receivable / Sales Revenue account found');
+    const { error: hErr } = await supabase.from('journal_entries').update({
+        date,
+        description: entryDescription(entryNumber, `${label} · Invoice`) || `${label} · invoice`,
+    }).eq('id', entryId).eq('status', 'Draft');
+    if (hErr) throw hErr;
+    const { data: oldLines, error: oldErr } = await supabase.from('journal_entry_lines')
+        .select('account_id, debit, credit, description').eq('journal_entry_id', entryId);
+    if (oldErr) throw oldErr;
+    const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId);
+    if (delErr) throw delErr;
+    const { error: insErr } = await insertJournalLines([
+        { journal_entry_id: entryId, account_id: arAcc.id, debit: amount, credit: 0, description: `Invoice — ${customerName}` },
+        { journal_entry_id: entryId, account_id: revenueAcc.id, debit: 0, credit: amount, description: `Sales — ${customerName}` },
+    ]);
+    if (insErr) {
+        // Best-effort restore so the entry isn't left empty; the reference
+        // row survives either way, so a retry of the edit still heals it.
+        if (oldLines && oldLines.length) {
+            await supabase.from('journal_entry_lines').insert(oldLines.map(l => ({ ...l, journal_entry_id: entryId })));
+        }
+        throw insErr;
+    }
+};
+
+// Cancelling or deleting a wholesale order puts the stock back, so its COGS
+// and invoice entries come back off the books too: a still-Draft entry is
+// deleted; a Posted one is final, so the user is told to reverse it manually.
+const removeWholesaleOrderEntry = async (
+    orderId: string,
+    suffix: 'COGS' | 'INV',
     showToast: (msg: string, kind: 'success' | 'error' | 'info') => void
 ) => {
     try {
         const { data: existing, error: exErr } = await supabase.from('journal_entries')
-            .select('*').eq('reference_id', `WSO-${orderId}-COGS`).limit(1).maybeSingle();
+            .select('*').eq('reference_id', `WSO-${orderId}-${suffix}`).limit(1).maybeSingle();
         if (exErr || !existing) return;
         if (((existing as { status?: string }).status || 'Posted') !== 'Draft') {
-            showToast('This order has a POSTED cost-of-goods entry — record a reversing entry manually.', 'info');
+            showToast(`This order has a POSTED ${suffix === 'COGS' ? 'cost-of-goods' : 'invoice'} entry — record a reversing entry manually.`, 'info');
             return;
         }
         await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
         await supabase.from('journal_entries').delete().eq('id', existing.id);
     } catch (e) {
-        console.error('Failed to remove the wholesale COGS entry:', e);
+        console.error(`Failed to remove the wholesale ${suffix} entry:`, e);
     }
 };
+const removeWholesaleCogsEntry = (orderId: string, showToast: (msg: string, kind: 'success' | 'error' | 'info') => void) =>
+    removeWholesaleOrderEntry(orderId, 'COGS', showToast);
+const removeWholesaleInvoiceEntry = (orderId: string, showToast: (msg: string, kind: 'success' | 'error' | 'info') => void) =>
+    removeWholesaleOrderEntry(orderId, 'INV', showToast);
 
 // Mirror of useProcurement, but for customer credit sales (Accounts Receivable).
 export const useWholesale = () => {
@@ -301,12 +428,14 @@ export const useWholesale = () => {
                 }
             }
 
-            // The goods just left the company — relieve ledger inventory at cost.
-            await postWholesaleCogsEntry(
-                orderId,
-                `${order.customer_name || 'Wholesale'} · ${order.invoice_number || 'WO-' + String(orderId).slice(0, 8).toUpperCase()}`,
-                items,
-                showToast
+            // The goods just left the company — relieve ledger inventory at cost
+            // and book the sale itself: Dr A/R / Cr Sales at the order total,
+            // settled later by the per-payment entries.
+            const entryLabel = `${order.customer_name || 'Wholesale'} · ${order.invoice_number || 'WO-' + String(orderId).slice(0, 8).toUpperCase()}`;
+            await postWholesaleCogsEntry(orderId, entryLabel, items, showToast);
+            await postWholesaleInvoiceEntry(
+                orderId, entryLabel, order.customer_name || 'Wholesale', total,
+                order.order_date || localDate, showToast
             );
 
             showToast('Wholesale order created', 'success');
@@ -334,6 +463,47 @@ export const useWholesale = () => {
     ) => {
         try {
             if (order.status === 'Cancelled') throw new Error('Cannot edit a cancelled order');
+
+            const total = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
+
+            // Invoice-entry handling decided up front, BEFORE anything is written:
+            //  - Draft invoice entry → taken off and re-booked at the edited total.
+            //  - Posted invoice entry + changed total → abort the whole edit: the
+            //    books are final at the old total, and silently keeping the stale
+            //    amount (or re-booking next to a posted entry) would misstate
+            //    revenue and A/R. Unposting it in Journal Entries unblocks the edit.
+            //  - No invoice entry + payments already recorded → a legacy cash-basis
+            //    order whose receipts credited Sales directly; booking an invoice
+            //    now would double its revenue, so it stays legacy.
+            //  - No invoice entry + nothing paid → safe to upgrade: book one.
+            // select('*'), never 'id, status': the status column is optional
+            // (add_entry_status.sql), and naming it on an instance without it
+            // would make every edit fail. Such instances never hold INV
+            // entries anyway (postWholesaleInvoiceEntry refuses without the
+            // column), so this lookup just comes back empty there.
+            const { data: invExisting, error: invExErr } = await supabase.from('journal_entries')
+                .select('*').eq('reference_id', `WSO-${order.id}-INV`).limit(1).maybeSingle();
+            if (invExErr) throw new Error("Could not check the order's invoice entry — try again");
+            const invPosted = !!invExisting && ((invExisting as { status?: string }).status || 'Posted') !== 'Draft';
+            if (invPosted && Math.abs(total - (Number(order.total_amount) || 0)) > 0.005) {
+                throw new Error("This order's invoice entry is already POSTED at the old total — unpost it in Journal Entries, then edit the order.");
+            }
+            const paidSoFar = Number(order.amount_paid) || 0;
+            // An accrual order edited below what's already paid would leave
+            // receipts crediting more A/R than the invoice debits.
+            if (invExisting && paidSoFar > 0.005 && total < paidSoFar - 0.005) {
+                throw new Error(`The edited total (${total.toFixed(2)}) is below what this order has already been paid (${paidSoFar.toFixed(2)}) — delete its payments first.`);
+            }
+            const invDraft = !!invExisting && !invPosted;
+            // Delete-then-recreate only while nothing is paid: it self-heals (a
+            // lost Draft just re-books on the next edit, since paid is 0). A
+            // PAID accrual order instead re-books IN PLACE further below —
+            // deleting its reference row and failing to recreate it would
+            // strand the payments' A/R credits with no invoice debit, and the
+            // no-INV+paid rule would then treat the order as legacy forever.
+            const rebookInvoice = (invDraft || !invExisting) && paidSoFar <= 0.005;
+            const rebookInPlaceId = invDraft && paidSoFar > 0.005 ? (invExisting as { id: string }).id : null;
+            const invEntryNumber = invExisting ? String((invExisting as { entry_number?: string }).entry_number || '') : '';
 
             // Availability check BEFORE anything is written, same approach as
             // createWholesaleOrder — except stock this order ALREADY holds
@@ -378,10 +548,13 @@ export const useWholesale = () => {
             }
             await supabase.from('stock_movements').delete().eq('reference_id', order.id).eq('type', 'out');
             // Stock is (about to be) back, so the old cost-of-goods entry comes
-            // off the books too — same bail-if-Posted guard as Cancel.
+            // off the books too — same bail-if-Posted guard as Cancel. The
+            // invoice entry only when it's being re-booked (decided above):
+            // a Posted one with an unchanged total stays untouched, and a
+            // legacy order never had one.
             await removeWholesaleCogsEntry(order.id, showToast);
+            if (rebookInvoice) await removeWholesaleInvoiceEntry(order.id, showToast);
 
-            const total = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
             const paid = order.amount_paid || 0;
             const paymentStatus = paid <= 0.005 ? 'Unpaid' : (paid >= total - 0.005 ? 'Paid' : 'Partial');
 
@@ -451,12 +624,19 @@ export const useWholesale = () => {
                 }
             }
 
-            await postWholesaleCogsEntry(
-                order.id,
-                `${updates.customer_name || 'Wholesale'} · ${updates.invoice_number || 'WO-' + String(order.id).slice(0, 8).toUpperCase()}`,
-                items,
-                showToast
-            );
+            const editedLabel = `${updates.customer_name || 'Wholesale'} · ${updates.invoice_number || 'WO-' + String(order.id).slice(0, 8).toUpperCase()}`;
+            await postWholesaleCogsEntry(order.id, editedLabel, items, showToast);
+            if (rebookInvoice) {
+                await postWholesaleInvoiceEntry(
+                    order.id, editedLabel, updates.customer_name || 'Wholesale', total,
+                    updates.order_date || localDate, showToast
+                );
+            } else if (rebookInPlaceId) {
+                await rebookWholesaleInvoiceInPlace(
+                    rebookInPlaceId, invEntryNumber, editedLabel,
+                    updates.customer_name || 'Wholesale', total, updates.order_date || localDate
+                );
+            }
 
             showToast('Wholesale order updated', 'success');
             await fetchWholesaleOrders(true);
@@ -505,8 +685,10 @@ export const useWholesale = () => {
                 const { error: txErr } = await supabase.from('transactions').delete().like('description', marker);
                 if (txErr) console.error('Failed to remove income row for deleted wholesale payment:', txErr);
             }
-            // And the order's own cost-of-goods entry (no-op if already gone).
+            // And the order's own cost-of-goods and invoice entries (no-ops if
+            // already gone).
             await removeWholesaleCogsEntry(order.id, showToast);
+            await removeWholesaleInvoiceEntry(order.id, showToast);
             showToast('Wholesale order deleted', 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {
@@ -580,11 +762,39 @@ export const useWholesale = () => {
                     const { data: coa } = await supabase.from('chart_of_accounts')
                         .select('id, account_code, account_name, account_type').eq('is_active', true);
                     const pool = coa || [];
+                    // Accrual orders booked their revenue up front (the WSO-…-INV
+                    // entry, Dr A/R / Cr Sales), so this receipt settles the
+                    // receivable: Dr cash / Cr A/R. Orders from before that
+                    // existed have no invoice entry, so their receipts keep the
+                    // old direct Cr Sales — revenue is still booked exactly once
+                    // either way.
+                    const { data: invEntry, error: invErr } = await supabase.from('journal_entries')
+                        .select('id').eq('reference_id', `WSO-${orderId}-INV`).limit(1).maybeSingle();
+                    if (invErr) {
+                        // A failed lookup is indistinguishable from "legacy order",
+                        // and crediting Sales on an accrual order would double its
+                        // revenue — so book NO entry at all. The TX- reference lets
+                        // Import to Ledger (Income & Expense) book it later.
+                        console.error("Could not check the order's invoice entry — ledger entry skipped:", invErr);
+                        showToast('Payment and Income logged, but the ledger entry was skipped (connection problem) — book it later with Import to Ledger.', 'info');
+                    }
+                    const arAcc = invEntry
+                        ? (pool.find(a => a.account_code === '1200')
+                            || pool.find(a => a.account_type === 'Asset' && /receivable/i.test(a.account_name)))
+                        : null;
                     const revenueAcc = pool.find(a => a.account_code === '4000')
                         || pool.find(a => a.account_type === 'Revenue' && /sales revenue/i.test(a.account_name))
                         || pool.find(a => a.account_type === 'Revenue');
+                    // An accrual order's receipt may ONLY credit A/R — falling
+                    // back to Sales next to its standing invoice entry would
+                    // double the revenue. So with an invoice entry but no
+                    // active A/R account, book nothing and say so.
+                    const creditAcc = invEntry ? arAcc : revenueAcc;
                     const cashAccId = receivedInAccountId || pickCashBankAccount(pool, receivedInAccountName || paymentMethod, { preferBank: true })?.id;
-                    if (revenueAcc && cashAccId) {
+                    if (!invErr && invEntry && !arAcc) {
+                        showToast('Payment and Income logged, but no active Accounts Receivable account exists — the ledger entry was skipped. Re-activate account 1200 in the Chart of Accounts.', 'info');
+                    }
+                    if (!invErr && creditAcc && cashAccId) {
                         const entryNumber = await nextJournalEntryNumber('WSP', payDate);
                         const entryPayload: Record<string, unknown> = {
                             date: payDate,
@@ -615,7 +825,7 @@ export const useWholesale = () => {
                         } else {
                             const { error: lErr } = await insertJournalLines([
                                 { journal_entry_id: entry.id, account_id: cashAccId, debit: Number(amount), credit: 0, description: `Receipt — ${order.customer_name || 'Wholesale'}` },
-                                { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: Number(amount), description: `Sales — ${order.customer_name || 'Wholesale'}` },
+                                { journal_entry_id: entry.id, account_id: creditAcc.id, debit: 0, credit: Number(amount), description: `${arAcc ? 'Settle receivable' : 'Sales'} — ${order.customer_name || 'Wholesale'}` },
                             ]);
                             if (lErr) {
                                 console.error('Failed to create journal entry lines for payment:', lErr);
@@ -645,14 +855,27 @@ export const useWholesale = () => {
     const updateWholesaleOrderStatus = useCallback(async (order: WholesaleOrder, status: WholesaleOrder['status']) => {
         try {
             if (status === 'Cancelled' && order.status !== 'Cancelled') {
+                // An accrual order's receipts credited A/R against its invoice
+                // entry; cancelling deletes that entry, which would leave the
+                // credits dangling (negative A/R). So its payments must be
+                // deleted first. Legacy orders (no invoice entry, receipts
+                // credited Sales) keep their old self-consistent cancel.
+                if ((Number(order.amount_paid) || 0) > 0.005) {
+                    const { data: inv, error: invErr } = await supabase.from('journal_entries')
+                        .select('id').eq('reference_id', `WSO-${order.id}-INV`).limit(1).maybeSingle();
+                    if (invErr) throw new Error("Could not check the order's invoice entry — try again");
+                    if (inv) throw new Error('This order has recorded payments — delete its payments first, then cancel (or delete the whole order).');
+                }
                 for (const i of order.items || []) {
                     if (!i.product_id || !i.quantity) continue;
                     await adjustProductStock(i.product_id, i.quantity);
                     if (order.warehouse_id) await adjustWarehouseStock(order.warehouse_id, i.product_id, i.quantity);
                 }
                 await supabase.from('stock_movements').delete().eq('reference_id', order.id).eq('type', 'out');
-                // Stock is back, so the cost-of-goods entry comes off the books too.
+                // Stock is back, so the cost-of-goods and invoice entries come
+                // off the books too.
                 await removeWholesaleCogsEntry(order.id, showToast);
+                await removeWholesaleInvoiceEntry(order.id, showToast);
             }
             const { error } = await supabase.from('wholesale_orders').update({ status }).eq('id', order.id);
             if (error) throw error;
