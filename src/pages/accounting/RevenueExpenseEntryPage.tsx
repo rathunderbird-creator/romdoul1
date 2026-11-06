@@ -520,7 +520,17 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 lineCount: entryLines.length,
             });
         }
-        return out.sort((a, b) => b.date.localeCompare(a.date) || b.entryId.localeCompare(a.entryId));
+        // Newest first. Within one date, the entry_number's global sequence
+        // (JE-<n>-…) is creation order; UUIDs are random, so sorting by
+        // entryId buried the newest same-day entry mid-list. Entries without
+        // a number (none since the numbering sweep) fall back to the old
+        // id tiebreak at the bottom of their date group.
+        const seqOf = (r: EntryRow): number => {
+            const m = /^JE-(\d+)-/.exec(r.ref);
+            return m ? Number(m[1]) : -1;
+        };
+        return out.sort((a, b) =>
+            b.date.localeCompare(a.date) || seqOf(b) - seqOf(a) || b.entryId.localeCompare(a.entryId));
     }, [lines, accountById, cfg.accountType, mode]);
 
     // ── List filters: search, date range, status, origin (Auto/Manual) ──
