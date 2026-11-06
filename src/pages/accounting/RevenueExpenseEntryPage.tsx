@@ -15,6 +15,7 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
+import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 import type { ChartOfAccount } from '../../types';
 
 const GREEN = '#10B981', RED = '#EF4444';
@@ -132,6 +133,18 @@ const todayYmd = (): string => {
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Desktop table columns, in order. One shared width set for Revenue and
+// Expense (same component, same table shape — a width dragged on one page is
+// what the user expects on the other too), persisted via useColumnWidths.
+// Date fits the full YYYY-MM-DD, Reference a full JE-…-XXX-YYYYMMDD-NNN
+// number, Amount 7-digit figures, Status its chip + MANUAL + Post button,
+// Actions all four icons — nothing clips at the defaults.
+const COL_DEFAULTS: Record<string, number> = {
+    date: 124, ref: 208, description: 260, account: 180, counter: 180, amount: 160, status: 220, actions: 128,
+};
+// The select-all checkbox column stays fixed — nothing in it to size.
+const CHECKBOX_COL = 48;
+
 const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mode }) => {
     const cfg = CFG[mode];
     const isMobile = useMobile();
@@ -146,6 +159,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const canUseCheckbox = hasPermission('use_checkbox');
     const { saveJournalEntry } = useAccounting();
     const navigate = useNavigate();
+    // Drag-resizable desktop columns, widths persisted in localStorage.
+    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('rev_exp_entries', COL_DEFAULTS);
 
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
     interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; lineDescription: string; status: string; ref: string; refId: string }
@@ -1124,11 +1139,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '680px' }}>
+                        <table style={{ width: totalWidth + (canUseCheckbox ? CHECKBOX_COL : 0), minWidth: '100%', borderCollapse: 'collapse', fontSize: '14px', tableLayout: 'fixed' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                                     {canUseCheckbox && (
-                                        <th style={{ padding: '14px 8px 14px 20px', width: '32px' }}>
+                                        <th style={{ padding: '14px 8px 14px 20px', width: `${CHECKBOX_COL}px`, minWidth: `${CHECKBOX_COL}px`, maxWidth: `${CHECKBOX_COL}px` }}>
                                             <input
                                                 type="checkbox"
                                                 checked={allSelected}
@@ -1140,8 +1155,20 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                             />
                                         </th>
                                     )}
-                                    {['Date', 'Reference', 'Description', cfg.accountLabel, cfg.counterLabel, 'Amount', 'Status', 'Actions'].map((h, i) => (
-                                        <th key={h || 'x'} style={{ padding: '14px 20px', textAlign: i === 5 ? 'right' : 'left', fontSize: '12px', fontWeight: 600, textTransform: 'none', color: 'var(--color-text-secondary)', width: i === 7 ? '110px' : undefined }}>{h}</th>
+                                    {([
+                                        { key: 'date', label: 'Date' },
+                                        { key: 'ref', label: 'Reference' },
+                                        { key: 'description', label: 'Description' },
+                                        { key: 'account', label: cfg.accountLabel },
+                                        { key: 'counter', label: cfg.counterLabel },
+                                        { key: 'amount', label: 'Amount' },
+                                        { key: 'status', label: 'Status' },
+                                        { key: 'actions', label: 'Actions' },
+                                    ] as const).map(c => (
+                                        <th key={c.key} style={{ ...widthStyle(c.key), position: 'relative', padding: '14px 20px', textAlign: c.key === 'amount' ? 'right' : 'left', fontSize: '12px', fontWeight: 600, textTransform: 'none', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {c.label}
+                                            {resizeHandle(c.key)}
+                                        </th>
                                     ))}
                                 </tr>
                             </thead>
@@ -1160,13 +1187,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 />
                                             </td>
                                         )}
-                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }}>{r.date}</td>
-                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', fontSize: '12px' }}>{r.ref || '—'}</td>
-                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-main)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
-                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-secondary)' }}>{accountLink(r.accountName, r.accountIds)}</td>
-                                        <td className="d2-khmer" style={{ padding: '14px 20px', color: 'var(--color-text-secondary)' }}>{accountLink(r.counterName, r.counterIds)}</td>
-                                        <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmt(r.amount)}</td>
-                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap' }}>
+                                        <td style={{ ...widthStyle('date'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }}>{r.date}</td>
+                                        <td style={{ ...widthStyle('ref'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)', fontSize: '12px' }} title={r.ref}>{r.ref || '—'}</td>
+                                        <td className="d2-khmer" style={{ ...widthStyle('description'), padding: '14px 20px', color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
+                                        <td className="d2-khmer" style={{ ...widthStyle('account'), padding: '14px 20px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }} title={r.accountName}>{accountLink(r.accountName, r.accountIds)}</td>
+                                        <td className="d2-khmer" style={{ ...widthStyle('counter'), padding: '14px 20px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }} title={r.counterName}>{accountLink(r.counterName, r.counterIds)}</td>
+                                        <td style={{ ...widthStyle('amount'), padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmt(r.amount)}</td>
+                                        <td style={{ ...widthStyle('status'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 <StatusChip status={r.status} />
                                                 {r.isSystem ? <SystemChip /> : <ManualChip />}
@@ -1175,7 +1202,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 )}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '14px 20px', whiteSpace: 'nowrap' }}>
+                                        <td style={{ ...widthStyle('actions'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
                                                 {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />}
                                                 <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label="View entry" />
@@ -1188,7 +1215,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
-                                    <td colSpan={6} style={{ padding: '14px 20px', color: 'var(--color-text-main)' }}>
+                                    <td colSpan={canUseCheckbox ? 6 : 5} style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         {`Total — ${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''}`}
                                     </td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
@@ -1368,6 +1395,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 /* Focused form field reads as "being edited": blue border (the
                    inputs set outline: none, so this is the focus cue). */
                 .rev-exp-form input:focus, .rev-exp-form select:focus { border-color: #5469d4 !important; }
+                /* Column resize grip rendered by useColumnWidths — same rule as
+                   pageIncomePrediction.css (not imported here), hover tinted to
+                   this page's accent. */
+                .pip-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; background: transparent; }
+                .pip-resize-handle:hover { background: ${cfg.color}4D; }
             `}</style>
         </div>
     );
