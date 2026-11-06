@@ -328,7 +328,10 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 name: 'Income Statement', period: `${displayDate(startDate)} – ${displayDate(endDate)}`,
                 columns: ['Code', 'Account', 'This period', ...(compare ? ['Previous year'] : [])],
                 rows: [
-                    ...section('Revenue', incomeStatement.revenue, t.revenue, pt?.revenue),
+                    // "Operating Revenue": the combined figure (incl. Other
+                    // Revenue) is the hero/card "Total Revenue" — same label on
+                    // a different number would make the export unreconcilable.
+                    ...section('Operating Revenue', incomeStatement.revenue, t.revenue, pt?.revenue),
                     ...section('Cost of Sales', incomeStatement.cogs, t.cogs, pt?.cogs),
                     ...keyLine('Gross Profit', t.grossProfit, pt?.grossProfit),
                     ...section('Operating Expenses', incomeStatement.opex, t.opex, pt?.opex),
@@ -596,7 +599,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 };
                 return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '880px' }}>
-                        <SectionCard title="Revenue" color={GREEN} rows={incomeStatement.revenue} totalLabel="Total Revenue" total={t.revenue} prevTotal={pt?.revenue} emptyText={noActivity} />
+                        <SectionCard title="Revenue" color={GREEN} rows={incomeStatement.revenue} totalLabel="Total Operating Revenue" total={t.revenue} prevTotal={pt?.revenue} emptyText={noActivity} />
                         <SectionCard title="Cost of Sales" color={AMBER} rows={incomeStatement.cogs} totalLabel="Total Cost of Sales" total={t.cogs} prevTotal={pt?.cogs} emptyText={noActivity} />
                         <KeyBar label="Gross Profit" value={t.grossProfit} prevValue={pt?.grossProfit} />
                         <SectionCard title="Operating Expenses" color={RED} rows={incomeStatement.opex} totalLabel="Total Operating Expenses" total={t.opex} prevTotal={pt?.opex} emptyText={noActivity} />
