@@ -277,6 +277,56 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         return { hasCash: cashIds.size > 0, opening, rows, net, closing: opening + net };
     }, [accounts, lines, startDate, endDate]);
 
+    // ── Indirect-method Cash Flow statement: Net Income, adjusted by the
+    // period's working-capital changes, then investing and financing
+    // movements. Every entry balances, so cash's change equals minus the sum
+    // of all non-cash accounts' net debits — and since every non-cash account
+    // lands in exactly ONE bucket below, Operating + Investing + Financing
+    // MUST equal the cash accounts' actual change. The banner checks that
+    // identity: a mismatch means a classification bug, not bad data. ──
+    const cashFlowStatement = useMemo(() => {
+        const cashIds = new Set(accounts.filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)).map(a => a.id));
+        const known = new Set(accounts.map(a => a.id));
+        // Period net debit per non-cash account (raw sides, not normal-signed).
+        const netDebit = new Map<string, number>();
+        let deletedContribution = 0;
+        for (const l of lines || []) {
+            if (l.date < startDate || l.date > endDate || cashIds.has(l.accountId)) continue;
+            if (!known.has(l.accountId)) { deletedContribution += -(l.debit - l.credit); continue; }
+            netDebit.set(l.accountId, (netDebit.get(l.accountId) || 0) + l.debit - l.credit);
+        }
+        // An account's cash contribution: a net debit elsewhere drains cash
+        // (asset bought, receivable grown), a net credit frees it.
+        const contributionOf = (a: ChartOfAccount): number => -(netDebit.get(a.id) || 0);
+        const isInvesting = (a: ChartOfAccount): boolean => a.account_type === 'Asset' && !cashIds.has(a.id)
+            && (/fixed|non-current|property|plant|equipment/i.test(a.sub_type || '') || /equipment|vehicle|property|land|building|furniture|machin|fixture/i.test(a.account_name));
+        const isFinancing = (a: ChartOfAccount): boolean => a.account_type === 'Equity'
+            || (a.account_type === 'Liability' && /loan|borrow|note payable|debt|mortgage/i.test(a.account_name));
+        const rowsOf = (pred: (a: ChartOfAccount) => boolean): StatementRow[] => accounts
+            .filter(a => !cashIds.has(a.id) && a.account_type !== 'Revenue' && a.account_type !== 'Expense' && pred(a))
+            .map(a => ({ id: a.id, code: a.account_code, name: a.account_name, amount: contributionOf(a) }))
+            .filter(r => Math.abs(r.amount) >= 0.005);
+        // Working capital = every remaining non-cash asset/liability: the
+        // catch-all bucket, so the three activities always cover everything.
+        const workingCapital = rowsOf(a => !isInvesting(a) && !isFinancing(a));
+        if (Math.abs(deletedContribution) >= 0.005) workingCapital.push({ code: '', name: '(Deleted accounts)', amount: deletedContribution });
+        const investing = rowsOf(isInvesting);
+        const financing = rowsOf(isFinancing);
+        let netIncome = 0;
+        for (const a of accounts) {
+            if (a.account_type === 'Revenue' || a.account_type === 'Expense') netIncome += contributionOf(a);
+        }
+        const totalWC = workingCapital.reduce((s, r) => s + r.amount, 0);
+        const netOperating = netIncome + totalWC;
+        const netInvesting = investing.reduce((s, r) => s + r.amount, 0);
+        const netFinancing = financing.reduce((s, r) => s + r.amount, 0);
+        return {
+            netIncome, workingCapital, totalWC, netOperating,
+            investing, netInvesting, financing, netFinancing,
+            netChange: netOperating + netInvesting + netFinancing,
+        };
+    }, [accounts, lines, startDate, endDate]);
+
     // ── Trial Balance (as at endDate, raw debit/credit sides) ──
     const trialBalance = useMemo(() => {
         const raw = new Map<string, { d: number; c: number }>();
@@ -343,14 +393,23 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             };
         }
         if (tab === 'cashflow') {
+            const cf = cashFlowStatement;
             return {
                 name: 'Cash Flow', period: `${displayDate(startDate)} – ${displayDate(endDate)}`,
-                columns: ['Line', 'Amount'],
+                columns: ['Code', 'Line', 'Amount'],
                 rows: [
-                    ['Opening cash', money(cashFlow.opening)],
-                    ...cashFlow.rows.map(r => [r.name, money(r.amount)]),
-                    ['Net change in cash', money(cashFlow.net)],
-                    ['Closing cash', money(cashFlow.closing)],
+                    ['', 'Operating Activities — Net Income', money(cf.netIncome)],
+                    ...cf.workingCapital.map(r => [r.code, `Working Capital: ${r.name}`, money(r.amount)]),
+                    ['', 'Total Changes in Working Capital', money(cf.totalWC)],
+                    ['', 'Net Cash from Operations', money(cf.netOperating)],
+                    ...cf.investing.map(r => [r.code, `Investing: ${r.name}`, money(r.amount)]),
+                    ['', 'Net Cash from Investing', money(cf.netInvesting)],
+                    ...cf.financing.map(r => [r.code, `Financing: ${r.name}`, money(r.amount)]),
+                    ['', 'Net Cash from Financing', money(cf.netFinancing)],
+                    ['', 'Beginning Cash Balance', money(cashFlow.opening)],
+                    ['', 'Net Change in Cash', money(cf.netChange)],
+                    ['', 'Ending Cash Balance', money(cashFlow.closing)],
+                    ...cashFlow.rows.map(r => ['', `Cash Movement: ${r.name}`, money(r.amount)]),
                 ],
             };
         }
@@ -462,10 +521,15 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             title: `${incomeStatement.totals.net >= 0 ? 'Net Income' : 'Net Loss'}: ${fmt(Math.abs(incomeStatement.totals.net))}`,
             sub: `Revenue ${fmt(incomeStatement.totals.totalRevenue)} − Expenses ${fmt(incomeStatement.totals.expenses)} · Gross Profit ${fmt(incomeStatement.totals.grossProfit)}`,
         };
+        const reconciled = Math.abs(cashFlowStatement.netChange - cashFlow.net) < 0.005;
         return {
-            ok: cashFlow.net >= 0,
+            ok: reconciled,
             title: `Net Cash Change: ${fmt(cashFlow.net)}`,
-            sub: cashFlow.hasCash ? 'Across accounts named cash or bank' : 'No cash accounts found (name containing cash or bank)',
+            sub: !cashFlow.hasCash
+                ? 'No cash accounts found (name containing cash or bank)'
+                : reconciled
+                    ? 'Operating + Investing + Financing reconciles with the cash and bank accounts'
+                    : `Statement differs from the cash accounts' actual change by ${fmt(cashFlowStatement.netChange - cashFlow.net)} — check account classifications`,
         };
     })();
 
@@ -482,9 +546,10 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             { label: 'Net Income', value: incomeStatement.totals.net, prev: incomeStatement.prevTotals?.net ?? null, color: incomeStatement.totals.net < 0 ? RED : BLUE },
         ];
         if (tab === 'cashflow') return [
-            { label: 'Opening Cash', value: cashFlow.opening, prev: null, color: BLUE },
-            { label: 'Net Change', value: cashFlow.net, prev: null, color: cashFlow.net < 0 ? RED : GREEN },
-            { label: 'Closing Cash', value: cashFlow.closing, prev: null, color: cashFlow.closing < 0 ? RED : BLUE },
+            { label: 'Net Cash from Operations', value: cashFlowStatement.netOperating, prev: null, color: cashFlowStatement.netOperating < 0 ? RED : BLUE },
+            { label: 'Net Cash from Investing', value: cashFlowStatement.netInvesting, prev: null, color: cashFlowStatement.netInvesting < 0 ? RED : GREEN },
+            { label: 'Net Cash from Financing', value: cashFlowStatement.netFinancing, prev: null, color: cashFlowStatement.netFinancing < 0 ? RED : PURPLE },
+            { label: 'Ending Cash', value: cashFlow.closing, prev: null, color: cashFlow.closing < 0 ? RED : BLUE },
         ];
         return [
             { label: 'Total Debits', value: trialBalance.totals.debit, prev: null, color: BLUE },
@@ -615,14 +680,93 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 );
             })()}
 
-            {tab === 'cashflow' && (
-                <div style={{ ...cardStyle, borderLeft: `4px solid ${BLUE}`, overflow: 'hidden' }}>
-                    <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: BLUE }}>
-                        Cash Movements
+            {tab === 'cashflow' && (() => {
+                const cf = cashFlowStatement;
+                const lineRow = (r: StatementRow, last: boolean) => (
+                    <div
+                        key={`${r.code}|${r.name}`}
+                        className={r.id ? 'hover-highlight' : undefined}
+                        onClick={r.id ? () => goToLedger(r.id!) : undefined}
+                        title={r.id ? 'View in General Ledger' : undefined}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: last ? 'none' : '1px solid var(--color-border)', fontSize: '14px', cursor: r.id ? 'pointer' : 'default' }}
+                    >
+                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', width: '44px', flexShrink: 0 }}>{r.code}</span>
+                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
+                        <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.amount < 0 ? RED : GREEN }}>{loading ? '…' : fmt(r.amount)}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Opening cash ({displayDate(startDate)})</span>
-                        {amountText(cashFlow.opening)}
+                );
+                const footerRow = (label: string, value: number) => (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '12px 20px', borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontSize: '14px', fontWeight: 700 }}>
+                        <span style={{ color: 'var(--color-text-main)' }}>{label}</span>
+                        {amountText(value, true)}
+                    </div>
+                );
+                const subHeader = (label: string) => (
+                    <div style={{ padding: '10px 20px 4px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{label}</div>
+                );
+                const activityHeader = (label: string, color: string) => (
+                    <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color }}>{label}</div>
+                );
+                const emptyNote = (text: string) => (
+                    <div style={{ padding: '14px 20px', fontSize: '13px', fontStyle: 'italic', color: 'var(--color-text-secondary)' }}>{text}</div>
+                );
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '880px' }}>
+                        <div style={{ ...cardStyle, borderLeft: `4px solid ${BLUE}`, overflow: 'hidden' }}>
+                            {activityHeader('Operating Activities', BLUE)}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px', fontWeight: 700 }}>
+                                <span style={{ color: 'var(--color-text-main)' }}>Net Income</span>
+                                {amountText(cf.netIncome, true)}
+                            </div>
+                            {subHeader('Changes in Working Capital')}
+                            {cf.workingCapital.length === 0
+                                ? emptyNote('No working-capital movements')
+                                : cf.workingCapital.map((r, i) => lineRow(r, i === cf.workingCapital.length - 1))}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderTop: '1px solid var(--color-border)', fontSize: '13px', fontWeight: 700 }}>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>Total Changes in Working Capital</span>
+                                {amountText(cf.totalWC)}
+                            </div>
+                            {footerRow('Net Cash from Operations', cf.netOperating)}
+                        </div>
+
+                        <div style={{ ...cardStyle, borderLeft: `4px solid ${GREEN}`, overflow: 'hidden' }}>
+                            {activityHeader('Investing Activities', GREEN)}
+                            {cf.investing.length === 0
+                                ? emptyNote('No investing activities')
+                                : cf.investing.map((r, i) => lineRow(r, i === cf.investing.length - 1))}
+                            {footerRow('Net Cash from Investing', cf.netInvesting)}
+                        </div>
+
+                        <div style={{ ...cardStyle, borderLeft: `4px solid ${PURPLE}`, overflow: 'hidden' }}>
+                            {activityHeader('Financing Activities', PURPLE)}
+                            {cf.financing.length === 0
+                                ? emptyNote('No financing activities')
+                                : cf.financing.map((r, i) => lineRow(r, i === cf.financing.length - 1))}
+                            {footerRow('Net Cash from Financing', cf.netFinancing)}
+                        </div>
+
+                        <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                            {activityHeader('Cash Summary', 'var(--color-text-secondary)')}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px' }}>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>Beginning Cash Balance ({displayDate(startDate)})</span>
+                                {amountText(cashFlow.opening)}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px' }}>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>Net Change in Cash</span>
+                                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: cf.netChange < 0 ? RED : GREEN }}>{loading ? '…' : fmt(cf.netChange)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '14px 20px', background: 'var(--color-bg)', fontSize: '15px', fontWeight: 800 }}>
+                                <span style={{ color: 'var(--color-text-main)' }}>Ending Cash Balance ({displayDate(endDate)})</span>
+                                {amountText(cashFlow.closing, true)}
+                            </div>
+                        </div>
+
+                        {/* The direct view kept as detail: each counter-account's
+                            share of the period's actual cash deltas. */}
+                        <div style={{ ...cardStyle, borderLeft: `4px solid ${BLUE}`, overflow: 'hidden' }}>
+                    <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: BLUE }}>Cash Movements</div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Where the cash actually moved — each entry's cash change attributed to its counter-accounts</div>
                     </div>
                     {cashFlow.rows.length === 0 ? (
                         <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
@@ -634,16 +778,11 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                             <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.amount < 0 ? RED : GREEN }}>{loading ? '…' : `${r.amount >= 0 ? '+' : ''}${fmt(r.amount)}`}</span>
                         </div>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px', fontWeight: 700 }}>
-                        <span style={{ color: 'var(--color-text-main)' }}>Net change in cash</span>
-                        <span style={{ fontVariantNumeric: 'tabular-nums', color: cashFlow.net < 0 ? RED : GREEN }}>{loading ? '…' : fmt(cashFlow.net)}</span>
+                    {footerRow('Net change in cash', cashFlow.net)}
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 20px', background: 'var(--color-bg)', fontSize: '14px', fontWeight: 800 }}>
-                        <span style={{ color: 'var(--color-text-main)' }}>Closing cash ({displayDate(endDate)})</span>
-                        {amountText(cashFlow.closing, true)}
-                    </div>
-                </div>
-            )}
+                );
+            })()}
 
             {tab === 'trial' && isMobile && (
                 <div style={{ ...cardStyle, overflow: 'hidden' }}>
