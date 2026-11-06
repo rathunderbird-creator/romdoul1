@@ -299,6 +299,11 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         // (asset bought, receivable grown), a net credit frees it.
         const contributionOf = (a: ChartOfAccount): number => -(netDebit.get(a.id) || 0);
         const isInvesting = (a: ChartOfAccount): boolean => a.account_type === 'Asset' && !cashIds.has(a.id)
+            // Accumulated depreciation/amortization is a CONTRA asset: its
+            // period credit is a non-cash add-back that belongs in Operating
+            // (the catch-all below), not an investing "inflow" — even when its
+            // name or sub_type reads like the fixed asset it offsets.
+            && !/depreciation|amorti[sz]/i.test(a.account_name)
             && (/fixed|non-current|property|plant|equipment/i.test(a.sub_type || '') || /equipment|vehicle|property|land|building|furniture|machin|fixture/i.test(a.account_name));
         const isFinancing = (a: ChartOfAccount): boolean => a.account_type === 'Equity'
             || (a.account_type === 'Liability' && /loan|borrow|note payable|debt|mortgage/i.test(a.account_name));
@@ -439,7 +444,10 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         const t = activeTable();
         const w = window.open('', '_blank', 'width=900,height=700');
         if (!w) return;
-        const numericCols = tab === 'trial' ? 2 : compare ? 2 : 1;
+        // `compare` only applies to the balance/income tables (its checkbox
+        // lives on those tabs but the state survives a tab switch) — on the
+        // 3-column cash flow it would right-align the Line text column.
+        const numericCols = tab === 'trial' ? 2 : (compare && (tab === 'balance' || tab === 'income')) ? 2 : 1;
         const body = t.rows.map(r =>
             `<tr>${r.map((c, i) => `<td style="text-align:${i >= t.columns.length - numericCols ? 'right' : 'left'}">${escapeHtml(String(c))}</td>`).join('')}</tr>`
         ).join('');
