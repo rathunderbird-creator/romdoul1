@@ -224,7 +224,9 @@ const IncomeStatementPage: React.FC = () => {
 
         emitSection('REVENUE');
         emitGroups(revenueGroups);
-        rows.push({ kind: 'total', cells: ['', 'Total Revenue', ...columns.map((_, i) => totalRevenueAt(i))] });
+        // "Operating": this total excludes Other Revenue (which sits below
+        // Operating Profit), so the old all-revenue label would mislabel it.
+        rows.push({ kind: 'total', cells: ['', 'Total Operating Revenue', ...columns.map((_, i) => totalRevenueAt(i))] });
 
         emitSection('COST OF SALES');
         emitGroups(cogsGroups);
