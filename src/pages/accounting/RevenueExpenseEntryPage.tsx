@@ -66,6 +66,7 @@ interface EntryRow {
     // Created by a payment flow (reference_id 'TX-…': retail receipts/deposits,
     // supplier and wholesale payments, imports) — managed from its own page.
     isSystem: boolean;
+    source: EntrySource;
     lineCount: number;
 }
 
@@ -132,6 +133,34 @@ const todayYmd = (): string => {
 };
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Where the entry came from, by the entry_number's type code — the same
+// vocabulary as Journal Entries' area chips — with reference-prefix and
+// description-marker fallbacks for rows from before the numbering migration.
+// An otherwise-unmarked payment-flow row ('TX-…') counts as Retail: on the
+// Revenue/Expense pages only the retail and wholesale flows put lines on
+// these accounts, and wholesale rows always carry the WSP number or '#WSP-'
+// marker — the retail flow is what's left (this covers receipts the
+// numbering sweep stamped MAN). 'Direct' is everything recorded by hand,
+// on this page or in Journal Entries.
+type EntrySource = 'Retail' | 'Wholesale' | 'Direct';
+const sourceOf = (ref: string, refId: string, description: string): EntrySource => {
+    const m = /^JE-\d+-([A-Z]+)-/.exec(ref);
+    if (m) {
+        if (m[1] === 'RCP' || m[1] === 'DEP' || m[1] === 'DLV') return 'Retail';
+        if (m[1] === 'WSP') return 'Wholesale';
+        // Any other real type code (REV/EXP/SPP/PAY/…) already names a flow
+        // that isn't retail or wholesale — don't let the TX- fallback below
+        // claim it. MAN is the exception: the numbering sweep also stamped
+        // MAN onto payment-flow rows it couldn't classify, so a MAN number
+        // proves nothing and falls through to the reference checks.
+        if (m[1] !== 'MAN') return 'Direct';
+    }
+    if (refId.startsWith('ORD-')) return 'Retail';
+    if (refId.startsWith('WSO-')) return 'Wholesale';
+    if (description.includes('#WSP-')) return 'Wholesale';
+    return refId.startsWith('TX-') ? 'Retail' : 'Direct';
+};
 
 // Desktop table columns, in order. One shared width set for Revenue and
 // Expense (same component, same table shape — a width dragged on one page is
@@ -364,6 +393,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         // its own (filteredRows no longer contains it), but clearing it here
         // avoids holding onto a stale selection across the switch.
         setSelectedIds(new Set());
+        // Revenue-account ids never match Expense rows (and vice versa) — a
+        // surviving chip selection would silently empty the other page's
+        // list. The source chips reset too, so each page starts unfiltered.
+        setAccountFilters(new Set());
+        setSourceFilters(new Set());
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
@@ -517,6 +551,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 status: entryLines[0].status,
                 ref: entryLines[0].ref,
                 isSystem: entryLines[0].refId.startsWith('TX-'),
+                source: sourceOf(entryLines[0].ref, entryLines[0].refId, entryLines[0].description),
                 lineCount: entryLines.length,
             });
         }
@@ -545,9 +580,28 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const setDateTo = (v: string) => setReDateRange(r => ({ ...r, end: v }));
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
-    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All');
+    // Multi-selectable chips, same pattern as Journal Entries' area chips, in
+    // two groups that AND together: source (Retail / Wholesale / Direct, from
+    // the entry's type code) and account (one chip per Revenue/Expense
+    // account). Within a group the selected chips OR; "All" clears both.
+    const [sourceFilters, setSourceFilters] = useState<ReadonlySet<EntrySource>>(new Set());
+    const toggleSourceFilter = (s: EntrySource) => setSourceFilters(prev => {
+        const n = new Set(prev);
+        if (n.has(s)) n.delete(s); else n.add(s);
+        return n;
+    });
+    const [accountFilters, setAccountFilters] = useState<ReadonlySet<string>>(new Set());
+    const toggleAccountFilter = (id: string) => setAccountFilters(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+    });
+    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All' || accountFilters.size > 0 || sourceFilters.size > 0);
 
-    const filteredRows = useMemo(() => {
+    // Everything but the chip filter — the chip counts come from this set, so
+    // they respect the search/date/status/origin filters without disappearing
+    // when their own chip is toggled.
+    const baseFilteredRows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return rows.filter(r =>
             (statusFilter === 'All' || r.status === statusFilter) &&
@@ -556,6 +610,62 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             (!dateTo || r.date <= dateTo) &&
             (!q || r.description.toLowerCase().includes(q) || r.accountName.toLowerCase().includes(q) || r.counterName.toLowerCase().includes(q) || r.ref.toLowerCase().includes(q)));
     }, [rows, search, dateFrom, dateTo, statusFilter, originFilter]);
+
+    // Chips with at least one entry at all (ignoring the filters) — keeps the
+    // chip row stable while filters narrow; emptied chips dim instead of
+    // unmounting under the pointer. Accounts arrive sorted by account_code.
+    const existingAccountIds = useMemo(() => {
+        const s = new Set<string>();
+        rows.forEach(r => r.accountIds.forEach(id => s.add(id)));
+        return s;
+    }, [rows]);
+    const chipAccounts = useMemo(
+        () => accounts.filter(a => a.account_type === cfg.accountType && (existingAccountIds.has(a.id) || accountFilters.has(a.id))),
+        [accounts, cfg.accountType, existingAccountIds, accountFilters]
+    );
+    const existingSources = useMemo(() => {
+        const s = new Set<EntrySource>();
+        rows.forEach(r => s.add(r.source));
+        return s;
+    }, [rows]);
+    // The source group only earns its place when a payment flow actually
+    // feeds this page — a book with only direct entries shows no group. An
+    // active selection keeps its group mounted even when a refetch removed
+    // the last matching row, or the filter would be invisible yet applied.
+    const showSourceChips = existingSources.has('Retail') || existingSources.has('Wholesale') || sourceFilters.size > 0;
+    const showAccountChips = chipAccounts.length > 1 || accountFilters.size > 0;
+    const chipSources = useMemo(
+        () => (['Retail', 'Wholesale', 'Direct'] as const).filter(s => existingSources.has(s) || sourceFilters.has(s)),
+        [existingSources, sourceFilters]
+    );
+
+    // Each group's counts respect the OTHER group (plus the filters above),
+    // so a chip always predicts exactly what clicking it would show.
+    const sourceCounts = useMemo(() => {
+        const m = new Map<EntrySource, number>();
+        baseFilteredRows.forEach(r => {
+            if (accountFilters.size > 0 && !r.accountIds.some(id => accountFilters.has(id))) return;
+            m.set(r.source, (m.get(r.source) || 0) + 1);
+        });
+        return m;
+    }, [baseFilteredRows, accountFilters]);
+    const accountCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        baseFilteredRows.forEach(r => {
+            if (sourceFilters.size > 0 && !sourceFilters.has(r.source)) return;
+            // An imported entry can carry several lines on the same account —
+            // dedupe so it counts once per account it touches.
+            new Set(r.accountIds).forEach(id => m.set(id, (m.get(id) || 0) + 1));
+        });
+        return m;
+    }, [baseFilteredRows, sourceFilters]);
+
+    const filteredRows = useMemo(
+        () => baseFilteredRows.filter(r =>
+            (sourceFilters.size === 0 || sourceFilters.has(r.source)) &&
+            (accountFilters.size === 0 || r.accountIds.some(id => accountFilters.has(id)))),
+        [baseFilteredRows, sourceFilters, accountFilters]
+    );
 
     const filteredTotal = useMemo(() => filteredRows.reduce((s, r) => s + r.amount, 0), [filteredRows]);
 
@@ -1036,6 +1146,91 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </span>
                 </div>
 
+                {/* Filter chips, multi-selectable like Journal Entries' area
+                    chips: a source group (Retail / Wholesale / Direct) and an
+                    account group, ANDed together; "All" clears both. */}
+                {!loading && (showSourceChips || showAccountChips) && (() => {
+                    const srcTitle: Record<EntrySource, string> = {
+                        Retail: 'From the retail flow — receipts, deposits and delivery entries',
+                        Wholesale: 'From the wholesale flow — wholesale payment entries',
+                        Direct: 'Recorded directly on this page or in Journal Entries — not from the retail or wholesale flows',
+                    };
+                    type Chip = { key: string; label: string; count: number; active: boolean; title: string; onClick: () => void };
+                    const chipBtn = (c: Chip) => {
+                        const empty = !c.active && c.count === 0;
+                        return (
+                            <button
+                                key={c.key}
+                                // aria-disabled instead of disabled: flipping to
+                                // disabled on the focused button (deselecting a
+                                // chip whose cross-count is 0) would silently
+                                // throw keyboard focus to <body>.
+                                onClick={empty ? undefined : c.onClick}
+                                aria-disabled={empty}
+                                aria-pressed={c.active}
+                                title={empty ? `No ${mode} entries here match the current filters` : c.title}
+                                className="d2-khmer"
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px',
+                                    borderRadius: '20px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
+                                    maxWidth: '100%',
+                                    cursor: empty ? 'default' : 'pointer', opacity: empty ? 0.45 : 1,
+                                    // The JE area chips' blue — white text passes
+                                    // contrast on it; the page accents don't.
+                                    border: c.active ? '1px solid #5469d4' : '1px solid var(--color-border)',
+                                    background: c.active ? '#5469d4' : 'var(--color-surface)',
+                                    color: c.active ? 'white' : 'var(--color-text-secondary)',
+                                }}
+                            >
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{c.label}</span>
+                                <span style={{
+                                    fontSize: '11px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+                                    padding: '1px 7px', borderRadius: '12px',
+                                    // Dark translucent, not white-on-white-ish:
+                                    // white text over it stays past 4.5:1.
+                                    background: c.active ? 'rgba(0, 0, 0, 0.25)' : 'var(--color-bg)',
+                                    color: c.active ? 'white' : 'var(--color-text-muted)',
+                                }}>{c.count.toLocaleString()}</span>
+                            </button>
+                        );
+                    };
+                    const groupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minWidth: 0 };
+                    return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 18px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+                            {chipBtn({
+                                key: 'All', label: 'All', count: baseFilteredRows.length,
+                                active: sourceFilters.size === 0 && accountFilters.size === 0,
+                                title: `Every ${mode} entry matching the current filters`,
+                                onClick: () => { setSourceFilters(new Set()); setAccountFilters(new Set()); },
+                            })}
+                            {showSourceChips && (
+                                <span role="group" aria-label="Filter by source" style={groupStyle}>
+                                    {chipSources.map(s => chipBtn({
+                                        key: `src:${s}`, label: s, count: sourceCounts.get(s) || 0,
+                                        active: sourceFilters.has(s), title: srcTitle[s],
+                                        onClick: () => toggleSourceFilter(s),
+                                    }))}
+                                </span>
+                            )}
+                            {showAccountChips && (
+                                <span
+                                    role="group"
+                                    aria-label="Filter by account"
+                                    // The group divider rides the group itself,
+                                    // so wrapping can't strand it mid-row.
+                                    style={{ ...groupStyle, ...(showSourceChips ? { borderLeft: '1px solid var(--color-border)', paddingLeft: '8px' } : {}) }}
+                                >
+                                    {chipAccounts.map(a => chipBtn({
+                                        key: `acc:${a.id}`, label: a.account_name, count: accountCounts.get(a.id) || 0,
+                                        active: accountFilters.has(a.id), title: `${a.account_code} · ${a.account_name}`,
+                                        onClick: () => toggleAccountFilter(a.id),
+                                    }))}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })()}
+
                 {/* Filters: search, date range, status */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
                     <div style={{ position: 'relative', flex: '1 1 180px', maxWidth: '300px' }}>
@@ -1059,7 +1254,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </select>
                     {filtersActive && (
                         <button
-                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); }}
+                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); setAccountFilters(new Set()); setSourceFilters(new Set()); }}
                             style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
                         >
                             Clear
