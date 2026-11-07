@@ -108,6 +108,41 @@ const originChip = (isSystem: boolean) => (
         }}>{isSystem ? 'auto' : 'manual'}</span>
 );
 
+// ── Business-area chips: with thousands of retail receipts in the ledger,
+// a type filter is the only way the rest stays findable. The area comes from
+// the entry_number's type code (JE-<n>-<TYPE>-…); rows from before that
+// migration fall back to reference/description markers the posting flows
+// write, and plain manual entries land in Manual. ──
+const AREA_LABELS = ['Retail', 'Wholesale', 'Purchases', 'Payments', 'Rev & Exp', 'Manual', 'Other'] as const;
+type Area = typeof AREA_LABELS[number];
+const CODE_AREA: Record<string, Area> = {
+    RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
+    WSP: 'Wholesale',
+    PUR: 'Purchases', GRN: 'Purchases', OPA: 'Purchases', ADJ: 'Purchases',
+    SPP: 'Payments', PAY: 'Payments',
+    REV: 'Rev & Exp', EXP: 'Rev & Exp',
+    MAN: 'Manual',
+};
+const areaOf = (e: JournalEntry): Area => {
+    const m = /^JE-\d+-([A-Z]+)-/.exec(e.entry_number || '');
+    if (m && CODE_AREA[m[1]]) return CODE_AREA[m[1]];
+    const ref = e.reference_id || '';
+    if (ref.startsWith('WSO-')) return 'Wholesale';
+    if (ref.startsWith('ORD-')) return 'Retail';
+    // Revenue & Expense's default machine reference, for rows from before
+    // the entry_number migration (which doesn't backfill).
+    if (ref.startsWith('REV-') || ref.startsWith('EXP-')) return 'Rev & Exp';
+    // Imported legacy entries (TX-…) carry the flow marker in their description.
+    const d = e.description || '';
+    if (d.includes('#SPP-') || d.includes('#PAY-')) return 'Payments';
+    if (d.includes('#WSP-')) return 'Wholesale';
+    return isSystemEntry(e) ? 'Other' : 'Manual';
+};
+
+// Rows rendered per "Show more" click — exports and summary cards still
+// cover the whole filtered set.
+const PAGE_SIZE = 100;
+
 const JournalEntriesPage = () => {
     const isMobile = useMobile();
     const navigate = useNavigate();
@@ -124,6 +159,9 @@ const JournalEntriesPage = () => {
     const [dateRange, setDateRange] = usePersistedDateRange('journal_entries_range');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
+    const [areaFilter, setAreaFilter] = useState<'All' | Area>('All');
+    // How many filtered rows are rendered; resets whenever the view changes.
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     // Editing an existing draft reuses the entry modal; null = creating.
     const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
     const [viewEntry, setViewEntry] = useState<JournalEntry | null>(null);
@@ -559,7 +597,9 @@ const JournalEntriesPage = () => {
 
     const activeAccounts = useMemo(() => accounts.filter(a => a.is_active), [accounts]);
 
-    const filteredEntries = useMemo(() => {
+    // Everything except the area chips — their counts come from this set, so
+    // each chip shows what it would leave visible under the other filters.
+    const baseFiltered = useMemo(() => {
         let result = journalEntries;
 
         if (dateRange.start) {
@@ -591,27 +631,79 @@ const JournalEntriesPage = () => {
         // every entry dated today compares equal and the newest one (e.g. the
         // highest entry_number) isn't guaranteed to land first. created_at is
         // a real timestamp and always distinct.
-        return result.sort((a, b) => {
+        return [...result].sort((a, b) => {
             const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
             if (dateDiff !== 0) return dateDiff;
             return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
         });
     }, [journalEntries, searchQuery, dateRange, statusFilter, originFilter]);
 
+    const areaCounts = useMemo(() => {
+        const c: Partial<Record<Area, number>> = {};
+        for (const e of baseFiltered) {
+            const a = areaOf(e);
+            c[a] = (c[a] || 0) + 1;
+        }
+        return c;
+    }, [baseFiltered]);
+
+    // Which areas exist in the whole journal (ignoring every filter): those
+    // chips stay mounted — dimmed when the current filters leave them at 0 —
+    // so the chip row doesn't reflow under the pointer while typing a search
+    // or narrowing dates. Areas this business never books stay hidden.
+    const existingAreas = useMemo(() => {
+        const s = new Set<Area>();
+        for (const e of journalEntries) s.add(areaOf(e));
+        return s;
+    }, [journalEntries]);
+
+    const filteredEntries = useMemo(
+        () => areaFilter === 'All' ? baseFiltered : baseFiltered.filter(e => areaOf(e) === areaFilter),
+        [baseFiltered, areaFilter]
+    );
+
+    // A changed view starts back at the first page — adjusted during render
+    // (not in an effect), so a "Show all" depth never commits one frame of
+    // thousands of rows against the new filter before resetting.
+    const filterSig = `${searchQuery}\u0000${dateRange.start}\u0000${dateRange.end}\u0000${statusFilter}\u0000${originFilter}\u0000${areaFilter}`;
+    const [lastFilterSig, setLastFilterSig] = useState(filterSig);
+    if (filterSig !== lastFilterSig) {
+        setLastFilterSig(filterSig);
+        setVisibleCount(PAGE_SIZE);
+    }
+
+    const visibleEntries = useMemo(() => filteredEntries.slice(0, visibleCount), [filteredEntries, visibleCount]);
+
+    // Selection never outlives the rendered rows: a filter or page change
+    // that hides a row also deselects it, so the bulk bar can't hold rows
+    // that aren't on screen anywhere.
+    useEffect(() => {
+        setSelectedIds(prev => {
+            if (prev.size === 0) return prev;
+            const visible = new Set(visibleEntries.map(e => e.id));
+            const kept = new Set<string>();
+            prev.forEach(id => { if (visible.has(id)) kept.add(id); });
+            return kept.size === prev.size ? prev : kept;
+        });
+    }, [visibleEntries]);
+
     // Summary cards: totals over the filtered view, so they track Date/Status/Search.
     const counts = useMemo(() => {
         const draft = filteredEntries.filter(e => e.status === 'Draft').length;
         return { total: filteredEntries.length, posted: filteredEntries.length - draft, draft };
     }, [filteredEntries]);
-    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All' || originFilter !== 'All');
+    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All' || originFilter !== 'All' || areaFilter !== 'All');
 
     // ── Bulk checkbox selection: Unpost (admin-only, Posted rows) / Delete
     // (Draft rows for anyone, Posted rows admin-only — same split as the
     // single-row action above). Matches this page's existing rule that
     // Auto/Manual origin makes no difference to what can be mutated. ──
+    // Derived from visibleEntries (not filteredEntries) so bulk actions can
+    // only ever target rendered rows, even in the render before the pruning
+    // effect above has run.
     const selectedRows = useMemo(
-        () => selectedIds.size === 0 ? [] : filteredEntries.filter(e => selectedIds.has(e.id)),
-        [selectedIds, filteredEntries]
+        () => selectedIds.size === 0 ? [] : visibleEntries.filter(e => selectedIds.has(e.id)),
+        [selectedIds, visibleEntries]
     );
     // A row already mid-post/mid-delete via its own single-row action can't
     // also be a bulk target — excluded here, not just from new picks
@@ -624,7 +716,9 @@ const JournalEntriesPage = () => {
         () => selectedRows.filter(e => !busyIds.has(e.id) && e.status !== 'Draft'),
         [selectedRows, busyIds]
     );
-    const selectableIds = useMemo(() => filteredEntries.filter(e => !busyIds.has(e.id)).map(e => e.id), [filteredEntries, busyIds]);
+    // Select-all covers only the rendered rows — never entries hidden behind
+    // "Show more", so a bulk Delete/Unpost can't grab rows nobody has seen.
+    const selectableIds = useMemo(() => visibleEntries.filter(e => !busyIds.has(e.id)).map(e => e.id), [visibleEntries, busyIds]);
     const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
     const someSelected = selectableIds.some(id => selectedIds.has(id));
 
@@ -773,6 +867,45 @@ const JournalEntriesPage = () => {
                 ))}
             </div>
 
+            {/* Area chips — one click isolates a business area (retail receipts
+                are ~¾ of the ledger, so everything else needs this to surface).
+                Counts respect the other filters; empty areas stay hidden. */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
+                {(['All', ...AREA_LABELS] as const).map(a => {
+                    const count = a === 'All' ? baseFiltered.length : (areaCounts[a] || 0);
+                    if (a !== 'All' && !existingAreas.has(a) && areaFilter !== a) return null;
+                    const active = areaFilter === a;
+                    const empty = !active && count === 0;
+                    return (
+                        <button
+                            key={a}
+                            onClick={() => setAreaFilter(a)}
+                            disabled={empty}
+                            aria-pressed={active}
+                            title={empty ? 'No entries in this area under the current filters' : undefined}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '7px',
+                                padding: '6px 13px', borderRadius: '20px',
+                                border: active ? '1px solid #5469d4' : '1px solid var(--color-border)',
+                                background: active ? '#5469d4' : 'var(--color-surface)',
+                                color: active ? '#fff' : 'var(--color-text-secondary)',
+                                fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap',
+                                cursor: empty ? 'default' : 'pointer',
+                                opacity: empty ? 0.45 : 1,
+                            }}
+                        >
+                            {a}
+                            <span style={{
+                                fontSize: '11px', fontWeight: 700, padding: '1px 7px', borderRadius: '10px',
+                                fontVariantNumeric: 'tabular-nums',
+                                background: active ? 'rgba(255,255,255,0.22)' : 'var(--color-bg)',
+                                color: active ? '#fff' : 'var(--color-text-muted)',
+                            }}>{isLoading ? '…' : count.toLocaleString()}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
             {/* Filters: From / To / Status / Search — with Print list & Export CSV on the right */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
                 <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -813,9 +946,9 @@ const JournalEntriesPage = () => {
                         />
                     </div>
                 </div>
-                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All' || originFilter !== 'All') && (
+                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All' || originFilter !== 'All' || areaFilter !== 'All') && (
                     <button
-                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); }}
+                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); setAreaFilter('All'); }}
                         style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
                     >
                         Clear
@@ -847,7 +980,7 @@ const JournalEntriesPage = () => {
                     ) : filteredEntries.length === 0 ? (
                         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No entries found</div>
                     ) : (
-                        filteredEntries.map(entry => {
+                        visibleEntries.map(entry => {
                             const t = entryTotals(entry);
                             const isDraft = entry.status === 'Draft';
                             const canDeleteRow = isDraft || isAdmin;
@@ -905,7 +1038,7 @@ const JournalEntriesPage = () => {
                                     ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
                                     onChange={toggleSelectAll}
                                     disabled={selectableIds.length === 0}
-                                    title="Select all listed entries"
+                                    title="Select all shown entries"
                                     style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                 />
                             </th>
@@ -924,7 +1057,7 @@ const JournalEntriesPage = () => {
                         ) : filteredEntries.length === 0 ? (
                             <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
                         ) : (
-                            filteredEntries.map(entry => {
+                            visibleEntries.map(entry => {
                                 const t = entryTotals(entry);
                                 const isDraft = entry.status === 'Draft';
                                 const canDeleteRow = isDraft || isAdmin;
@@ -982,6 +1115,32 @@ const JournalEntriesPage = () => {
                     </tbody>
                 </table>
                 </div>
+                )}
+                {/* Pagination footer — rendering stops at visibleCount, but the
+                    summary cards, Print list and Export CSV always cover the
+                    whole filtered set. */}
+                {!isLoading && filteredEntries.length > PAGE_SIZE && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', flexWrap: 'wrap', padding: '14px 20px', borderTop: '1px solid var(--color-border)' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                            Showing {Math.min(visibleCount, filteredEntries.length).toLocaleString()} of {filteredEntries.length.toLocaleString()} entries
+                        </span>
+                        {filteredEntries.length > visibleCount && (
+                            <>
+                                <button
+                                    onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #5469d4', background: 'var(--color-surface)', color: '#5469d4', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Show {Math.min(PAGE_SIZE, filteredEntries.length - visibleCount).toLocaleString()} more
+                                </button>
+                                <button
+                                    onClick={() => setVisibleCount(filteredEntries.length)}
+                                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Show all
+                                </button>
+                            </>
+                        )}
+                    </div>
                 )}
             </div>
 
