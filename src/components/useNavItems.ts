@@ -58,7 +58,9 @@ export const useNavItems = (): NavItem[] => {
             subItems: [
                 { label: t('nav.chartOfAccounts'), path: '/accounting/chart-of-accounts', icon: Network },
                 { label: t('nav.journalEntries'), path: '/accounting/journal-entries', icon: BookOpen },
-                { label: t('nav.generalLedger'), path: '/accounting/general-ledger', icon: BookText },
+                // General Ledger is hidden from this section; it stays in the
+                // Reports Center list and /accounting/general-ledger stays
+                // reachable from the pages' "View in General Ledger" links.
                 { label: t('nav.revenue'), path: '/accounting/revenue', icon: CircleDollarSign },
                 { label: t('nav.expense'), path: '/accounting/expense', icon: TrendingDown },
                 { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
