@@ -159,7 +159,15 @@ const JournalEntriesPage = () => {
     const [dateRange, setDateRange] = usePersistedDateRange('journal_entries_range');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
-    const [areaFilter, setAreaFilter] = useState<'All' | Area>('All');
+    // Multi-select: empty set = all areas ("All" chip). Clicking a chip
+    // toggles its area in and out of the view.
+    const [areaFilters, setAreaFilters] = useState<ReadonlySet<Area>>(new Set());
+    const toggleAreaFilter = (a: 'All' | Area) => setAreaFilters(prev => {
+        if (a === 'All') return new Set<Area>();
+        const n = new Set(prev);
+        if (n.has(a)) n.delete(a); else n.add(a);
+        return n;
+    });
     // How many filtered rows are rendered; resets whenever the view changes.
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     // Editing an existing draft reuses the entry modal; null = creating.
@@ -658,14 +666,14 @@ const JournalEntriesPage = () => {
     }, [journalEntries]);
 
     const filteredEntries = useMemo(
-        () => areaFilter === 'All' ? baseFiltered : baseFiltered.filter(e => areaOf(e) === areaFilter),
-        [baseFiltered, areaFilter]
+        () => areaFilters.size === 0 ? baseFiltered : baseFiltered.filter(e => areaFilters.has(areaOf(e))),
+        [baseFiltered, areaFilters]
     );
 
     // A changed view starts back at the first page — adjusted during render
     // (not in an effect), so a "Show all" depth never commits one frame of
     // thousands of rows against the new filter before resetting.
-    const filterSig = `${searchQuery}\u0000${dateRange.start}\u0000${dateRange.end}\u0000${statusFilter}\u0000${originFilter}\u0000${areaFilter}`;
+    const filterSig = `${searchQuery}\u0000${dateRange.start}\u0000${dateRange.end}\u0000${statusFilter}\u0000${originFilter}\u0000${[...areaFilters].sort().join(',')}`;
     const [lastFilterSig, setLastFilterSig] = useState(filterSig);
     if (filterSig !== lastFilterSig) {
         setLastFilterSig(filterSig);
@@ -692,7 +700,7 @@ const JournalEntriesPage = () => {
         const draft = filteredEntries.filter(e => e.status === 'Draft').length;
         return { total: filteredEntries.length, posted: filteredEntries.length - draft, draft };
     }, [filteredEntries]);
-    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All' || originFilter !== 'All' || areaFilter !== 'All');
+    const filtersActive = !!(searchQuery.trim() || dateRange.start || dateRange.end || statusFilter !== 'All' || originFilter !== 'All' || areaFilters.size > 0);
 
     // ── Bulk checkbox selection: Unpost (admin-only, Posted rows) / Delete
     // (Draft rows for anyone, Posted rows admin-only — same split as the
@@ -867,19 +875,19 @@ const JournalEntriesPage = () => {
                 ))}
             </div>
 
-            {/* Area chips — one click isolates a business area (retail receipts
-                are ~¾ of the ledger, so everything else needs this to surface).
-                Counts respect the other filters; empty areas stay hidden. */}
+            {/* Area chips — toggle any mix of business areas (retail receipts
+                are ~¾ of the ledger, so everything else needs this to surface);
+                "All" clears the mix. Counts respect the other filters. */}
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
                 {(['All', ...AREA_LABELS] as const).map(a => {
                     const count = a === 'All' ? baseFiltered.length : (areaCounts[a] || 0);
-                    if (a !== 'All' && !existingAreas.has(a) && areaFilter !== a) return null;
-                    const active = areaFilter === a;
+                    if (a !== 'All' && !existingAreas.has(a) && !areaFilters.has(a)) return null;
+                    const active = a === 'All' ? areaFilters.size === 0 : areaFilters.has(a);
                     const empty = !active && count === 0;
                     return (
                         <button
                             key={a}
-                            onClick={() => setAreaFilter(a)}
+                            onClick={() => toggleAreaFilter(a)}
                             disabled={empty}
                             aria-pressed={active}
                             title={empty ? 'No entries in this area under the current filters' : undefined}
@@ -946,9 +954,9 @@ const JournalEntriesPage = () => {
                         />
                     </div>
                 </div>
-                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All' || originFilter !== 'All' || areaFilter !== 'All') && (
+                {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All' || originFilter !== 'All' || areaFilters.size > 0) && (
                     <button
-                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); setAreaFilter('All'); }}
+                        onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); setAreaFilters(new Set()); }}
                         style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
                     >
                         Clear
