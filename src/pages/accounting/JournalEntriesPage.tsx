@@ -113,7 +113,10 @@ const originChip = (isSystem: boolean) => (
 // the entry_number's type code (JE-<n>-<TYPE>-…); rows from before that
 // migration fall back to reference/description markers the posting flows
 // write, and plain manual entries land in Manual. ──
-const AREA_LABELS = ['Retail', 'Wholesale', 'Purchases', 'Payments', 'Rev & Exp', 'Manual', 'Other'] as const;
+// "General" (not "Manual") to avoid colliding with the amber auto/manual
+// ORIGIN chip: general-journal entries booked right on this page, versus
+// rows that originate in the retail/wholesale/purchase/expense flows.
+const AREA_LABELS = ['Retail', 'Wholesale', 'Purchases', 'Payments', 'Rev & Exp', 'General', 'Other'] as const;
 type Area = typeof AREA_LABELS[number];
 const CODE_AREA: Record<string, Area> = {
     RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
@@ -121,7 +124,7 @@ const CODE_AREA: Record<string, Area> = {
     PUR: 'Purchases', GRN: 'Purchases', OPA: 'Purchases', ADJ: 'Purchases',
     SPP: 'Payments', PAY: 'Payments',
     REV: 'Rev & Exp', EXP: 'Rev & Exp',
-    MAN: 'Manual',
+    MAN: 'General',
 };
 const areaOf = (e: JournalEntry): Area => {
     const m = /^JE-\d+-([A-Z]+)-/.exec(e.entry_number || '');
@@ -136,7 +139,7 @@ const areaOf = (e: JournalEntry): Area => {
     const d = e.description || '';
     if (d.includes('#SPP-') || d.includes('#PAY-')) return 'Payments';
     if (d.includes('#WSP-')) return 'Wholesale';
-    return isSystemEntry(e) ? 'Other' : 'Manual';
+    return isSystemEntry(e) ? 'Other' : 'General';
 };
 
 // Rows rendered per "Show more" click — exports and summary cards still
@@ -890,7 +893,9 @@ const JournalEntriesPage = () => {
                             onClick={() => toggleAreaFilter(a)}
                             disabled={empty}
                             aria-pressed={active}
-                            title={empty ? 'No entries in this area under the current filters' : undefined}
+                            title={empty
+                                ? 'No entries in this area under the current filters'
+                                : a === 'General' ? 'General-journal entries recorded directly on this page (New Entry)' : undefined}
                             style={{
                                 display: 'inline-flex', alignItems: 'center', gap: '7px',
                                 padding: '6px 13px', borderRadius: '20px',
