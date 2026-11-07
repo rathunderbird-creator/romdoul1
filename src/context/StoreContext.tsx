@@ -131,12 +131,25 @@ async function retailCogsLines(
     }
 }
 
+// Serializes this tab's ledger posts: nextJournalEntryNumber is a non-atomic
+// count-then-insert, so concurrent posts (a bulk settle fans out one per
+// order) would all read the same counts and mint the same entry_number. The
+// chain makes each post's insert land before the next one counts. Posts from
+// other tabs/users keep the util's documented rare-race tradeoff.
+let ledgerPostChain: Promise<unknown> = Promise.resolve();
+function enqueueLedgerPost<T>(run: () => Promise<T>): Promise<T> {
+    const result = ledgerPostChain.then(run, run);
+    ledgerPostChain = result.catch(() => undefined);
+    return result;
+}
+
 // COGS entry for an order with NO receipt entry to carry it: when the deposit
 // covered the whole total, the Paid transition books no RCP row (nothing left
 // to collect), so the cost side gets its own 2-line entry — Dr Cost of Goods
 // Sold / Cr Inventory. Reference 'ORD-<id>-COGS' so a revert/re-pay (or a
 // later Post Now on the deposit row) can never book it twice. Non-fatal.
 async function postRetailCogsOnlyEntry(orderId: string, date: string, description: string, status: 'Draft' | 'Posted' = 'Draft'): Promise<void> {
+    return enqueueLedgerPost(async () => {
     try {
         const reference = `ORD-${orderId}-COGS`;
         // select('*') so status is read where that column exists without failing where it doesn't.
@@ -189,6 +202,7 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
     } catch (e) {
         console.error('Failed to post the COGS entry for order', orderId, e);
     }
+    });
 }
 
 // Books a cancelled order's delivery-fee-only payment (paymentStatus
@@ -212,6 +226,7 @@ async function postDeliveryFeeToLedger({
     depositAccountId?: string;
     payBy?: string | null;
 }): Promise<boolean> {
+    return enqueueLedgerPost(async () => {
     try {
         const { data: coa } = await supabase.from('chart_of_accounts')
             .select('id, account_code, account_name, account_type').eq('is_active', true);
@@ -261,6 +276,7 @@ async function postDeliveryFeeToLedger({
         console.error('Failed to post delivery fee to ledger:', e);
         return false;
     }
+    });
 }
 
 // Posts a journal entry (Draft by default) straight to the ledger for a
@@ -308,6 +324,7 @@ export async function postRetailSaleToLedger({
     // — steers the cash/bank account when no depositAccountId was picked.
     payBy?: string | null;
 }): Promise<boolean> {
+    return enqueueLedgerPost(async () => {
     try {
         const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy);
         if (revenueAcc && cashAccId) {
@@ -367,6 +384,7 @@ export async function postRetailSaleToLedger({
         console.error('Failed to post journal entry for retail payment:', jeCatchErr);
         return false;
     }
+    });
 }
 
 // Finalizes a specific transaction's journal entry as Posted — used by the
@@ -2559,23 +2577,40 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const amountMatches = [existingOrder.amountReceived || 0, existingOrder.total];
             if (dep > 0) amountMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - dep), Math.max(0, existingOrder.total - dep));
             const positiveMatches = amountMatches.filter(a => a > 0);
-            if (positiveMatches.length > 0) try {
-                const { data: paidTxns } = await supabase.from('transactions')
+            try {
+                // Exact match by order link first: the Paid transition writes
+                // order_id where migrations/add_transaction_order_link.sql has
+                // run, and the fuzzy name+amount match below can hit a same-name
+                // same-amount SIBLING order's row — which, now that every settle
+                // books a TX- journal entry, would also delete the wrong entry.
+                let paidTxns: { id: string }[] | null | undefined;
+                const { data: linkedTxns, error: linkErr } = await supabase.from('transactions')
                     .select('id')
                     .eq('type', 'Income')
-                    // Also match the pre-rename category so older rows still clean up.
                     .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                    .eq('description', custName)
-                    .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
+                    .eq('order_id', id)
                     .limit(1);
+                // On instances without the order_id column this errors — fall
+                // through to the fuzzy match, same as rows from before the link.
+                if (!linkErr) paidTxns = linkedTxns;
+                if ((!paidTxns || paidTxns.length === 0) && positiveMatches.length > 0) {
+                    ({ data: paidTxns } = await supabase.from('transactions')
+                        .select('id')
+                        .eq('type', 'Income')
+                        // Also match the pre-rename category so older rows still clean up.
+                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
+                        .eq('description', custName)
+                        .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
+                        .limit(1));
+                }
                 if (paidTxns && paidTxns.length > 0) {
                     await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
                     setTransactions(prev => prev.filter(t => t.id !== paidTxns[0].id));
 
-                    // Also remove any Draft journal entry this payment posted (Payment
-                    // Tracking's Record Receipt flow posts one; Orders' Settle Payment
-                    // flow never does, so this simply finds nothing for those). Lines
-                    // first, then the header, to satisfy the FK.
+                    // Also remove any Draft journal entry this payment posted
+                    // (Payment Tracking's Record Receipt and Orders' Settle
+                    // Payment both post one now). Lines first, then the header,
+                    // to satisfy the FK.
                     const refId = 'TX-' + paidTxns[0].id;
                     const { data: journalEntry } = await supabase.from('journal_entries')
                         .select('id').eq('reference_id', refId).limit(1).maybeSingle();
@@ -2758,11 +2793,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 })();
 
                 // Also post a matching Draft entry straight to the ledger, but ONLY when
-                // the caller explicitly opted in (Payment Tracking's Record Receipt flow
-                // sets this; Orders' Settle Payment flow never does, by design — it keeps
-                // logging to Income & Expense only). Runs independently of the transactions
-                // insert above: no ordering dependency, since transactionId is already
-                // generated client-side before either insert happens.
+                // the caller explicitly opted in (Payment Tracking's Record Receipt and
+                // Orders' Settle Payment both set this now). Runs independently of the
+                // transactions insert above: no ordering dependency, since transactionId
+                // is already generated client-side before either insert happens.
                 if ((updates as Partial<Sale>).postToLedger === true) {
                     postRetailSaleToLedger({
                         txId: transactionId,
@@ -3066,12 +3100,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 })();
 
                 // Also post a matching Draft entry straight to the ledger, same opt-in
-                // as the Paid branch above (Payment Tracking's Deposit modal sets this;
-                // Orders' Deposit flow never does — Income & Expense only, by design).
-                // Payment Tracking's modal can now supply an explicit "Deposited into"
-                // account (depositAccountId); when it doesn't — e.g. Orders' Deposit flow,
-                // which never sets this — the helper's cash/bank name-match fallback
-                // resolves the account instead.
+                // as the Paid branch above (Payment Tracking's and Orders' Deposit
+                // modals both set this now, each with an explicit "Deposited into"
+                // account; when depositAccountId is missing, the helper's cash/bank
+                // name-match fallback resolves the account instead).
                 if ((updates as Partial<Sale>).postToLedger === true) {
                     postRetailSaleToLedger({
                         txId: depTxn.id,

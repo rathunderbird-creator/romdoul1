@@ -2230,6 +2230,10 @@ const Orders: React.FC = () => {
                         individualUpdates.settleDate = settleDate ? new Date(settleDate).toISOString() : now;
                         // Pay By chosen in the modal — also feeds the income row's pay_by.
                         if (payBy) individualUpdates.paymentMethod = payBy as any;
+                        // Bulk settles book their receipts too; with no account
+                        // picker here, the Pay By steers which cash/bank account
+                        // the Draft RCP entry lands on.
+                        individualUpdates.postToLedger = true;
                     } else if (value === 'Get File') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.
@@ -4576,6 +4580,11 @@ const Orders: React.FC = () => {
                         updates.amountReceived = paymentMethodTargetOrder.total;
                         updates.depositAccountId = depositAccountId;
                         updates.depositAccountName = depositAccountName;
+                        // Settling books the receipt too (a Draft RCP entry on the
+                        // picked account) — without this, a settled order never
+                        // reaches the ledger unless someone also records it on
+                        // Customer Payment.
+                        updates.postToLedger = true;
                         updateOrder(paymentMethodTargetOrder.id, updates);
                     }}
                 />
@@ -4607,7 +4616,8 @@ const Orders: React.FC = () => {
             <DepositModal
                 order={depositTargetOrder}
                 onClose={() => setDepositTargetOrder(null)}
-                onConfirm={({ amount, method, date }) => {
+                showDepositAccount
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
@@ -4619,7 +4629,14 @@ const Orders: React.FC = () => {
                         depositMethod: method,
                         paymentMethod: method as any,
                         depositDate: date,
-                        amountReceived: amount
+                        amountReceived: amount,
+                        // Deposits book their DEP entry too (same as Payment Tracking's
+                        // deposit flow) — the later settle entry only carries the
+                        // REMAINDER (total − deposit), so without this the ledger
+                        // would be short the deposit for every Orders-settled sale.
+                        postToLedger: true,
+                        depositAccountId,
+                        depositAccountName
                     });
                     setDepositTargetOrder(null);
                 }}

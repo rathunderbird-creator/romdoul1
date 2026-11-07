@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
+import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
@@ -14,10 +15,11 @@ const localYMD = (daysAgo = 0): string => {
 interface SettlePaymentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    // depositAccountId/depositAccountName are no longer collected here — account
-    // selection now happens later, manually, via Customer Payment's Record
-    // Receipt flow. Kept optional in the payload so existing callers destructuring
-    // them keep compiling; this modal simply never sets them.
+    // depositAccountId/depositAccountName name the cash/bank ledger account the
+    // settlement lands in — the caller passes them (with postToLedger) to
+    // updateOrder so settling also books the receipt, instead of leaving the
+    // entry for a later manual Record Receipt on Customer Payment. They stay
+    // optional: an instance with no cash/bank accounts settles without them.
     onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string }) => void;
     initialMethod?: string;
     initialDate?: string;
@@ -35,8 +37,28 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     description = "Please confirm the settle date and payment method."
 }) => {
     const { paymentMethods } = useStore();
+    const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
+    const [depositAccountId, setDepositAccountId] = useState<string>('');
+    // Confirm stays disabled until the chart of accounts has actually loaded —
+    // before that, "no accounts" can't be told from "not here yet", and a quick
+    // Confirm would book the receipt to a heuristically picked account.
+    const [accountsLoaded, setAccountsLoaded] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setAccountsLoaded(false);
+            fetchAccounts().finally(() => setAccountsLoaded(true));
+        }
+    }, [isOpen, fetchAccounts]);
+
+    // Cash/bank ledger accounts for the "Deposited into" select — same filter
+    // as RecordReceiptModal's and DepositModal's field.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
 
     useEffect(() => {
         if (isOpen) {
@@ -45,8 +67,26 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
             setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
+            setDepositAccountId('');
         }
+        // paymentAccounts stays OUT of these deps: the accounts arrive after the
+        // modal opens, and re-running this then would clobber whatever date or
+        // method the user already changed. The account default has its own
+        // effect below for exactly that reason.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, initialMethod, initialDate, paymentMethods]);
+
+    // Seed the account default once the accounts arrive — but never overwrite
+    // a pick the user already made.
+    useEffect(() => {
+        if (!isOpen || paymentAccounts.length === 0) return;
+        setDepositAccountId(prev => {
+            if (prev && paymentAccounts.some(a => a.id === prev)) return prev;
+            // Bank is the default Deposited into account too, same idea as Pay By.
+            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
+            return bankAccount?.id || paymentAccounts[0]?.id || '';
+        });
+    }, [isOpen, paymentAccounts]);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -104,6 +144,34 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         ))}
                     </select>
                 </div>
+                <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>
+                        Deposited into {accountsLoaded && paymentAccounts.length > 0 && <span style={{ color: 'red' }}>*</span>}
+                    </label>
+                    <select
+                        value={depositAccountId}
+                        onChange={(e) => setDepositAccountId(e.target.value)}
+                        disabled={!accountsLoaded}
+                        style={{
+                            width: '100%', padding: '10px', borderRadius: '8px',
+                            border: `1px solid ${accountsLoaded && paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}`,
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                            outline: 'none', boxSizing: 'border-box', opacity: accountsLoaded ? 1 : 0.6
+                        }}
+                    >
+                        <option value="">{accountsLoaded ? 'Bank or cash account…' : 'Loading accounts…'}</option>
+                        {paymentAccounts.map(a => (
+                            <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
+                        ))}
+                    </select>
+                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        {!accountsLoaded
+                            ? 'Loading the Chart of Accounts…'
+                            : paymentAccounts.length > 0
+                                ? 'Settling also books the receipt to this account as a Draft journal entry.'
+                                : 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.'}
+                    </p>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                     <button
                         onClick={onClose}
@@ -115,24 +183,38 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     >
                         Cancel
                     </button>
-                    <button
-                        onClick={() => {
-                            // Ensure time is preserved, or just set to noon if we only care about the date
-                            // Default behavior for <input type="date"> is YYYY-MM-DD
-                            onConfirm({ paymentMethod: selectedMethod, settleDate: new Date(settleDate).toISOString() });
-                            onClose();
-                        }}
-                        className="primary-button"
-                        style={{
-                            padding: '10px 16px', borderRadius: '8px', border: 'none',
-                            background: 'var(--color-primary)',
-                            color: 'white',
-                            cursor: 'pointer',
-                            fontSize: '14px', fontWeight: 500
-                        }}
-                    >
-                        Confirm
-                    </button>
+                    {(() => {
+                        // An account is required only when there is one to pick —
+                        // and nothing confirms before the accounts have loaded.
+                        const valid = accountsLoaded && !(paymentAccounts.length > 0 && !depositAccountId);
+                        return (
+                            <button
+                                onClick={() => {
+                                    if (!valid) return;
+                                    // Ensure time is preserved, or just set to noon if we only care about the date
+                                    // Default behavior for <input type="date"> is YYYY-MM-DD
+                                    onConfirm({
+                                        paymentMethod: selectedMethod,
+                                        settleDate: new Date(settleDate).toISOString(),
+                                        depositAccountId: depositAccountId || undefined,
+                                        depositAccountName: paymentAccounts.find(a => a.id === depositAccountId)?.account_name,
+                                    });
+                                    onClose();
+                                }}
+                                className="primary-button"
+                                disabled={!valid}
+                                style={{
+                                    padding: '10px 16px', borderRadius: '8px', border: 'none',
+                                    background: valid ? 'var(--color-primary)' : 'var(--color-border)',
+                                    color: valid ? 'white' : 'var(--color-text-muted)',
+                                    cursor: valid ? 'pointer' : 'not-allowed',
+                                    fontSize: '14px', fontWeight: 500
+                                }}
+                            >
+                                Confirm
+                            </button>
+                        );
+                    })()}
                 </div>
             </div>
         </Modal>
