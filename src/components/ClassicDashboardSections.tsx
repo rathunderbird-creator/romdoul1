@@ -406,6 +406,13 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                         flex: 1 1 calc(50% - 16px);
                         min-width: 0;
                     }
+                    /* …except the performance/report cards: a name (often
+                       Khmer), a counts line, status pills AND a money figure
+                       don't fit a half-width column — they overflow and wrap
+                       word-by-word. Those sections go one card per row. */
+                    .dashboard-rich-cards > * {
+                        flex: 1 1 100%;
+                    }
                 }
             `}</style>
 
@@ -609,7 +616,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     {salesmanStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
-                        <div className="dashboard-flex-container" style={{
+                        <div className="dashboard-flex-container dashboard-rich-cards" style={{
                             display: 'flex',
                             flexWrap: 'wrap',
                             gap: '16px'
@@ -667,7 +674,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     {pageStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
-                        <div className="dashboard-flex-container" style={{
+                        <div className="dashboard-flex-container dashboard-rich-cards" style={{
                             display: 'flex',
                             flexWrap: 'wrap',
                             gap: '16px'
@@ -704,7 +711,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     {shippingStats.length === 0 ? (
                         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                     ) : (
-                        <div className="dashboard-flex-container" style={{
+                        <div className="dashboard-flex-container dashboard-rich-cards" style={{
                             display: 'flex',
                             flexWrap: 'wrap',
                             gap: '16px'
@@ -751,7 +758,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                 {pivotStats.product.length === 0 ? (
                     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg)' }} className="glass-panel">{t('dashboard.noData')}</div>
                 ) : (
-                    <div className="dashboard-flex-container" style={{
+                    <div className="dashboard-flex-container dashboard-rich-cards" style={{
                         display: 'flex',
                         flexWrap: 'wrap',
                         gap: '16px'
