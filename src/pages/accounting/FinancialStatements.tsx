@@ -72,7 +72,19 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
     const isMobile = useMobile();
     const navigate = useNavigate();
     const goToLedger = (accountId: string) => navigate(`/accounting/general-ledger?account=${accountId}`);
-    const [tab, setTab] = useState<TabKey>(initialTab || 'balance');
+    // The open statement survives reloads and navigation, same idea as the
+    // page's persisted date range. An explicit initialTab prop still wins.
+    const [tab, setTab] = useState<TabKey>(() => {
+        if (initialTab) return initialTab;
+        try {
+            const saved = localStorage.getItem('financial_reports_tab');
+            if (saved && TABS.some(t => t.key === saved)) return saved as TabKey;
+        } catch { /* storage unavailable — fall through to the default */ }
+        return 'balance';
+    });
+    useEffect(() => {
+        try { localStorage.setItem('financial_reports_tab', tab); } catch { /* best-effort */ }
+    }, [tab]);
     const [compare, setCompare] = useState(false);
 
     // Navigating between the per-statement sidebar pages changes only the prop
