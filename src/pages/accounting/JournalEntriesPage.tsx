@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
+import FilterDropdown from '../../components/FilterDropdown';
 import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
@@ -108,7 +109,7 @@ const originChip = (isSystem: boolean) => (
         }}>{isSystem ? 'auto' : 'manual'}</span>
 );
 
-// ── Business-area chips: with thousands of retail receipts in the ledger,
+// ── Business-area filter: with thousands of retail receipts in the ledger,
 // a type filter is the only way the rest stays findable. The area comes from
 // the entry_number's type code (JE-<n>-<TYPE>-…); rows from before that
 // migration fall back to reference/description markers the posting flows
@@ -162,11 +163,10 @@ const JournalEntriesPage = () => {
     const [dateRange, setDateRange] = usePersistedDateRange('journal_entries_range');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
-    // Multi-select: empty set = all areas ("All" chip). Clicking a chip
+    // Multi-select dropdown: empty set = all areas. Ticking an option
     // toggles its area in and out of the view.
     const [areaFilters, setAreaFilters] = useState<ReadonlySet<Area>>(new Set());
-    const toggleAreaFilter = (a: 'All' | Area) => setAreaFilters(prev => {
-        if (a === 'All') return new Set<Area>();
+    const toggleAreaFilter = (a: Area) => setAreaFilters(prev => {
         const n = new Set(prev);
         if (n.has(a)) n.delete(a); else n.add(a);
         return n;
@@ -608,8 +608,8 @@ const JournalEntriesPage = () => {
 
     const activeAccounts = useMemo(() => accounts.filter(a => a.is_active), [accounts]);
 
-    // Everything except the area chips — their counts come from this set, so
-    // each chip shows what it would leave visible under the other filters.
+    // Everything except the area filter — its counts come from this set, so
+    // each option shows what it would leave visible under the other filters.
     const baseFiltered = useMemo(() => {
         let result = journalEntries;
 
@@ -659,8 +659,8 @@ const JournalEntriesPage = () => {
     }, [baseFiltered]);
 
     // Which areas exist in the whole journal (ignoring every filter): those
-    // chips stay mounted — dimmed when the current filters leave them at 0 —
-    // so the chip row doesn't reflow under the pointer while typing a search
+    // options stay listed — dimmed when the current filters leave them at 0 —
+    // so the menu doesn't reflow under the pointer while typing a search
     // or narrowing dates. Areas this business never books stay hidden.
     const existingAreas = useMemo(() => {
         const s = new Set<Area>();
@@ -878,48 +878,7 @@ const JournalEntriesPage = () => {
                 ))}
             </div>
 
-            {/* Area chips — toggle any mix of business areas (retail receipts
-                are ~¾ of the ledger, so everything else needs this to surface);
-                "All" clears the mix. Counts respect the other filters. */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
-                {(['All', ...AREA_LABELS] as const).map(a => {
-                    const count = a === 'All' ? baseFiltered.length : (areaCounts[a] || 0);
-                    if (a !== 'All' && !existingAreas.has(a) && !areaFilters.has(a)) return null;
-                    const active = a === 'All' ? areaFilters.size === 0 : areaFilters.has(a);
-                    const empty = !active && count === 0;
-                    return (
-                        <button
-                            key={a}
-                            onClick={() => toggleAreaFilter(a)}
-                            disabled={empty}
-                            aria-pressed={active}
-                            title={empty
-                                ? 'No entries in this area under the current filters'
-                                : a === 'General' ? 'General-journal entries recorded directly on this page (New Entry)' : undefined}
-                            style={{
-                                display: 'inline-flex', alignItems: 'center', gap: '7px',
-                                padding: '6px 13px', borderRadius: '20px',
-                                border: active ? '1px solid #5469d4' : '1px solid var(--color-border)',
-                                background: active ? '#5469d4' : 'var(--color-surface)',
-                                color: active ? '#fff' : 'var(--color-text-secondary)',
-                                fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap',
-                                cursor: empty ? 'default' : 'pointer',
-                                opacity: empty ? 0.45 : 1,
-                            }}
-                        >
-                            {a}
-                            <span style={{
-                                fontSize: '11px', fontWeight: 700, padding: '1px 7px', borderRadius: '10px',
-                                fontVariantNumeric: 'tabular-nums',
-                                background: active ? 'rgba(255,255,255,0.22)' : 'var(--color-bg)',
-                                color: active ? '#fff' : 'var(--color-text-muted)',
-                            }}>{isLoading ? '…' : count.toLocaleString()}</span>
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* Filters: From / To / Status / Search — with Print list & Export CSV on the right */}
+            {/* Filters: From / To / Status / Origin / Area / Search — with Print list & Export CSV on the right */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
                 <DateRangePicker value={dateRange} onChange={setDateRange} />
                 <div>
@@ -946,6 +905,32 @@ const JournalEntriesPage = () => {
                         <option value="Manual">Manual only</option>
                     </select>
                 </div>
+                {/* Business-area filter — multi-select dropdown (none ticked
+                    = all). With thousands of retail receipts in the ledger,
+                    this is the only way the rest stays findable. No isLoading
+                    gate: the page refetches after every post/delete/bulk
+                    action, and journalEntries keeps its stale rows during
+                    one, so unmounting would just blink the control out and
+                    reflow the bar while an active filter kept applying. */}
+                {(existingAreas.size > 0 || areaFilters.size > 0) && (
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Area</label>
+                        <FilterDropdown
+                            allLabel="All Areas"
+                            noun="area"
+                            options={AREA_LABELS
+                                .filter(a => existingAreas.has(a) || areaFilters.has(a))
+                                .map(a => ({
+                                    key: a, label: a, count: areaCounts[a] || 0,
+                                    title: a === 'General' ? 'General-journal entries recorded directly on this page (New Entry)' : a,
+                                }))}
+                            selected={areaFilters}
+                            onToggle={a => toggleAreaFilter(a as Area)}
+                            onClear={() => setAreaFilters(new Set())}
+                            emptyTitle="No entries in this area under the current filters"
+                        />
+                    </div>
+                )}
                 <div style={{ flex: '1 1 200px', maxWidth: '340px' }}>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Search</label>
                     <div style={{ position: 'relative' }}>

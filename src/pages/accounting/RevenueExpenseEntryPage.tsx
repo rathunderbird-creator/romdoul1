@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Trash2, RefreshCw, AlertTriangle, Check, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil } from 'lucide-react';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
+import FilterDropdown from '../../components/FilterDropdown';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -394,8 +395,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         // avoids holding onto a stale selection across the switch.
         setSelectedIds(new Set());
         // Revenue-account ids never match Expense rows (and vice versa) — a
-        // surviving chip selection would silently empty the other page's
-        // list. The source chips reset too, so each page starts unfiltered.
+        // surviving account selection would silently empty the other page's
+        // list. The source filter resets too, so each page starts unfiltered.
         setAccountFilters(new Set());
         setSourceFilters(new Set());
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -580,10 +581,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const setDateTo = (v: string) => setReDateRange(r => ({ ...r, end: v }));
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
     const [originFilter, setOriginFilter] = useState<'All' | 'Auto' | 'Manual'>('All');
-    // Multi-selectable chips, same pattern as Journal Entries' area chips, in
-    // two groups that AND together: source (Retail / Wholesale / Direct, from
-    // the entry's type code) and account (one chip per Revenue/Expense
-    // account). Within a group the selected chips OR; "All" clears both.
+    // Two multi-select dropdowns that AND together: source (Retail /
+    // Wholesale / Direct, from the entry's type code) and account (one row
+    // per Revenue/Expense account). Within a dropdown the ticked options OR;
+    // none ticked = all.
     const [sourceFilters, setSourceFilters] = useState<ReadonlySet<EntrySource>>(new Set());
     const toggleSourceFilter = (s: EntrySource) => setSourceFilters(prev => {
         const n = new Set(prev);
@@ -598,9 +599,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     });
     const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All' || accountFilters.size > 0 || sourceFilters.size > 0);
 
-    // Everything but the chip filter — the chip counts come from this set, so
-    // they respect the search/date/status/origin filters without disappearing
-    // when their own chip is toggled.
+    // Everything but the dropdown filters — the per-option counts come from
+    // this set, so they respect the search/date/status/origin filters without
+    // disappearing when their own option is ticked.
     const baseFilteredRows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return rows.filter(r =>
@@ -611,15 +612,15 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             (!q || r.description.toLowerCase().includes(q) || r.accountName.toLowerCase().includes(q) || r.counterName.toLowerCase().includes(q) || r.ref.toLowerCase().includes(q)));
     }, [rows, search, dateFrom, dateTo, statusFilter, originFilter]);
 
-    // Chips with at least one entry at all (ignoring the filters) — keeps the
-    // chip row stable while filters narrow; emptied chips dim instead of
-    // unmounting under the pointer. Accounts arrive sorted by account_code.
+    // Options with at least one entry at all (ignoring the filters) — keeps
+    // the option list stable while filters narrow; emptied options dim
+    // instead of unmounting. Accounts arrive sorted by account_code.
     const existingAccountIds = useMemo(() => {
         const s = new Set<string>();
         rows.forEach(r => r.accountIds.forEach(id => s.add(id)));
         return s;
     }, [rows]);
-    const chipAccounts = useMemo(
+    const filterAccounts = useMemo(
         () => accounts.filter(a => a.account_type === cfg.accountType && (existingAccountIds.has(a.id) || accountFilters.has(a.id))),
         [accounts, cfg.accountType, existingAccountIds, accountFilters]
     );
@@ -628,19 +629,19 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         rows.forEach(r => s.add(r.source));
         return s;
     }, [rows]);
-    // The source group only earns its place when a payment flow actually
-    // feeds this page — a book with only direct entries shows no group. An
-    // active selection keeps its group mounted even when a refetch removed
+    // The source dropdown only earns its place when a payment flow actually
+    // feeds this page — a book with only direct entries shows none. An
+    // active selection keeps its dropdown mounted even when a refetch removed
     // the last matching row, or the filter would be invisible yet applied.
-    const showSourceChips = existingSources.has('Retail') || existingSources.has('Wholesale') || sourceFilters.size > 0;
-    const showAccountChips = chipAccounts.length > 1 || accountFilters.size > 0;
-    const chipSources = useMemo(
+    const showSourceFilter = existingSources.has('Retail') || existingSources.has('Wholesale') || sourceFilters.size > 0;
+    const showAccountFilter = filterAccounts.length > 1 || accountFilters.size > 0;
+    const filterSources = useMemo(
         () => (['Retail', 'Wholesale', 'Direct'] as const).filter(s => existingSources.has(s) || sourceFilters.has(s)),
         [existingSources, sourceFilters]
     );
 
-    // Each group's counts respect the OTHER group (plus the filters above),
-    // so a chip always predicts exactly what clicking it would show.
+    // Each dropdown's counts respect the OTHER dropdown (plus the filters
+    // above), so an option always predicts exactly what ticking it would show.
     const sourceCounts = useMemo(() => {
         const m = new Map<EntrySource, number>();
         baseFilteredRows.forEach(r => {
@@ -1146,91 +1147,6 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </span>
                 </div>
 
-                {/* Filter chips, multi-selectable like Journal Entries' area
-                    chips: a source group (Retail / Wholesale / Direct) and an
-                    account group, ANDed together; "All" clears both. */}
-                {!loading && (showSourceChips || showAccountChips) && (() => {
-                    const srcTitle: Record<EntrySource, string> = {
-                        Retail: 'From the retail flow — receipts, deposits and delivery entries',
-                        Wholesale: 'From the wholesale flow — wholesale payment entries',
-                        Direct: 'Recorded directly on this page or in Journal Entries — not from the retail or wholesale flows',
-                    };
-                    type Chip = { key: string; label: string; count: number; active: boolean; title: string; onClick: () => void };
-                    const chipBtn = (c: Chip) => {
-                        const empty = !c.active && c.count === 0;
-                        return (
-                            <button
-                                key={c.key}
-                                // aria-disabled instead of disabled: flipping to
-                                // disabled on the focused button (deselecting a
-                                // chip whose cross-count is 0) would silently
-                                // throw keyboard focus to <body>.
-                                onClick={empty ? undefined : c.onClick}
-                                aria-disabled={empty}
-                                aria-pressed={c.active}
-                                title={empty ? `No ${mode} entries here match the current filters` : c.title}
-                                className="d2-khmer"
-                                style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px',
-                                    borderRadius: '20px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
-                                    maxWidth: '100%',
-                                    cursor: empty ? 'default' : 'pointer', opacity: empty ? 0.45 : 1,
-                                    // The JE area chips' blue — white text passes
-                                    // contrast on it; the page accents don't.
-                                    border: c.active ? '1px solid #5469d4' : '1px solid var(--color-border)',
-                                    background: c.active ? '#5469d4' : 'var(--color-surface)',
-                                    color: c.active ? 'white' : 'var(--color-text-secondary)',
-                                }}
-                            >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{c.label}</span>
-                                <span style={{
-                                    fontSize: '11px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-                                    padding: '1px 7px', borderRadius: '12px',
-                                    // Dark translucent, not white-on-white-ish:
-                                    // white text over it stays past 4.5:1.
-                                    background: c.active ? 'rgba(0, 0, 0, 0.25)' : 'var(--color-bg)',
-                                    color: c.active ? 'white' : 'var(--color-text-muted)',
-                                }}>{c.count.toLocaleString()}</span>
-                            </button>
-                        );
-                    };
-                    const groupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minWidth: 0 };
-                    return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 18px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
-                            {chipBtn({
-                                key: 'All', label: 'All', count: baseFilteredRows.length,
-                                active: sourceFilters.size === 0 && accountFilters.size === 0,
-                                title: `Every ${mode} entry matching the current filters`,
-                                onClick: () => { setSourceFilters(new Set()); setAccountFilters(new Set()); },
-                            })}
-                            {showSourceChips && (
-                                <span role="group" aria-label="Filter by source" style={groupStyle}>
-                                    {chipSources.map(s => chipBtn({
-                                        key: `src:${s}`, label: s, count: sourceCounts.get(s) || 0,
-                                        active: sourceFilters.has(s), title: srcTitle[s],
-                                        onClick: () => toggleSourceFilter(s),
-                                    }))}
-                                </span>
-                            )}
-                            {showAccountChips && (
-                                <span
-                                    role="group"
-                                    aria-label="Filter by account"
-                                    // The group divider rides the group itself,
-                                    // so wrapping can't strand it mid-row.
-                                    style={{ ...groupStyle, ...(showSourceChips ? { borderLeft: '1px solid var(--color-border)', paddingLeft: '8px' } : {}) }}
-                                >
-                                    {chipAccounts.map(a => chipBtn({
-                                        key: `acc:${a.id}`, label: a.account_name, count: accountCounts.get(a.id) || 0,
-                                        active: accountFilters.has(a.id), title: `${a.account_code} · ${a.account_name}`,
-                                        onClick: () => toggleAccountFilter(a.id),
-                                    }))}
-                                </span>
-                            )}
-                        </div>
-                    );
-                })()}
-
                 {/* Filters: search, date range, status */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
                     <div style={{ position: 'relative', flex: '1 1 180px', maxWidth: '300px' }}>
@@ -1252,6 +1168,40 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <option value="Auto">Auto only</option>
                         <option value="Manual">Manual only</option>
                     </select>
+                    {/* Source and account filters — multi-select dropdowns,
+                        ANDed together; within one, ticked options OR. */}
+                    {!loading && showSourceFilter && (
+                        <FilterDropdown
+                            allLabel="All Sources"
+                            noun="source"
+                            options={filterSources.map(s => ({
+                                key: s, label: s, count: sourceCounts.get(s) || 0,
+                                title: {
+                                    Retail: 'From the retail flow — receipts, deposits and delivery entries',
+                                    Wholesale: 'From the wholesale flow — wholesale payment entries',
+                                    Direct: 'Recorded directly on this page or in Journal Entries — not from the retail or wholesale flows',
+                                }[s],
+                            }))}
+                            selected={sourceFilters}
+                            onToggle={k => toggleSourceFilter(k as EntrySource)}
+                            onClear={() => setSourceFilters(new Set())}
+                            emptyTitle={`No ${mode} entries here match the current filters`}
+                        />
+                    )}
+                    {!loading && showAccountFilter && (
+                        <FilterDropdown
+                            allLabel="All Accounts"
+                            noun="account"
+                            options={filterAccounts.map(a => ({
+                                key: a.id, label: a.account_name, count: accountCounts.get(a.id) || 0,
+                                title: `${a.account_code} · ${a.account_name}`,
+                            }))}
+                            selected={accountFilters}
+                            onToggle={toggleAccountFilter}
+                            onClear={() => setAccountFilters(new Set())}
+                            emptyTitle={`No ${mode} entries here match the current filters`}
+                        />
+                    )}
                     {filtersActive && (
                         <button
                             onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); setAccountFilters(new Set()); setSourceFilters(new Set()); }}
