@@ -180,6 +180,7 @@ const OrdersManagement2Page: React.FC = () => {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null;
                     }
+                    individualUpdates.expectedPaymentStatus = order.paymentStatus;
                     return updateOrder(id, individualUpdates as any);
                 }));
             }

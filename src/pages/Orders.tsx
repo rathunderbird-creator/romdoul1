@@ -2244,7 +2244,7 @@ const Orders: React.FC = () => {
                         individualUpdates.settleDate = null as any;
                     }
                     
-                    return updateOrder(id, individualUpdates);
+                    return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus });
                 });
                 await Promise.all(promises);
             }
@@ -3486,7 +3486,7 @@ const Orders: React.FC = () => {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
                                             }
-                                            updateOrder(id, updates);
+                                            updateOrder(id, { ...updates, expectedPaymentStatus: order.paymentStatus });
                                         }}
                                         canEdit={canEdit}
                                         isAdmin={isAdmin}
@@ -3851,7 +3851,7 @@ const Orders: React.FC = () => {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
                                                                                 }
-                                                                                updateOrder(order.id, updates);
+                                                                                updateOrder(order.id, { ...updates, expectedPaymentStatus: order.paymentStatus });
                                                                             }}
                                                                             // Admins bypass the lock so they can correct mistakes
                                                                             // (e.g. un-mark a wrong Paid); the store cleans up the
@@ -4621,6 +4621,7 @@ const Orders: React.FC = () => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
+                        expectedPaymentStatus: depositTargetOrder.paymentStatus,
                         depositAmount: amount,
                         // depositMethod re-fills this same form's Pay By field next time
                         // it reopens; paymentMethod is the separate field the table's own
@@ -4649,6 +4650,7 @@ const Orders: React.FC = () => {
                     if (!deliveryFeeTargetOrder) return;
                     updateOrder(deliveryFeeTargetOrder.id, {
                         paymentStatus: 'PdFee',
+                        expectedPaymentStatus: deliveryFeeTargetOrder.paymentStatus,
                         paymentMethod: method as any,
                         settleDate: date,
                         amountReceived: amount,
