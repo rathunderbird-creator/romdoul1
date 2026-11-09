@@ -276,6 +276,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
         try {
             await onSave({
                 orderId: order.id, paymentStatus, amountReceived,
+                expectedPaymentStatus: baseline.paymentStatus,
                 paymentMethod: paymentMethod ? (paymentMethod as Order['paymentMethod']) : undefined,
                 settleDate: settleDateInput || null,
             });

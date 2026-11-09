@@ -14,7 +14,7 @@ interface RecordSupplierPaymentModalProps {
         paidFromAccountId?: string;
         paidFromAccountName?: string;
         notes?: string;
-    }) => void;
+    }) => void | Promise<void>;
     // The bill's current outstanding balance — prefills Amount and the
     // quick-fill percent buttons.
     remainingBalance: number;
@@ -51,6 +51,8 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
     const [accountId, setAccountId] = useState('');
     const [notes, setNotes] = useState('');
     const initializedRef = useRef(false);
+    const [submitting, setSubmitting] = useState(false);
+    const submittingRef = useRef(false);
 
     useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
@@ -173,32 +175,39 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                         Cancel
                     </button>
                     <button
-                        onClick={() => {
+                        onClick={async () => {
                             // Closing is the caller's call, not ours: onConfirm's save is
                             // async and can fail (bad account, network, etc.) — closing
                             // here unconditionally would hide that failure and discard
                             // everything just typed. The caller closes on success only,
                             // same as the hand-rolled payment modal on Purchase Orders.
-                            if (!canRecord) return;
+                            if (!canRecord || submittingRef.current) return;
+                            submittingRef.current = true;
+                            setSubmitting(true);
                             const acc = paymentAccounts.find(a => a.id === accountId);
-                            onConfirm({
-                                amount: Number(amount),
-                                paymentDate,
-                                paymentMethod,
-                                paidFromAccountId: accountId || undefined,
-                                paidFromAccountName: acc?.account_name,
-                                notes: notes.trim() || undefined,
-                            });
+                            try {
+                                await onConfirm({
+                                    amount: Number(amount),
+                                    paymentDate,
+                                    paymentMethod,
+                                    paidFromAccountId: accountId || undefined,
+                                    paidFromAccountName: acc?.account_name,
+                                    notes: notes.trim() || undefined,
+                                });
+                            } finally {
+                                submittingRef.current = false;
+                                setSubmitting(false);
+                            }
                         }}
-                        disabled={!canRecord}
+                        disabled={!canRecord || submitting}
                         style={{
                             padding: '10px 16px', borderRadius: '8px', border: 'none',
-                            background: canRecord ? 'var(--color-primary)' : 'var(--color-border)',
-                            color: canRecord ? 'white' : 'var(--color-text-muted)',
-                            cursor: canRecord ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: 600,
+                            background: canRecord && !submitting ? 'var(--color-primary)' : 'var(--color-border)',
+                            color: canRecord && !submitting ? 'white' : 'var(--color-text-muted)',
+                            cursor: canRecord && !submitting ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: 600,
                         }}
                     >
-                        Record Payment
+                        {submitting ? 'Saving…' : 'Record Payment'}
                     </button>
                 </div>
             </div>

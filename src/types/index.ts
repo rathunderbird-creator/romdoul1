@@ -65,6 +65,7 @@ export interface Sale {
     depositAccountName?: string; // transient, UI-only: resolved account name passed through updateOrder() for the income transaction's "Pay by" — never persisted to the sales table itself
     receiptReference?: string; // transient, UI-only: cheque/transfer reference passed through updateOrder() for the income transaction — never persisted to the sales table
     receiptNotes?: string; // transient, UI-only: note passed through updateOrder() for the income transaction — never persisted to the sales table
+    expectedPaymentStatus?: string; // transient, UI-only: the status an edit form loaded with, so updateOrder() can tell a field left alone from a requested change — never persisted
     postToLedger?: boolean; // transient, UI-only: when true, updateOrder() also posts a Draft journal entry for this payment — never persisted to the sales table
     lastEditedAt?: string; // ISO string
     lastEditedBy?: string;

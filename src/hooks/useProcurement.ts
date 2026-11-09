@@ -6,6 +6,9 @@ import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryN
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
+import { createInFlightGuard } from '../utils/inFlightGuard';
+
+const supplierPaymentGuard = createInFlightGuard();
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -729,6 +732,9 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
+    const recordSupplierPaymentOnce = useCallback((...args: Parameters<typeof recordSupplierPayment>) =>
+        supplierPaymentGuard(JSON.stringify(args), () => recordSupplierPayment(...args)), [recordSupplierPayment]);
+
     const deleteSupplierPayment = useCallback(async (paymentId: string) => {
         try {
             // Wait, we need to revert PO amount_paid too. 
@@ -786,7 +792,7 @@ export const useProcurement = () => {
         savePurchaseOrder,
         saveBillReference,
         clearBillReference,
-        recordSupplierPayment,
+        recordSupplierPayment: recordSupplierPaymentOnce,
         deleteSupplierPayment,
         supplierPayments,
         fetchSupplierPayments
