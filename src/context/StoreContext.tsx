@@ -2569,9 +2569,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             freshPayment = toLocal(freshRow);
             if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
 
+            const shownStatus = expectedPaymentStatus === undefined ? undefined : (expectedPaymentStatus || 'Unpaid');
+            const currentStatus = freshRow.payment_status || 'Unpaid';
+
+            // Leaving Paid removes the booked income and journal entry, so it needs
+            // someone who could see the order was Paid.
+            if (shownStatus !== undefined && updates.paymentStatus !== shownStatus && !PAID_STATUSES.includes(shownStatus) && PAID_STATUSES.includes(currentStatus) && !PAID_STATUSES.includes(updates.paymentStatus)) {
+                setSales(prev => prev.map(s => s.id === id ? { ...s, ...freshPayment } : s));
+                setSalesUpdatedAt(Date.now());
+                alert(`This order was just marked ${currentStatus} by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.`);
+                return;
+            }
+
             // An edit form opened before someone else recorded a payment, saved
             // with the status left alone: that must not undo the payment.
-            if (expectedPaymentStatus !== undefined && updates.paymentStatus === expectedPaymentStatus && freshRow.payment_status !== expectedPaymentStatus) {
+            if (shownStatus !== undefined && (updates.paymentStatus || 'Unpaid') === shownStatus && currentStatus !== shownStatus) {
                 delete updates.paymentStatus;
                 delete updates.amountReceived;
                 delete updates.settleDate;
@@ -2598,10 +2610,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (!claimed || claimed.length === 0) {
                     const { data: winner } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
                     if (winner) setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(winner) } : s));
+                    setSalesUpdatedAt(Date.now());
                     const sameOutcome = winner?.payment_status === updates.paymentStatus
                         && (updates.depositAmount === undefined || Number(updates.depositAmount) === (Number(winner?.deposit_amount) || 0));
                     if (!sameOutcome) {
-                        alert("This order's payment details were just changed by someone else, so your change wasn't saved. Your screen is now up to date. Please check the order and try again.");
+                        alert("This order's payment details were just changed by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.");
                     }
                     return;
                 }
@@ -3237,7 +3250,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.depositMethod !== undefined) dbUpdates.deposit_method = updates.depositMethod || null;
         if (updates.depositAccountId !== undefined) dbUpdates.deposit_account_id = updates.depositAccountId || null;
         if (updates.customKhrAmount !== undefined) dbUpdates.custom_khr_amount = updates.customKhrAmount;
-        if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
+        // payment_status is written by the claim above, never here: an unconditional
+        // write could overwrite a payment recorded since that claim's read.
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) {
             dbUpdates.customer_snapshot = updates.customer;

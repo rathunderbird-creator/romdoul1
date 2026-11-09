@@ -243,7 +243,7 @@ const PaymentTracking: React.FC = () => {
                         individualUpdates.settleDate = null as any;
                     }
                     
-                    return updateOrder(id, individualUpdates);
+                    return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus });
                 });
                 await Promise.all(promises);
             }
@@ -1290,7 +1290,7 @@ const PaymentTracking: React.FC = () => {
                                                 setDeliveryFeeTargetOrder(order);
                                                 return;
                                             }
-                                            updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })
+                                            updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel', expectedPaymentStatus: order.paymentStatus })
                                         }}
                                         // Admins bypass the lock so they can correct mistakes (e.g.
                                         // un-mark a wrong Paid); the store cleans up the logged
@@ -1547,6 +1547,7 @@ const PaymentTracking: React.FC = () => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
+                        expectedPaymentStatus: depositTargetOrder.paymentStatus,
                         depositAmount: amount,
                         depositMethod: method,
                         depositDate: date,
@@ -1567,6 +1568,7 @@ const PaymentTracking: React.FC = () => {
                     if (!deliveryFeeTargetOrder) return;
                     updateOrder(deliveryFeeTargetOrder.id, {
                         paymentStatus: 'PdFee',
+                        expectedPaymentStatus: deliveryFeeTargetOrder.paymentStatus,
                         paymentMethod: method as any,
                         settleDate: date,
                         amountReceived: amount,
