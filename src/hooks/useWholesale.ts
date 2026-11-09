@@ -6,6 +6,7 @@ import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryN
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
+import { createInFlightGuard } from '../utils/inFlightGuard';
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -23,6 +24,8 @@ const generateUUID = () => {
 // Cr Inventory at the items' purchase cost, reference 'WSO-<id>-COGS' so a
 // retry never double-books and cancel/delete can take it back off the books.
 // Revenue stays on the per-payment WSP entries. Non-fatal: the order exists.
+const customerPaymentGuard = createInFlightGuard();
+
 const postWholesaleCogsEntry = async (
     orderId: string,
     label: string,
@@ -887,6 +890,9 @@ export const useWholesale = () => {
         }
     }, [showToast, fetchWholesaleOrders]);
 
+    const recordCustomerPaymentOnce = useCallback((...args: Parameters<typeof recordCustomerPayment>) =>
+        customerPaymentGuard(JSON.stringify(args), () => recordCustomerPayment(...args)), [recordCustomerPayment]);
+
     // Delete a customer payment and revert the order's paid amount (mirror of deleteSupplierPayment).
     const deleteCustomerPayment = useCallback(async (paymentId: string) => {
         try {
@@ -1008,7 +1014,7 @@ export const useWholesale = () => {
         updateWholesaleOrder,
         deleteWholesaleOrder,
         updateWholesaleOrderStatus,
-        recordCustomerPayment,
+        recordCustomerPayment: recordCustomerPaymentOnce,
         deleteCustomerPayment,
         fetchCustomers,
         saveCustomer,

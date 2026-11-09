@@ -716,6 +716,7 @@ const PaymentTracking: React.FC = () => {
             amountReceived: formData.amountReceived,
             settleDate: formData.settleDate,
             paymentStatus: formData.paymentStatus,
+            expectedPaymentStatus: selectedOrder.paymentStatus,
             ...(formData.paymentStatus === 'Paid' && selectedOrder.shipping?.status !== 'Delivered' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
         showToast('Payment details updated', 'success');

@@ -538,7 +538,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             };
 
             if (orderToEdit) {
-                await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date });
+                await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date, expectedPaymentStatus: orderToEdit.paymentStatus });
                 showToast('Order updated', 'success');
 
                 // Send Telegram Notification if status changed

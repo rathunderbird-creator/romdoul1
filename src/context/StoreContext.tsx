@@ -2544,12 +2544,75 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        // Every income and ledger decision below keys off the order's payment state,
+        // and this tab's copy can be out of date (no realtime sync) — deciding from
+        // it booked sales twice. Use the real state, then claim the change with a
+        // compare-and-set so of two racing saves only one can book.
+        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
+        let freshPayment: Partial<Sale> | null = null;
+        const expectedPaymentStatus = updates.expectedPaymentStatus;
+        delete updates.expectedPaymentStatus;
+        if (updates.paymentStatus !== undefined) {
+            const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method';
+            const { data: freshRow, error: freshErr } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
+            if (freshErr || !freshRow) {
+                alert("Couldn't confirm this order's current payment status, so nothing was saved. Check your connection and try again.");
+                return;
+            }
+            const toLocal = (row: typeof freshRow): Partial<Sale> => ({
+                paymentStatus: row.payment_status as Sale['paymentStatus'],
+                depositAmount: Number(row.deposit_amount) || 0,
+                amountReceived: Number(row.amount_received) || 0,
+                settleDate: row.settle_date || undefined,
+                paymentMethod: row.payment_method as Sale['paymentMethod'],
+            });
+            freshPayment = toLocal(freshRow);
+            if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
+
+            // An edit form opened before someone else recorded a payment, saved
+            // with the status left alone: that must not undo the payment.
+            if (expectedPaymentStatus !== undefined && updates.paymentStatus === expectedPaymentStatus && freshRow.payment_status !== expectedPaymentStatus) {
+                delete updates.paymentStatus;
+                delete updates.amountReceived;
+                delete updates.settleDate;
+                delete updates.paymentMethod;
+                delete updates.depositAmount;
+                delete updates.depositDate;
+                delete updates.depositMethod;
+            }
+
+            const depositChanging = updates.depositAmount !== undefined && Number(updates.depositAmount) !== (Number(freshRow.deposit_amount) || 0);
+            if (updates.paymentStatus !== undefined && (updates.paymentStatus !== freshRow.payment_status || depositChanging)) {
+                const claim: Record<string, unknown> = { payment_status: updates.paymentStatus };
+                if (updates.depositAmount !== undefined) claim.deposit_amount = updates.depositAmount;
+                let claimQuery = supabase.from('sales').update(claim).eq('id', id);
+                claimQuery = freshRow.payment_status === null ? claimQuery.is('payment_status', null) : claimQuery.eq('payment_status', freshRow.payment_status);
+                if (depositChanging) {
+                    claimQuery = freshRow.deposit_amount === null ? claimQuery.is('deposit_amount', null) : claimQuery.eq('deposit_amount', freshRow.deposit_amount);
+                }
+                const { data: claimed, error: claimErr } = await claimQuery.select('id');
+                if (claimErr) {
+                    alert(`Failed to update order: ${claimErr.message}`);
+                    return;
+                }
+                if (!claimed || claimed.length === 0) {
+                    const { data: winner } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
+                    if (winner) setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(winner) } : s));
+                    const sameOutcome = winner?.payment_status === updates.paymentStatus
+                        && (updates.depositAmount === undefined || Number(updates.depositAmount) === (Number(winner?.deposit_amount) || 0));
+                    if (!sameOutcome) {
+                        alert("This order's payment details were just changed by someone else, so your change wasn't saved. Your screen is now up to date. Please check the order and try again.");
+                    }
+                    return;
+                }
+            }
+        }
+
         // Leaving Paid/Settled for ANY non-paid status — Cancel, or an admin unlocking a
         // mistaken Paid back to Unpaid/Get File/Deposit — removes the income that was
         // logged when the order was marked Paid, so the books don't keep revenue that is
         // no longer collected. Matched the same way income is looked up elsewhere.
         // The deposit entry itself (កក់ប្រាក់) is never removed: deposits are always kept.
-        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
         if (
             updates.paymentStatus !== undefined &&
             !PAID_STATUSES.includes(updates.paymentStatus || '') &&
@@ -2688,7 +2751,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         // 1. Optimistic Local Update
         setSales(prev => prev.map(sale =>
-            sale.id === id ? { ...sale, ...updates } : sale
+            sale.id === id ? { ...sale, ...(freshPayment || {}), ...updates } : sale
         ));
 
         const isPaidStatus = (s: string | undefined) => ['Paid', 'Settled', 'Paid/Settled'].includes(s || '');
@@ -2821,7 +2884,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // (never the order total, no COGS: nothing was sold/shipped).
             // DeliveryFeeModal always hands the fee amount as amountReceived.
             const feeAmount = updates.amountReceived || 0;
+            // Leaving PdFee keeps the fee's income row and Posted entry, so coming
+            // back to PdFee must not book the fee again.
+            let bookedFee = 0;
             if (feeAmount > 0) {
+                const { data: feeRows, error: feeErr } = await supabase.from('transactions')
+                    .select('amount').eq('type', 'Income').eq('category', 'ថ្លៃដឹក').eq('order_id', id);
+                if (feeErr) console.error('Could not check for an existing delivery fee:', feeErr);
+                bookedFee = (feeRows || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+                if (bookedFee > 0) {
+                    if (Math.abs(bookedFee - feeAmount) > 0.005) {
+                        alert(`A delivery fee of $${bookedFee.toFixed(2)} is already booked for this order, so the $${feeAmount.toFixed(2)} wasn't added. To change the amount, correct it in Journal Entries.`);
+                    }
+                    updates.amountReceived = bookedFee;
+                    setSales(prev => prev.map(sale => sale.id === id ? { ...sale, amountReceived: bookedFee } : sale));
+                }
+            }
+            if (feeAmount > 0 && bookedFee === 0) {
                 const transactionId = generateUUID();
                 const customerName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
                 const rawDate = updates.settleDate || new Date().toISOString();
@@ -2975,6 +3054,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     txns = res.data;
                 }
                 const match = txns && (txns.find(t => t.order_id === id) || txns[0]);
+                // A name or amount mismatch must not read as "income never logged"
+                // when this order already has its own linked row.
+                let hasLinkedIncome = false;
+                if (!match && settleDayChanged) {
+                    const { data: linkedRows, error: linkedErr } = await supabase.from('transactions')
+                        .select('id').eq('type', 'Income').in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់']).eq('order_id', id).limit(1);
+                    hasLinkedIncome = !linkedErr && !!linkedRows && linkedRows.length > 0;
+                }
                 if (match) {
                     const patch: Record<string, unknown> = { amount: amountToRecord || match.amount, description: customerName };
                     if (normalizedDate) patch.date = normalizedDate;
@@ -2983,7 +3070,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         .update(patch)
                         .eq('id', match.id);
                     setTransactions(prev => prev.map(t => t.id === match.id ? { ...t, amount: amountToRecord || t.amount, description: customerName, ...(normalizedDate ? { date: normalizedDate } : {}), ...(payByChanged ? { pay_by: updates.paymentMethod } : {}) } : t));
-                } else if (settleDayChanged && normalizedDate && amountToRecord > 0) {
+                } else if (settleDayChanged && normalizedDate && amountToRecord > 0 && !hasLinkedIncome) {
                     // Heal a missing row only on a real settle-day change AND when
                     // there is actual income to book — a deposit-covered order has
                     // no income row by design, and an amount-only correction that
@@ -3043,7 +3130,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // DELTA: a first deposit logs its full amount (prev = 0), raising an
             // existing deposit ($30 -> $50) logs the extra $20, and re-saving an
             // unchanged deposit logs nothing (delta 0 — no duplicate rows).
-            const prevDep = existingOrder.paymentStatus === 'Deposit' ? (existingOrder.depositAmount || 0) : 0;
+            // Deposit rows outlive the Deposit status (they are never removed), so
+            // the amount already on the books comes from those rows: re-entering
+            // Deposit from Get File or Unpaid must not book the same money again.
+            let prevDep = existingOrder.paymentStatus === 'Deposit' ? (existingOrder.depositAmount || 0) : 0;
+            if ((Number(updates.depositAmount) || 0) > 0) {
+                const { data: depositRows, error: depositErr } = await supabase.from('transactions')
+                    .select('amount').eq('type', 'Income').eq('category', 'កក់ប្រាក់')
+                    .like('description', `%#DEP-${id.slice(0, 8)}`);
+                if (depositErr) {
+                    console.error('Could not read the deposits already booked for this order:', depositErr);
+                    prevDep = Math.max(prevDep, existingOrder.depositAmount || 0);
+                } else {
+                    prevDep = Math.max(prevDep, (depositRows || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0));
+                }
+            }
             const depAmount = Math.max(0, (Number(updates.depositAmount) || 0) - prevDep);
             if (depAmount > 0) {
                 const custName = updates.customer?.name || existingOrder.customer?.name || 'Customer';

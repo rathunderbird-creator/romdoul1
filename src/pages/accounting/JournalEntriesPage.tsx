@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircle2, Download, Check, AlertTriangle } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
@@ -159,6 +159,8 @@ const JournalEntriesPage = () => {
     const { journalEntries, accounts, isLoading, fetchJournalEntries, patchJournalEntry, fetchAccounts, saveJournalEntry } = useAccounting();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isSavingEntry, setIsSavingEntry] = useState(false);
+    const savingEntryRef = useRef(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [dateRange, setDateRange] = usePersistedDateRange('journal_entries_range');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Posted' | 'Draft'>('All');
@@ -469,7 +471,18 @@ const JournalEntriesPage = () => {
     const isFormValid = isBalanced && lines.every(l => l.account_id) && date;
 
     const handleSave = async () => {
-        if (!isFormValid) return;
+        if (!isFormValid || savingEntryRef.current) return;
+        savingEntryRef.current = true;
+        setIsSavingEntry(true);
+        try {
+            await persistEntry();
+        } finally {
+            savingEntryRef.current = false;
+            setIsSavingEntry(false);
+        }
+    };
+
+    const persistEntry = async () => {
         if (editingEntryId) {
             // Update the header, then rebuild the lines with the edited values.
             try {
@@ -1510,10 +1523,10 @@ const JournalEntriesPage = () => {
                                 </button>
                                 <button
                                     onClick={handleSave}
-                                    disabled={!isFormValid}
-                                    style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: isFormValid ? 'pointer' : 'not-allowed', opacity: (!isFormValid) ? 0.55 : 1 }}
+                                    disabled={!isFormValid || isSavingEntry}
+                                    style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: isFormValid && !isSavingEntry ? 'pointer' : 'not-allowed', opacity: (!isFormValid || isSavingEntry) ? 0.55 : 1 }}
                                 >
-                                    {editingEntryId ? 'Save Changes' : 'Create Entry'}
+                                    {isSavingEntry ? 'Saving…' : editingEntryId ? 'Save Changes' : 'Create Entry'}
                                 </button>
                             </div>
                         </div>

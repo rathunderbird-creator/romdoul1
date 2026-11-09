@@ -53,6 +53,7 @@ const OrdersManagement2Page: React.FC = () => {
     const applyEdit = async (edit: OrderEdit) => {
         const updates: Record<string, unknown> = {};
         if (edit.paymentStatus !== undefined) updates.paymentStatus = edit.paymentStatus;
+        if (edit.expectedPaymentStatus !== undefined) updates.expectedPaymentStatus = edit.expectedPaymentStatus;
         if (edit.amountReceived !== undefined) updates.amountReceived = edit.amountReceived;
         if (edit.paymentMethod !== undefined) updates.paymentMethod = edit.paymentMethod;
         if (edit.settleDate !== undefined) updates.settleDate = edit.settleDate ? new Date(edit.settleDate).toISOString() : null;
