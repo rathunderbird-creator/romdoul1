@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard, Eye } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -26,6 +26,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { useWholesale } from '../hooks/useWholesale';
 import MobileInventoryCard from '../components/MobileInventoryCard';
+import ProductDetailsModal from '../components/ProductDetailsModal';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
 import { dayKeyFromDate } from '../utils/dateRange';
@@ -169,6 +170,7 @@ const Inventory: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [viewingProductId, setViewingProductId] = useState<string | null>(null);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [hoverPreview, setHoverPreview] = useState<{ src: string; x: number; y: number } | null>(null);
 
@@ -883,6 +885,7 @@ const Inventory: React.FC = () => {
                                 onEdit={openEditModal}
                                 onDelete={promptDelete}
                                 onWholesale={openWholesaleModal}
+                                onView={(p) => setViewingProductId(p.id)}
                                 canManage={canManageInventory}
                             />
                         ))}
@@ -927,7 +930,7 @@ const Inventory: React.FC = () => {
                                 </th>
                             )}
                             <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
-                            {canManageInventory && <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>}
+                            <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1008,27 +1011,32 @@ const Inventory: React.FC = () => {
                                             {isOutOfStock ? 'Out of Stock' : (isLowStock ? 'Low Stock' : 'In Stock')}
                                         </span>
                                     </td>
-                                    {canManageInventory && (
-                                        <td style={{ padding: '16px', textAlign: 'right' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                                <button onClick={() => adjustStock(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
-                                                    <AlertTriangle size={14} />
-                                                </button>
-                                                <button onClick={() => setAdjustStockProduct(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">
-                                                    <Layers size={14} />
-                                                </button>
-                                                <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title="Wholesale Order">
-                                                    <Truck size={14} />
-                                                </button>
-                                                <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title="Edit Product">
-                                                    <Edit2 size={14} />
-                                                </button>
-                                                <button onClick={() => promptDelete(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title="Delete">
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    )}
+                                    <td style={{ padding: '16px', textAlign: 'right' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                                            <button onClick={() => setViewingProductId(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }} title="View Details" aria-label={`View details of ${product.name}`}>
+                                                <Eye size={14} />
+                                            </button>
+                                            {canManageInventory && (
+                                                <>
+                                                    <button onClick={() => adjustStock(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
+                                                        <AlertTriangle size={14} />
+                                                    </button>
+                                                    <button onClick={() => setAdjustStockProduct(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">
+                                                        <Layers size={14} />
+                                                    </button>
+                                                    <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title="Wholesale Order">
+                                                        <Truck size={14} />
+                                                    </button>
+                                                    <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title="Edit Product">
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button onClick={() => promptDelete(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title="Delete">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -1057,6 +1065,20 @@ const Inventory: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Looked up by id so an edit made elsewhere shows live, and a
+                product deleted meanwhile just closes the view. */}
+            {(() => {
+                const viewed = viewingProductId ? products.find(p => p.id === viewingProductId) ?? null : null;
+                return (
+                    <ProductDetailsModal
+                        product={viewed}
+                        stockStatus={viewed ? getStockStatus(viewed) : 'In Stock'}
+                        onClose={() => setViewingProductId(null)}
+                        canViewFinancials={canViewFinancials}
+                    />
+                );
+            })()}
 
             {/* Add/Edit Modal */}
             {

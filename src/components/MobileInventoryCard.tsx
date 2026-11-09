@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2, AlertTriangle, ChevronDown, Truck } from 'lucide-react';
+import { Edit2, Trash2, AlertTriangle, ChevronDown, Truck, Eye } from 'lucide-react';
 import type { Product } from '../types';
 import './MobileInventoryCard.css';
 import LazyAvatar from './LazyAvatar';
@@ -13,6 +13,7 @@ interface MobileInventoryCardProps {
     onEdit: (product: Product) => void;
     onDelete: (id: string) => void;
     onWholesale?: (product: Product) => void;
+    onView?: (product: Product) => void;
     /** Hides the edit/delete/wholesale actions for view-only roles. */
     canManage?: boolean;
 }
@@ -26,6 +27,7 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
     onEdit,
     onDelete,
     onWholesale,
+    onView,
     canManage = true
 }) => {
     const isLowStock = product.stock < (product.lowStockThreshold || 5);
@@ -107,19 +109,21 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                         </div>
                     </div>
 
-                    {/* Actions Bar — hidden for view-only roles */}
-                    {canManage && (
+                    {/* Actions Bar — view-only roles get just the View button */}
+                    {(canManage || onView) && (
                     <div className="mic-actions">
-                        <button
-                            className="mic-action-btn delete"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete(product.id);
-                            }}
-                        >
-                            <Trash2 size={18} />
-                        </button>
-                        {onWholesale && (
+                        {canManage && (
+                            <button
+                                className="mic-action-btn delete"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(product.id);
+                                }}
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        )}
+                        {canManage && onWholesale && (
                             <button
                                 className="mic-action-btn primary"
                                 style={{ backgroundColor: '#3B82F6', borderColor: '#3B82F6' }}
@@ -131,15 +135,30 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                                 <Truck size={18} />
                             </button>
                         )}
-                        <button
-                            className="mic-action-btn primary"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onEdit(product);
-                            }}
-                        >
-                            <Edit2 size={18} />
-                        </button>
+                        {onView && (
+                            <button
+                                className="mic-action-btn"
+                                title="View Details"
+                                aria-label={`View details of ${product.name}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onView(product);
+                                }}
+                            >
+                                <Eye size={18} />
+                            </button>
+                        )}
+                        {canManage && (
+                            <button
+                                className="mic-action-btn primary"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEdit(product);
+                                }}
+                            >
+                                <Edit2 size={18} />
+                            </button>
+                        )}
                     </div>
                     )}
                 </div>
