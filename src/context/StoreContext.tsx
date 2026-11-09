@@ -1808,7 +1808,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const addProduct = async (productData: Omit<Product, 'id'>): Promise<Product | null> => {
         const newProduct: Product = {
             ...productData,
-            id: Date.now().toString()
+            id: Date.now().toString(),
+            createdAt: new Date().toISOString()
         };
         // Optimistic update
         setProducts(prev => [...prev, newProduct]);
