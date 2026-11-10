@@ -355,14 +355,24 @@ const Inventory: React.FC = () => {
             };
 
             const created = await addOnlineOrder(sale);
+            // The order exists from here on. A shipping step below that doesn't go
+            // through must not read as "Failed to create" (someone would create it
+            // again and end up with two), so it is reported as created-but-not-shipped.
+            let reachedStatus: string = bornShipped ? 'Confirmed' : chosenStatus;
             if (bornShipped && created?.id) {
-                // Runs Case 1's deduction, FIFO inventory_items flip, and the
+                // Runs the stock deduction, FIFO inventory_items flip, and the
                 // stock-out movement; Delivered is entered from Shipped, which
-                // satisfies the post-dispatch guard.
-                await updateOrderStatus(created.id, 'Shipped');
-                if (chosenStatus === 'Delivered') {
-                    await updateOrderStatus(created.id, 'Delivered');
+                // satisfies the post-dispatch guard. false: refused or failed
+                // (already explained), nothing moved.
+                if (await updateOrderStatus(created.id, 'Shipped')) {
+                    reachedStatus = 'Shipped';
+                    if (chosenStatus === 'Delivered' && await updateOrderStatus(created.id, 'Delivered')) reachedStatus = 'Delivered';
                 }
+            }
+            if (reachedStatus !== chosenStatus) {
+                showToast(`Wholesale order created for ${qty}x ${wholesaleProduct.name}, but it is still ${reachedStatus}, not ${chosenStatus}. Change its status from the Orders page.`, 'error');
+                setWholesaleProduct(null);
+                return;
             }
             showToast(`Wholesale order created for ${qty}x ${wholesaleProduct.name}`, 'success');
             setWholesaleProduct(null);

@@ -1259,7 +1259,9 @@ const PaymentTracking: React.FC = () => {
                                             // call must observe the status the first one wrote.
                                             (async () => {
                                                 try {
-                                                    await updateOrderStatus(order.id, newStatus as any);
+                                                    // false: refused or changed elsewhere (already
+                                                    // explained) — don't go on to the payment side.
+                                                    if (!(await updateOrderStatus(order.id, newStatus as any))) return;
                                                     if (newStatus === 'ReStock') {
                                                         // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
                                                         // PdFee kept — and income cleanup). Nothing more to do here.

@@ -54,7 +54,9 @@ export interface OM2Actions {
     onRefresh: () => void;
     onNewOrder: () => void;
     onExport: () => void;
-    onSaveEdit: (edit: OrderEdit) => Promise<void>;
+    // Resolves false when the save was refused or didn't go through (the user has
+    // been told); the drawer then keeps its unsaved values.
+    onSaveEdit: (edit: OrderEdit) => Promise<boolean | void>;
     onUndoEdit: (edit: OrderEdit, previous: OrderEdit) => Promise<void>;
     onBulkAddTracking: (updates: Array<{ orderId: string; trackingNumber: string }>) => Promise<void>;
     onBulkMarkShipped: (orderIds: string[]) => Promise<void>;

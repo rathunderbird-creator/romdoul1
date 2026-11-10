@@ -37,6 +37,8 @@ const OrdersManagement2Page: React.FC = () => {
     const data = useOrdersM2Data(filters);
     const [visibleColumns, setVisibleColumns] = useLocalStorageState('om2_visible_columns', DEFAULT_VISIBLE_COLUMNS);
     const toastHandle = useRef<UndoToastHandle | null>(null);
+    // A 'Mark shipped' run is in progress (see onBulkMarkShipped).
+    const markingShippedRef = useRef(false);
 
     useEffect(() => {
         setHeaderContent({
@@ -75,12 +77,18 @@ const OrdersManagement2Page: React.FC = () => {
             const targetStatus = edit.orderStatus ?? (order?.shipping?.status || 'Confirmed');
             // shownStatus: the drawer always sends its status; when that is just the
             // status it showed and the order moved on since, the real one is kept.
-            await updateOrderStatus(edit.orderId, targetStatus as any, edit.trackingNumber, edit.shippingCompany, {
+            // false: refused (e.g. ReStock on an order that isn't Returned) or someone
+            // else changed the order first, and nothing of this call was written (its
+            // tracking number included); the user has been told. Stop there: no
+            // payment or detail write on top, and no "updated" toast or Undo, which
+            // would push the other person's status back.
+            if (!(await updateOrderStatus(edit.orderId, targetStatus as any, edit.trackingNumber, edit.shippingCompany, {
                 shownStatus: edit.expectedShippingStatus ?? (edit.orderStatus === undefined ? order?.shipping?.status : undefined),
-            });
+            }))) return false;
         }
-        if (Object.keys(updates).length > 0) await updateOrder(edit.orderId, updates as any);
+        if (Object.keys(updates).length > 0 && !(await updateOrder(edit.orderId, updates as any))) return false;
         await logActivity('order_update', `Updated order ${edit.orderId}`, currentUser?.id, currentUser?.name, { edit });
+        return true;
     };
 
     const actions = useMemo<OM2Actions>(() => ({
@@ -116,30 +124,55 @@ const OrdersManagement2Page: React.FC = () => {
                 customerCare: edit.customerCare !== undefined ? previous?.customerCare : undefined,
                 remark: edit.remark !== undefined ? previous?.remark : undefined,
             };
-            await applyEdit(edit);
-            data.refresh();
-            toastHandle.current?.show('Order updated.', () => {
-                applyEdit(previousEdit).then(() => data.refresh());
+            const saved = await applyEdit(edit).catch((e: unknown) => {
+                console.error('Order edit failed:', e);
+                return false;
             });
+            data.refresh();
+            if (!saved) return false;
+            toastHandle.current?.show('Order updated.', () => {
+                applyEdit(previousEdit).catch(e => console.error('Undo failed:', e)).then(() => data.refresh());
+            });
+            return true;
         },
         onUndoEdit: async (edit) => { await applyEdit(edit); data.refresh(); },
         onBulkAddTracking: async (updates) => {
+            let saved = 0;
+            let lastReason = '';
             for (const u of updates) {
                 const order = data.orders.find(o => o.id === u.orderId);
                 // Tracking only: the status is the one this page showed, so if the order
                 // moved on since, updateOrderStatus keeps the real one (shownStatus).
                 const shown = order?.shipping?.status || 'Shipped';
-                await updateOrderStatus(u.orderId, shown as any, u.trackingNumber, order?.shipping?.company, { shownStatus: shown });
+                if (await updateOrderStatus(u.orderId, shown as any, u.trackingNumber, order?.shipping?.company, { shownStatus: shown, onRefused: m => { lastReason = m; } })) saved++;
             }
-            await logActivity('bulk_tracking', `Added tracking IDs to ${updates.length} order(s)`, currentUser?.id, currentUser?.name, { count: updates.length });
+            await logActivity('bulk_tracking', `Added tracking IDs to ${saved} order(s)`, currentUser?.id, currentUser?.name, { count: saved });
             data.refresh();
-            showToast(`Tracking IDs saved for ${updates.length} order(s).`, 'success');
+            if (saved < updates.length) showToast(`Tracking IDs saved for ${saved} order(s); ${updates.length - saved} could not be saved: ${lastReason}`, 'error');
+            else showToast(`Tracking IDs saved for ${saved} order(s).`, 'success');
         },
         onBulkMarkShipped: async (orderIds) => {
-            for (const id of orderIds) await updateOrderStatus(id, 'Shipped');
-            await logActivity('bulk_ship', `Marked ${orderIds.length} order(s) Shipped`, currentUser?.id, currentUser?.name, { count: orderIds.length });
-            data.refresh();
-            showToast(`${orderIds.length} order(s) marked Shipped.`, 'success');
+            // One run at a time: a second click while the first is still going sent
+            // the same orders through again (the view also disables the button).
+            if (markingShippedRef.current) return;
+            markingShippedRef.current = true;
+            try {
+                // Each order on its own: one that is refused (already shipped from a
+                // first click, changed elsewhere) or fails no longer stops the rest,
+                // and the toast says what happened.
+                let shipped = 0;
+                let lastReason = '';
+                for (const id of orderIds) {
+                    if (await updateOrderStatus(id, 'Shipped', undefined, undefined, { onRefused: m => { lastReason = m; } })) shipped++;
+                }
+                const notShipped = orderIds.length - shipped;
+                await logActivity('bulk_ship', `Marked ${shipped} order(s) Shipped`, currentUser?.id, currentUser?.name, { count: shipped });
+                data.refresh();
+                if (notShipped > 0) showToast(`${shipped} order(s) marked Shipped; ${notShipped} could not be: ${lastReason}`, 'error');
+                else showToast(`${shipped} order(s) marked Shipped.`, 'success');
+            } finally {
+                markingShippedRef.current = false;
+            }
         },
         onBulkPrint: () => showToast('Printing runs from the classic Orders page for now.', 'info'),
         onBulkExport: async (orderIds) => {

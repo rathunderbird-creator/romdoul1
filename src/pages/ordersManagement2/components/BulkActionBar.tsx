@@ -11,6 +11,9 @@ interface BulkActionBarProps {
     onClear: () => void;
     onAddTracking: () => void;
     onMarkShipped: () => void;
+    // True while a 'Mark shipped' run is going: the button is disabled so it
+    // can't be started twice for the same orders.
+    markShippedBusy?: boolean;
     onBulkEdit: () => void;
     onPrint: () => void;
     onExport: () => void;
@@ -22,7 +25,7 @@ const secondaryBtn: React.CSSProperties = {
     fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
 };
 
-const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, onAddTracking, onMarkShipped, onBulkEdit, onPrint, onExport }) => {
+const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, onAddTracking, onMarkShipped, markShippedBusy = false, onBulkEdit, onPrint, onExport }) => {
     const count = selectedOrders.length;
     return (
         <div
@@ -54,8 +57,15 @@ const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, 
                     <Truck size={15} aria-hidden /> Add tracking IDs
                 </button>
 
-                <button type="button" onClick={onMarkShipped} className="d2-clickable om2-tap-target" style={secondaryBtn}>
-                    <PackageCheck size={15} aria-hidden /> Mark shipped
+                <button
+                    type="button"
+                    onClick={onMarkShipped}
+                    disabled={markShippedBusy}
+                    aria-busy={markShippedBusy}
+                    className="d2-clickable om2-tap-target"
+                    style={{ ...secondaryBtn, ...(markShippedBusy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                >
+                    <PackageCheck size={15} aria-hidden /> {markShippedBusy ? 'Marking shipped…' : 'Mark shipped'}
                 </button>
 
                 <button type="button" onClick={onBulkEdit} className="d2-clickable om2-tap-target" style={secondaryBtn}>

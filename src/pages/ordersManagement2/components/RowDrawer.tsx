@@ -29,7 +29,7 @@ interface RowDrawerProps {
     order: Order | null;
     isOpen: boolean;
     onClose: () => void;
-    onSave: (edit: OrderEdit) => Promise<void>;
+    onSave: (edit: OrderEdit) => Promise<boolean | void>; // false: not saved (the user has been told)
     onPrint: (order: Order) => void;
     salesmen: string[];
     customerCare: string[];
@@ -274,12 +274,13 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
         if (!window.confirm(message)) return;
         setPaySaving(true);
         try {
-            await onSave({
+            const saved = await onSave({
                 orderId: order.id, paymentStatus, amountReceived,
                 expectedPaymentStatus: baseline.paymentStatus,
                 paymentMethod: paymentMethod ? (paymentMethod as Order['paymentMethod']) : undefined,
                 settleDate: settleDateInput || null,
             });
+            if (saved === false) return;
             setBaseline(b => ({ ...b, paymentStatus, amountReceived, paymentMethod, settleDate: settleDateInput }));
             setPaySaved(true);
             setTimeout(() => setPaySaved(false), 2000);
@@ -291,7 +292,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
     const handleSaveDetails = async () => {
         setDetailsSaving(true);
         try {
-            await onSave({
+            const saved = await onSave({
                 orderId: order.id,
                 address: addressInput,
                 pageSource: pageSourceInput,
@@ -299,6 +300,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 customerCare: customerCareInput,
                 remark: remarkInput,
             });
+            if (saved === false) return;
             setDetailsBaseline({ address: addressInput, pageSource: pageSourceInput, salesman: salesmanInput, customerCare: customerCareInput, remark: remarkInput });
             setDetailsSaved(true);
             setTimeout(() => setDetailsSaved(false), 2000);
@@ -315,7 +317,11 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             // as a silent no-op, so this is harmless when only tracking
             // changed, and is exactly what applies the transition when
             // status did change.
-            await onSave({ orderId: order.id, orderStatus, trackingNumber, shippingCompany: order.shipping?.company, expectedShippingStatus: baseline.orderStatus });
+            // false: the status change was refused or lost to someone else's, and
+            // nothing was written; keep the baseline so the drawer still shows
+            // these values as unsaved.
+            const saved = await onSave({ orderId: order.id, orderStatus, trackingNumber, shippingCompany: order.shipping?.company, expectedShippingStatus: baseline.orderStatus });
+            if (saved === false) return;
             setBaseline(b => ({ ...b, orderStatus, trackingNumber }));
             setTrackingSaved(true);
             setTimeout(() => setTrackingSaved(false), 2000);
