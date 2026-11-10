@@ -1,9 +1,7 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
-import { nextJournalEntryNumber, entryNumberRef, entryDescription } from '../utils/journalEntryNumber';
-import { insertJournalLines } from '../utils/journalEntryLines';
-import type { StockAdjustment, StockAdjustmentLine, StockAdjustmentReason } from '../types';
+import type { StockAdjustment, StockAdjustmentReason } from '../types';
 
 // Reasons that correct the books rather than record a real-world loss: an
 // opening balance, a recount, or something that doesn't fit the others.
@@ -62,6 +60,8 @@ export function useStockAdjustments() {
         lines: { product_id: string; bin?: string; quantity: number; unit_cost: number; batch?: string }[],
         createdBy?: string
     ): Promise<string> => {
+        const lineProblem = checkLines(lines);
+        if (lineProblem) throw new Error(lineProblem);
         const { data: adjustment, error } = await supabase
             .from('stock_adjustments')
             .insert([{ ...header, status: 'Draft', created_by: createdBy || null }])
@@ -79,179 +79,86 @@ export function useStockAdjustments() {
         return adjustment.id as string;
     }, [fetchAdjustments]);
 
-    // Rewrites a Draft in place: header fields updated, lines replaced.
-    // Drafts have made no stock/ledger changes yet, so this is a plain
-    // rewrite; Posted is final (same rule as deleteAdjustment below).
+    // Rewrites a Draft in place: header fields updated, lines replaced. Runs
+    // in the database (save_stock_adjustment) as one transaction that locks
+    // the adjustment, so it can't interleave with a post, is refused once the
+    // adjustment is Posted, and a bad line leaves the old lines in place.
     const updateAdjustment = useCallback(async (
         id: string,
         header: { warehouse_id: string; adjustment_date: string; reason: StockAdjustmentReason; notes?: string | null },
         lines: { product_id: string; bin?: string; quantity: number; unit_cost: number; batch?: string }[]
     ) => {
-        const { error } = await supabase.from('stock_adjustments')
-            .update({ ...header, notes: header.notes ?? null })
-            .eq('id', id).eq('status', 'Draft');
-        if (error) throw new Error(errorMessage(error));
-        const { error: delErr } = await supabase.from('stock_adjustment_lines').delete().eq('adjustment_id', id);
-        if (delErr) throw new Error(errorMessage(delErr));
-        const { error: insErr } = await supabase.from('stock_adjustment_lines').insert(
-            lines.map(l => ({ ...l, adjustment_id: id }))
-        );
-        if (insErr) throw new Error(errorMessage(insErr));
+        const lineProblem = checkLines(lines);
+        if (lineProblem) throw new Error(lineProblem);
+        const { error } = await supabase.rpc('save_stock_adjustment', {
+            p_id: id,
+            p_header: { ...header, notes: header.notes ?? null },
+            p_lines: lines,
+        });
+        if (error) {
+            await fetchAdjustments(true);
+            throw new Error(rpcMessage(error));
+        }
         await fetchAdjustments(true);
     }, [fetchAdjustments]);
 
     // A Draft has made no stock/ledger changes yet, so deleting one is a
     // plain delete (lines cascade). Posted is final — same rule as every
-    // other ledger-backed record in this app.
+    // other ledger-backed record in this app. The delete only matches a
+    // Draft, so a stale page can't delete one that was just posted.
     const deleteAdjustment = useCallback(async (id: string, status: string) => {
         if (status !== 'Draft') throw new Error('Posted adjustments cannot be deleted — make a correcting adjustment instead.');
-        const { error } = await supabase.from('stock_adjustments').delete().eq('id', id);
+        const { data: deleted, error } = await supabase.from('stock_adjustments').delete().eq('id', id).eq('status', 'Draft').select('id');
         if (error) throw new Error(errorMessage(error));
         await fetchAdjustments(true);
+        if (!deleted || deleted.length === 0) throw new Error('This adjustment has been posted, so it was not deleted.');
     }, [fetchAdjustments]);
 
-    // Moves the quantity deltas into warehouse_stock and the product's flat
-    // total, logs a stock_movements row per line (so Stock Movements shows
-    // these too), books a Dr/Cr journal entry for the net value, and flips
-    // status to Posted. Both stock tables are kept in sync here even though
-    // elsewhere in the app they can drift — see the ADJ-prefixed reference
-    // comment below.
+    // Posts a Draft through post_stock_adjustment
+    // (migrations/add_stock_adjustment_posting.sql). In one transaction that
+    // locks the adjustment it moves products.stock and warehouse_stock, writes
+    // the stock movements, books the ledger entry and marks it Posted, so it
+    // either all happens or none of it does, and a second Post (another tab
+    // or user) waits and is then refused. Removing more than is on hand is
+    // refused rather than clamped.
     const postAdjustment = useCallback(async (adjustment: StockAdjustment, createdBy?: string) => {
-        if (adjustment.status === 'Posted') return;
-        const lines = adjustment.lines || [];
-        if (lines.length === 0) throw new Error('This adjustment has no lines.');
-        const warehouseId = adjustment.warehouse_id || '';
-
-        for (const line of lines) {
-            const qty = Number(line.quantity) || 0;
-            if (qty === 0) continue;
-            const productId = line.product_id;
-
-            if (warehouseId) {
-                const { data: ws } = await supabase.from('warehouse_stock')
-                    .select('id, quantity').eq('warehouse_id', warehouseId).eq('product_id', productId).maybeSingle();
-                if (ws) {
-                    await supabase.from('warehouse_stock').update({ quantity: Math.max(0, (Number(ws.quantity) || 0) + qty) }).eq('id', ws.id);
-                } else {
-                    await supabase.from('warehouse_stock').insert({ warehouse_id: warehouseId, product_id: productId, quantity: Math.max(0, qty) });
-                }
-            }
-
-            const { data: prod } = await supabase.from('products').select('stock, name').eq('id', productId).single();
-            if (prod) {
-                await supabase.from('products').update({ stock: Math.max(0, (Number(prod.stock) || 0) + qty) }).eq('id', productId);
-            }
-
-            await supabase.from('stock_movements').insert({
-                product_id: productId,
-                product_name: prod?.name || line.product?.name || '',
-                type: qty > 0 ? 'in' : 'out',
-                quantity: Math.abs(qty),
-                unit_price: Number(line.unit_cost) || 0,
-                source: 'Stock Adjustment',
-                reason: adjustment.reason,
-                reference_id: 'ADJ-' + adjustment.id,
-                note: adjustment.notes || '',
-                movement_date: adjustment.adjustment_date,
-                created_by: createdBy || null,
-                warehouse_id: warehouseId || null,
-            });
-        }
-
-        await postStockAdjustmentEntry(adjustment, lines, showToast);
-
-        const { error } = await supabase.from('stock_adjustments').update({ status: 'Posted' }).eq('id', adjustment.id);
-        if (error) throw new Error(errorMessage(error));
+        if (adjustment.status !== 'Draft') throw new Error('This adjustment has already been posted.');
+        const { data, error } = await supabase.rpc('post_stock_adjustment', { p_id: adjustment.id, p_created_by: createdBy || null });
         await fetchAdjustments(true);
+        if (error) throw new Error(rpcMessage(error));
+        const ledger = (data as { ledger?: string } | null)?.ledger;
+        if (ledger === 'no_accounts') {
+            const corrective = CORRECTIVE_REASONS.has(adjustment.reason);
+            showToast(`Adjustment posted, but no Inventory or ${corrective ? 'Equity' : 'Expense'} account exists in the Chart of Accounts — no ledger entry was posted.`, 'info');
+        }
     }, [fetchAdjustments, showToast]);
 
     return { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, updateAdjustment, deleteAdjustment, postAdjustment };
 }
 
-type ToastFn = (msg: string, kind: 'success' | 'error' | 'info') => void;
-
-// Dr Inventory / Cr Equity when the adjustment nets positive and is
-// corrective (Opening balance / Stock correction / Other); Dr Cost of Goods
-// Sold / Cr Inventory when it's a real loss (damaged/expired/stolen/given
-// away). A corrective adjustment that nets NEGATIVE reverses the same pair
-// (Dr Equity / Cr Inventory), and a loss-reason adjustment that nets
-// POSITIVE reverses its pair too (Dr Inventory / Cr COGS) — e.g. correcting
-// an over-reported write-off. Reference 'ADJ-<id>' so this never double-posts.
-async function postStockAdjustmentEntry(
-    adjustment: StockAdjustment,
-    lines: StockAdjustmentLine[],
-    showToast: ToastFn
-) {
-    try {
-        const netValue = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0);
-        const amount = Math.round(Math.abs(netValue) * 100) / 100;
-        if (amount <= 0) return;
-
-        const { data: existing, error: exErr } = await supabase.from('journal_entries')
-            .select('id, status').eq('reference_id', 'ADJ-' + adjustment.id).limit(1).maybeSingle();
-        if (exErr) { console.error('Could not check for an existing adjustment entry:', exErr); return; }
-        if (existing) return; // Already posted for this adjustment — Posted adjustments never re-post.
-
-        const { data: coa } = await supabase.from('chart_of_accounts')
-            .select('id, account_code, account_name, account_type').eq('is_active', true);
-        const pool = coa || [];
-        const inventoryAcc = pool.find(a => a.account_code === '1300')
-            || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
-        const corrective = CORRECTIVE_REASONS.has(adjustment.reason);
-        const balancingAcc = corrective
-            ? (pool.find(a => a.account_code === '3000') || pool.find(a => a.account_type === 'Equity'))
-            : (pool.find(a => a.account_code === '5000') || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs/i.test(a.account_name)) || pool.find(a => a.account_type === 'Expense'));
-
-        if (!inventoryAcc || !balancingAcc) {
-            showToast(`Adjustment posted, but no Inventory or ${corrective ? 'Equity' : 'Expense'} account exists in the Chart of Accounts — no ledger entry was posted.`, 'info');
-            return;
-        }
-
-        const entryNumber = await nextJournalEntryNumber('ADJ', adjustment.adjustment_date);
-        // Unified format with the reason in the counterparty slot —
-        // 'Inventory - ADJ-20261104-001 — Damaged goods'; instances without
-        // the entry_number migration keep the older plain label.
-        const entryPayload: Record<string, unknown> = {
-            date: adjustment.adjustment_date,
-            description: entryDescription(entryNumber, adjustment.reason)
-                || `Stock adjustment ${entryNumberRef(entryNumber) || 'ADJ'}`,
-            reference_id: 'ADJ-' + adjustment.id,
-            status: 'Draft',
-        };
-        if (entryNumber) entryPayload.entry_number = entryNumber;
-
-        let entry: { id: string } | null | undefined;
-        let jeErr: { message?: string } | null | undefined;
-        for (let attempt = 0; attempt < 3; attempt++) {
-            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
-            if (!jeErr) break;
-            const msg = jeErr.message || '';
-            if (/entry_number/i.test(msg) && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
-            break;
-        }
-        if (jeErr && /status/i.test(jeErr.message || '')) {
-            showToast('Adjustment posted — run migrations/add_entry_status.sql on this instance to also post the ledger entry as a draft.', 'info');
-            return;
-        }
-        if (jeErr || !entry) {
-            console.error('Failed to post the adjustment ledger entry:', jeErr);
-            showToast('Adjustment posted, but the ledger entry failed to post.', 'error');
-            return;
-        }
-
-        const netPositive = netValue > 0;
-        const debitInventory = netPositive ? amount : 0;
-        const creditInventory = netPositive ? 0 : amount;
-        const { error: lErr } = await insertJournalLines([
-            { journal_entry_id: entry.id, account_id: inventoryAcc.id, debit: debitInventory, credit: creditInventory, description: `Inventory adjustment — ${adjustment.reason}` },
-            { journal_entry_id: entry.id, account_id: balancingAcc.id, debit: creditInventory, credit: debitInventory, description: corrective ? `Stock adjustment — ${adjustment.reason}` : `Inventory write-off — ${adjustment.reason}` },
-        ]);
-        if (lErr) {
-            console.error('Failed to post the adjustment ledger entry lines:', lErr);
-            await supabase.from('journal_entries').delete().eq('id', entry.id);
-            showToast('Adjustment posted, but the ledger entry failed to post.', 'error');
-        }
-    } catch (e) {
-        console.error('Failed to post the adjustment ledger entry:', e);
+// The database functions arrive with migrations/add_stock_adjustment_posting.sql;
+// until it is run, PostgREST reports the function as missing.
+const rpcMessage = (error: unknown): string => {
+    const message = errorMessage(error);
+    if (/stock_adjustment/i.test(message) && /could not find the function|schema cache|does not exist/i.test(message)) {
+        return 'Adjust Stock needs a one-time database update before it can post or edit: run migrations/add_stock_adjustment_posting.sql in this store\'s Supabase SQL editor.';
     }
+    return message;
+};
+
+// Whole, non-zero quantities (stock_movements.quantity is a whole number), a
+// unit cost that isn't negative (a negative cost would flip the ledger
+// entry), and each product on one line only. The database checks the same
+// rules when saving and posting; this just answers sooner. Returns a message,
+// or null when fine.
+export function checkLines(lines: { product_id?: string | null; quantity: number; unit_cost: number }[]): string | null {
+    const seen = new Set<string>();
+    for (const l of lines) {
+        if (!l.product_id) return 'Every line needs a product.';
+        if (!Number.isFinite(l.quantity) || !Number.isInteger(l.quantity) || l.quantity === 0) return 'Quantities must be whole numbers other than zero.';
+        if (!Number.isFinite(l.unit_cost) || l.unit_cost < 0) return 'Unit cost can’t be negative.';
+        if (seen.has(l.product_id)) return 'A product is on more than one line. Combine them into one line.';
+        seen.add(l.product_id);
+    }
+    return null;
 }
