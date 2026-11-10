@@ -3,7 +3,11 @@ import { supabase } from '../lib/supabase';
 // Wholesale orders, customer and supplier payments, Add Stock and receiving a
 // purchase order each run as ONE database function, in one transaction
 // (migrations/add_wholesale_procurement_functions.sql): a failure changes
-// nothing, and a second click, retry or device waits and is then refused.
+// nothing, and a second device or a stale screen waits for the first save and
+// is then checked against what it did (a second cancel or receive is
+// refused). Add Stock and payments, which may rightly be repeated, are
+// retried with the id of the failed try (utils/retryKey.ts), so a save whose
+// reply was lost is reported as already done rather than made twice.
 // Until a store has run that file, PostgREST reports the function missing,
 // and this says what to do instead of showing the raw error.
 const MIGRATION = 'migrations/add_wholesale_procurement_functions.sql';

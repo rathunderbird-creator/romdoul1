@@ -6,10 +6,12 @@ import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryN
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
 import { createInFlightGuard } from '../utils/inFlightGuard';
+import { createRetryKeys } from '../utils/retryKey';
 import { outstandingReceipt, poReceiveMarker } from '../utils/receivePurchaseOrder';
 import { callDbFunction } from '../utils/dbFunctions';
 
 const supplierPaymentGuard = createInFlightGuard();
+const supplierPaymentKeys = createRetryKeys();
 
 type ToastFn = (msg: string, kind: 'success' | 'error' | 'info') => void;
 
@@ -621,13 +623,19 @@ export const useProcurement = () => {
     // row (Income & Expense, tagged '#SPP-<id>' so deleting the payment finds
     // it) and its Draft ledger entry (Dr Accounts Payable when the PO's receive
     // entry exists, else the purchase expense / Cr cash or bank). A failure
-    // saves nothing, so a retry can't pay twice; more than a bill's balance is
-    // refused.
+    // saves nothing. Each bill's payment id is picked here and kept when the
+    // call fails: if the network dropped after the database saved it, the
+    // retry (same bills, amounts and details) sends the same ids and the
+    // database reports the earlier payment instead of paying twice. As
+    // before, the amount isn't capped at the bill's balance here (the pages
+    // that check it do so themselves).
     const recordSupplierPayments = useCallback(async (supplierId: string, allocations: { poId: string; amount: number }[], paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) => {
+        const signature = JSON.stringify([supplierId, allocations.map(a => [a.poId, Number(a.amount)]), paymentMethod, notes, paymentDate, paidBy, paidFromAccountId, paidFromAccountName]);
+        const paymentIds = supplierPaymentKeys.take(signature, allocations.length);
         try {
-            await callDbFunction<unknown>('record_supplier_payments', {
+            const result = await callDbFunction<{ already_recorded?: boolean }>('record_supplier_payments', {
                 p_supplier_id: supplierId,
-                p_allocations: allocations.map(a => ({ po_id: a.poId, amount: Number(a.amount) })),
+                p_allocations: allocations.map((a, i) => ({ po_id: a.poId, amount: Number(a.amount), payment_id: paymentIds[i] })),
                 p_method: paymentMethod || '',
                 p_notes: notes ?? '',
                 p_pay_date: paymentDate || dayKeyFromDate(new Date()),
@@ -635,12 +643,17 @@ export const useProcurement = () => {
                 p_account_id: paidFromAccountId || null,
                 p_account_name: paidFromAccountName || null,
             }, 'Recording supplier payments');
-            showToast('Payment recorded successfully', 'success');
+            supplierPaymentKeys.release(signature);
+            showToast(result?.already_recorded ? 'This payment had already been saved — it was not recorded twice' : 'Payment recorded successfully', 'success');
             await fetchPurchaseOrders(true);
             await fetchSupplierPayments(true);
         } catch (error: any) {
             console.error('Failed to record payment:', error);
             showToast('Failed to record payment: ' + error.message, 'error');
+            // The payment may have been saved even so (a lost reply): show the
+            // bills as they are now.
+            await fetchPurchaseOrders(true);
+            await fetchSupplierPayments(true);
             throw error;
         }
     }, [showToast, fetchPurchaseOrders, fetchSupplierPayments]);

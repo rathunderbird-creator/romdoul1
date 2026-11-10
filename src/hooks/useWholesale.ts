@@ -4,6 +4,7 @@ import type { WholesaleOrder, WholesaleOrderItem, WholesaleCustomer, CustomerPay
 import { useToast } from '../context/ToastContext';
 import { dayKeyFromDate } from '../utils/dateRange';
 import { createInFlightGuard } from '../utils/inFlightGuard';
+import { createRetryKeys } from '../utils/retryKey';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 
 // Stock, payments and the books for wholesale orders move inside the
@@ -14,6 +15,7 @@ import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 // 'WSO-<id>-COGS') and a Draft invoice entry (Dr A/R / Cr Sales,
 // 'WSO-<id>-INV'); each payment books a Draft receipt (Dr cash / Cr A/R).
 const customerPaymentGuard = createInFlightGuard();
+const customerPaymentKeys = createRetryKeys();
 
 // The order shape the database functions take (empty strings for unset
 // optional fields; the function stores them as NULL).
@@ -174,11 +176,16 @@ export const useWholesale = () => {
     // payment status, the Income row (Income & Expense, tagged '#WSP-<id>' so
     // deleting the payment finds it) and its Draft ledger entry (Dr cash/bank /
     // Cr A/R, or Cr Sales for an order from before invoice entries) — all or
-    // nothing, so a 'Failed' payment was never half saved and a retry can't
-    // record it twice. More than the balance still owed is refused.
+    // nothing, so a 'Failed' payment was never half saved. The payment's id
+    // is picked here and kept when the call fails: if the network dropped
+    // after the database saved it, the retry (same order, amount and details)
+    // sends the same id and the database reports the earlier payment instead
+    // of recording it again. More than the balance still owed is refused.
     const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string, receivedInAccountId?: string, receivedInAccountName?: string) => {
+        const signature = JSON.stringify([orderId, amount, paymentMethod, notes, paymentDate, receivedBy, receivedInAccountId, receivedInAccountName]);
+        const [paymentId] = customerPaymentKeys.take(signature);
         try {
-            const result = await callDbFunction<unknown>('record_customer_payment', {
+            const result = await callDbFunction<{ already_recorded?: boolean }>('record_customer_payment', {
                 p_order_id: orderId,
                 p_amount: Number(amount),
                 p_method: paymentMethod || '',
@@ -187,14 +194,20 @@ export const useWholesale = () => {
                 p_received_by: receivedBy || null,
                 p_account_id: receivedInAccountId || null,
                 p_account_name: receivedInAccountName || null,
+                p_payment_id: paymentId,
             }, 'Recording payments');
+            customerPaymentKeys.release(signature);
             showNotices(showToast, result);
-            showToast('Payment recorded', 'success');
+            showToast(result?.already_recorded ? 'This payment had already been saved — it was not recorded twice' : 'Payment recorded', 'success');
             await fetchWholesaleOrders(true);
             await fetchCustomerPayments(true);
         } catch (error: any) {
             console.error('Failed to record payment:', error);
             showToast('Failed to record payment: ' + error.message, 'error');
+            // The payment may have been saved even so (a lost reply): show the
+            // order as it is now.
+            await fetchWholesaleOrders(true);
+            await fetchCustomerPayments(true);
             throw error;
         }
     }, [showToast, fetchWholesaleOrders, fetchCustomerPayments]);
