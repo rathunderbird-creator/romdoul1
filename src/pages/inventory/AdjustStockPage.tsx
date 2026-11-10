@@ -52,7 +52,7 @@ const emptyLine = (): DraftLine => ({ key: genKey(), product_id: '', bin: 'Defau
 
 const AdjustStockPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const { products, warehouses, currentUser } = useStore();
+    const { products, warehouses, currentUser, refreshData } = useStore();
     const { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, updateAdjustment, deleteAdjustment, postAdjustment } = useStockAdjustments();
     const { showToast } = useToast();
 
@@ -187,9 +187,23 @@ const AdjustStockPage: React.FC = () => {
         if (!warehouseId) { showToast('Choose a warehouse', 'error'); return; }
         const validLines = lines.filter(l => l.product_id && l.quantity !== '' && parseFloat(l.quantity) !== 0);
         if (validLines.length === 0) { showToast('Add at least one line with a product and a non-zero quantity', 'error'); return; }
+        const seenProducts = new Set<string>();
         for (const l of validLines) {
+            if (seenProducts.has(l.product_id)) {
+                showToast(`${activeProducts.find(p => p.id === l.product_id)?.name || 'A product'} is on more than one line. Combine them into one line.`, 'error');
+                return;
+            }
+            seenProducts.add(l.product_id);
             const q = parseFloat(l.quantity);
             const product = activeProducts.find(p => p.id === l.product_id);
+            if (!Number.isInteger(q)) {
+                showToast(`Quantity for ${product?.name || 'a product'} must be a whole number`, 'error');
+                return;
+            }
+            if (l.unit_cost !== '' && !(parseFloat(l.unit_cost) >= 0)) {
+                showToast(`Unit cost for ${product?.name || 'a product'} can’t be negative`, 'error');
+                return;
+            }
             const hasCost = (l.unit_cost !== '' && parseFloat(l.unit_cost) >= 0) || (product?.purchaseCost || 0) > 0;
             if (q < 0 && !hasCost) {
                 showToast(`A unit cost is required to remove stock for ${product?.name || 'a product'}`, 'error');
@@ -241,6 +255,9 @@ const AdjustStockPage: React.FC = () => {
             showToast('Failed to post adjustment: ' + (e instanceof Error ? e.message : 'unknown error'), 'error');
         } finally {
             setIsPosting(false);
+            // Stock changed in the database; refresh the cached products and
+            // warehouse stock so other pages and the template export see it.
+            refreshData(true).catch(() => { /* the next load picks it up */ });
         }
     };
 
@@ -391,7 +408,7 @@ const AdjustStockPage: React.FC = () => {
                                                     <button onClick={() => openEdit(a)} title="Edit draft" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Pencil size={15} /></button>
                                                 )}
                                                 <button onClick={() => printOne(a)} title="Print" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Printer size={15} /></button>
-                                                <button onClick={() => handleVoid(a)} disabled={isVoiding} title={a.status === 'Draft' ? 'Delete draft' : "Posted — can't be deleted"} style={{ background: 'none', border: 'none', cursor: a.status === 'Draft' ? 'pointer' : 'not-allowed', color: a.status === 'Draft' ? '#DC2626' : 'var(--color-text-muted)', padding: '4px', opacity: a.status === 'Draft' ? 1 : 0.5 }}><X size={15} /></button>
+                                                <button onClick={() => handleVoid(a)} disabled={isVoiding} title={a.status === 'Draft' ? 'Delete draft' : "Posted, can't be deleted"} style={{ background: 'none', border: 'none', cursor: a.status === 'Draft' ? 'pointer' : 'not-allowed', color: a.status === 'Draft' ? '#DC2626' : 'var(--color-text-muted)', padding: '4px', opacity: a.status === 'Draft' ? 1 : 0.5 }}><X size={15} /></button>
                                             </td>
                                         </tr>
                                     ))}
@@ -437,7 +454,7 @@ const AdjustStockPage: React.FC = () => {
                             </div>
                             <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '20px' }}>
                                 Fill quantity (+ add / − remove) and unit cost, then import — lines are added below for review before the draft is saved.
-                                Enter a positive quantity to add stock and a negative one to remove. A unit cost is required when removing stock, costed from the product's own purchase cost.
+                                Enter a whole positive quantity to add stock and a negative one to remove; you can't remove more than is in stock, and each product goes on one line. A unit cost is required when removing stock, costed from the product's own purchase cost.
                             </p>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -463,7 +480,7 @@ const AdjustStockPage: React.FC = () => {
                                             </div>
                                             <div>
                                                 <label style={labelStyle}>Quantity</label>
-                                                <input type="number" step="any" placeholder="e.g. 10 or -3" value={l.quantity} onChange={e => updateLine(l.key, { quantity: e.target.value })} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                                                <input type="number" step="1" placeholder="e.g. 10 or -3" value={l.quantity} onChange={e => updateLine(l.key, { quantity: e.target.value })} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                                             </div>
                                             <div>
                                                 <label style={labelStyle}>Unit cost</label>
