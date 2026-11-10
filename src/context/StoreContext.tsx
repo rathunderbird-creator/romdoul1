@@ -1924,11 +1924,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // 1. Fetch current product (stock from the DB — the local closure is
             // stale inside the PO-receive loop and after other edits).
-            const product = products.find(p => p.id === productId);
-            if (!product) throw new Error("Product not found");
-            const { data: dbProduct, error: readError } = await supabase.from('products').select('stock').eq('id', productId).single();
+            // The loaded list only has active products: one deleted after a purchase
+            // order was raised is missing from it, and throwing here left that PO
+            // impossible to receive. The database row is the source of truth.
+            const { data: dbProduct, error: readError } = await supabase.from('products').select('stock, name, purchase_cost').eq('id', productId).maybeSingle();
             if (readError) throw readError;
-            const newStock = (dbProduct ? Number(dbProduct.stock) : product.stock) + quantity;
+            const listed = products.find(p => p.id === productId);
+            if (!dbProduct && !listed) throw new Error("Product not found");
+            const product = {
+                name: dbProduct?.name ?? listed?.name ?? 'Unknown',
+                purchaseCost: Number(dbProduct?.purchase_cost ?? listed?.purchaseCost) || 0,
+                stock: Number(dbProduct?.stock ?? listed?.stock) || 0,
+            };
+            const newStock = product.stock + quantity;
 
             // 2. Insert into inventory_items
             const inventoryItems = Array.from({ length: quantity }).map(() => ({

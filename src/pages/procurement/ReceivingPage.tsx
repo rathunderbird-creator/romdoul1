@@ -15,6 +15,7 @@ import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
+import { receivePurchaseOrderStock } from '../../utils/receivePurchaseOrder';
 import type { PurchaseOrder } from '../../types';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -156,20 +157,10 @@ const ReceivingPage: React.FC = () => {
         processingIds.current.add(po.id);
         setReceivingId(po.id);
         try {
-            // Idempotent per item: addStock throws on failure (the PO then
-            // stays pending), so a retry must skip items whose restock
-            // record already landed — otherwise their stock would double.
-            if (po.items && po.items.length > 0) {
-                const marker = `Received from PO-${po.id.substring(0, 8)}`;
-                for (const item of po.items) {
-                    if (!item.product_id) continue;
-                    const { data: already } = await supabase.from('restocks')
-                        .select('id').eq('product_id', item.product_id).like('note', `%${marker}%`).limit(1);
-                    if (already && already.length > 0) continue;
-                    await addStock(item.product_id, item.quantity, item.unit_price, marker, po.supplier?.name || '');
-                }
-            }
-            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || []);
+            // Adds only what hasn't arrived yet for this PO (safe to retry), and
+            // throws on failure so the PO stays pending.
+            await receivePurchaseOrderStock(po.id, po.items || [], po.supplier?.name || '', addStock);
+            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || [], { quiet: true });
             showToast(`${poShortId(po.id)} received successfully`, 'success');
             setIsPicking(false);
             setReceiveTargetId('');
@@ -208,11 +199,13 @@ const ReceivingPage: React.FC = () => {
     // one) — see cancelPurchaseReceiptEntry in useProcurement.ts. ──
     const [cancellingId, setCancellingId] = useState<string | null>(null);
     const handleCancel = async (po: PurchaseOrder) => {
-        if (!confirm(`Cancel ${referenceOf.get(po.id) || poShortId(po.id)}? The delivery's inventory stays on the books — reverse it manually if needed.`)) return;
+        if (!confirm(`Cancel ${referenceOf.get(po.id) || poShortId(po.id)}? Only a receipt whose goods never reached stock can be cancelled. If they are in stock, record a return to the supplier with Adjust Stock instead.`)) return;
         setCancellingId(po.id);
         try {
             await savePurchaseOrder({ ...po, status: 'Cancelled' }, po.items || []);
             await fetchJournalEntries();
+        } catch {
+            // savePurchaseOrder already told the user why (e.g. goods in stock).
         } finally {
             setCancellingId(null);
         }

@@ -234,9 +234,10 @@ const SupplierDetailsPage = () => {
                 await deleteSupplierPayment(payId);
                 setPayments(prev => prev.filter(p => p.id !== payId));
             }
-        } catch (err: any) {
+        } catch (err) {
+            // deletePurchaseOrder / deleteSupplierPayment already showed the reason;
+            // a second toast here repeated it.
             console.error('Delete error', err);
-            showToast('Failed to delete: ' + err.message, 'error');
         }
     };
 
