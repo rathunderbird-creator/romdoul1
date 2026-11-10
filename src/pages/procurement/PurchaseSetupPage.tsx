@@ -279,9 +279,10 @@ const PurchaseSetupPage: React.FC = () => {
             for (const r of validRows) {
                 const supplier = suppliers.find(s => s.id === r.supplier_id);
                 const amount = Math.round(parseFloat(r.amount) * 100) / 100;
-                const { data: po, error } = await supabase.from('purchase_orders').insert([{
+                const openingRow: Record<string, unknown> = {
                     supplier_id: r.supplier_id,
                     order_date: r.bill_date,
+                    bill_date: r.bill_date,
                     status: 'Received',
                     total_amount: amount,
                     payment_status: 'Unpaid',
@@ -289,7 +290,14 @@ const PurchaseSetupPage: React.FC = () => {
                     payment_due_date: r.due_date,
                     invoice_number: r.their_invoice.trim(),
                     notes: 'Opening balance',
-                }]).select().single();
+                };
+                let { data: po, error } = await supabase.from('purchase_orders').insert([openingRow]).select().single();
+                // Instances without migrations/add_purchase_order_bill_date.sql: the
+                // bill date still lands in order_date, as before.
+                if (error && /bill_date/i.test(error.message || '')) {
+                    delete openingRow.bill_date;
+                    ({ data: po, error } = await supabase.from('purchase_orders').insert([openingRow]).select().single());
+                }
                 if (error || !po) {
                     failures++;
                     console.error('Failed to load an opening balance:', error);
