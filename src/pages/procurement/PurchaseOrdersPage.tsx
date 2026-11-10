@@ -415,14 +415,18 @@ const PurchaseOrdersPage = () => {
                 // again, that must continue this order, not create a second one.
                 setEditingPOId(savedId);
                 setOpenedStatus(firstStatus);
+                // A cancelled order saved as Received is received too, as
+                // before (the list's Receive button isn't shown for it).
+                const reopenCancelled = firstStatus === 'Cancelled';
                 try {
                     // Adds the goods, marks it Received and books the purchase,
                     // in one transaction (nothing changes if it fails).
-                    const notices = await receivePurchaseOrder(savedId);
+                    const notices = await receivePurchaseOrder(savedId, { reopenCancelled });
                     showToast('Purchase Order received into stock', 'success');
                     for (const n of notices) showToast(n, 'info');
                 } catch (error) {
-                    showToast('The order was saved, but receiving it into stock failed: ' + (error instanceof Error ? error.message : String(error)) + '. Use Receive to try again.', 'error');
+                    showToast('The order was saved, but receiving it into stock failed: ' + (error instanceof Error ? error.message : String(error))
+                        + (reopenCancelled ? '. Open it and save it as Received again to try again.' : '. Use Receive to try again.'), 'error');
                     setIsModalOpen(false);
                     return;
                 } finally {

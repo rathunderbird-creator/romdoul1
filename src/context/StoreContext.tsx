@@ -6,6 +6,7 @@ import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryN
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
+import { createRetryKeys } from '../utils/retryKey';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -64,6 +65,9 @@ interface ConfigState {
     purchaseSettings?: PurchaseSettings;
     wholesaleSettings?: WholesaleSettings;
 }
+// Add Stock retries reuse the restock id of a failed identical add (see addStock).
+const addStockKeys = createRetryKeys();
+
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
         return window.crypto.randomUUID();
@@ -1919,11 +1923,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // the freshly mounted list fetched BEFORE the status update landed,
     // leaving the Receive button visible. Callers show their own feedback.
     const addStock = async (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => {
+        // The restock's id is picked here and kept when the call fails: if the
+        // network dropped after the database added the stock, the retry (same
+        // product, quantity and cost) sends the same id and the database adds
+        // nothing a second time.
+        const signature = JSON.stringify([productId, quantity, cost || 0, note || '', supplier || '']);
+        const [restockId] = addStockKeys.take(signature);
         try {
             // One database function (add_product_stock) writes the inventory_items
             // (one per unit, at this cost or the product's purchase cost),
             // products.stock, the restocks row and the stock movement in one
-            // transaction: a failure adds nothing, so trying again adds it once.
+            // transaction: a failure adds nothing.
             const newStock = await callDbFunction<number>('add_product_stock', {
                 p_product_id: productId,
                 p_quantity: quantity,
@@ -1933,7 +1943,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 p_added_by: currentUser?.name || 'Unknown',
                 p_created_by: currentUser?.id || null,
                 p_today: getLocalYYYYMMDD(),
+                p_restock_id: restockId,
             }, 'Adding stock');
+            addStockKeys.release(signature);
 
             // Update local state (functional form — loops must compose)
             setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: Number(newStock) || 0 } : p));
@@ -1953,12 +1965,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Payable, GRN), all in one transaction: a failure changes nothing, and a
     // second click or retry of a received PO is refused. Returns notices worth
     // showing (e.g. a Posted purchase entry it left alone).
-    const receivePurchaseOrder = async (poId: string): Promise<string[]> => {
+    // reopenCancelled: the PO form saving a cancelled order as Received
+    // receives it (the list and Receiving never offer a cancelled PO).
+    const receivePurchaseOrder = async (poId: string, opts?: { reopenCancelled?: boolean }): Promise<string[]> => {
         const result = await callDbFunction<{ stock?: Record<string, number> }>('receive_purchase_order', {
             p_po_id: poId,
             p_added_by: currentUser?.name || 'Unknown',
             p_created_by: currentUser?.id || null,
             p_today: getLocalYYYYMMDD(),
+            p_reopen_cancelled: !!opts?.reopenCancelled,
         }, 'Receiving purchase orders');
         const stock = result?.stock || {};
         if (Object.keys(stock).length > 0) {

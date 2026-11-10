@@ -198,7 +198,7 @@ export interface StoreContextType {
     addStock: (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => Promise<void>;
     // Receives a purchase order (stock, Received status and its purchase
     // entry, in one transaction); resolves to notices worth showing.
-    receivePurchaseOrder: (poId: string) => Promise<string[]>;
+    receivePurchaseOrder: (poId: string, opts?: { reopenCancelled?: boolean }) => Promise<string[]>;
     adjustStock: (productId: string, newStock: number, reason: string) => Promise<void>;
 
     // Customer Management
