@@ -171,8 +171,11 @@ const SupplierPaymentsPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<'All' | PayStatus>('All');
     const [supplierFilter, setSupplierFilter] = useState('all');
     const [spDateRange, setSpDateRange] = usePersistedDateRange('supplier_payments_range');
-    const dateFrom = spDateRange.start;
-    const dateTo = spDateRange.end;
+    // The old From/To boxes could save just one end. The picker can't show or make
+    // a one-sided range, so treat one as cleared rather than filtering invisibly.
+    const spRangeShown = !spDateRange.start !== !spDateRange.end ? { start: '', end: '' } : spDateRange;
+    const dateFrom = spRangeShown.start;
+    const dateTo = spRangeShown.end;
     const setDateFrom = (v: string) => setSpDateRange(r => ({ ...r, start: v }));
     const setDateTo = (v: string) => setSpDateRange(r => ({ ...r, end: v }));
 
@@ -447,7 +450,7 @@ const SupplierPaymentsPage: React.FC = () => {
                 </select>
                 {/* Same date picker as the Accounting pages (presets + calendar); the range
                     is still remembered per browser via usePersistedDateRange. */}
-                <DateRangePicker value={spDateRange} onChange={setSpDateRange} />
+                <DateRangePicker value={spRangeShown} onChange={setSpDateRange} />
                 <button onClick={() => { fetchSupplierPayments(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>
