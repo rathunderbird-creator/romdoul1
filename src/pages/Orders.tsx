@@ -368,6 +368,18 @@ const ShippingModalComponent: React.FC<{
                                 if (depositNum !== (order.depositAmount || 0)) {
                                     updates.depositAmount = depositNum;
                                     if (depositNum > 0) updates.depositDate = new Date().toISOString().split('T')[0];
+                                    // A deposit typed here is money received, the same as in
+                                    // the Deposit modal: route it through the Deposit flow so
+                                    // it is booked as income (កក់ប្រាក់) with its Draft DEP
+                                    // ledger entry — a bare number in the deposit column left
+                                    // revenue short by the deposit. Not for a paid order (its
+                                    // money is already booked; only the column is corrected).
+                                    if (depositNum > 0 && !['Paid', 'Settled', 'Paid/Settled'].includes(order.paymentStatus || '')) {
+                                        updates.paymentStatus = 'Deposit';
+                                        updates.expectedPaymentStatus = order.paymentStatus;
+                                        updates.amountReceived = depositNum;
+                                        updates.postToLedger = true;
+                                    }
                                 }
                                 // '' means "no override, keep computing it live" — that's the
                                 // same as an unset existing value, so only a real change (either
