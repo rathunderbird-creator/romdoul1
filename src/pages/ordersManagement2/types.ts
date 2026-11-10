@@ -17,6 +17,9 @@ export interface OrderEdit {
     orderId: string;
     paymentStatus?: Sale['paymentStatus'];
     expectedPaymentStatus?: string;
+    // The order status the drawer showed, so a tracking-only save can't revert a
+    // status someone else changed meanwhile.
+    expectedShippingStatus?: string;
     amountReceived?: number;
     paymentMethod?: Sale['paymentMethod'];
     // undefined = leave alone; null = clear; a string = set to this date.
