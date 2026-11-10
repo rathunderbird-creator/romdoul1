@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
 
 type ReceiveLine = { product_id?: string | null; quantity?: number | null; unit_price?: number | null };
-type AddStock = (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => Promise<void>;
 
 // The note every restock from this PO carries; how a receive (or a retry of one)
 // knows what already arrived.
@@ -39,19 +38,6 @@ export async function outstandingReceipt(poId: string, lines: ReceiveLine[]) {
     }));
 }
 
-// Adds a purchase order's goods to stock — the ONE receive used by the PO list,
-// Receiving and the PO form. Only what hasn't arrived for this PO is added, so a
-// retry after a failure part-way through adds nothing twice, and a second line of
-// the same product is no longer skipped as "already received". addStock throws on
-// failure, and so does this: the caller must then leave the PO un-received.
-export async function receivePurchaseOrderStock(
-    poId: string,
-    lines: ReceiveLine[],
-    supplierName: string,
-    addStock: AddStock,
-): Promise<void> {
-    const marker = poReceiveMarker(poId);
-    for (const { productId, missing, unitCost } of await outstandingReceipt(poId, lines)) {
-        if (missing > 0) await addStock(productId, missing, unitCost, marker, supplierName);
-    }
-}
+// Receiving itself is receivePurchaseOrder in StoreContext: one database
+// function that adds the goods still outstanding (worked out the same way as
+// above), marks the PO Received and books its purchase, in one transaction.

@@ -5,6 +5,7 @@ import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
+import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -1919,75 +1920,52 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // leaving the Receive button visible. Callers show their own feedback.
     const addStock = async (productId: string, quantity: number, cost?: number, note?: string, supplier?: string) => {
         try {
-            const id = generateUUID();
-            const date = new Date().toISOString();
+            // One database function (add_product_stock) writes the inventory_items
+            // (one per unit, at this cost or the product's purchase cost),
+            // products.stock, the restocks row and the stock movement in one
+            // transaction: a failure adds nothing, so trying again adds it once.
+            const newStock = await callDbFunction<number>('add_product_stock', {
+                p_product_id: productId,
+                p_quantity: quantity,
+                p_cost: cost || 0,
+                p_note: note || '',
+                p_supplier: supplier || '',
+                p_added_by: currentUser?.name || 'Unknown',
+                p_created_by: currentUser?.id || null,
+                p_today: getLocalYYYYMMDD(),
+            }, 'Adding stock');
 
-            // 1. Fetch current product (stock from the DB — the local closure is
-            // stale inside the PO-receive loop and after other edits).
-            // The loaded list only has active products: one deleted after a purchase
-            // order was raised is missing from it, and throwing here left that PO
-            // impossible to receive. The database row is the source of truth.
-            const { data: dbProduct, error: readError } = await supabase.from('products').select('stock, name, purchase_cost').eq('id', productId).maybeSingle();
-            if (readError) throw readError;
-            const listed = products.find(p => p.id === productId);
-            if (!dbProduct && !listed) throw new Error("Product not found");
-            const product = {
-                name: dbProduct?.name ?? listed?.name ?? 'Unknown',
-                purchaseCost: Number(dbProduct?.purchase_cost ?? listed?.purchaseCost) || 0,
-                stock: Number(dbProduct?.stock ?? listed?.stock) || 0,
-            };
-            const newStock = product.stock + quantity;
-
-            // 2. Insert into inventory_items
-            const inventoryItems = Array.from({ length: quantity }).map(() => ({
-                product_id: productId,
-                cost_of_purchase: cost || product.purchaseCost || 0,
-                status: 'in_stock'
-            }));
-            const { error: invError } = await supabase.from('inventory_items').insert(inventoryItems);
-            if (invError) throw invError;
-
-            // 3. Update product stock in DB
-            const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
-            if (productError) throw productError;
-
-            // 4. Insert restock record — AFTER the stock update, so a failure
-            // earlier never leaves history for stock that was never added.
-            const { error: restockError } = await supabase.from('restocks').insert([{
-                id,
-                product_id: productId,
-                quantity,
-                cost: cost || 0,
-                date,
-                added_by: currentUser?.name || 'Unknown',
-                note: note || ''
-            }]);
-            if (restockError) throw restockError;
-
-            // 4.5 Log to stock_movements
-            const { error: movementError } = await supabase.from('stock_movements').insert({
-                product_id: productId,
-                product_name: product.name,
-                type: 'in',
-                quantity: quantity,
-                unit_price: cost || product.purchaseCost || 0,
-                source: note?.startsWith('Received from PO') ? 'Purchase Order' : 'Inventory Adjustment',
-                supplier: supplier || '',
-                note: note || '',
-                movement_date: getLocalYYYYMMDD(),
-                created_by: currentUser?.id
-            });
-            if (movementError) console.error('Failed to log stock movement:', movementError);
-
-            // 5. Update local state (functional form — loops must compose)
-            setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock } : p));
+            // Update local state (functional form — loops must compose)
+            setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: Number(newStock) || 0 } : p));
             setProductsUpdatedAt(Date.now());
         } catch (error: any) {
-            // Rethrow so callers can react — the PO receive flow must NOT mark a
-            // PO 'Received' (and toast success) when the stock was never added.
+            // Rethrow so callers can react.
             console.error("Error adding stock:", error);
             throw error;
         }
+    };
+
+    // Receives a purchase order into stock — the ONE receive used by the PO
+    // list, Receiving and the PO form. One database function
+    // (receive_purchase_order) adds what hasn't arrived yet for this PO (from
+    // the restocks carrying its 'Received from PO-xxxxxxxx' note), marks it
+    // Received and books its Draft purchase entry (Dr Inventory / Cr Accounts
+    // Payable, GRN), all in one transaction: a failure changes nothing, and a
+    // second click or retry of a received PO is refused. Returns notices worth
+    // showing (e.g. a Posted purchase entry it left alone).
+    const receivePurchaseOrder = async (poId: string): Promise<string[]> => {
+        const result = await callDbFunction<{ stock?: Record<string, number> }>('receive_purchase_order', {
+            p_po_id: poId,
+            p_added_by: currentUser?.name || 'Unknown',
+            p_created_by: currentUser?.id || null,
+            p_today: getLocalYYYYMMDD(),
+        }, 'Receiving purchase orders');
+        const stock = result?.stock || {};
+        if (Object.keys(stock).length > 0) {
+            setProducts(prev => prev.map(p => p.id in stock ? { ...p, stock: Number(stock[p.id]) || 0 } : p));
+            setProductsUpdatedAt(Date.now());
+        }
+        return noticesOf(result);
     };
 
     // NOTE: deliberately does NOT toggle the global isLoading — App renders a
@@ -4653,6 +4631,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deleteProduct,
             deleteProducts,
             addStock, // Added addStock to context
+            receivePurchaseOrder,
             adjustStock, // Added adjustStock to context
             transactions,
             addTransaction,

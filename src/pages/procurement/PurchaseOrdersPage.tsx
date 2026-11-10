@@ -11,7 +11,7 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, MobileMultiChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 import DateRangePicker from '../../components/DateRangePicker';
 import { dayKeyFromDate } from '../../utils/dateRange';
-import { receivePurchaseOrderStock, poReceiveMarker } from '../../utils/receivePurchaseOrder';
+import { poReceiveMarker } from '../../utils/receivePurchaseOrder';
 import { supabase } from '../../lib/supabase';
 
 const formatCurrency = (amount: number) => {
@@ -45,7 +45,7 @@ const PAYMENT_FILTER_OPTIONS = ['Unpaid', 'Partial', 'Paid'] as const;
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { products, addStock, currentUser, addProduct, purchaseSettings } = useStore();
+    const { products, receivePurchaseOrder, currentUser, addProduct, purchaseSettings } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
     const { accounts, fetchAccounts } = useAccounting();
@@ -347,11 +347,11 @@ const PurchaseOrdersPage = () => {
         receivingRef.current.add(po.id);
         setReceivingId(po.id);
         try {
-            // Adds only what hasn't arrived yet for this PO (safe to retry), and
-            // throws on failure so the PO stays un-received.
-            await receivePurchaseOrderStock(po.id, po.items || [], po.supplier?.name || '', addStock);
-            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || [], { quiet: true });
+            // One transaction: adds only what hasn't arrived yet, marks the PO
+            // Received and books the purchase — or, on failure, changes nothing.
+            const notices = await receivePurchaseOrder(po.id);
             showToast(`PO-${po.id.substring(0, 8).toUpperCase()} received into stock`, 'success');
+            for (const n of notices) showToast(n, 'info');
             fetchPurchaseOrders(true);
         } catch (error: any) {
             showToast('Error receiving PO: ' + (error?.message || ''), 'error');
@@ -415,15 +415,19 @@ const PurchaseOrdersPage = () => {
                 // again, that must continue this order, not create a second one.
                 setEditingPOId(savedId);
                 setOpenedStatus(firstStatus);
-                const supplierName = suppliers.find(s => s.id === supplierId)?.name || '';
                 try {
-                    await receivePurchaseOrderStock(savedId, lines, supplierName, addStock);
+                    // Adds the goods, marks it Received and books the purchase,
+                    // in one transaction (nothing changes if it fails).
+                    const notices = await receivePurchaseOrder(savedId);
+                    showToast('Purchase Order received into stock', 'success');
+                    for (const n of notices) showToast(n, 'info');
                 } catch (error) {
                     showToast('The order was saved, but receiving it into stock failed: ' + (error instanceof Error ? error.message : String(error)) + '. Use Receive to try again.', 'error');
                     setIsModalOpen(false);
                     return;
+                } finally {
+                    fetchPurchaseOrders(true);
                 }
-                await savePurchaseOrder({ ...base, id: savedId, status: 'Received' }, lines);
             }
             setIsModalOpen(false);
         } catch (error) {

@@ -3,23 +3,13 @@ import { supabase } from '../lib/supabase';
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, SupplierPayment } from '../types';
 import { useToast } from '../context/ToastContext';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
 import { createInFlightGuard } from '../utils/inFlightGuard';
 import { outstandingReceipt, poReceiveMarker } from '../utils/receivePurchaseOrder';
+import { callDbFunction } from '../utils/dbFunctions';
 
 const supplierPaymentGuard = createInFlightGuard();
-
-const generateUUID = () => {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
-        return window.crypto.randomUUID();
-    }
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-};
 
 type ToastFn = (msg: string, kind: 'success' | 'error' | 'info') => void;
 
@@ -625,143 +615,26 @@ export const useProcurement = () => {
         }
     }, [showToast, fetchPurchaseOrders]);
 
-    // Also logs each supplier payment to Income & Expense as an Expense.
-    const recordSupplierPayment = useCallback(async (poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) => {
+    // Pays one or more of a supplier's bills with one payment — all of them or
+    // none. One database function (record_supplier_payments) writes, per bill,
+    // the payment row, the PO's amount paid and payment status, the Expense
+    // row (Income & Expense, tagged '#SPP-<id>' so deleting the payment finds
+    // it) and its Draft ledger entry (Dr Accounts Payable when the PO's receive
+    // entry exists, else the purchase expense / Cr cash or bank). A failure
+    // saves nothing, so a retry can't pay twice; more than a bill's balance is
+    // refused.
+    const recordSupplierPayments = useCallback(async (supplierId: string, allocations: { poId: string; amount: number }[], paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) => {
         try {
-            const payDate = paymentDate || dayKeyFromDate(new Date());
-            // Log payment ("Paid from" needs migrations/add_supplier_payment_account.sql;
-            // until an instance has run it, save the payment without the account).
-            const payload: Record<string, unknown> = {
-                purchase_order_id: poId,
-                supplier_id: supplierId,
-                amount,
-                payment_date: payDate,
-                payment_method: paymentMethod,
-                notes,
-                paid_from_account_id: paidFromAccountId || null
-            };
-            let { data: inserted, error: paymentError } = await supabase.from('supplier_payments').insert([payload]).select().single();
-            if (paymentError && /paid_from_account_id/i.test(paymentError.message || '')) {
-                const withoutAccount = { ...payload };
-                delete withoutAccount.paid_from_account_id;
-                ({ data: inserted, error: paymentError } = await supabase.from('supplier_payments').insert([withoutAccount]).select().single());
-                if (!paymentError) showToast('Saved without the Paid-from account — run migrations/add_supplier_payment_account.sql to store it', 'info');
-            }
-
-            if (paymentError) throw paymentError;
-
-            // Fetch current PO
-            const { data: po, error: fetchError } = await supabase
-                .from('purchase_orders')
-                .select('amount_paid, total_amount')
-                .eq('id', poId)
-                .single();
-
-            if (fetchError || !po) throw fetchError || new Error('PO not found');
-
-            const newAmountPaid = (Number(po.amount_paid) || 0) + Number(amount);
-            const newPaymentStatus = newAmountPaid >= po.total_amount ? 'Paid' : 'Partial';
-
-            // Update PO
-            const { error: poUpdateError } = await supabase
-                .from('purchase_orders')
-                .update({
-                    amount_paid: newAmountPaid,
-                    payment_status: newPaymentStatus
-                })
-                .eq('id', poId);
-
-            if (poUpdateError) throw poUpdateError;
-
-            // Log an Expense transaction, tagged with the payment id so deleting the
-            // payment can remove it again. Non-fatal: the payment itself succeeded.
-            const { data: supplier } = await supabase.from('suppliers').select('name').eq('id', supplierId).single();
-            const marker = `#SPP-${String(inserted?.id || '').slice(0, 8)}`;
-            const description = `${supplier?.name || 'Supplier'} · PO-${poId.slice(0, 8).toUpperCase()} ${marker}`;
-            const txId = generateUUID();
-            const { error: tErr } = await supabase.from('transactions').insert([{
-                id: txId,
-                date: new Date(payDate).toISOString(),
-                type: 'Expense',
-                category: 'ទិញឥវ៉ាន់',
-                amount: Number(amount),
-                description,
-                // The account name (when picked) beats the generic method: Income &
-                // Expense shows where the money left, and the ledger import maps it.
-                pay_by: paidFromAccountName || paymentMethod || null,
-                added_by: paidBy || 'Purchasing'
-            }]);
-            if (tErr) {
-                console.error('Failed to log supplier expense transaction:', tErr);
-                showToast('Payment saved, but logging to Expense failed: ' + tErr.message, 'error');
-            } else {
-                // Also post a matching Draft entry straight to the ledger: Accounting
-                // › Expense reads journal entries, not the transactions log above, so
-                // without this the payment would only show there after someone runs
-                // Import to Ledger. Same 'TX-<id>' reference as that import uses, so
-                // running it later never double-books this payment.
-                try {
-                    const { data: coa } = await supabase.from('chart_of_accounts')
-                        .select('id, account_code, account_name, account_type').eq('is_active', true);
-                    const pool = coa || [];
-                    // Standard accounting: paying a supplier settles the liability the
-                    // received PO created (Dr Accounts Payable, Cr Cash/Bank) — the
-                    // purchase itself already sits in Inventory, and COGS is booked
-                    // when the goods sell. Debit A/P only when this PO's receive
-                    // entry actually exists in the ledger (prepayments on unreceived
-                    // POs, and POs received before this treatment shipped, have no
-                    // A/P credit to settle); otherwise keep the old direct-expense
-                    // treatment so the books stay balanced either way.
-                    const { data: receiveEntry } = await supabase.from('journal_entries')
-                        .select('id').eq('reference_id', 'PO-' + poId).limit(1).maybeSingle();
-                    const apAcc = receiveEntry
-                        ? (pool.find(a => a.account_code === '2000')
-                            || pool.find(a => a.account_type === 'Liability' && /payable/i.test(a.account_name)))
-                        : undefined;
-                    const debitAcc = apAcc
-                        || pool.find(a => a.account_code === '5000')
-                        || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs|purchas/i.test(a.account_name))
-                        || pool.find(a => a.account_type === 'Expense');
-                    const cashAccId = paidFromAccountId || pickCashBankAccount(pool, paidFromAccountName || paymentMethod)?.id;
-                    if (debitAcc && cashAccId) {
-                        const entryNumber = await nextJournalEntryNumber('SPP', payDate);
-                        const jeDescription = entryDescription(entryNumber, supplier?.name || 'Supplier')
-                            || `Payment SPP — ${supplier?.name || 'Supplier'}`;
-                        const entryPayload: Record<string, unknown> = { date: payDate, description: jeDescription, reference_id: 'TX-' + txId, status: 'Draft' };
-                        if (entryNumber) entryPayload.entry_number = entryNumber;
-                        let { data: entry, error: jeErr } = await supabase.from('journal_entries')
-                            .insert([entryPayload])
-                            .select().single();
-                        // entry_number arrives with migrations/add_journal_entry_number.sql;
-                        // until an instance has run it, post the entry without it.
-                        if (jeErr && /entry_number/i.test(jeErr.message || '')) {
-                            const withoutEntryNumber = { ...entryPayload };
-                            delete withoutEntryNumber.entry_number;
-                            ({ data: entry, error: jeErr } = await supabase.from('journal_entries')
-                                .insert([withoutEntryNumber])
-                                .select().single());
-                        }
-                        if (jeErr && /status/i.test(jeErr.message || '')) {
-                            showToast('Payment and Expense logged — run migrations/add_entry_status.sql on this instance to also post it as a journal entry', 'info');
-                        } else if (jeErr || !entry) {
-                            console.error('Failed to create journal entry for payment:', jeErr);
-                        } else {
-                            const supplierLabel = supplier?.name || 'Supplier';
-                            const { error: lErr } = await insertJournalLines([
-                                { journal_entry_id: entry.id, account_id: debitAcc.id, debit: Number(amount), credit: 0, description: apAcc ? `Settle payable — ${supplierLabel}` : `Purchase — ${supplierLabel}` },
-                                { journal_entry_id: entry.id, account_id: cashAccId, debit: 0, credit: Number(amount), description: `Payment — ${supplierLabel}` },
-                            ]);
-                            if (lErr) {
-                                console.error('Failed to create journal entry lines for payment:', lErr);
-                                await supabase.from('journal_entries').delete().eq('id', entry.id);
-                            }
-                        }
-                    }
-                } catch (jeCatchErr) {
-                    console.error('Failed to post journal entry for supplier payment:', jeCatchErr);
-                }
-            }
-
+            await callDbFunction<unknown>('record_supplier_payments', {
+                p_supplier_id: supplierId,
+                p_allocations: allocations.map(a => ({ po_id: a.poId, amount: Number(a.amount) })),
+                p_method: paymentMethod || '',
+                p_notes: notes ?? '',
+                p_pay_date: paymentDate || dayKeyFromDate(new Date()),
+                p_paid_by: paidBy || null,
+                p_account_id: paidFromAccountId || null,
+                p_account_name: paidFromAccountName || null,
+            }, 'Recording supplier payments');
             showToast('Payment recorded successfully', 'success');
             await fetchPurchaseOrders(true);
             await fetchSupplierPayments(true);
@@ -771,6 +644,11 @@ export const useProcurement = () => {
             throw error;
         }
     }, [showToast, fetchPurchaseOrders, fetchSupplierPayments]);
+
+    // One bill.
+    const recordSupplierPayment = useCallback((poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) =>
+        recordSupplierPayments(supplierId, [{ poId, amount }], paymentMethod, notes, paymentDate, paidBy, paidFromAccountId, paidFromAccountName),
+    [recordSupplierPayments]);
 
     // Supplier Bills: billing a delivery means giving its already-Received PO
     // a reference/due date — never savePurchaseOrder(), whose update path
@@ -827,6 +705,8 @@ export const useProcurement = () => {
 
     const recordSupplierPaymentOnce = useCallback((...args: Parameters<typeof recordSupplierPayment>) =>
         supplierPaymentGuard(JSON.stringify(args), () => recordSupplierPayment(...args)), [recordSupplierPayment]);
+    const recordSupplierPaymentsOnce = useCallback((...args: Parameters<typeof recordSupplierPayments>) =>
+        supplierPaymentGuard(JSON.stringify(['multi', ...args]), () => recordSupplierPayments(...args)), [recordSupplierPayments]);
 
     const deleteSupplierPayment = useCallback(async (paymentId: string) => {
         try {
@@ -886,6 +766,7 @@ export const useProcurement = () => {
         saveBillReference,
         clearBillReference,
         recordSupplierPayment: recordSupplierPaymentOnce,
+        recordSupplierPayments: recordSupplierPaymentsOnce,
         deleteSupplierPayment,
         supplierPayments,
         fetchSupplierPayments
