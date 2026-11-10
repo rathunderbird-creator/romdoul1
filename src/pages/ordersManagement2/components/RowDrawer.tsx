@@ -286,6 +286,11 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             //  * Deposit: the typed amount as the deposit (amount, date,
             //    method and postToLedger), like DepositModal.
             const nowIso = new Date().toISOString();
+            // The user's LOCAL day — between midnight and 07:00 ICT the UTC
+            // day (nowIso's first 10 chars) is still yesterday, and the
+            // deposit income would land on the wrong ledger day. Same default
+            // as classic Orders' DepositModal.
+            const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
             const entering = (s: PayStatus) => paymentStatus === s && baseline.paymentStatus !== s;
             const paidExtras = entering('Paid')
                 ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true }
@@ -293,7 +298,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             const depositExtras = entering('Deposit') && amountReceived > 0
                 ? {
                     depositAmount: amountReceived,
-                    depositDate: (settleDateInput || nowIso).slice(0, 10),
+                    depositDate: settleDateInput ? settleDateInput.slice(0, 10) : localToday,
                     depositMethod: paymentMethod || undefined,
                     postToLedger: true,
                 }
