@@ -22,6 +22,14 @@ export interface OrderEdit {
     expectedShippingStatus?: string;
     amountReceived?: number;
     paymentMethod?: Sale['paymentMethod'];
+    // Deposit saves mirror classic Orders' DepositModal payload, so the
+    // deposit is actually booked as income (not just a status flip).
+    depositAmount?: number;
+    depositDate?: string;
+    depositMethod?: string;
+    // Paid / Deposit saves book their Draft ledger entry, same as classic
+    // Orders' settle and deposit modals.
+    postToLedger?: boolean;
     // undefined = leave alone; null = clear; a string = set to this date.
     settleDate?: string | null;
     // Undefined = "leave the shipping/order status alone"; any real status

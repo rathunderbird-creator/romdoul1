@@ -45,10 +45,14 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     // before that, "no accounts" can't be told from "not here yet", and a quick
     // Confirm would book the receipt to a heuristically picked account.
     const [accountsLoaded, setAccountsLoaded] = useState(false);
+    // One confirm per opening: a second click before the modal closes would
+    // send the same settle twice.
+    const [submitted, setSubmitted] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
             setAccountsLoaded(false);
+            setSubmitted(false);
             fetchAccounts().finally(() => setAccountsLoaded(true));
         }
     }, [isOpen, fetchAccounts]);
@@ -186,11 +190,12 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     {(() => {
                         // An account is required only when there is one to pick —
                         // and nothing confirms before the accounts have loaded.
-                        const valid = accountsLoaded && !(paymentAccounts.length > 0 && !depositAccountId);
+                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId);
                         return (
                             <button
                                 onClick={() => {
                                     if (!valid) return;
+                                    setSubmitted(true);
                                     // Ensure time is preserved, or just set to noon if we only care about the date
                                     // Default behavior for <input type="date"> is YYYY-MM-DD
                                     onConfirm({

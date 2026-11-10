@@ -253,7 +253,11 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
     };
 
     const handleSavePayment = async () => {
-        const amountReceived = Number(amountReceivedInput) || 0;
+        // Marking Paid collects the full total (same as classic Orders'
+        // settle modal), whatever the Received box still shows.
+        const amountReceived = paymentStatus === 'Paid' && baseline.paymentStatus !== 'Paid'
+            ? (order.total || 0)
+            : Number(amountReceivedInput) || 0;
         const delta = previewPayChange(order, { paymentStatus, amountReceived });
         // Report owed and collected independently rather than assuming one
         // is always the mirror of the other — marking an order Cancel forces
@@ -274,14 +278,39 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
         if (!window.confirm(message)) return;
         setPaySaving(true);
         try {
+            // Mirror what classic Orders' modals send for the same action, so
+            // the save actually books its money (OM2-1/OM2-3):
+            //  * Paid/Settled: the full total as received, a settle date
+            //    (today when none was typed) and postToLedger, like
+            //    SettlePaymentModal — not the stale $0 the box started with;
+            //  * Deposit: the typed amount as the deposit (amount, date,
+            //    method and postToLedger), like DepositModal.
+            const nowIso = new Date().toISOString();
+            const entering = (s: PayStatus) => paymentStatus === s && baseline.paymentStatus !== s;
+            const paidExtras = entering('Paid')
+                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true }
+                : {};
+            const depositExtras = entering('Deposit') && amountReceived > 0
+                ? {
+                    depositAmount: amountReceived,
+                    depositDate: (settleDateInput || nowIso).slice(0, 10),
+                    depositMethod: paymentMethod || undefined,
+                    postToLedger: true,
+                }
+                : {};
             const saved = await onSave({
                 orderId: order.id, paymentStatus, amountReceived,
                 expectedPaymentStatus: baseline.paymentStatus,
                 paymentMethod: paymentMethod ? (paymentMethod as Order['paymentMethod']) : undefined,
                 settleDate: settleDateInput || null,
+                ...paidExtras,
+                ...depositExtras,
             });
             if (saved === false) return;
-            setBaseline(b => ({ ...b, paymentStatus, amountReceived, paymentMethod, settleDate: settleDateInput }));
+            // A Paid save collected the full total (see paidExtras above).
+            const savedReceived = entering('Paid') ? (order.total || 0) : amountReceived;
+            setAmountReceivedInput(String(savedReceived));
+            setBaseline(b => ({ ...b, paymentStatus, amountReceived: savedReceived, paymentMethod, settleDate: settleDateInput }));
             setPaySaved(true);
             setTimeout(() => setPaySaved(false), 2000);
         } finally {

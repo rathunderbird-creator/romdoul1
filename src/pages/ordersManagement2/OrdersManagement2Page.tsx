@@ -59,6 +59,10 @@ const OrdersManagement2Page: React.FC = () => {
         if (edit.amountReceived !== undefined) updates.amountReceived = edit.amountReceived;
         if (edit.paymentMethod !== undefined) updates.paymentMethod = edit.paymentMethod;
         if (edit.settleDate !== undefined) updates.settleDate = edit.settleDate ? new Date(edit.settleDate).toISOString() : null;
+        if (edit.depositAmount !== undefined) updates.depositAmount = edit.depositAmount;
+        if (edit.depositDate !== undefined) updates.depositDate = edit.depositDate;
+        if (edit.depositMethod !== undefined) updates.depositMethod = edit.depositMethod;
+        if (edit.postToLedger !== undefined) updates.postToLedger = edit.postToLedger;
         if (edit.salesman !== undefined) updates.salesman = edit.salesman;
         if (edit.customerCare !== undefined) updates.customerCare = edit.customerCare;
         if (edit.remark !== undefined) updates.remark = edit.remark;
@@ -233,6 +237,10 @@ const OrdersManagement2Page: React.FC = () => {
                         individualUpdates.amountReceived = order.total;
                         individualUpdates.settleDate = settleDate ? new Date(settleDate).toISOString() : now;
                         if (payBy) individualUpdates.paymentMethod = payBy;
+                        // Bulk settles book their receipts too (the same flag
+                        // classic Orders' bulk edit passes) — without it the
+                        // orders were marked Paid with no ledger entry (OM2-2).
+                        individualUpdates.postToLedger = true;
                     } else if (value === 'Get File') {
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null;

@@ -23,6 +23,9 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
     const [method, setMethod] = useState('');
     const [date, setDate] = useState(today());
     const [depositAccountId, setDepositAccountId] = useState('');
+    // One save per opening: a second click before the modal closes would send
+    // the same deposit twice.
+    const [submitted, setSubmitted] = useState(false);
 
     // Only fetch when the field can actually show — Orders' popup never
     // displays it, so it shouldn't pay for the query on every mount.
@@ -37,6 +40,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
 
     useEffect(() => {
         if (order) {
+            setSubmitted(false);
             setAmount(order.depositAmount && order.depositAmount > 0 ? order.depositAmount : '');
             const bank = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setMethod(order.depositMethod || bank || paymentMethods[0] || 'Bank');
@@ -52,7 +56,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
 
     const amt = Number(amount) || 0;
     const remaining = Math.max(0, (order.total || 0) - amt);
-    const valid = amt > 0 && amt < (order.total || 0) && !(showDepositAccount && paymentAccounts.length > 0 && !depositAccountId);
+    const valid = amt > 0 && amt < (order.total || 0) && !submitted && !(showDepositAccount && paymentAccounts.length > 0 && !depositAccountId);
 
     return (
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
@@ -130,6 +134,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                         className="primary-button"
                         disabled={!valid}
                         onClick={() => {
+                            setSubmitted(true);
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 amount: amt,

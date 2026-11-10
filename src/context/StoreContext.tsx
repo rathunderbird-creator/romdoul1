@@ -68,6 +68,14 @@ interface ConfigState {
 // Add Stock retries reuse the restock id of a failed identical add (see addStock).
 const addStockKeys = createRetryKeys();
 
+// A failed order create keeps its id, so the retry finds the order already
+// saved (create_retail_order reports it as created) instead of making a
+// second one. Same idea as utils/retryKey.ts, with the Date.now()-style ids
+// orders use. Payment saves reuse utils/retryKey.ts for their income row id.
+const ORDER_RETRY_WINDOW_MS = 10 * 60 * 1000;
+const pendingOrderIds = new Map<string, { id: string; at: number }>();
+const paymentTxKeys = createRetryKeys();
+
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
         return window.crypto.randomUUID();
@@ -206,80 +214,6 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
         }
     } catch (e) {
         console.error('Failed to post the COGS entry for order', orderId, e);
-    }
-    });
-}
-
-// Books a cancelled order's delivery-fee-only payment (paymentStatus
-// 'PdFee') straight to the ledger as Posted — Dr the chosen cash/bank
-// account, Cr the dedicated Delivery Fee Revenue account (4005), never the
-// normal Sales Revenue account, since the order itself wasn't fulfilled.
-// Posted immediately (not Draft): unlike a regular Paid/Deposit receipt,
-// there's no separate "post it from Customer Payment later" step for this.
-async function postDeliveryFeeToLedger({
-    txId,
-    amount,
-    date,
-    description,
-    depositAccountId,
-    payBy,
-}: {
-    txId: string;
-    amount: number;
-    date: string;
-    description: string;
-    depositAccountId?: string;
-    payBy?: string | null;
-}): Promise<boolean> {
-    return enqueueLedgerPost(async () => {
-    try {
-        const { data: coa } = await supabase.from('chart_of_accounts')
-            .select('id, account_code, account_name, account_type').eq('is_active', true);
-        const pool = coa || [];
-        const feeRevenueAcc = pool.find(a => a.account_code === '4005')
-            || pool.find(a => a.account_type === 'Revenue' && /delivery fee/i.test(a.account_name));
-        const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true })?.id;
-        if (!feeRevenueAcc || !cashAccId) {
-            console.error('Could not post the delivery fee: missing the Delivery Fee Revenue account (run migrations/add_delivery_fee_revenue_account.sql) or a cash/bank account');
-            return false;
-        }
-        const entryNumber = await nextJournalEntryNumber('DLV', date);
-        const entryPayload: Record<string, unknown> = {
-            date,
-            description: entryDescription(entryNumber, description) || description,
-            reference_id: 'TX-' + txId,
-            status: 'Posted'
-        };
-        if (entryNumber) entryPayload.entry_number = entryNumber;
-        let entry: { id: string } | null | undefined;
-        let jeErr: { message?: string } | null | undefined;
-        for (let attempt = 0; attempt < 2; attempt++) {
-            ({ data: entry, error: jeErr } = await supabase.from('journal_entries').insert([entryPayload]).select().single());
-            if (!jeErr) break;
-            if (/entry_number/i.test(jeErr.message || '') && 'entry_number' in entryPayload) { delete entryPayload.entry_number; continue; }
-            break;
-        }
-        if (jeErr && /status/i.test(jeErr.message || '')) {
-            console.warn('Logged the delivery fee to Income & Expense, but this instance needs migrations/add_entry_status.sql to also post it to the ledger');
-            return false;
-        }
-        if (jeErr || !entry) {
-            console.error('Failed to create journal entry for delivery fee:', jeErr);
-            return false;
-        }
-        const { error: lErr } = await insertJournalLines([
-            { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0, description: `Delivery fee — ${description}` },
-            { journal_entry_id: entry.id, account_id: feeRevenueAcc.id, debit: 0, credit: amount, description: `Delivery fee — ${description}` },
-        ]);
-        if (lErr) {
-            console.error('Failed to create journal entry lines for delivery fee:', lErr);
-            await supabase.from('journal_entries').delete().eq('id', entry.id);
-            return false;
-        }
-        return true;
-    } catch (e) {
-        console.error('Failed to post delivery fee to ledger:', e);
-        return false;
     }
     });
 }
@@ -551,18 +485,6 @@ export const isRpcMissingError = (err: any): boolean => {
     return code === 'PGRST202' || code === '42883' || /could not find the function/i.test(msg);
 };
 
-// Local calendar day of a stored date value: plain YYYY-MM-DD strings pass
-// through; ISO timestamps convert to the LOCAL day (a settle stamped between
-// midnight and 07:00 local lives on the previous UTC day, so comparing raw
-// ISO slices would miss a genuine one-day correction).
-const localDayOf = (v: string | null | undefined): string => {
-    if (!v) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-    const d = new Date(v);
-    if (isNaN(d.getTime())) return v.slice(0, 10);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-};
-
 // Statuses where the stock is already gone: moving Shipped -> Delivered stays
 // "consumed", so nothing is restored. The stock rules for each status change
 // (what deducts, what restores, which stock-out records are written) live in
@@ -575,6 +497,8 @@ const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(st
 const holdsOrderStock = (status: string) => isStockConsumed(status) || status === 'Returned';
 
 const ORDER_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order\'s shipping status can change, a returned order can be restocked, or the items of a shipped order can be edited: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor. Nothing was saved.';
+
+const ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order can be created, its payment saved, orders deleted or a restock\'s payment cancelled: run migrations/add_order_payment_functions.sql in this store\'s Supabase SQL editor. Nothing was saved.';
 
 // Statuses that only make sense once the goods have physically left: you cannot deliver
 // or receive a return for something that was never shipped.
@@ -2036,177 +1960,80 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    // Creates an online/retail order: the sales row, its items and — for an
+    // order born Paid/Settled or with a Deposit — the income row(s), all in
+    // ONE database transaction (create_retail_order). A failure creates
+    // nothing: no orphan income, no half order. The order keeps its
+    // client-generated id; a retry after a lost reply re-sends the same id
+    // and is reported as already created instead of creating a second order.
     const addOnlineOrder = async (order: Omit<Sale, 'id'>): Promise<Sale> => {
+        const signature = JSON.stringify({
+            total: order.total,
+            status: order.paymentStatus || '',
+            customer: order.customer?.name || '',
+            phone: order.customer?.phone || '',
+            items: (order.items || []).map(i => [i.id, i.quantity, i.price]),
+        });
+        const nowMs = Date.now();
+        for (const [k, v] of pendingOrderIds) if (nowMs - v.at > ORDER_RETRY_WINDOW_MS) pendingOrderIds.delete(k);
+        const held = pendingOrderIds.get(signature);
         const newSale: Sale = {
             ...order,
-            id: Date.now().toString(),
+            id: held ? held.id : nowMs.toString(),
             date: order.date || new Date().toISOString()
         };
+        pendingOrderIds.set(signature, { id: newSale.id, at: nowMs });
+        const [txId, depTxId] = paymentTxKeys.take('create:' + newSale.id, 2);
 
-        const isPaidStatus = (s: string | undefined) => ['Paid', 'Settled', 'Paid/Settled'].includes(s || '');
-
-        // If creating a new order as already paid, record the income transaction
-        if (isPaidStatus(newSale.paymentStatus)) {
-            const transactionId = generateUUID();
-            const rawDate = order.settleDate || new Date().toISOString();
-            const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) 
-                ? new Date(rawDate).toISOString() 
-                : rawDate;
-
-            const newTransaction = {
-                id: transactionId,
-                date: normalizedDate,
-                type: 'Income' as const,
-                category: 'លក់រាយ',
-                amount: newSale.amountReceived || newSale.total,
-                description: newSale.customer?.name || 'Customer',
-                addedBy: currentUser?.name || 'System',
-                order_id: newSale.id,
-                customer_phone: newSale.customer?.phone || null
-            };
-
-            // Optimistic update
-            setTransactions(prev => [newTransaction, ...prev]);
-
-            // Async insert — order_id/customer_phone need migrations/add_transaction_order_link.sql.
-            // Strip only the column(s) an older instance's error actually names and retry, so one
-            // missing column never also drops another, still-valid one.
-            const insertPayload: Record<string, unknown> = {
-                id: newTransaction.id,
-                date: newTransaction.date,
-                type: newTransaction.type,
-                category: newTransaction.category,
-                amount: newTransaction.amount,
-                description: newTransaction.description,
-                added_by: newTransaction.addedBy,
-                order_id: newTransaction.order_id,
-                customer_phone: newTransaction.customer_phone
-            };
-            (async () => {
-                let error: { message?: string } | null | undefined;
-                for (let attempt = 0; attempt < 3; attempt++) {
-                    ({ error } = await supabase.from('transactions').insert([insertPayload]));
-                    if (!error) break;
-                    const msg = error.message || '';
-                    let stripped = false;
-                    if (/order_id/i.test(msg) && 'order_id' in insertPayload) { delete insertPayload.order_id; stripped = true; }
-                    if (/customer_phone/i.test(msg) && 'customer_phone' in insertPayload) { delete insertPayload.customer_phone; stripped = true; }
-                    if (!stripped) break;
-                }
-                if (error) console.error('Failed to create transaction for online order:', error);
-            })();
-        } else if (newSale.paymentStatus === 'Deposit' && (newSale.depositAmount || 0) > 0) {
-            // Order created straight from checkout with a partial payment:
-            // log the deposit as income right away (mirror of the updateOrder
-            // Deposit branch — deposits are always kept, never removed).
-            const depAmount = Number(newSale.depositAmount) || 0;
-            const rawDepDate = newSale.depositDate || new Date().toISOString();
-            const depDateIso = rawDepDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDepDate).toISOString() : rawDepDate;
-            const depTxn = {
-                id: generateUUID(),
-                date: depDateIso,
-                type: 'Income' as const,
-                category: 'កក់ប្រាក់',
-                amount: depAmount,
-                description: `${newSale.customer?.name || 'Customer'} #DEP-${newSale.id.slice(0, 8)}`,
-                addedBy: currentUser?.name || 'System',
-                shipping_co: newSale.shipping?.company || null,
-                // Deposits are received by bank transfer unless the order's own
-                // payment method says otherwise — never leave Method blank.
-                pay_by: newSale.depositMethod || 'Bank',
-                order_id: newSale.id,
-                customer_phone: newSale.customer?.phone || null
-            };
-            setTransactions(prev => [depTxn, ...prev]);
-            // order_id/customer_phone need migrations/add_transaction_order_link.sql. Strip only the
-            // column(s) an older instance's error actually names and retry, so one missing column
-            // never also drops another, still-valid one.
-            const depInsertPayload: Record<string, unknown> = {
-                id: depTxn.id,
-                date: depTxn.date,
-                type: depTxn.type,
-                category: depTxn.category,
-                amount: depTxn.amount,
-                description: depTxn.description,
-                added_by: depTxn.addedBy,
-                pay_by: depTxn.pay_by,
-                shipping_co: depTxn.shipping_co,
-                order_id: depTxn.order_id,
-                customer_phone: depTxn.customer_phone
-            };
-            (async () => {
-                let error: { message?: string } | null | undefined;
-                for (let attempt = 0; attempt < 3; attempt++) {
-                    ({ error } = await supabase.from('transactions').insert([depInsertPayload]));
-                    if (!error) break;
-                    const msg = error.message || '';
-                    let stripped = false;
-                    if (/order_id/i.test(msg) && 'order_id' in depInsertPayload) { delete depInsertPayload.order_id; stripped = true; }
-                    if (/customer_phone/i.test(msg) && 'customer_phone' in depInsertPayload) { delete depInsertPayload.customer_phone; stripped = true; }
-                    if (!stripped) break;
-                }
-                if (error) console.error('Failed to log deposit income for new order:', error);
-            })();
-        }
-
-        setSales(prev => [newSale, ...prev]);
-
-        // DB Insert
-        const { error: saleError } = await supabase.from('sales').insert({
-            id: newSale.id,
-            total: newSale.total,
-            discount: newSale.discount,
-            date: newSale.date,
-            payment_method: newSale.paymentMethod,
-            type: 'Online',
-            salesman: newSale.salesman,
-            customer_care: newSale.customerCare,
-            amount_received: newSale.amountReceived,
-            payment_status: newSale.paymentStatus,
-            deposit_amount: newSale.depositAmount || 0,
-            deposit_date: newSale.depositDate || null,
-            deposit_method: newSale.depositMethod || null,
-            customer_snapshot: newSale.customer,
-            order_status: 'Open',
-            page_source: newSale.customer?.page || null,
-            shipping_company: newSale.shipping?.company,
-            tracking_number: newSale.shipping?.trackingNumber,
-            shipping_status: newSale.shipping?.status,
-            remark: newSale.remark
+        const { data, error } = await supabase.rpc('create_retail_order', {
+            p_order: {
+                id: newSale.id,
+                total: newSale.total,
+                discount: newSale.discount,
+                date: newSale.date,
+                payment_method: newSale.paymentMethod,
+                salesman: newSale.salesman,
+                customer_care: newSale.customerCare,
+                amount_received: newSale.amountReceived,
+                payment_status: newSale.paymentStatus,
+                deposit_amount: newSale.depositAmount || 0,
+                deposit_date: newSale.depositDate || null,
+                deposit_method: newSale.depositMethod || null,
+                customer_snapshot: newSale.customer,
+                page_source: newSale.customer?.page || null,
+                shipping_company: newSale.shipping?.company,
+                tracking_number: newSale.shipping?.trackingNumber,
+                shipping_status: newSale.shipping?.status,
+                remark: newSale.remark,
+                settle_date: newSale.settleDate || null
+            },
+            p_items: newSale.items.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity })),
+            p_fields: { added_by: currentUser?.name || 'System', tx_id: txId, dep_tx_id: depTxId },
         });
-
-        if (saleError) {
-            console.error("Error creating online order:", saleError);
-            throw new Error("Failed to create order: " + saleError.message);
+        if (error) {
+            // A genuinely different order colliding on the same millisecond id:
+            // let the next try mint a fresh id instead of re-sending this one.
+            if (/already exists/i.test(error.message || '')) pendingOrderIds.delete(signature);
+            console.error('Error creating online order:', error);
+            throw new Error('Failed to create order: ' + orderPaymentRpcMessage(error));
         }
+        pendingOrderIds.delete(signature);
+        paymentTxKeys.release('create:' + newSale.id);
 
-        // Items
-        const itemsPayload = newSale.items.map(item => ({
-            id: generateUUID(),
-            sale_id: newSale.id,
-            product_id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity
-            // image: item.image - Removed to save DB space
-        }));
-        const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
-        if (itemsError) {
-            console.error('Failed to insert online items:', itemsError);
-            throw new Error('Failed to insert items: ' + itemsError.message);
+        const res = (data || {}) as { already_created?: boolean; transactions?: Transaction[] };
+        const resTxs = res.transactions || [];
+        if (resTxs.length > 0) {
+            const ids = resTxs.map(t => t.id);
+            setTransactions(prev => [...resTxs, ...prev.filter(t => !ids.includes(t.id))]);
         }
-
-        // 3. Update Stock - REMOVED (Stock now deducted on 'Shipped' status)
-        /*
-        newSale.items.forEach(async (item) => {
-            // ...
-        });
-        */
+        setSales(prev => [newSale, ...prev.filter(sale => sale.id !== newSale.id)]);
 
         // Update salesOrder config (scoped write — see prependToSalesOrder)
-        prependToSalesOrder(newSale.id);
+        if (!res.already_created) {
+            prependToSalesOrder(newSale.id);
+            dispatchActivity({ action: 'order_created', description: `New order #${newSale.id.slice(0, 8)} created — $${newSale.total}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: newSale.id, total: newSale.total } });
+        }
         setSalesUpdatedAt(Date.now());
-        dispatchActivity({ action: 'order_created', description: `New order #${newSale.id.slice(0, 8)} created — $${newSale.total}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: newSale.id, total: newSale.total } });
         return newSale;
     };
 
@@ -2218,6 +2045,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const message = String(e?.message || error || '');
         if (isRpcMissingError(e) || (/set_order_shipping_status|restock_returned_orders|edit_order_items/i.test(message) && /schema cache|does not exist/i.test(message))) {
             return ORDER_FUNCTIONS_MISSING_MESSAGE;
+        }
+        if (/sale_items_product_id_fkey/i.test(message)) {
+            return 'A product on this order no longer exists. Remove it from the order and save again.';
+        }
+        return message || 'Unknown error';
+    };
+
+    // Same, for the order-payment functions, which arrive with
+    // migrations/add_order_payment_functions.sql.
+    const orderPaymentRpcMessage = (error: unknown): string => {
+        const e = error as { code?: string; message?: string } | null;
+        const message = String(e?.message || error || '');
+        if (isRpcMissingError(e) || (/create_retail_order|set_order_payment|delete_retail_orders|apply_restock_payment_side|order_payment_functions_ready/i.test(message) && /schema cache|does not exist/i.test(message))) {
+            return ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE;
         }
         if (/sale_items_product_id_fkey/i.test(message)) {
             return 'A product on this order no longer exists. Remove it from the order and save again.';
@@ -2237,6 +2078,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error } = await supabase.rpc('order_status_holds_stock', { p_status: 'Pending' });
         if (error && isRpcMissingError(error)) return false;
         if (!error) orderFunctionsReadyRef.current = true;
+        return true;
+    };
+
+    // Whether this store has run migrations/add_order_payment_functions.sql
+    // (creating orders, payment saves, deletes and the restock payment side).
+    // Same contract as orderFunctionsReady above.
+    const paymentFunctionsReadyRef = useRef(false);
+    const paymentFunctionsReady = async (): Promise<boolean> => {
+        if (paymentFunctionsReadyRef.current) return true;
+        const { error } = await supabase.rpc('order_payment_functions_ready');
+        if (error && isRpcMissingError(error)) return false;
+        if (!error) paymentFunctionsReadyRef.current = true;
         return true;
     };
 
@@ -2265,87 +2118,31 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // and the payment goes to Cancel (a PdFee order keeps PdFee — the delivery
     // fee was collected and stays booked).
     const applyRestockPaymentSide = async (orderIds: string[], now: string) => {
-        const { data: orderDataList, error: readErr } = await supabase.from('sales').select('id, customer_snapshot, payment_status, amount_received, settle_date, deposit_amount, total').in('id', orderIds);
-        if (readErr) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + readErr.message);
+        // One database transaction (apply_restock_payment_side): a
+        // previously-Paid order's income row is removed by its ORDER LINK only
+        // (never the old customer-name + amount match, which could delete a
+        // sibling order's income), its Draft journal entry goes with it (a
+        // Posted one stays, with a notice), Received and settle date are
+        // reset, and the payment goes to Cancel (a PdFee order keeps PdFee —
+        // the delivery fee was collected and stays booked).
+        const { data, error } = await supabase.rpc('apply_restock_payment_side', { p_ids: orderIds, p_fields: {} });
+        if (error) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + orderPaymentRpcMessage(error));
+        const res = (data || {}) as { cancelled?: string[]; paid_reset?: string[]; transactions_removed?: string[]; notices?: string[] };
 
-        // Previously-Paid orders leaving Paid for Cancel get the same cleanup
-        // as updateOrder's leaving-Paid branch (this path bypasses updateOrder):
-        // remove the income logged when the order was marked Paid, plus any
-        // draft journal entry it posted, and take back the Received amount and
-        // settle date below. Matched the same way income is looked up there.
-        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
-        const paidOrders = (orderDataList || []).filter(o => PAID_STATUSES.includes(o.payment_status || ''));
-        const removedTxnIds: string[] = [];
-        for (const paidOrder of paidOrders) {
-            const custName = paidOrder.customer_snapshot?.name || 'Customer';
-            // Deposit orders logged only the remainder as sales income — match
-            // that too. Zero amounts are excluded: real income rows are always
-            // > 0, and matching amount.eq.0 could only ever hit an unrelated
-            // row of the same customer.
-            const dep = Number(paidOrder.deposit_amount) || 0;
-            const received = Number(paidOrder.amount_received) || 0;
-            const total = Number(paidOrder.total) || 0;
-            const amountMatches = [received, total];
-            if (dep > 0) amountMatches.push(Math.max(0, received - dep), Math.max(0, total - dep));
-            const positiveMatches = amountMatches.filter(a => a > 0);
-            if (positiveMatches.length === 0) continue;
-            try {
-                const { data: paidTxns } = await supabase.from('transactions')
-                    .select('id')
-                    .eq('type', 'Income')
-                    // Also match the pre-rename category so older rows still clean up.
-                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                    .eq('description', custName)
-                    .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
-                    .limit(1);
-                if (paidTxns && paidTxns.length > 0) {
-                    await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
-                    removedTxnIds.push(paidTxns[0].id);
-
-                    // Also remove any Draft journal entry this payment posted.
-                    // Lines first, then the header, to satisfy the FK.
-                    const refId = 'TX-' + paidTxns[0].id;
-                    const { data: journalEntry } = await supabase.from('journal_entries')
-                        .select('id').eq('reference_id', refId).limit(1).maybeSingle();
-                    if (journalEntry) {
-                        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntry.id);
-                        await supabase.from('journal_entries').delete().eq('id', journalEntry.id);
-                    }
-                }
-            } catch (e) {
-                console.error('Failed to remove income for bulk-restocked paid order:', e);
-            }
-        }
+        const removedTxnIds = res.transactions_removed || [];
         if (removedTxnIds.length > 0) {
             setTransactions(prev => prev.filter(t => !removedTxnIds.includes(t.id)));
         }
 
-        // Payment to Cancel (PdFee kept). The ReStock status and the edit
-        // stamp were written with the stock.
-        const pdFeeIds = new Set((orderDataList || []).filter(o => o.payment_status === 'PdFee').map(o => o.id));
-        const cancelIds = orderIds.filter(oid => !pdFeeIds.has(oid));
-        if (cancelIds.length > 0) {
-            const { error } = await supabase.from('sales').update({ payment_status: 'Cancel' }).in('id', cancelIds);
-            if (error) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + error.message);
-        }
-
-        // The payment reset applies only to the previously-Paid orders — a
-        // non-paid order's Received (e.g. a kept deposit) is left alone, same
-        // as the single-order Cancel path.
-        const paidOrderIds = paidOrders.map(o => o.id);
-        if (paidOrderIds.length > 0) {
-            await supabase.from('sales').update({
-                amount_received: 0,
-                settle_date: null
-            }).in('id', paidOrderIds);
-        }
+        const cancelledIds = new Set(res.cancelled || []);
+        const paidOrderIds = res.paid_reset || [];
 
         // Local State Update
         setSales(prev => prev.map(sale =>
             orderIds.includes(sale.id)
             ? {
                 ...sale,
-                paymentStatus: pdFeeIds.has(sale.id) ? 'PdFee' : 'Cancel',
+                paymentStatus: cancelledIds.has(sale.id) ? 'Cancel' : sale.paymentStatus,
                 ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined } : {}),
                 lastEditedAt: currentUser ? now : sale.lastEditedAt,
                 lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
@@ -2353,6 +2150,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             : sale
         ));
+
+        if (res.notices && res.notices.length > 0) {
+            alert(res.notices.join('\n'));
+        }
 
         dispatchActivity({
             action: 'stock_restock',
@@ -2447,6 +2248,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         if (restocking && !hasPermission('restock_orders')) {
             return refuse('You do not have permission to restock orders.');
+        }
+        // The payment side of a restock (income cleanup, payment Cancel) needs
+        // the payment functions; refuse before any stock moves.
+        if (restocking && !(await paymentFunctionsReady())) {
+            return refuse(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
         }
 
         const now = new Date().toISOString();
@@ -2797,53 +2603,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return false;
         }
 
-        // Claim the payment change with a compare-and-set, so of two racing saves
-        // only one can book.
-        let claimedPayment: Record<string, unknown> | null = null;
-        if (paymentRow && updates.paymentStatus !== undefined) {
-            const freshRow = paymentRow;
-            const depositChanging = updates.depositAmount !== undefined && Number(updates.depositAmount) !== (Number(freshRow.deposit_amount) || 0);
-            if (updates.paymentStatus !== freshRow.payment_status || depositChanging) {
-                const claim: Record<string, unknown> = { payment_status: updates.paymentStatus };
-                if (updates.depositAmount !== undefined) claim.deposit_amount = updates.depositAmount;
-                let claimQuery = supabase.from('sales').update(claim).eq('id', id);
-                claimQuery = freshRow.payment_status === null ? claimQuery.is('payment_status', null) : claimQuery.eq('payment_status', freshRow.payment_status);
-                if (depositChanging) {
-                    claimQuery = freshRow.deposit_amount === null ? claimQuery.is('deposit_amount', null) : claimQuery.eq('deposit_amount', freshRow.deposit_amount);
-                }
-                const { data: claimed, error: claimErr } = await claimQuery.select('id');
-                if (claimErr) {
-                    alert(`Failed to update order: ${claimErr.message}`);
-                    return false;
-                }
-                if (!claimed || claimed.length === 0) {
-                    const { data: winner } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
-                    if (winner) setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(winner as PaymentRow) } : s));
-                    setSalesUpdatedAt(Date.now());
-                    const sameOutcome = !!winner && winner.payment_status === updates.paymentStatus
-                        && (updates.depositAmount === undefined || Number(updates.depositAmount) === (Number(winner.deposit_amount) || 0));
-                    if (!sameOutcome || !winner) {
-                        alert("This order's payment details were just changed by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.");
-                        return false;
-                    }
-                    // Same outcome: someone else (or this tab's first click) already
-                    // saved this payment, with its income and its shipping move. The
-                    // rest of the edit (items, address, a shipping change of its
-                    // own) still goes ahead, without the payment side.
-                    delete updates.paymentStatus;
-                    delete updates.amountReceived;
-                    delete updates.settleDate;
-                    delete updates.paymentMethod;
-                    delete updates.depositAmount;
-                    delete updates.depositDate;
-                    delete updates.depositMethod;
-                    freshPayment = toLocal(winner as PaymentRow);
-                    if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
-                    shippingPlan = planShipping(false);
-                } else {
-                    claimedPayment = claim;
-                }
-            }
+        // Whether this save touches the payment side at all — computed after
+        // the screen checks above, which may have dropped the payment fields.
+        // Every payment save runs as ONE database transaction
+        // (set_order_payment, below); a store that hasn't run the migration
+        // refuses the whole save here, before anything is written.
+        const hasPaymentFields = () => updates.paymentStatus !== undefined || updates.amountReceived !== undefined
+            || updates.settleDate !== undefined || updates.paymentMethod !== undefined
+            || updates.depositAmount !== undefined || updates.depositDate !== undefined
+            || updates.depositMethod !== undefined || updates.depositAccountId !== undefined
+            || updates.depositAccountName !== undefined || updates.postToLedger !== undefined;
+        if (hasPaymentFields() && !(await paymentFunctionsReady())) {
+            alert(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
+            return false;
         }
 
         // 2b. A real shipping status change goes through updateOrderStatus, which
@@ -2852,7 +2624,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // only if the order is still at the status read above. Runs before the
         // payment side (income, journal entries) and the sales row below, and
         // before the items are rewritten, so it reverses the items that left. If
-        // it is refused, the payment claim is put back and nothing else is
+        // it is refused, nothing has been written yet and nothing else is
         // written: payment and shipping never end up out of step.
         if (shippingPlan.to) {
             const moved = await updateOrderStatus(id, shippingPlan.to, undefined, shippingPlan.shipping?.company || undefined, {
@@ -2863,101 +2635,104 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 customer: updates.customer ? { name: updates.customer.name, phone: updates.customer.phone } : undefined,
             });
             if (!moved) {
-                if (claimedPayment && paymentRow) {
-                    const revert: Record<string, unknown> = { payment_status: paymentRow.payment_status };
-                    if ('deposit_amount' in claimedPayment) revert.deposit_amount = paymentRow.deposit_amount;
-                    const { data: reverted, error: revertErr } = await supabase.from('sales').update(revert)
-                        .eq('id', id).eq('payment_status', claimedPayment.payment_status as string).select('id');
-                    if (revertErr || !reverted || reverted.length === 0) {
-                        console.error('Could not put the payment status back after a refused status change:', revertErr);
-                        alert(`The payment status of order #${id.slice(0, 8)} was changed to ${String(claimedPayment.payment_status)}, but its shipping status was not, and the payment could not be put back. Open the order and set its payment status back to ${paymentRow.payment_status || 'Unpaid'}.`);
-                    }
-                    setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(paymentRow as PaymentRow) } : s));
-                }
                 setSalesUpdatedAt(Date.now());
                 return false;
             }
         }
         if (shippingPlan.shipping !== undefined) updates.shipping = shippingPlan.shipping;
 
-        // Leaving Paid/Settled for ANY non-paid status — Cancel, or an admin unlocking a
-        // mistaken Paid back to Unpaid/Get File/Deposit — removes the income that was
-        // logged when the order was marked Paid, so the books don't keep revenue that is
-        // no longer collected. Matched the same way income is looked up elsewhere.
-        // The deposit entry itself (កក់ប្រាក់) is never removed: deposits are always kept.
-        if (
-            updates.paymentStatus !== undefined &&
-            !PAID_STATUSES.includes(updates.paymentStatus || '') &&
-            existingOrder && PAID_STATUSES.includes(existingOrder.paymentStatus || '')
-        ) {
-            // Un-marking Paid must also take back the Received amount — the badge
-            // paths pass only the status (the bulk edit passes its own amount, so
-            // the undefined check leaves it alone, same as PdFee's fee amount).
-            // Get File / Deposit keep a taken deposit visible, mirroring the bulk
-            // edit; Unpaid / Cancel reset to 0.
-            if (updates.amountReceived === undefined) {
-                const keepsDeposit = updates.paymentStatus === 'Get File' || updates.paymentStatus === 'Deposit';
-                updates.amountReceived = keepsDeposit ? (existingOrder.depositAmount || 0) : 0;
+        // The payment side — status, money columns, income rows and journal
+        // entries — is saved by the database in ONE transaction
+        // (set_order_payment): a failure or refusal saves none of it, and the
+        // income row this save may create carries a retry id, so a save whose
+        // reply was lost is reported as already booked instead of booked
+        // twice. Runs AFTER the shipping change above: a refused shipping
+        // change saves nothing at all, and a refused payment leaves a
+        // completed, consistent shipping change (never a claimed payment
+        // without its stock move).
+        if (hasPaymentFields()) {
+            const pUpdates: Record<string, unknown> = {};
+            if (updates.paymentStatus !== undefined) pUpdates.payment_status = updates.paymentStatus;
+            if (updates.amountReceived !== undefined) pUpdates.amount_received = updates.amountReceived;
+            if (updates.settleDate !== undefined) pUpdates.settle_date = updates.settleDate || '';
+            if (updates.paymentMethod !== undefined) pUpdates.payment_method = updates.paymentMethod;
+            if (updates.depositAmount !== undefined) pUpdates.deposit_amount = updates.depositAmount;
+            if (updates.depositDate !== undefined) pUpdates.deposit_date = updates.depositDate || '';
+            if (updates.depositMethod !== undefined) pUpdates.deposit_method = updates.depositMethod || '';
+            if (updates.depositAccountId !== undefined) pUpdates.deposit_account_id = updates.depositAccountId || '';
+            if (updates.depositAccountName) pUpdates.deposit_account_name = updates.depositAccountName;
+            if (updates.postToLedger === true) pUpdates.post_to_ledger = true;
+            if (updates.receiptReference !== undefined) pUpdates.reference = updates.receiptReference || '';
+            if (updates.receiptNotes !== undefined) pUpdates.notes = updates.receiptNotes || '';
+            if (updates.customer?.name) pUpdates.customer_name = updates.customer.name;
+            if (updates.customer?.phone) pUpdates.customer_phone = updates.customer.phone;
+            if (updates.shipping?.company) pUpdates.shipping_company = updates.shipping.company;
+            const paySignature = 'pay:' + id + ':' + JSON.stringify(pUpdates);
+            const [payTxId] = paymentTxKeys.take(paySignature);
+            pUpdates.tx_id = payTxId;
+            const { data: payData, error: payErr } = await supabase.rpc('set_order_payment', {
+                p_order_id: id,
+                // The status this save decided from (the fresh read above): the
+                // database refuses if the order has moved on since — the same
+                // job the client-side compare-and-set claim used to do.
+                p_expected_status: updates.paymentStatus !== undefined && paymentRow ? (paymentRow.payment_status || 'Unpaid') : null,
+                p_updates: pUpdates,
+                p_fields: {
+                    added_by: currentUser?.name || 'System',
+                    today: getLocalYYYYMMDD(),
+                    ...(currentUser ? { last_edited_by: currentUser.name, now: new Date().toISOString() } : {}),
+                },
+            });
+            if (payErr) {
+                console.error('Failed to save the payment:', payErr);
+                alert(orderPaymentRpcMessage(payErr));
+                setSalesUpdatedAt(Date.now());
+                return false;
             }
-            // The settle date belongs to the settled payment being taken back, so
-            // it goes too ('' maps to NULL in the DB write below).
-            if (updates.settleDate === undefined) {
-                updates.settleDate = '';
+            paymentTxKeys.release(paySignature);
+            const payRes = (payData || {}) as {
+                skipped?: boolean; already_applied?: boolean;
+                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null };
+                transactions_added?: Transaction[]; transactions_removed?: string[]; notices?: string[];
+            };
+            if (payRes.payment) {
+                freshPayment = {
+                    paymentStatus: (payRes.payment.payment_status || 'Unpaid') as Sale['paymentStatus'],
+                    amountReceived: Number(payRes.payment.amount_received) || 0,
+                    settleDate: payRes.payment.settle_date || undefined,
+                    paymentMethod: (payRes.payment.payment_method || undefined) as Sale['paymentMethod'],
+                    depositAmount: Number(payRes.payment.deposit_amount) || 0,
+                    depositDate: payRes.payment.deposit_date || undefined,
+                    depositMethod: payRes.payment.deposit_method || undefined,
+                };
+                if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
             }
-            const custName = existingOrder.customer?.name || 'Customer';
-            // Deposit orders logged only the remainder as sales income — match that too.
-            // Zero amounts are excluded: real income rows are always > 0 (the paid
-            // transition never inserts $0 rows), and matching amount.eq.0 could
-            // only ever hit an unrelated row of the same customer.
-            const dep = existingOrder.depositAmount || 0;
-            const amountMatches = [existingOrder.amountReceived || 0, existingOrder.total];
-            if (dep > 0) amountMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - dep), Math.max(0, existingOrder.total - dep));
-            const positiveMatches = amountMatches.filter(a => a > 0);
-            try {
-                // Exact match by order link first: the Paid transition writes
-                // order_id where migrations/add_transaction_order_link.sql has
-                // run, and the fuzzy name+amount match below can hit a same-name
-                // same-amount SIBLING order's row — which, now that every settle
-                // books a TX- journal entry, would also delete the wrong entry.
-                let paidTxns: { id: string }[] | null | undefined;
-                const { data: linkedTxns, error: linkErr } = await supabase.from('transactions')
-                    .select('id')
-                    .eq('type', 'Income')
-                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                    .eq('order_id', id)
-                    .limit(1);
-                // On instances without the order_id column this errors — fall
-                // through to the fuzzy match, same as rows from before the link.
-                if (!linkErr) paidTxns = linkedTxns;
-                if ((!paidTxns || paidTxns.length === 0) && positiveMatches.length > 0) {
-                    ({ data: paidTxns } = await supabase.from('transactions')
-                        .select('id')
-                        .eq('type', 'Income')
-                        // Also match the pre-rename category so older rows still clean up.
-                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                        .eq('description', custName)
-                        .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
-                        .limit(1));
-                }
-                if (paidTxns && paidTxns.length > 0) {
-                    await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
-                    setTransactions(prev => prev.filter(t => t.id !== paidTxns[0].id));
-
-                    // Also remove any Draft journal entry this payment posted
-                    // (Payment Tracking's Record Receipt and Orders' Settle
-                    // Payment both post one now). Lines first, then the header,
-                    // to satisfy the FK.
-                    const refId = 'TX-' + paidTxns[0].id;
-                    const { data: journalEntry } = await supabase.from('journal_entries')
-                        .select('id').eq('reference_id', refId).limit(1).maybeSingle();
-                    if (journalEntry) {
-                        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntry.id);
-                        await supabase.from('journal_entries').delete().eq('id', journalEntry.id);
-                    }
-                }
-            } catch (e) {
-                console.error('Failed to remove income for un-paid order:', e);
+            const addedTxs = payRes.transactions_added || [];
+            if (addedTxs.length > 0) {
+                const addedIds = addedTxs.map(t => t.id);
+                setTransactions(prev => [...addedTxs, ...prev.filter(t => !addedIds.includes(t.id))]);
             }
+            const removedTxs = payRes.transactions_removed || [];
+            if (removedTxs.length > 0) {
+                setTransactions(prev => prev.filter(t => !removedTxs.includes(t.id)));
+            }
+            if (payRes.notices && payRes.notices.length > 0) {
+                alert(payRes.notices.join('\n'));
+            }
+            // The columns the function saved are not re-sent below; the local
+            // cache takes them from the values it returned.
+            delete updates.paymentStatus;
+            delete updates.amountReceived;
+            delete updates.settleDate;
+            delete updates.paymentMethod;
+            delete updates.depositAmount;
+            delete updates.depositDate;
+            delete updates.depositMethod;
+            delete updates.depositAccountId;
+            delete updates.depositAccountName;
+            delete updates.postToLedger;
+            delete updates.receiptReference;
+            delete updates.receiptNotes;
         }
 
         // A paid order's customer rename must follow through to its income row:
@@ -2999,491 +2774,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             sale.id === id ? { ...sale, ...(freshPayment || {}), ...updates } : sale
         ));
 
-        const isPaidStatus = (s: string | undefined) => ['Paid', 'Settled', 'Paid/Settled'].includes(s || '');
-
-        // Sync Income/Expense: If changed to 'Paid'/'Settled' (and wasn't before)
-        if (isPaidStatus(updates.paymentStatus) && existingOrder && !isPaidStatus(existingOrder.paymentStatus)) {
-            const transactionId = generateUUID();
-            // A deposit was already logged as income when it was received, so an
-            // order that ever took a deposit only logs the COD remainder here —
-            // even when it settles from 'Get File' or a reverted 'Unpaid', where
-            // the deposit row (កក់ប្រាក់) is still on the books. When no explicit
-            // amount is passed, a deposit order is treated as fully collected
-            // (amountReceived currently holds just the deposit).
-            const depositPaid = existingOrder.depositAmount || 0;
-            if (depositPaid > 0 && updates.amountReceived === undefined) {
-                updates.amountReceived = existingOrder.total;
-            }
-            const grossReceived = updates.amountReceived !== undefined
-                ? updates.amountReceived
-                : (existingOrder.amountReceived || existingOrder.total);
-            const amountToRecord = Math.max(0, (grossReceived || 0) - depositPaid);
-
-            const customerName = updates.customer?.name
-                || existingOrder.customer?.name
-                || 'Customer';
-
-            const rawDate = updates.settleDate || existingOrder.settleDate || new Date().toISOString();
-            const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) 
-                ? new Date(rawDate).toISOString() 
-                : rawDate;
-
-            const shippingCoToRecord = updates.shipping?.company || existingOrder.shipping?.company || null;
-
-            // Nothing to book when the deposit already covered everything —
-            // inserting a $0 row would only clutter Income & Expense (and could
-            // be matched by later amount.eq.0 lookups).
-            if (amountToRecord > 0) {
-                const newTransaction = {
-                    id: transactionId,
-                    date: normalizedDate,
-                    type: 'Income' as const,
-                    category: 'លក់រាយ',
-                    amount: amountToRecord,
-                    description: customerName,
-                    addedBy: currentUser?.name || 'System',
-                    shipping_co: shippingCoToRecord,
-                    // The Pay By chosen in the settle modal (falls back to the order's method).
-                    // The resolved "Deposit into" account name wins when set — it names the
-                    // actual cash/bank ledger account, which is more specific than the
-                    // payment method alone.
-                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null,
-                    reference: (updates as Partial<Sale>).receiptReference || null,
-                    notes: (updates as Partial<Sale>).receiptNotes || null,
-                    order_id: id,
-                    customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
-                };
-
-                // Optimistic update
-                setTransactions(prev => [newTransaction, ...prev]);
-
-                // Async insert — reference/notes need migrations/add_transaction_reference_notes.sql,
-                // order_id/customer_phone need migrations/add_transaction_order_link.sql. Each pair
-                // arrives with its own migration, so strip only the column(s) the error actually
-                // names and retry — one missing pair must never also drop the other, still-valid one.
-                const insertPayload: Record<string, unknown> = {
-                    id: newTransaction.id,
-                    date: newTransaction.date,
-                    type: newTransaction.type,
-                    category: newTransaction.category,
-                    amount: newTransaction.amount,
-                    description: newTransaction.description,
-                    added_by: newTransaction.addedBy,
-                    shipping_co: newTransaction.shipping_co,
-                    pay_by: newTransaction.pay_by,
-                    reference: newTransaction.reference,
-                    notes: newTransaction.notes,
-                    order_id: newTransaction.order_id,
-                    customer_phone: newTransaction.customer_phone
-                };
-                (async () => {
-                    let error: { message?: string } | null | undefined;
-                    let refNotesDropped = false;
-                    let orderLinkDropped = false;
-                    for (let attempt = 0; attempt < 3; attempt++) {
-                        ({ error } = await supabase.from('transactions').insert([insertPayload]));
-                        if (!error) break;
-                        const msg = error.message || '';
-                        let stripped = false;
-                        if (/reference|notes/i.test(msg) && ('reference' in insertPayload || 'notes' in insertPayload)) {
-                            delete insertPayload.reference; delete insertPayload.notes; refNotesDropped = true; stripped = true;
-                        }
-                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in insertPayload || 'customer_phone' in insertPayload)) {
-                            delete insertPayload.order_id; delete insertPayload.customer_phone; orderLinkDropped = true; stripped = true;
-                        }
-                        if (!stripped) break;
-                    }
-                    if (error) {
-                        console.error('Failed to create transaction for updated order:', error);
-                    } else {
-                        if (refNotesDropped) console.warn('Logged payment without reference/notes — run migrations/add_transaction_reference_notes.sql to store them');
-                        if (orderLinkDropped) console.warn('Logged payment without order_id/customer_phone — run migrations/add_transaction_order_link.sql to store them');
-                    }
-                })();
-
-                // Also post a matching Draft entry straight to the ledger, but ONLY when
-                // the caller explicitly opted in (Payment Tracking's Record Receipt and
-                // Orders' Settle Payment both set this now). Runs independently of the
-                // transactions insert above: no ordering dependency, since transactionId
-                // is already generated client-side before either insert happens.
-                if ((updates as Partial<Sale>).postToLedger === true) {
-                    postRetailSaleToLedger({
-                        txId: transactionId,
-                        amount: amountToRecord,
-                        date: normalizedDate,
-                        description: customerName,
-                        depositAccountId: (updates as Partial<Sale>).depositAccountId,
-                        type: 'RCP',
-                        orderId: id,
-                        payBy: newTransaction.pay_by
-                    });
-                }
-            } else if ((updates as Partial<Sale>).postToLedger === true) {
-                // Deposit covered the whole order: no receipt entry exists to carry
-                // COGS, so book the cost side on its own (deduped per order).
-                postRetailCogsOnlyEntry(id, localDayOf(normalizedDate), `${customerName} · cost of goods sold`);
-            }
-        } else if (updates.paymentStatus === 'PdFee' && existingOrder && existingOrder.paymentStatus !== 'PdFee') {
-            // Order treated as cancelled (shipping reset above), but the
-            // customer paid for delivery — book just that fee to Revenue
-            // (never the order total, no COGS: nothing was sold/shipped).
-            // DeliveryFeeModal always hands the fee amount as amountReceived.
-            const feeAmount = updates.amountReceived || 0;
-            // Leaving PdFee keeps the fee's income row and Posted entry, so coming
-            // back to PdFee must not book the fee again.
-            let bookedFee = 0;
-            if (feeAmount > 0) {
-                const { data: feeRows, error: feeErr } = await supabase.from('transactions')
-                    .select('amount').eq('type', 'Income').eq('category', 'ថ្លៃដឹក').eq('order_id', id);
-                if (feeErr) console.error('Could not check for an existing delivery fee:', feeErr);
-                bookedFee = (feeRows || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-                if (bookedFee > 0) {
-                    if (Math.abs(bookedFee - feeAmount) > 0.005) {
-                        alert(`A delivery fee of $${bookedFee.toFixed(2)} is already booked for this order, so the $${feeAmount.toFixed(2)} wasn't added. To change the amount, correct it in Journal Entries.`);
-                    }
-                    updates.amountReceived = bookedFee;
-                    setSales(prev => prev.map(sale => sale.id === id ? { ...sale, amountReceived: bookedFee } : sale));
-                }
-            }
-            if (feeAmount > 0 && bookedFee === 0) {
-                const transactionId = generateUUID();
-                const customerName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
-                const rawDate = updates.settleDate || new Date().toISOString();
-                const normalizedDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/)
-                    ? new Date(rawDate).toISOString()
-                    : rawDate;
-                const shippingCoToRecord = updates.shipping?.company || existingOrder.shipping?.company || null;
-                const newTransaction = {
-                    id: transactionId,
-                    date: normalizedDate,
-                    type: 'Income' as const,
-                    category: 'ថ្លៃដឹក',
-                    amount: feeAmount,
-                    description: customerName,
-                    addedBy: currentUser?.name || 'System',
-                    shipping_co: shippingCoToRecord,
-                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || null,
-                    order_id: id,
-                    customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
-                };
-
-                // Optimistic update — same shape as the Paid-transition row above.
-                setTransactions(prev => [newTransaction, ...prev]);
-
-                const insertPayload: Record<string, unknown> = {
-                    id: newTransaction.id,
-                    date: newTransaction.date,
-                    type: newTransaction.type,
-                    category: newTransaction.category,
-                    amount: newTransaction.amount,
-                    description: newTransaction.description,
-                    added_by: newTransaction.addedBy,
-                    shipping_co: newTransaction.shipping_co,
-                    pay_by: newTransaction.pay_by,
-                    order_id: newTransaction.order_id,
-                    customer_phone: newTransaction.customer_phone
-                };
-                (async () => {
-                    let error: { message?: string } | null | undefined;
-                    let orderLinkDropped = false;
-                    for (let attempt = 0; attempt < 2; attempt++) {
-                        ({ error } = await supabase.from('transactions').insert([insertPayload]));
-                        if (!error) break;
-                        const msg = error.message || '';
-                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in insertPayload || 'customer_phone' in insertPayload)) {
-                            delete insertPayload.order_id; delete insertPayload.customer_phone; orderLinkDropped = true;
-                            continue;
-                        }
-                        break;
-                    }
-                    if (error) {
-                        console.error('Failed to create transaction for delivery fee:', error);
-                    } else if (orderLinkDropped) {
-                        console.warn('Logged delivery fee without order_id/customer_phone — run migrations/add_transaction_order_link.sql to store them');
-                    }
-                    // Auto-posted straight to the ledger — see postDeliveryFeeToLedger's
-                    // own comment for why this skips the usual Draft-then-Post-Now step.
-                    const posted = await postDeliveryFeeToLedger({
-                        txId: transactionId,
-                        amount: feeAmount,
-                        date: normalizedDate,
-                        description: customerName,
-                        depositAccountId: (updates as Partial<Sale>).depositAccountId,
-                        payBy: newTransaction.pay_by,
-                    });
-                    if (!posted) {
-                        console.error('Delivery fee logged to Income & Expense, but could not be posted to the ledger for order', id);
-                    }
-                })();
-            }
-        } else if (
-            existingOrder &&
-            // Run when the settle day actually moved (compared as LOCAL days), when
-            // a paid order's received amount was corrected, or when its Pay By was
-            // corrected — all three must reach the income row. An ordinary no-op
-            // re-save (CheckoutForm resends the stored settleDate/paymentMethod, and
-            // COD orders resend amountReceived 0) skips, so edits like fixing a
-            // customer-name typo can't duplicate the row via the heal branch below.
-            // Not gated on updates.settleDate being truthy — an order marked Paid at
-            // creation (addOnlineOrder/processSale) never gets one, and a later
-            // Pay-By-only correction on it must still reach this block.
-            (
-                (!!updates.settleDate && localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate)) ||
-                (updates.amountReceived !== undefined && updates.amountReceived > 0 && updates.amountReceived !== (existingOrder.amountReceived || 0)) ||
-                (updates.paymentMethod !== undefined && updates.paymentMethod !== existingOrder.paymentMethod)
-            ) &&
-            isPaidStatus(updates.paymentStatus !== undefined ? updates.paymentStatus : existingOrder.paymentStatus)
-        ) {
-            // Only overwrite pay_by when THIS edit actually changed it — a
-            // settle-date-only or amount-only correction must leave it alone.
-            const payByChanged = updates.paymentMethod !== undefined && updates.paymentMethod !== existingOrder.paymentMethod;
-            // A paid order's settle date changed without a payment-status transition
-            // (e.g. the bulk settle-date edit when the shipping company pays out).
-            // Move its income transaction to the new date so Income & Expense matches
-            // the settle-date view — and if it was never logged (silent failure or
-            // legacy data), create it now. Guarded on updates.settleDate being
-            // non-empty too, so a Pay-By-only edit (settleDate '' or unset) can
-            // never be mistaken for a date change with nothing valid to write.
-            const settleDayChanged = !!updates.settleDate && localDayOf(updates.settleDate) !== localDayOf(existingOrder.settleDate);
-            // Look the row up under BOTH names: normally it still carries the old
-            // customer name, but when a rename lands in the same save the rename
-            // sync above has already moved it to the new one.
-            const lookupName = existingOrder.customer?.name || 'Customer';
-            const customerName = updates.customer?.name || lookupName;
-            const lookupNames = Array.from(new Set([lookupName, customerName]));
-            // Deposit orders keep the deposit income separate — the sales entry only
-            // holds the remainder, so match and update against remainder amounts too.
-            const depositHeld = existingOrder.depositAmount || 0;
-            const grossForSync = updates.amountReceived !== undefined
-                ? updates.amountReceived
-                : (existingOrder.amountReceived || existingOrder.total);
-            const amountToRecord = Math.max(0, (grossForSync || 0) - depositHeld);
-            const syncMatches = [existingOrder.amountReceived || 0, existingOrder.total];
-            if (depositHeld > 0) syncMatches.push(Math.max(0, (existingOrder.amountReceived || 0) - depositHeld), Math.max(0, existingOrder.total - depositHeld));
-            // Zero amounts excluded — real income rows are always > 0, and a
-            // deposit-covered order (no income row by design) must not have its
-            // lookup land on an unrelated row of the same customer.
-            const positiveSyncMatches = syncMatches.filter(a => a > 0);
-            // A Pay-By-only correction on an order with no recorded settle date (see
-            // the gate above) has no date to write — leave the transaction's own
-            // date untouched rather than stamping it with an invalid value.
-            const rawDate = updates.settleDate;
-            const normalizedDate = rawDate ? (rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDate).toISOString() : rawDate) : undefined;
-            if (positiveSyncMatches.length > 0) try {
-                // order_id disambiguates a repeat customer's same-amount orders (a
-                // name+amount match alone can't tell two $20 orders apart) — prefer
-                // it, but tolerate instances that haven't run
-                // migrations/add_transaction_order_link.sql, where the column select
-                // itself fails and the lookup falls back to the old, looser match.
-                let txns: { id: string; amount: number; order_id?: string | null }[] | null = null;
-                try {
-                    const res = await supabase.from('transactions')
-                        .select('id, amount, order_id')
-                        .eq('type', 'Income')
-                        // Also match the pre-rename category so older rows still sync.
-                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                        .in('description', lookupNames)
-                        .or(positiveSyncMatches.map(a => `amount.eq.${a}`).join(','))
-                        .limit(10);
-                    if (res.error) throw res.error;
-                    txns = res.data;
-                } catch (err) {
-                    if (!/order_id/i.test((err as { message?: string })?.message || '')) throw err;
-                    const res = await supabase.from('transactions')
-                        .select('id, amount')
-                        .eq('type', 'Income')
-                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                        .in('description', lookupNames)
-                        .or(positiveSyncMatches.map(a => `amount.eq.${a}`).join(','))
-                        .limit(1);
-                    txns = res.data;
-                }
-                const match = txns && (txns.find(t => t.order_id === id) || txns[0]);
-                // A name or amount mismatch must not read as "income never logged"
-                // when this order already has its own linked row.
-                let hasLinkedIncome = false;
-                if (!match && settleDayChanged) {
-                    const { data: linkedRows, error: linkedErr } = await supabase.from('transactions')
-                        .select('id').eq('type', 'Income').in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់']).eq('order_id', id).limit(1);
-                    hasLinkedIncome = !linkedErr && !!linkedRows && linkedRows.length > 0;
-                }
-                if (match) {
-                    const patch: Record<string, unknown> = { amount: amountToRecord || match.amount, description: customerName };
-                    if (normalizedDate) patch.date = normalizedDate;
-                    if (payByChanged) patch.pay_by = updates.paymentMethod;
-                    await supabase.from('transactions')
-                        .update(patch)
-                        .eq('id', match.id);
-                    setTransactions(prev => prev.map(t => t.id === match.id ? { ...t, amount: amountToRecord || t.amount, description: customerName, ...(normalizedDate ? { date: normalizedDate } : {}), ...(payByChanged ? { pay_by: updates.paymentMethod } : {}) } : t));
-                } else if (settleDayChanged && normalizedDate && amountToRecord > 0 && !hasLinkedIncome) {
-                    // Heal a missing row only on a real settle-day change AND when
-                    // there is actual income to book — a deposit-covered order has
-                    // no income row by design, and an amount-only correction that
-                    // fails to find its row must not insert a fresh one (that
-                    // would risk duplicate revenue).
-                    const healed = {
-                        id: generateUUID(),
-                        date: normalizedDate,
-                        type: 'Income' as const,
-                        category: 'លក់រាយ',
-                        amount: amountToRecord,
-                        description: customerName,
-                        addedBy: currentUser?.name || 'System',
-                        shipping_co: updates.shipping?.company || existingOrder.shipping?.company || null,
-                        // Same "Deposit into" account preference as the primary settle block above.
-                        pay_by: (updates as Partial<Sale>).depositAccountName || updates.paymentMethod || existingOrder.paymentMethod || null,
-                        order_id: id,
-                        customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
-                    };
-                    setTransactions(prev => [healed, ...prev]);
-                    // order_id/customer_phone need migrations/add_transaction_order_link.sql. Strip
-                    // only the column(s) an older instance's error actually names and retry.
-                    const healInsertPayload: Record<string, unknown> = {
-                        id: healed.id,
-                        date: healed.date,
-                        type: healed.type,
-                        category: healed.category,
-                        amount: healed.amount,
-                        description: healed.description,
-                        added_by: healed.addedBy,
-                        shipping_co: healed.shipping_co,
-                        pay_by: healed.pay_by,
-                        order_id: healed.order_id,
-                        customer_phone: healed.customer_phone
-                    };
-                    let healErr: { message?: string } | null | undefined;
-                    for (let attempt = 0; attempt < 3; attempt++) {
-                        ({ error: healErr } = await supabase.from('transactions').insert([healInsertPayload]));
-                        if (!healErr) break;
-                        const msg = healErr.message || '';
-                        let stripped = false;
-                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in healInsertPayload || 'customer_phone' in healInsertPayload)) {
-                            delete healInsertPayload.order_id; delete healInsertPayload.customer_phone; stripped = true;
-                        }
-                        if (!stripped) break;
-                    }
-                    if (healErr) console.error('Failed to create missing income transaction:', healErr);
-                }
-            } catch (e) {
-                console.error('Failed to sync income transaction with settle date:', e);
-            }
-        } else if (updates.paymentStatus === 'Deposit' && existingOrder) {
-            // Deposit received: log it as income right away (category កក់ប្រាក់).
-            // Deposits are always kept — cancelling the order later never removes
-            // this entry (the cancel cleanup only targets 'លក់រាយ').
-            // Fires on ANY save into/within Deposit and logs only the POSITIVE
-            // DELTA: a first deposit logs its full amount (prev = 0), raising an
-            // existing deposit ($30 -> $50) logs the extra $20, and re-saving an
-            // unchanged deposit logs nothing (delta 0 — no duplicate rows).
-            // Deposit rows outlive the Deposit status (they are never removed), so
-            // the amount already on the books comes from those rows: re-entering
-            // Deposit from Get File or Unpaid must not book the same money again.
-            let prevDep = existingOrder.paymentStatus === 'Deposit' ? (existingOrder.depositAmount || 0) : 0;
-            if ((Number(updates.depositAmount) || 0) > 0) {
-                const { data: depositRows, error: depositErr } = await supabase.from('transactions')
-                    .select('amount').eq('type', 'Income').eq('category', 'កក់ប្រាក់')
-                    .like('description', `%#DEP-${id.slice(0, 8)}`);
-                if (depositErr) {
-                    console.error('Could not read the deposits already booked for this order:', depositErr);
-                    prevDep = Math.max(prevDep, existingOrder.depositAmount || 0);
-                } else {
-                    prevDep = Math.max(prevDep, (depositRows || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0));
-                }
-            }
-            const depAmount = Math.max(0, (Number(updates.depositAmount) || 0) - prevDep);
-            if (depAmount > 0) {
-                const custName = updates.customer?.name || existingOrder.customer?.name || 'Customer';
-                // A top-up delta is money received TODAY — the edit forms resend
-                // the original deposit date, and backdating the delta row would
-                // silently rewrite a past day's income totals. Only a first
-                // deposit honors the passed date.
-                const rawDepDate = (prevDep > 0 ? null : updates.depositDate) || new Date().toISOString();
-                const depDateIso = rawDepDate.match(/^\d{4}-\d{2}-\d{2}$/) ? new Date(rawDepDate).toISOString() : rawDepDate;
-                const depTxn = {
-                    id: generateUUID(),
-                    date: depDateIso,
-                    type: 'Income' as const,
-                    category: 'កក់ប្រាក់',
-                    amount: depAmount,
-                    description: `${custName} #DEP-${id.slice(0, 8)}`,
-                    addedBy: currentUser?.name || 'System',
-                    shipping_co: existingOrder.shipping?.company || null,
-                    // Same "Deposit into" account preference as the Paid branch above.
-                    // Deposits are received by bank transfer unless told otherwise —
-                    // never leave Method blank.
-                    pay_by: (updates as Partial<Sale>).depositAccountName || updates.depositMethod || 'Bank',
-                    order_id: id,
-                    customer_phone: updates.customer?.phone || existingOrder.customer?.phone || null
-                };
-                setTransactions(prev => [depTxn, ...prev]);
-                // order_id/customer_phone need migrations/add_transaction_order_link.sql. Strip only
-                // the column(s) an older instance's error actually names and retry.
-                const depInsertPayload: Record<string, unknown> = {
-                    id: depTxn.id,
-                    date: depTxn.date,
-                    type: depTxn.type,
-                    category: depTxn.category,
-                    amount: depTxn.amount,
-                    description: depTxn.description,
-                    added_by: depTxn.addedBy,
-                    pay_by: depTxn.pay_by,
-                    shipping_co: depTxn.shipping_co,
-                    order_id: depTxn.order_id,
-                    customer_phone: depTxn.customer_phone
-                };
-                (async () => {
-                    let error: { message?: string } | null | undefined;
-                    for (let attempt = 0; attempt < 3; attempt++) {
-                        ({ error } = await supabase.from('transactions').insert([depInsertPayload]));
-                        if (!error) break;
-                        const msg = error.message || '';
-                        let stripped = false;
-                        if (/order_id|customer_phone/i.test(msg) && ('order_id' in depInsertPayload || 'customer_phone' in depInsertPayload)) {
-                            delete depInsertPayload.order_id; delete depInsertPayload.customer_phone; stripped = true;
-                        }
-                        if (!stripped) break;
-                    }
-                    if (error) console.error('Failed to log deposit income:', error);
-                })();
-
-                // Also post a matching Draft entry straight to the ledger, same opt-in
-                // as the Paid branch above (Payment Tracking's and Orders' Deposit
-                // modals both set this now, each with an explicit "Deposited into"
-                // account; when depositAccountId is missing, the helper's cash/bank
-                // name-match fallback resolves the account instead).
-                if ((updates as Partial<Sale>).postToLedger === true) {
-                    postRetailSaleToLedger({
-                        txId: depTxn.id,
-                        amount: depAmount,
-                        // journal_entries.date is a DATE: pass the local day, not the UTC instant.
-                        date: localDayOf(rawDepDate),
-                        description: depTxn.description,
-                        depositAccountId: (updates as Partial<Sale>).depositAccountId,
-                        type: 'DEP',
-                        payBy: depTxn.pay_by
-                    });
-                }
-            }
-        }
+        // Income, ledger entries and payment columns were saved above by
+        // set_order_payment, in the same transaction.
 
         // 2. Prepare DB Updates for 'sales' table
         const dbUpdates: any = {};
         if (updates.total !== undefined) dbUpdates.total = updates.total;
         if (updates.discount !== undefined) dbUpdates.discount = updates.discount;
         if (updates.date !== undefined) dbUpdates.date = updates.date;
-        if (updates.paymentMethod !== undefined) dbUpdates.payment_method = updates.paymentMethod;
         if (updates.salesman !== undefined) dbUpdates.salesman = updates.salesman;
         if (updates.customerCare !== undefined) dbUpdates.customer_care = updates.customerCare;
         if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
-        if (updates.amountReceived !== undefined) dbUpdates.amount_received = updates.amountReceived;
-        if (updates.settleDate !== undefined) dbUpdates.settle_date = updates.settleDate || null;
-        if (updates.depositAmount !== undefined) dbUpdates.deposit_amount = updates.depositAmount;
-        if (updates.depositDate !== undefined) dbUpdates.deposit_date = updates.depositDate || null;
-        if (updates.depositMethod !== undefined) dbUpdates.deposit_method = updates.depositMethod || null;
-        if (updates.depositAccountId !== undefined) dbUpdates.deposit_account_id = updates.depositAccountId || null;
         if (updates.customKhrAmount !== undefined) dbUpdates.custom_khr_amount = updates.customKhrAmount;
-        // payment_status is written by the claim above, never here: an unconditional
-        // write could overwrite a payment recorded since that claim's read.
+        // The payment columns (payment_status, amounts, dates, methods) are
+        // written by set_order_payment above, never here: an unconditional
+        // write could overwrite a payment recorded elsewhere since.
         if (updates.orderStatus !== undefined) dbUpdates.order_status = updates.orderStatus;
         if (updates.customer !== undefined) {
             dbUpdates.customer_snapshot = updates.customer;
@@ -3521,17 +2826,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             // 4. Update 'sales' table
             if (Object.keys(dbUpdates).length > 0) {
-                // "Deposit into" needs migrations/add_sales_deposit_account.sql; until an
-                // instance has run it, save the rest of the update without that one column
-                // (mirrors the same degrade-and-retry pattern used by recordSupplierPayment).
                 let { error } = await supabase.from('sales').update(dbUpdates).eq('id', id);
-                if (error && /deposit_account_id/i.test(error.message || '')) {
-                    const dbUpdatesWithoutAccount = { ...dbUpdates };
-                    delete dbUpdatesWithoutAccount.deposit_account_id;
-                    ({ error } = await supabase.from('sales').update(dbUpdatesWithoutAccount).eq('id', id));
-                    if (!error) console.info('Saved without the Deposit-into account — run migrations/add_sales_deposit_account.sql to store it');
-                }
-                // Same degrade-and-retry for the KH(៛) override, needs migrations/add_sales_custom_khr.sql.
+                // Degrade-and-retry for the KH(៛) override, needs migrations/add_sales_custom_khr.sql.
                 if (error && /custom_khr_amount/i.test(error.message || '')) {
                     const dbUpdatesWithoutKhr = { ...dbUpdates };
                     delete dbUpdatesWithoutKhr.custom_khr_amount;
@@ -3635,113 +2931,35 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    // Deletes orders in ONE database transaction per batch
+    // (delete_retail_orders): each order is archived to deleted_orders /
+    // deleted_sale_items, a Shipped/Delivered/Returned order's stock comes
+    // back (with its FIFO items and the newest stock-out generation), and the
+    // order's income rows — the sales income AND its deposits — are removed
+    // with their Draft journal entries (a Posted entry stays, with a notice),
+    // so deleting a paid order no longer leaves revenue on the books.
     const deleteOrders = async (ids: string[]): Promise<void> => {
         try {
-            // 1. Fetch DB orders and items directly since local `sales` state is now paginated/stale
-            const { data: dbOrders, error: ordersErr } = await supabase.from('sales').select('*').in('id', ids);
-            if (ordersErr) throw ordersErr;
-
-            const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('*').in('sale_id', ids);
-            if (itemsErr) throw itemsErr;
-
-            const ordersToDelete = dbOrders || [];
-            const allItemsToDelete = dbItems || [];
-
-            // 1.5 Archive to deleted tables — pick only columns that exist in deleted_orders/deleted_sale_items
-            if (ordersToDelete.length > 0) {
-                const archiveOrders = ordersToDelete.map(o => ({
-                    id: o.id, total: o.total, discount: o.discount, date: o.date,
-                    payment_method: o.payment_method, type: o.type, salesman: o.salesman,
-                    customer_care: o.customer_care, remark: o.remark, amount_received: o.amount_received,
-                    settle_date: o.settle_date, payment_status: o.payment_status, order_status: o.order_status,
-                    shipping_company: o.shipping_company, tracking_number: o.tracking_number,
-                    shipping_status: o.shipping_status, shipping_cost: o.shipping_cost,
-                    customer_snapshot: o.customer_snapshot, page_source: o.page_source,
-                    last_edited_at: o.last_edited_at, last_edited_by: o.last_edited_by,
-                    created_at: o.created_at, daily_number: o.daily_number
-                }));
-                // Deposit fields must survive delete+restore, or settling a
-                // restored deposit order double-counts revenue. Retry without
-                // them if add_deposit_to_deleted_orders.sql hasn't run yet.
-                const withDeposits = archiveOrders.map((a, idx) => ({
-                    ...a,
-                    deposit_amount: ordersToDelete[idx].deposit_amount || 0,
-                    deposit_date: ordersToDelete[idx].deposit_date || null,
-                    deposit_method: ordersToDelete[idx].deposit_method || null
-                }));
-                let { error: insOrdErr } = await supabase.from('deleted_orders').insert(withDeposits);
-                if (insOrdErr) {
-                    ({ error: insOrdErr } = await supabase.from('deleted_orders').insert(archiveOrders));
-                }
-                if (insOrdErr) throw insOrdErr;
-            }
-            if (allItemsToDelete.length > 0) {
-                const archiveItems = allItemsToDelete.map(i => ({
-                    id: i.id, sale_id: i.sale_id, product_id: i.product_id,
-                    name: i.name, price: i.price, quantity: i.quantity,
-                    image: i.image, created_at: i.created_at
-                }));
-                const { error: insItemErr } = await supabase.from('deleted_sale_items').insert(archiveItems);
-                if (insItemErr) throw insItemErr;
-            }
-
-            // 2. Restock Items based on real source of truth
-            for (const order of ordersToDelete) {
-                // Only restore stock if status is Shipped, Delivered, or Returned
-                // (Pending/Ordered means stock wasn't deducted yet, so don't increment)
-                const status = order.shipping_status || 'Pending';
-                if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
-                    const orderItems = allItemsToDelete.filter(item => item.sale_id === order.id);
-                    for (const item of orderItems) {
-                        // DB Update (Increment)
-                        const { data: originProduct } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
-                        if (originProduct) {
-                            await supabase.from('products').update({ stock: originProduct.stock + item.quantity }).eq('id', item.product_id);
-                        }
-                    }
-
-                    // Keep the ledger and FIFO pool consistent with the restock:
-                    // return this order's sold inventory items to the pool (done
-                    // BEFORE the sales rows are deleted, while sale_id still
-                    // links them), and remove the NEWEST out-movement generation
-                    // — exactly the shipment whose stock was just restored;
-                    // earlier trips (already balanced by return/restock rows)
-                    // stay on the ledger.
-                    await supabase.from('inventory_items')
-                        .update({ status: 'in_stock', sale_id: null })
-                        .eq('sale_id', order.id)
-                        .eq('status', 'sold');
-                    const { data: outRows } = await supabase.from('stock_movements')
-                        .select('id, created_at')
-                        .eq('reference_id', order.id)
-                        .eq('type', 'out');
-                    if (outRows && outRows.length > 0) {
-                        const newest = outRows.reduce((m, r: any) => (r.created_at > m ? r.created_at : m), outRows[0].created_at);
-                        const idsToDelete = outRows.filter((r: any) => r.created_at === newest).map((r: any) => r.id);
-                        await supabase.from('stock_movements').delete().in('id', idsToDelete);
-                    }
-                }
-            }
-
-            // 3. Batch deletion to avoid API limits (e.g. URL length or max row count)
-            const BATCH_SIZE = 500;
+            // Batched to keep each call's payload reasonable.
+            const BATCH_SIZE = 200;
+            const notices: string[] = [];
             for (let i = 0; i < ids.length; i += BATCH_SIZE) {
                 const batch = ids.slice(i, i + BATCH_SIZE);
-                // Delete items first (Constraint usually cascades, but good practice)
-                const { error: itemsDelErr } = await supabase.from('sale_items').delete().in('sale_id', batch);
-                if (itemsDelErr) {
-                    console.error('Error deleting items batch:', itemsDelErr);
-                    throw itemsDelErr;
+                const { data, error } = await supabase.rpc('delete_retail_orders', { p_ids: batch, p_fields: {} });
+                if (error) throw new Error(orderPaymentRpcMessage(error));
+                const res = (data || {}) as { deleted?: string[]; stock?: Record<string, number>; transactions_removed?: string[]; notices?: string[] };
+                applyStockMap(res.stock);
+                const removed = res.transactions_removed || [];
+                if (removed.length > 0) {
+                    setTransactions(prev => prev.filter(t => !removed.includes(t.id)));
                 }
-
-                const { error } = await supabase.from('sales').delete().in('id', batch);
-                if (error) {
-                    console.error(`Error deleting batch ${i}-${i + BATCH_SIZE}:`, error);
-                    throw error;
-                }
+                notices.push(...(res.notices || []));
+            }
+            if (notices.length > 0) {
+                alert(Array.from(new Set(notices)).join('\n'));
             }
 
-            // 4. Trigger UI Updates
+            // Trigger UI Updates
             setProductsUpdatedAt(Date.now());
             setSalesUpdatedAt(Date.now());
             dispatchActivity({ action: 'order_deleted', description: `${ids.length} order(s) deleted`, userId: currentUser?.id, userName: currentUser?.name, metadata: { count: ids.length } });
@@ -4240,6 +3458,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // ReStock status in one transaction, so a double click or a second
             // device restocks an order once, and a failure restocks nothing.
             const now = new Date().toISOString();
+            // The payment side below needs the payment functions; refuse
+            // before any stock moves.
+            if (!(await paymentFunctionsReady())) {
+                throw new Error(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
+            }
             const { data, error } = await supabase.rpc('restock_returned_orders', {
                 p_ids: requestedIds,
                 p_fields: orderStockFields(now),
