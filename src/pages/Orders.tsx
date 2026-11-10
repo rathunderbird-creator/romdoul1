@@ -382,7 +382,10 @@ const ShippingModalComponent: React.FC<{
                                 // go on to ship the order with the old items.
                                 if (Object.keys(updates).length > 0 && !(await updateOrder(order.id, updates))) return;
                                 // false: refused or changed elsewhere, nothing moved (already explained).
-                                const moved = await updateOrderStatus(order.id, targetStatus, order.shipping?.trackingNumber, selectedCompany);
+                                // shownStatus: the status the popup was opened from — if the
+                                // order has moved on since (shipped from another device), the
+                                // change is refused instead of being applied on top of it.
+                                const moved = await updateOrderStatus(order.id, targetStatus, order.shipping?.trackingNumber, selectedCompany, { shownStatus: order.shipping?.status || 'Pending' });
                                 if (moved) showToast(targetStatus === 'Shipped' ? 'Order marked as shipped' : 'Order marked as confirmed', 'success');
                             } catch (e: any) {
                                 console.error('Failed to update shipping status:', e);
@@ -479,7 +482,7 @@ const PendingRemarkModalComponent: React.FC<{
                                     await updateOrder(order.id, { remark });
                                 }
                                 // false: refused or changed elsewhere (already explained).
-                                const moved = await updateOrderStatus(order.id, 'Pending');
+                                const moved = await updateOrderStatus(order.id, 'Pending', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' });
                                 if (moved) showToast('Order marked as Pending', 'success');
                             } catch (e: any) {
                                 console.error('Failed to update pending status:', e);
@@ -2228,6 +2231,11 @@ const Orders: React.FC = () => {
         try {
             let ids = Array.from(selectedIds);
             const updates: Partial<Sale> = {};
+            // Orders whose change was refused or failed (each one already
+            // explained, or its reason kept in lastReason): the toast below
+            // reports them instead of claiming every order was updated.
+            let notSaved = 0;
+            let lastReason = '';
 
             if (field === 'date') {
                 updates.date = new Date(value).toISOString();
@@ -2253,7 +2261,14 @@ const Orders: React.FC = () => {
                 for (const id of ids) {
                     const current = (serverOrders.find(s => s.id === id) || sales.find(s => s.id === id))?.shipping?.status;
                     if (current === value) continue;
-                    await updateOrderStatus(id, value);
+                    // shownStatus: the status this list showed; if the order has moved
+                    // on since, the change is refused rather than applied to the
+                    // status someone else set.
+                    const moved = await updateOrderStatus(id, value, undefined, undefined, {
+                        shownStatus: current || 'Pending',
+                        onRefused: m => { lastReason = m; },
+                    });
+                    if (!moved) notSaved++;
                 }
             } else if (field === 'settleDate') {
                 updates.settleDate = value ? new Date(value).toISOString() : null as any;
@@ -2262,8 +2277,8 @@ const Orders: React.FC = () => {
                 const now = new Date().toISOString();
                 const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
-                    if (!order) return Promise.resolve();
-                    
+                    if (!order) return Promise.resolve(true);
+
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
 
                     if (value === 'Paid' || value === 'Settled') {
@@ -2290,9 +2305,18 @@ const Orders: React.FC = () => {
                 // Get File moves stock (an unshipped order is counted out as Delivered), and
                 // stock is read-modify-write per product, so those saves go one at a time:
                 // in parallel, two orders with the same product would overwrite each other.
-                if (value === 'Get File') { for (const id of ids) await saveOne(id); } else { await Promise.all(ids.map(saveOne)); }
+                // false: not saved (updateOrder has said why).
+                const results: boolean[] = [];
+                if (value === 'Get File') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
+                notSaved = results.filter(ok => !ok).length;
             }
 
+            if (notSaved > 0) {
+                showToast(`Updated ${ids.length - notSaved} of ${ids.length} orders; ${notSaved} not saved${lastReason ? ': ' + lastReason : ''}`, 'error');
+                setSelectedIds(new Set());
+                await fetchOrders();
+                return;
+            }
             showToast(`Updated ${ids.length} orders`, 'success');
             setSelectedIds(new Set()); // Clear selection
             await fetchOrders();
@@ -3474,7 +3498,7 @@ const Orders: React.FC = () => {
                                                 // Admin reopening a restocked order (see desktop handler).
                                                 // In sequence: updateOrder must see the Drafted status the
                                                 // first call wrote, and nothing follows a refused change.
-                                                updateOrderStatus(id, 'Drafted')
+                                                updateOrderStatus(id, 'Drafted', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' })
                                                     .then(moved => { if (moved) return updateOrder(id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any }); })
                                                     .catch(e => { console.error('Status change failed:', e); showToast('Failed to update order status', 'error'); });
                                                 return;
@@ -3494,7 +3518,9 @@ const Orders: React.FC = () => {
                                                 try {
                                                     // false: refused or changed elsewhere (already
                                                     // explained) — don't go on to the payment side.
-                                                    if (!(await updateOrderStatus(id, status))) return;
+                                                    // shownStatus: refused if the order is no longer
+                                                    // at the status this card showed.
+                                                    if (!(await updateOrderStatus(id, status, undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' }))) return;
                                                     if (status === 'ReStock') {
                                                         // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
                                                         // PdFee kept — and income cleanup). Nothing more to do here.
@@ -3962,7 +3988,7 @@ const Orders: React.FC = () => {
                                                                                     // (stock deducts fresh when it ships).
                                                                                     // In sequence: updateOrder must see the Drafted status the
                                                                                     // first call wrote, and nothing follows a refused change.
-                                                                                    updateOrderStatus(order.id, 'Drafted')
+                                                                                    updateOrderStatus(order.id, 'Drafted', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' })
                                                                                         .then(moved => { if (moved) return updateOrder(order.id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any }); })
                                                                                         .catch(e => { console.error('Status change failed:', e); showToast('Failed to update order status', 'error'); });
                                                                                     return;
@@ -3993,7 +4019,9 @@ const Orders: React.FC = () => {
                                                                                     try {
                                                                                         // false: refused or changed elsewhere (already
                                                                                         // explained) — don't go on to the payment side.
-                                                                                        if (!(await updateOrderStatus(order.id, newStatus as any))) return;
+                                                                                        // shownStatus: refused if the order is no longer
+                                                                                        // at the status this row showed.
+                                                                                        if (!(await updateOrderStatus(order.id, newStatus as any, undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' }))) return;
                                                                                         if (newStatus === 'ReStock') {
                                                                                             // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
                                                                                             // PdFee kept — and income cleanup). Nothing more to do here.

@@ -203,6 +203,10 @@ const PaymentTracking: React.FC = () => {
         try {
             let ids = Array.from(selectedIds);
             const updates: Partial<Sale> = {};
+            // Orders whose change was refused or failed (each already explained, or
+            // its reason kept in lastReason): reported instead of a blanket success.
+            let notSaved = 0;
+            let lastReason = '';
 
             if (field === 'date') {
                 updates.date = new Date(value).toISOString();
@@ -219,13 +223,18 @@ const PaymentTracking: React.FC = () => {
                 for (const id of ids) {
                     const current = serverOrders.find(s => s.id === id)?.shipping?.status;
                     if (current === value) continue;
-                    await updateOrderStatus(id, value);
+                    // shownStatus: refused if the order is no longer at the status this list showed.
+                    const moved = await updateOrderStatus(id, value, undefined, undefined, {
+                        shownStatus: current || 'Pending',
+                        onRefused: m => { lastReason = m; },
+                    });
+                    if (!moved) notSaved++;
                 }
             } else if (field === 'paymentStatus') {
                 const now = settleDateInput ? new Date(settleDateInput).toISOString() : new Date().toISOString();
                 const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id);
-                    if (!order) return Promise.resolve();
+                    if (!order) return Promise.resolve(true);
 
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
 
@@ -248,11 +257,18 @@ const PaymentTracking: React.FC = () => {
                 // Get File moves stock (an unshipped order is counted out as Delivered), and
                 // stock is read-modify-write per product, so those saves go one at a time:
                 // in parallel, two orders with the same product would overwrite each other.
-                if (value === 'Get File') { for (const id of ids) await saveOne(id); } else { await Promise.all(ids.map(saveOne)); }
+                // false: not saved (updateOrder has said why).
+                const results: boolean[] = [];
+                if (value === 'Get File') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
+                notSaved = results.filter(ok => !ok).length;
             }
 
             setSelectedIds(new Set());
             setIsBulkEditOpen(false);
+            if (notSaved > 0) {
+                showToast(`Updated ${ids.length - notSaved} of ${ids.length} orders; ${notSaved} not saved${lastReason ? ': ' + lastReason : ''}`, 'error');
+                return;
+            }
             showToast(`Successfully updated ${ids.length} orders`, 'success');
         } catch (error) {
             console.error('Bulk edit error:', error);
@@ -1261,7 +1277,9 @@ const PaymentTracking: React.FC = () => {
                                                 try {
                                                     // false: refused or changed elsewhere (already
                                                     // explained) — don't go on to the payment side.
-                                                    if (!(await updateOrderStatus(order.id, newStatus as any))) return;
+                                                    // shownStatus: refused if the order is no longer
+                                                    // at the status this row showed.
+                                                    if (!(await updateOrderStatus(order.id, newStatus as any, undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' }))) return;
                                                     if (newStatus === 'ReStock') {
                                                         // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
                                                         // PdFee kept — and income cleanup). Nothing more to do here.

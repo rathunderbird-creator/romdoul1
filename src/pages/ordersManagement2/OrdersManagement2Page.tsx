@@ -116,6 +116,8 @@ const OrdersManagement2Page: React.FC = () => {
                 paymentMethod: edit.paymentMethod !== undefined ? previous?.paymentMethod : undefined,
                 settleDate: edit.settleDate !== undefined ? (previous?.settleDate ?? null) : undefined,
                 orderStatus: edit.orderStatus !== undefined ? previous?.shipping?.status : undefined,
+                // Undo moves the status back only if it is still the one this edit set.
+                expectedShippingStatus: edit.orderStatus !== undefined ? edit.orderStatus : undefined,
                 trackingNumber: previous?.shipping?.trackingNumber,
                 shippingCompany: previous?.shipping?.company,
                 address: edit.address !== undefined ? previous?.customer?.address : undefined,
@@ -131,11 +133,18 @@ const OrdersManagement2Page: React.FC = () => {
             data.refresh();
             if (!saved) return false;
             toastHandle.current?.show('Order updated.', () => {
-                applyEdit(previousEdit).catch(e => console.error('Undo failed:', e)).then(() => data.refresh());
+                applyEdit(previousEdit).catch((e: unknown) => { console.error('Undo failed:', e); return false; }).then(ok => {
+                    if (!ok) showToast('The undo was not saved.', 'error');
+                    data.refresh();
+                });
             });
             return true;
         },
-        onUndoEdit: async (edit) => { await applyEdit(edit); data.refresh(); },
+        onUndoEdit: async (edit) => {
+            const ok = await applyEdit(edit).catch((e: unknown) => { console.error('Undo failed:', e); return false; });
+            if (!ok) showToast('The undo was not saved.', 'error');
+            data.refresh();
+        },
         onBulkAddTracking: async (updates) => {
             let saved = 0;
             let lastReason = '';
@@ -163,7 +172,9 @@ const OrdersManagement2Page: React.FC = () => {
                 let shipped = 0;
                 let lastReason = '';
                 for (const id of orderIds) {
-                    if (await updateOrderStatus(id, 'Shipped', undefined, undefined, { onRefused: m => { lastReason = m; } })) shipped++;
+                    // shownStatus: refused if the order is no longer at the status this page showed.
+                    const shown = (data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id))?.shipping?.status;
+                    if (await updateOrderStatus(id, 'Shipped', undefined, undefined, { shownStatus: shown || 'Pending', onRefused: m => { lastReason = m; } })) shipped++;
                 }
                 const notShipped = orderIds.length - shipped;
                 await logActivity('bulk_ship', `Marked ${shipped} order(s) Shipped`, currentUser?.id, currentUser?.name, { count: shipped });
@@ -190,6 +201,10 @@ const OrdersManagement2Page: React.FC = () => {
         // verbatim — same fields, same per-branch update shape — since
         // BulkEditModal (../../components) is reused as-is here too.
         onBulkEdit: async (orderIds, field, value, settleDate, payBy) => {
+            // Orders whose change was refused or failed (already explained, or the
+            // reason kept in lastReason): reported instead of a blanket success.
+            let notSaved = 0;
+            let lastReason = '';
             if (field === 'date') {
                 await updateOrders(orderIds, { date: new Date(value).toISOString() });
             } else if (field === 'status') {
@@ -199,7 +214,12 @@ const OrdersManagement2Page: React.FC = () => {
                 for (const id of orderIds) {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     if (order?.shipping?.status === value) continue;
-                    await updateOrderStatus(id, value as any);
+                    // shownStatus: refused if the order is no longer at the status this page showed.
+                    const moved = await updateOrderStatus(id, value as any, undefined, undefined, {
+                        shownStatus: order?.shipping?.status || 'Pending',
+                        onRefused: m => { lastReason = m; },
+                    });
+                    if (!moved) notSaved++;
                 }
             } else if (field === 'settleDate') {
                 await updateOrders(orderIds, { settleDate: value ? new Date(value).toISOString() : null as any });
@@ -207,7 +227,7 @@ const OrdersManagement2Page: React.FC = () => {
                 const now = new Date().toISOString();
                 const saveOne = (id: string) => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
-                    if (!order) return Promise.resolve();
+                    if (!order) return Promise.resolve(true);
                     const individualUpdates: Record<string, unknown> = { paymentStatus: value };
                     if (value === 'Paid' || value === 'Settled') {
                         individualUpdates.amountReceived = order.total;
@@ -226,11 +246,16 @@ const OrdersManagement2Page: React.FC = () => {
                 // Get File moves stock (an unshipped order is counted out as Delivered), and
                 // stock is read-modify-write per product, so those saves go one at a time:
                 // in parallel, two orders with the same product would overwrite each other.
-                if (value === 'Get File') { for (const id of orderIds) await saveOne(id); } else { await Promise.all(orderIds.map(saveOne)); }
+                // false: not saved (updateOrder has said why).
+                const results: boolean[] = [];
+                if (value === 'Get File') { for (const id of orderIds) results.push(await saveOne(id)); } else { results.push(...await Promise.all(orderIds.map(saveOne))); }
+                notSaved = results.filter(ok => !ok).length;
             }
-            await logActivity('bulk_edit', `Bulk edited ${orderIds.length} order(s): ${field}`, currentUser?.id, currentUser?.name, { count: orderIds.length, field, value });
+            const savedCount = orderIds.length - notSaved;
+            await logActivity('bulk_edit', `Bulk edited ${savedCount} order(s): ${field}`, currentUser?.id, currentUser?.name, { count: savedCount, field, value });
             data.refresh();
-            showToast(`Updated ${orderIds.length} order(s).`, 'success');
+            if (notSaved > 0) showToast(`Updated ${savedCount} of ${orderIds.length} order(s); ${notSaved} not saved${lastReason ? ': ' + lastReason : ''}`, 'error');
+            else showToast(`Updated ${orderIds.length} order(s).`, 'success');
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [setFilters, data, navigate, showToast, updateOrder, updateOrders, updateOrderStatus, logActivity, currentUser]);

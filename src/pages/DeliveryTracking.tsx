@@ -1505,7 +1505,8 @@ const DeliveryTracking: React.FC = () => {
                                     {visibleColumns.includes('status') && <td style={{ width: `var(--col-delivery-status-width, ${columnWidths.status}px)` }}>
                                         <StatusBadge
                                             status={order.shipping?.status || 'Pending'}
-                                            onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock')}
+                                            // shownStatus: refused if the order is no longer at the status this row showed.
+                                            onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' })}
                                             bold={false}
                                             unrestricted={currentUser?.roleId === 'admin'}
                                         />
