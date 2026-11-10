@@ -9,8 +9,8 @@
 -- either happens completely or not at all, and a second caller waits and
 -- then sees the result of the first.
 --
--- Until this is run, the Adjust Stock page saves drafts as before but
--- refuses to post them, and says to run this file.
+-- Until this is run, the Adjust Stock page still creates new drafts, but
+-- editing or posting one is refused with a message saying to run this file.
 
 -- Returns the first problem with an adjustment's lines, or NULL when fine.
 -- Quantities must be whole numbers other than zero (stock_movements.quantity

@@ -111,7 +111,12 @@ export function useStockAdjustments() {
         const { data: deleted, error } = await supabase.from('stock_adjustments').delete().eq('id', id).eq('status', 'Draft').select('id');
         if (error) throw new Error(errorMessage(error));
         await fetchAdjustments(true);
-        if (!deleted || deleted.length === 0) throw new Error('This adjustment has been posted, so it was not deleted.');
+        if (!deleted || deleted.length === 0) {
+            // Nothing deleted: either it was posted meanwhile, or another tab
+            // already deleted it (then the draft is gone, which is what was asked).
+            const { data: still } = await supabase.from('stock_adjustments').select('status').eq('id', id).maybeSingle();
+            if (still) throw new Error('This adjustment has been posted, so it was not deleted.');
+        }
     }, [fetchAdjustments]);
 
     // Posts a Draft through post_stock_adjustment
