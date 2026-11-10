@@ -564,6 +564,13 @@ const localDayOf = (v: string | null | undefined): string => {
 // the database: set_order_shipping_status in migrations/add_order_status_function.sql.
 const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(status);
 
+// Statuses where this order's goods are counted out of stock: shipped, delivered,
+// or on their way back (Returned keeps them out until Restock brings them in).
+// Same rule as order_status_holds_stock in the migration.
+const holdsOrderStock = (status: string) => isStockConsumed(status) || status === 'Returned';
+
+const ORDER_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order\'s shipping status can change, a returned order can be restocked, or the items of a shipped order can be edited: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor. Nothing was saved.';
+
 // Statuses that only make sense once the goods have physically left: you cannot deliver
 // or receive a return for something that was never shipped.
 //
@@ -2217,12 +2224,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const e = error as { code?: string; message?: string } | null;
         const message = String(e?.message || error || '');
         if (isRpcMissingError(e) || (/set_order_shipping_status|restock_returned_orders|edit_order_items/i.test(message) && /schema cache|does not exist/i.test(message))) {
-            return 'Orders need a one-time database update before shipping status, restocks or shipped items can change: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor.';
+            return ORDER_FUNCTIONS_MISSING_MESSAGE;
         }
         if (/sale_items_product_id_fkey/i.test(message)) {
             return 'A product on this order no longer exists. Remove it from the order and save again.';
         }
         return message || 'Unknown error';
+    };
+
+    // Whether this store has run migrations/add_order_status_function.sql, asked
+    // with the smallest function it adds (it only reads its argument). Asked
+    // before an edit writes anything it would then need those functions for, so
+    // a store that hasn't run it refuses the edit up front instead of half-saving
+    // it. Remembered once found; a network error is not taken as "missing" (the
+    // real call then reports it).
+    const orderFunctionsReadyRef = useRef(false);
+    const orderFunctionsReady = async (): Promise<boolean> => {
+        if (orderFunctionsReadyRef.current) return true;
+        const { error } = await supabase.rpc('order_status_holds_stock', { p_status: 'Pending' });
+        if (error && isRpcMissingError(error)) return false;
+        if (!error) orderFunctionsReadyRef.current = true;
+        return true;
     };
 
     // Stock values a database function returned, applied to the cached products.
@@ -2398,7 +2420,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const status = (opts?.shownStatus !== undefined && requestedStatus === opts.shownStatus && freshStatus !== requestedStatus
             ? freshStatus
             : requestedStatus) as NonNullable<Sale['shipping']>['status'];
-        const expectedStatus = opts?.expectedStatus !== undefined ? (opts.expectedStatus || 'Pending') : freshStatus;
+        // The status the change was decided from: what the caller says it expects,
+        // else the status its screen showed when it asked for a different one,
+        // else (a caller that doesn't say) the status just read.
+        const expectedStatus = opts?.expectedStatus !== undefined
+            ? (opts.expectedStatus || 'Pending')
+            : (opts?.shownStatus !== undefined && requestedStatus !== opts.shownStatus ? (opts.shownStatus || 'Pending') : freshStatus);
+        // A real change asked for from a screen that is out of date (the order has
+        // moved on since it was shown) is refused, not applied on top of the
+        // status someone else set. Same message as the database's own check.
+        if (status !== freshStatus && expectedStatus !== freshStatus) {
+            setSalesUpdatedAt(Date.now());
+            return refuse(`This order is now "${freshStatus}": it was changed somewhere else, so your change was not saved. Refresh and check it before trying again.`);
+        }
 
         // Already at the target status: no transition and no alert (bulk selections
         // routinely mix rows already there). Carry on so a tracking number or courier
@@ -2438,21 +2472,44 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (trackingNumber !== undefined) fields.tracking_number = trackingNumber;
         if (shippingCompany) fields.shipping_company = shippingCompany;
 
-        // Status, stock, inventory items, stock-out records (and for a restock the
-        // return records) in one database transaction: all of it or none of it.
-        const { data: result, error: rpcError } = await supabase.rpc('set_order_shipping_status', {
-            p_order_id: id,
-            p_expected_status: expectedStatus,
-            p_new_status: status,
-            p_fields: fields,
-        });
-        if (rpcError) {
-            console.error('Failed to update order status:', rpcError);
-            setSalesUpdatedAt(Date.now());
-            return refuse(orderRpcMessage(rpcError));
+        let res: { stock?: Record<string, number>; restocked?: string[]; restocks?: RestockRow[] } = {};
+        if (status === freshStatus) {
+            // No transition (a tracking/courier save, or a status already there):
+            // nothing moves stock, so a plain write of those fields, which also
+            // works on a store that hasn't run the migration yet. The status itself
+            // is not written, so a change made since the read above is kept.
+            const plain: Record<string, unknown> = {};
+            if (trackingNumber !== undefined) plain.tracking_number = trackingNumber;
+            if (shippingCompany) plain.shipping_company = shippingCompany;
+            if (currentUser) {
+                plain.last_edited_at = now;
+                plain.last_edited_by = currentUser.name;
+            }
+            if (Object.keys(plain).length > 0) {
+                const { error: plainErr } = await supabase.from('sales').update(plain).eq('id', id);
+                if (plainErr) {
+                    console.error('Failed to save the shipping details:', plainErr);
+                    setSalesUpdatedAt(Date.now());
+                    return refuse(`Failed to save the shipping details: ${plainErr.message}`);
+                }
+            }
+        } else {
+            // Status, stock, inventory items, stock-out records (and for a restock the
+            // return records) in one database transaction: all of it or none of it.
+            const { data: result, error: rpcError } = await supabase.rpc('set_order_shipping_status', {
+                p_order_id: id,
+                p_expected_status: expectedStatus,
+                p_new_status: status,
+                p_fields: fields,
+            });
+            if (rpcError) {
+                console.error('Failed to update order status:', rpcError);
+                setSalesUpdatedAt(Date.now());
+                return refuse(orderRpcMessage(rpcError));
+            }
+            res = (result || {}) as typeof res;
+            applyStockMap(res.stock);
         }
-        const res = (result || {}) as { stock?: Record<string, number>; restocked?: string[]; restocks?: RestockRow[] };
-        applyStockMap(res.stock);
 
         setSales(prev => prev.map(sale => {
             if (sale.id === id) {
@@ -2519,12 +2576,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // stock-out generation (the shipment being edited) to match, in the same
     // transaction as the item replace, so un-shipping, deleting or restocking
     // later reverses exactly what left — and a failure keeps the old items.
-    const replaceOrderItems = async (orderId: string, items: Sale['items']) => {
+    //
+    // statusNow: the order's shipping status at this point of the save. On a store
+    // that hasn't run the migration, an order whose goods are still on hand gets
+    // its items replaced the way it always was (delete, then insert): no stock
+    // moves for it, so it needs no database function.
+    const replaceOrderItems = async (orderId: string, items: Sale['items'], statusNow: string) => {
         const { data, error } = await supabase.rpc('edit_order_items', {
             p_order_id: orderId,
             p_items: items.map(item => ({ id: item.id || null, name: item.name, price: item.price, quantity: item.quantity, image: item.image ?? null })),
             p_fields: { created_by: currentUser?.id || 'unknown' },
         });
+        if (error && isRpcMissingError(error) && !holdsOrderStock(statusNow)) {
+            const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', orderId);
+            if (deleteError) throw deleteError;
+            const { error: insertError } = await supabase.from('sale_items').insert(items.map(item => ({
+                id: generateUUID(),
+                sale_id: orderId,
+                product_id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                image: item.image
+            })));
+            if (insertError) throw insertError;
+            return;
+        }
         if (error) throw new Error(orderRpcMessage(error));
         const res = (data || {}) as { stock?: Record<string, number>; missing?: string[] };
         applyStockMap(res.stock);
@@ -2534,9 +2611,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     // Resolves false when not everything was saved (the user has been told why):
-    // a refusal before anything was written, a shipping status change the
-    // database refused (the rest of the edit is still saved, the status stays
-    // what it really is), or a failed write.
+    // a refusal (a stale screen, a payment or status changed elsewhere, a store
+    // without the migration, a shipping status change the database refused) saves
+    // nothing; a write that fails part-way leaves what was written before it.
     const updateOrder = async (id: string, updates: Partial<Sale>): Promise<boolean> => {
         // Find existing order BEFORE local update for checking status change
         let existingOrder = sales.find(s => s.id === id);
@@ -2599,20 +2676,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         let freshPayment: Partial<Sale> | null = null;
         const expectedPaymentStatus = updates.expectedPaymentStatus;
         delete updates.expectedPaymentStatus;
+        const expectedShippingStatus = updates.expectedShippingStatus;
+        delete updates.expectedShippingStatus;
+        type PaymentRow = { payment_status: string | null; deposit_amount: number | null; amount_received: number | null; settle_date: string | null; payment_method: string | null };
+        const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method';
+        const toLocal = (row: PaymentRow): Partial<Sale> => ({
+            paymentStatus: row.payment_status as Sale['paymentStatus'],
+            depositAmount: Number(row.deposit_amount) || 0,
+            amountReceived: Number(row.amount_received) || 0,
+            settleDate: row.settle_date || undefined,
+            paymentMethod: row.payment_method as Sale['paymentMethod'],
+        });
+        // The payment row as read below, and whether this save's payment change
+        // still has to be claimed (done after the shipping plan is checked).
+        let paymentRow: PaymentRow | null = null;
         if (updates.paymentStatus !== undefined) {
-            const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method';
             const { data: freshRow, error: freshErr } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
             if (freshErr || !freshRow) {
                 alert("Couldn't confirm this order's current payment status, so nothing was saved. Check your connection and try again.");
                 return false;
             }
-            const toLocal = (row: typeof freshRow): Partial<Sale> => ({
-                paymentStatus: row.payment_status as Sale['paymentStatus'],
-                depositAmount: Number(row.deposit_amount) || 0,
-                amountReceived: Number(row.amount_received) || 0,
-                settleDate: row.settle_date || undefined,
-                paymentMethod: row.payment_method as Sale['paymentMethod'],
-            });
+            paymentRow = freshRow as PaymentRow;
             freshPayment = toLocal(freshRow);
             if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
 
@@ -2640,8 +2724,93 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 delete updates.depositMethod;
             }
 
+        }
+
+        // What this save does to the shipping status. Only a real payment change
+        // moves shipping. A form re-saving an order that is already Cancel or Get
+        // File (to fix a phone number, say) sends that status back unchanged, and
+        // must not re-apply the shipping move: that re-deducted stock or reverted a
+        // status someone had since corrected.
+        //
+        // Cancel / PdFee (Paid for Delivery Fee, treated the same — the order itself
+        // isn't fulfilled, only the delivery fee was paid): when the caller ALSO sets
+        // a shipping status (the Returned / Cancelled / ReStock transitions cancel
+        // payment as a side effect and pass their own status), that status is kept.
+        // Otherwise only an order whose goods are still here goes back to Pending. A
+        // Shipped or Delivered order goes to Returned instead: the goods are with the
+        // courier or the customer and stay counted out until they are restocked
+        // (Returns & Restocks lists it). Resetting it to Pending put them back "in
+        // stock" on paper only.
+        //
+        // Get File: Delivered. If the order never shipped, the stock-out is recorded
+        // now (entering Delivered from an on-hand status is the goods leaving). Not
+        // for a restocked or cancelled order: its goods are on the shelf, and
+        // flipping it to Delivered would take them out again.
+        //
+        // A form echoes the status it was showing (expectedShippingStatus). When the
+        // database has moved on since (someone shipped it meanwhile), sending that
+        // same status back is not a request to move it back: the real status is
+        // kept. Callers that don't say what they showed are taken at their word.
+        const planShipping = (paymentChanging: boolean) => {
+            let shipping = updates.shipping;
+            let forced = false;
+            if (!paymentChanging) {
+                // nothing to move
+            } else if (updates.paymentStatus === 'Cancel' || updates.paymentStatus === 'PdFee') {
+                if (!updates.shipping?.status) {
+                    const currentShippingStatus = shippingStatusBeforeUpdate || 'Pending';
+                    if (isStockConsumed(currentShippingStatus)) {
+                        shipping = { ...(existingOrder?.shipping || {}), status: 'Returned' } as Sale['shipping'];
+                        forced = true;
+                    } else if (!['Returned', 'Cancelled', 'ReStock'].includes(currentShippingStatus)) {
+                        shipping = { ...(existingOrder?.shipping || {}), status: 'Pending' } as Sale['shipping'];
+                        forced = true;
+                    }
+                }
+            } else if (updates.paymentStatus === 'Get File' && !['ReStock', 'Cancelled'].includes(shippingStatusBeforeUpdate || '')) {
+                shipping = { ...(existingOrder?.shipping || {}), ...(updates.shipping || {}), status: 'Delivered' } as Sale['shipping'];
+                forced = true;
+            }
+            if (shipping?.status && shippingStatusBeforeUpdate !== undefined && !forced && expectedShippingStatus !== undefined) {
+                const shownShippingStatus = expectedShippingStatus || 'Pending';
+                if (shipping.status === shownShippingStatus && shipping.status !== shippingStatusBeforeUpdate) {
+                    shipping = { ...shipping, status: shippingStatusBeforeUpdate as NonNullable<Sale['shipping']>['status'] };
+                }
+            }
+            const to = shipping?.status && shippingStatusBeforeUpdate !== undefined && shipping.status !== shippingStatusBeforeUpdate
+                ? shipping.status
+                : null;
+            return { shipping, forced, to };
+        };
+        const paymentChangingNow = () => updates.paymentStatus !== undefined && freshPayment !== null
+            && updates.paymentStatus !== (freshPayment.paymentStatus || 'Unpaid');
+        let shippingPlan = planShipping(paymentChangingNow());
+
+        // Everything that can refuse this save is checked before anything is
+        // written, so a refusal saves nothing. A status change asked for from a
+        // screen that is out of date (the order moved on since it was shown) is
+        // refused rather than applied on top of the status someone else set.
+        if (shippingPlan.to && !shippingPlan.forced && expectedShippingStatus !== undefined && (expectedShippingStatus || 'Pending') !== shippingStatusBeforeUpdate) {
+            setSalesUpdatedAt(Date.now());
+            alert(`This order is now "${shippingStatusBeforeUpdate}": it was changed somewhere else, so your change was not saved. Refresh and check it before trying again.`);
+            return false;
+        }
+        // A status change, or an item edit on an order whose goods are out of
+        // stock, needs the database functions; a store that hasn't run the
+        // migration refuses the whole save here.
+        const holdsStockForItems = holdsOrderStock(shippingPlan.to || shippingStatusBeforeUpdate || 'Pending');
+        if ((shippingPlan.to || (updates.items && updates.items.length > 0 && holdsStockForItems)) && !(await orderFunctionsReady())) {
+            alert(ORDER_FUNCTIONS_MISSING_MESSAGE);
+            return false;
+        }
+
+        // Claim the payment change with a compare-and-set, so of two racing saves
+        // only one can book.
+        let claimedPayment: Record<string, unknown> | null = null;
+        if (paymentRow && updates.paymentStatus !== undefined) {
+            const freshRow = paymentRow;
             const depositChanging = updates.depositAmount !== undefined && Number(updates.depositAmount) !== (Number(freshRow.deposit_amount) || 0);
-            if (updates.paymentStatus !== undefined && (updates.paymentStatus !== freshRow.payment_status || depositChanging)) {
+            if (updates.paymentStatus !== freshRow.payment_status || depositChanging) {
                 const claim: Record<string, unknown> = { payment_status: updates.paymentStatus };
                 if (updates.depositAmount !== undefined) claim.deposit_amount = updates.depositAmount;
                 let claimQuery = supabase.from('sales').update(claim).eq('id', id);
@@ -2656,19 +2825,67 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
                 if (!claimed || claimed.length === 0) {
                     const { data: winner } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
-                    if (winner) setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(winner) } : s));
+                    if (winner) setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(winner as PaymentRow) } : s));
                     setSalesUpdatedAt(Date.now());
-                    const sameOutcome = winner?.payment_status === updates.paymentStatus
-                        && (updates.depositAmount === undefined || Number(updates.depositAmount) === (Number(winner?.deposit_amount) || 0));
-                    if (!sameOutcome) {
+                    const sameOutcome = !!winner && winner.payment_status === updates.paymentStatus
+                        && (updates.depositAmount === undefined || Number(updates.depositAmount) === (Number(winner.deposit_amount) || 0));
+                    if (!sameOutcome || !winner) {
                         alert("This order's payment details were just changed by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.");
+                        return false;
                     }
                     // Same outcome: someone else (or this tab's first click) already
-                    // saved what was asked for.
-                    return sameOutcome;
+                    // saved this payment, with its income and its shipping move. The
+                    // rest of the edit (items, address, a shipping change of its
+                    // own) still goes ahead, without the payment side.
+                    delete updates.paymentStatus;
+                    delete updates.amountReceived;
+                    delete updates.settleDate;
+                    delete updates.paymentMethod;
+                    delete updates.depositAmount;
+                    delete updates.depositDate;
+                    delete updates.depositMethod;
+                    freshPayment = toLocal(winner as PaymentRow);
+                    if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
+                    shippingPlan = planShipping(false);
+                } else {
+                    claimedPayment = claim;
                 }
             }
         }
+
+        // 2b. A real shipping status change goes through updateOrderStatus, which
+        // owns stock: the database moves products.stock, inventory items and the
+        // stock-out records together with the status, in one transaction, and
+        // only if the order is still at the status read above. Runs before the
+        // payment side (income, journal entries) and the sales row below, and
+        // before the items are rewritten, so it reverses the items that left. If
+        // it is refused, the payment claim is put back and nothing else is
+        // written: payment and shipping never end up out of step.
+        if (shippingPlan.to) {
+            const moved = await updateOrderStatus(id, shippingPlan.to, undefined, shippingPlan.shipping?.company || undefined, {
+                skipDispatchGuard: true,
+                expectedStatus: shippingStatusBeforeUpdate,
+                // The customer from this same save, so the stock records name them
+                // (the sales row is written after this).
+                customer: updates.customer ? { name: updates.customer.name, phone: updates.customer.phone } : undefined,
+            });
+            if (!moved) {
+                if (claimedPayment && paymentRow) {
+                    const revert: Record<string, unknown> = { payment_status: paymentRow.payment_status };
+                    if ('deposit_amount' in claimedPayment) revert.deposit_amount = paymentRow.deposit_amount;
+                    const { data: reverted, error: revertErr } = await supabase.from('sales').update(revert)
+                        .eq('id', id).eq('payment_status', claimedPayment.payment_status as string).select('id');
+                    if (revertErr || !reverted || reverted.length === 0) {
+                        console.error('Could not put the payment status back after a refused status change:', revertErr);
+                        alert(`The payment status of order #${id.slice(0, 8)} was changed to ${String(claimedPayment.payment_status)}, but its shipping status was not, and the payment could not be put back. Open the order and set its payment status back to ${paymentRow.payment_status || 'Unpaid'}.`);
+                    }
+                    setSales(prev => prev.map(s => s.id === id ? { ...s, ...toLocal(paymentRow as PaymentRow) } : s));
+                }
+                setSalesUpdatedAt(Date.now());
+                return false;
+            }
+        }
+        if (shippingPlan.shipping !== undefined) updates.shipping = shippingPlan.shipping;
 
         // Leaving Paid/Settled for ANY non-paid status — Cancel, or an admin unlocking a
         // mistaken Paid back to Unpaid/Get File/Deposit — removes the income that was
@@ -2783,79 +3000,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 console.error('Failed to rename income row with customer:', e);
             }
         }
-
-        let forcedShippingStatus = false;
-        // Only a real payment change moves shipping. A form re-saving an order that is
-        // already Cancel or Get File (to fix a phone number, say) sends that status
-        // back unchanged, and must not re-apply the shipping move: that re-deducted
-        // stock or reverted a status someone had since corrected.
-        const paymentChanging = updates.paymentStatus !== undefined && freshPayment !== null
-            && updates.paymentStatus !== (freshPayment.paymentStatus || 'Unpaid');
-        if (!paymentChanging) {
-            // nothing to move
-        } else if (updates.paymentStatus === 'Cancel' || updates.paymentStatus === 'PdFee') {
-            // PdFee (Paid for Delivery Fee) is treated the same as Cancel here —
-            // the order itself isn't fulfilled, only the delivery fee was paid.
-            // Cancelling payment normally sends shipping back to 'Pending' so the order can
-            // be re-processed. But when the caller ALSO sets a shipping status (the
-            // Returned / Cancelled / ReStock transitions cancel payment as a side effect and
-            // pass their own status), respect that status instead of forcing 'Pending'.
-            // Without this, changing e.g. Shipped -> Returned flipped the order to Pending,
-            // because `existingOrder` is read from the not-yet-committed local state (still
-            // 'Shipped') and so failed the Returned/Cancelled check below.
-            //
-            // Only an order whose goods are still here goes back to Pending. A Shipped or
-            // Delivered order goes to Returned instead: the goods are with the courier or
-            // the customer and stay counted out until they are restocked (Returns &
-            // Restocks lists it). Resetting it to Pending put them back "in stock" on
-            // paper only (the stock-out record was deleted but stock was never restored,
-            // and a re-ship took them out a second time).
-            if (!updates.shipping?.status) {
-                const currentShippingStatus = shippingStatusBeforeUpdate || 'Pending';
-                if (isStockConsumed(currentShippingStatus)) {
-                    updates.shipping = {
-                        ...(existingOrder?.shipping || {}),
-                        status: 'Returned'
-                    } as any;
-                    forcedShippingStatus = true;
-                } else if (!['Returned', 'Cancelled', 'ReStock'].includes(currentShippingStatus)) {
-                    updates.shipping = {
-                        ...(existingOrder?.shipping || {}),
-                        status: 'Pending'
-                    } as any;
-                    forcedShippingStatus = true;
-                }
-            }
-        } else if (updates.paymentStatus === 'Get File' && !['ReStock', 'Cancelled'].includes(shippingStatusBeforeUpdate || '')) {
-            // Delivered: if the order never shipped, the stock-out is recorded now
-            // (updateOrderStatus treats entering Delivered from an on-hand status as
-            // the goods leaving). Not for a restocked or cancelled order: its goods are
-            // on the shelf, and flipping it to Delivered would take them out again.
-            updates.shipping = {
-                ...(existingOrder?.shipping || {}),
-                ...(updates.shipping || {}),
-                status: 'Delivered'
-            } as any;
-            forcedShippingStatus = true;
-        }
-
-        // A form echoes the status it was showing (expectedShippingStatus). When the
-        // database has moved on since (someone shipped it meanwhile), sending that
-        // same status back is not a request to move it back: keep the real status.
-        // A change the caller actually made, or one forced above, is applied —
-        // through updateOrderStatus, which owns stock. Callers that don't say what
-        // they showed are taken at their word.
-        const expectedShippingStatus = updates.expectedShippingStatus;
-        delete updates.expectedShippingStatus;
-        if (updates.shipping?.status && shippingStatusBeforeUpdate !== undefined && !forcedShippingStatus && expectedShippingStatus !== undefined) {
-            const shownShippingStatus = expectedShippingStatus || 'Pending';
-            if (updates.shipping.status === shownShippingStatus && updates.shipping.status !== shippingStatusBeforeUpdate) {
-                updates.shipping = { ...updates.shipping, status: shippingStatusBeforeUpdate as any };
-            }
-        }
-        const shippingTransitionTo = updates.shipping?.status && shippingStatusBeforeUpdate !== undefined && updates.shipping.status !== shippingStatusBeforeUpdate
-            ? updates.shipping.status
-            : null;
 
         // 1. Optimistic Local Update
         setSales(prev => prev.map(sale =>
@@ -3371,35 +3515,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             dbUpdates.last_edited_by = currentUser.name;
         }
 
-        // The shipping status change was refused (permission, a Restock of an order
-        // that isn't Returned, the order changed elsewhere since it was read) or
-        // failed: nothing of it was written, the rest of this edit still is.
-        let statusChangeRefused = false;
         try {
-            // 2b. A real shipping status change goes through updateOrderStatus, which
-            // owns stock: the database moves products.stock, inventory items and the
-            // stock-out records together with the status, in one transaction, and
-            // only if the order is still at the status read above. Runs before the
-            // sales update below and before the items are rewritten, so it reverses
-            // the items that left.
-            if (shippingTransitionTo) {
-                // The courier and customer from this same save, so the stock records
-                // name them (the sales row is written after this).
-                const moved = await updateOrderStatus(id, shippingTransitionTo, undefined, updates.shipping?.company || undefined, {
-                    skipDispatchGuard: true,
-                    expectedStatus: shippingStatusBeforeUpdate,
-                    customer: updates.customer ? { name: updates.customer.name, phone: updates.customer.phone } : undefined,
-                });
-                if (!moved) {
-                    statusChangeRefused = true;
-                    // The optimistic update above showed the new status; put back the real one.
-                    const { data: realRow } = await supabase.from('sales').select('shipping_status').eq('id', id).maybeSingle();
-                    const realStatus = (realRow?.shipping_status || shippingStatusBeforeUpdate || 'Pending') as NonNullable<Sale['shipping']>['status'];
-                    setSales(prev => prev.map(sale => sale.id === id && sale.shipping ? { ...sale, shipping: { ...sale.shipping, status: realStatus } } : sale));
-                }
+            // 3. Items: replaced in one database transaction. When the order's goods
+            // are out of stock (by its status at that moment), stock moves by what
+            // the edit added or removed and the stock-out record is kept in step, so
+            // a later cancel, delete or restock reverses what actually left. A
+            // failure keeps the old items. Before the sales row below, so a failure
+            // here doesn't leave the new total saved over the old items.
+            if (updates.items && updates.items.length > 0) {
+                await replaceOrderItems(id, updates.items, shippingPlan.to || shippingStatusBeforeUpdate || 'Pending');
             }
 
-            // 3. Update 'sales' table
+            // 4. Update 'sales' table
             if (Object.keys(dbUpdates).length > 0) {
                 // "Deposit into" needs migrations/add_sales_deposit_account.sql; until an
                 // instance has run it, save the rest of the update without that one column
@@ -3419,15 +3546,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (!error) console.info('Saved without the custom KH(៛) override — run migrations/add_sales_custom_khr.sql to store it');
                 }
                 if (error) throw error;
-            }
-
-            // 4. Items: replaced in one database transaction. When the order's goods
-            // are out of stock (by its status at that moment), stock moves by what
-            // the edit added or removed and the stock-out record is kept in step, so
-            // a later cancel, delete or restock reverses what actually left. A
-            // failure keeps the old items.
-            if (updates.items && updates.items.length > 0) {
-                await replaceOrderItems(id, updates.items);
             }
 
             let loggedSpecific = false;
@@ -3468,7 +3586,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
 
             // Stock-out records follow the shipping status in updateOrderStatus (step 2b).
-            return !statusChangeRefused;
+            return true;
         } catch (error: any) {
             console.error('Error updating order:', error);
             alert(`Failed to update order: ${error.message}`);

@@ -8,18 +8,26 @@
 -- two tabs, a screen that was out of date) both took the stock out and both
 -- logged an 'Order Shipped' movement, and a write that failed part-way left
 -- stock moved for a status that never changed. Each function here locks the
--- order first (then its products, always in id order, so two orders can't
--- deadlock), checks the order is still at the status the caller saw, and does
--- the status, stock, inventory_items, stock_movements and restocks writes
--- together: all of them happen or none do, and a second caller waits and is
--- then refused.
+-- order first (then its products, always in id order), checks the order is
+-- still at the status the caller saw, and does the status, stock,
+-- inventory_items, stock_movements and restocks writes together: all of them
+-- happen or none do, and a second caller waits and is then refused.
+--
+-- The row locks are FOR NO KEY UPDATE (the lock a plain UPDATE takes), not
+-- FOR UPDATE: every foreign-key check on sale_items, inventory_items and
+-- restocks takes FOR KEY SHARE on the product (and order) it points at, and
+-- FOR UPDATE conflicts with that, so two saves touching the same product (or
+-- a new order being created at the same time) could deadlock, and every ship
+-- would block new orders for its products until it committed.
 --
 -- Payment and income (transactions, sales journal entries, payment_status)
 -- are not touched here; the app still handles those itself.
 --
 -- Until this is run, changing an order's shipping status, restocking a
--- returned order and editing the items of a shipped order are refused with a
--- message saying to run this file.
+-- returned order and editing the items of a shipped (or delivered, or
+-- returned) order are refused, before anything is saved, with a message
+-- saying to run this file. Tracking and courier saves, and item edits on an
+-- order whose goods are still on hand, keep working without it.
 
 -- Statuses where the order's goods are counted out of stock: shipped,
 -- delivered, or on their way back (Returned keeps them out until Restock).
@@ -67,7 +75,7 @@ DECLARE
     r RECORD;
 BEGIN
     FOR r IN
-        SELECT id, shipping_status FROM sales WHERE id = ANY(p_ids) ORDER BY id FOR UPDATE
+        SELECT id, shipping_status FROM sales WHERE id = ANY(p_ids) ORDER BY id FOR NO KEY UPDATE
     LOOP
         IF r.shipping_status = 'Returned' THEN
             v_ids := v_ids || r.id;
@@ -77,14 +85,16 @@ BEGIN
         RETURN jsonb_build_object('restocked', '[]'::jsonb, 'restocks', '[]'::jsonb, 'stock', '{}'::jsonb);
     END IF;
 
-    -- Shipping marked these orders' FIFO items sold; return them to the pool.
-    UPDATE inventory_items SET status = 'in_stock', sale_id = NULL
-     WHERE sale_id = ANY(v_ids) AND status = 'sold';
-
+    -- Products before their inventory items, the same order the other
+    -- functions take them in.
     PERFORM 1 FROM products
      WHERE id IN (SELECT product_id FROM sale_items WHERE sale_id = ANY(v_ids))
      ORDER BY id
-       FOR UPDATE;
+       FOR NO KEY UPDATE;
+
+    -- Shipping marked these orders' FIFO items sold; return them to the pool.
+    UPDATE inventory_items SET status = 'in_stock', sale_id = NULL
+     WHERE sale_id = ANY(v_ids) AND status = 'sold';
 
     FOR r IN
         WITH lines AS (
@@ -191,7 +201,7 @@ BEGIN
         RAISE EXCEPTION 'No shipping status was given.';
     END IF;
 
-    SELECT * INTO s FROM sales WHERE id = p_order_id FOR UPDATE;
+    SELECT * INTO s FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'This order no longer exists.';
     END IF;
@@ -217,7 +227,7 @@ BEGIN
         PERFORM 1 FROM products
          WHERE id IN (SELECT product_id FROM sale_items WHERE sale_id = p_order_id)
          ORDER BY id
-           FOR UPDATE;
+           FOR NO KEY UPDATE;
     END IF;
 
     IF order_status_holds_stock(v_new) AND NOT order_status_holds_stock(v_old) THEN
@@ -332,7 +342,7 @@ BEGIN
         RAISE EXCEPTION 'The order needs at least one item.';
     END IF;
 
-    SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending') INTO v_status FROM sales WHERE id = p_order_id FOR UPDATE;
+    SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending') INTO v_status FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'This order no longer exists.';
     END IF;
@@ -355,7 +365,7 @@ BEGIN
      WHERE id IN (SELECT NULLIF(b->>'product_id', '') FROM jsonb_array_elements(v_before) b
                   UNION SELECT NULLIF(i->>'id', '') FROM jsonb_array_elements(p_items) i)
      ORDER BY id
-       FOR UPDATE;
+       FOR NO KEY UPDATE;
 
     FOR r IN
         WITH b AS (
