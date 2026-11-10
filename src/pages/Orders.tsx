@@ -82,6 +82,9 @@ const ShippingModalComponent: React.FC<{
     // '' = auto-compute from the total/deposit — stays live until the user
     // types a KHR figure of their own, same pattern the Receipt used to have.
     const [customKhr, setCustomKhr] = useState<string>('');
+    // Save is in flight (see the Save handler).
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
     const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
 
     const handleShippingPointSelect = (data: any) => {
@@ -345,6 +348,12 @@ const ShippingModalComponent: React.FC<{
                                 showToast('The order needs at least one item', 'error');
                                 return;
                             }
+                            // One save at a time: a second click while the first is still
+                            // running is ignored (the ref answers at once; the state
+                            // disables the button).
+                            if (savingRef.current) return;
+                            savingRef.current = true;
+                            setSaving(true);
                             try {
                                 const updates: Partial<Sale> = {};
                                 if (shippingRemark !== (order.remark || '')) updates.remark = shippingRemark;
@@ -369,28 +378,31 @@ const ShippingModalComponent: React.FC<{
                                     updates.customKhrAmount = newKhr as any;
                                 }
 
-                                if (Object.keys(updates).length > 0) {
-                                    await updateOrder(order.id, updates);
-                                }
-                                await updateOrderStatus(order.id, targetStatus, order.shipping?.trackingNumber, selectedCompany);
-                                showToast(targetStatus === 'Shipped' ? 'Order marked as shipped' : 'Order marked as confirmed', 'success');
+                                // An edit that didn't fully save (already explained) must not
+                                // go on to ship the order with the old items.
+                                if (Object.keys(updates).length > 0 && !(await updateOrder(order.id, updates))) return;
+                                // false: refused or changed elsewhere, nothing moved (already explained).
+                                const moved = await updateOrderStatus(order.id, targetStatus, order.shipping?.trackingNumber, selectedCompany);
+                                if (moved) showToast(targetStatus === 'Shipped' ? 'Order marked as shipped' : 'Order marked as confirmed', 'success');
                             } catch (e: any) {
                                 console.error('Failed to update shipping status:', e);
                                 showToast('Update failed. Please try again.', 'error');
                             } finally {
+                                savingRef.current = false;
+                                setSaving(false);
                                 onClose();
                             }
                         }}
-                        disabled={!selectedCompany || items.length === 0}
+                        disabled={saving || !selectedCompany || items.length === 0}
                         className="primary-button"
                         style={{
                             padding: '10px 16px', borderRadius: '8px', border: 'none',
-                            background: (selectedCompany && items.length > 0) ? 'var(--color-primary)' : 'var(--color-border)',
-                            color: 'white', cursor: (selectedCompany && items.length > 0) ? 'pointer' : 'not-allowed',
+                            background: (!saving && selectedCompany && items.length > 0) ? 'var(--color-primary)' : 'var(--color-border)',
+                            color: 'white', cursor: (!saving && selectedCompany && items.length > 0) ? 'pointer' : 'not-allowed',
                             fontSize: '14px', fontWeight: 600
                         }}
                     >
-                        Save
+                        {saving ? 'Saving…' : 'Save'}
                     </button>
                 </div>
             </div>
@@ -414,6 +426,9 @@ const PendingRemarkModalComponent: React.FC<{
     const { showToast } = useToast();
 
     const [remark, setRemark] = useState<string>('');
+    // Same in-flight guard as the ship popup: one save at a time.
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
 
     useEffect(() => {
         if (isOpen && order) {
@@ -456,24 +471,31 @@ const PendingRemarkModalComponent: React.FC<{
                     </button>
                     <button
                         onClick={async () => {
+                            if (savingRef.current) return;
+                            savingRef.current = true;
+                            setSaving(true);
                             try {
                                 if (remark !== (order.remark || '')) {
                                     await updateOrder(order.id, { remark });
                                 }
-                                await updateOrderStatus(order.id, 'Pending');
-                                showToast('Order marked as Pending', 'success');
+                                // false: refused or changed elsewhere (already explained).
+                                const moved = await updateOrderStatus(order.id, 'Pending');
+                                if (moved) showToast('Order marked as Pending', 'success');
                             } catch (e: any) {
                                 console.error('Failed to update pending status:', e);
                                 showToast('Update failed. Please try again.', 'error');
                             } finally {
+                                savingRef.current = false;
+                                setSaving(false);
                                 onClose();
                             }
                         }}
+                        disabled={saving}
                         className="primary-button"
                         style={{
                             padding: '10px 16px', borderRadius: '8px', border: 'none',
-                            background: 'var(--color-primary)',
-                            color: 'white', cursor: 'pointer',
+                            background: saving ? 'var(--color-border)' : 'var(--color-primary)',
+                            color: 'white', cursor: saving ? 'not-allowed' : 'pointer',
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
@@ -3450,8 +3472,11 @@ const Orders: React.FC = () => {
                                             }
                                             if (order.shipping?.status === 'ReStock' && status === 'Drafted') {
                                                 // Admin reopening a restocked order (see desktop handler).
-                                                updateOrderStatus(id, 'Drafted');
-                                                updateOrder(id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any });
+                                                // In sequence: updateOrder must see the Drafted status the
+                                                // first call wrote, and nothing follows a refused change.
+                                                updateOrderStatus(id, 'Drafted')
+                                                    .then(moved => { if (moved) return updateOrder(id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any }); })
+                                                    .catch(e => { console.error('Status change failed:', e); showToast('Failed to update order status', 'error'); });
                                                 return;
                                             }
                                             // Shipped -> Delivered is a plain status change: no payment
@@ -3467,7 +3492,9 @@ const Orders: React.FC = () => {
                                             // stock-ledger handling never runs twice for one transition.
                                             (async () => {
                                                 try {
-                                                    await updateOrderStatus(id, status);
+                                                    // false: refused or changed elsewhere (already
+                                                    // explained) — don't go on to the payment side.
+                                                    if (!(await updateOrderStatus(id, status))) return;
                                                     if (status === 'ReStock') {
                                                         // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
                                                         // PdFee kept — and income cleanup). Nothing more to do here.
@@ -3933,8 +3960,11 @@ const Orders: React.FC = () => {
                                                                                     // Admin reopening a restocked order: back to Drafted with
                                                                                     // payment reset so it can run the normal flow again
                                                                                     // (stock deducts fresh when it ships).
-                                                                                    updateOrderStatus(order.id, 'Drafted');
-                                                                                    updateOrder(order.id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any });
+                                                                                    // In sequence: updateOrder must see the Drafted status the
+                                                                                    // first call wrote, and nothing follows a refused change.
+                                                                                    updateOrderStatus(order.id, 'Drafted')
+                                                                                        .then(moved => { if (moved) return updateOrder(order.id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any }); })
+                                                                                        .catch(e => { console.error('Status change failed:', e); showToast('Failed to update order status', 'error'); });
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'Shipped') {
@@ -3961,7 +3991,9 @@ const Orders: React.FC = () => {
                                                                                 // stock-ledger handling) is never replayed twice.
                                                                                 (async () => {
                                                                                     try {
-                                                                                        await updateOrderStatus(order.id, newStatus as any);
+                                                                                        // false: refused or changed elsewhere (already
+                                                                                        // explained) — don't go on to the payment side.
+                                                                                        if (!(await updateOrderStatus(order.id, newStatus as any))) return;
                                                                                         if (newStatus === 'ReStock') {
                                                                                             // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
                                                                                             // PdFee kept — and income cleanup). Nothing more to do here.
@@ -4010,7 +4042,10 @@ const Orders: React.FC = () => {
                                                                                     const updatedShipping = order.shipping
                                                                                         ? { ...order.shipping, trackingNumber: val }
                                                                                         : { company: '', trackingNumber: val, status: 'Pending' as const, cost: 0, staffName: '' };
-                                                                                    updateOrder(order.id, { shipping: updatedShipping });
+                                                                                    // The status sent back is only what this row showed, not a
+                                                                                    // request to move it: if the order moved on since, the
+                                                                                    // database's status is kept (no shipment undone or replayed).
+                                                                                    updateOrder(order.id, { shipping: updatedShipping, expectedShippingStatus: order.shipping?.status || 'Pending' });
                                                                                 }
                                                                             }}
                                                                             onKeyDown={(e) => {

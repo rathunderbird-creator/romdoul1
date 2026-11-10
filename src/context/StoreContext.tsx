@@ -558,18 +558,11 @@ const localDayOf = (v: string | null | undefined): string => {
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
-// Stock leaves the building at 'Shipped', and only then. Delivery is a later
-// confirmation of the same physical movement, so it must not deduct again or rewrite
-// the original stock-out record — the goods are counted out exactly once.
-const countsAsStockOut = (status: string) => status === 'Shipped';
-
-// Statuses where the stock is already gone. Used to decide whether stock should be
-// put back: moving Shipped -> Delivered stays "consumed", so nothing is restored.
+// Statuses where the stock is already gone: moving Shipped -> Delivered stays
+// "consumed", so nothing is restored. The stock rules for each status change
+// (what deducts, what restores, which stock-out records are written) live in
+// the database: set_order_shipping_status in migrations/add_order_status_function.sql.
 const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(status);
-
-// Statuses where this order's goods are counted out of stock: shipped, delivered,
-// or on their way back (Returned keeps them out until Restock brings them in).
-const holdsOrderStock = (status: string) => isStockConsumed(status) || status === 'Returned';
 
 // Statuses that only make sense once the goods have physically left: you cannot deliver
 // or receive a return for something that was never shipped.
@@ -2217,72 +2210,249 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return newSale;
     };
 
+    // The status-change, restock and item-edit functions arrive with
+    // migrations/add_order_status_function.sql; until it is run, PostgREST
+    // reports them as missing. Plain messages for the other failures too.
+    const orderRpcMessage = (error: unknown): string => {
+        const e = error as { code?: string; message?: string } | null;
+        const message = String(e?.message || error || '');
+        if (isRpcMissingError(e) || (/set_order_shipping_status|restock_returned_orders|edit_order_items/i.test(message) && /schema cache|does not exist/i.test(message))) {
+            return 'Orders need a one-time database update before shipping status, restocks or shipped items can change: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor.';
+        }
+        if (/sale_items_product_id_fkey/i.test(message)) {
+            return 'A product on this order no longer exists. Remove it from the order and save again.';
+        }
+        return message || 'Unknown error';
+    };
+
+    // Stock values a database function returned, applied to the cached products.
+    const applyStockMap = (stock: Record<string, number> | null | undefined) => {
+        if (!stock || Object.keys(stock).length === 0) return;
+        setProducts(prev => prev.map(p => stock[p.id] !== undefined ? { ...p, stock: Number(stock[p.id]) } : p));
+        setProductsUpdatedAt(Date.now());
+    };
+
+    // Who and when, for the database functions: the edit stamp, the stock
+    // records' author and the local day they are dated.
+    const orderStockFields = (now: string): Record<string, unknown> => ({
+        now,
+        movement_date: getLocalYYYYMMDD(),
+        created_by: currentUser?.id || 'unknown',
+        added_by: currentUser?.name || 'System',
+        ...(currentUser ? { last_edited_at: now, last_edited_by: currentUser.name } : {}),
+    });
+
+    type RestockRow = { id: string; product_id: string; quantity: number; cost: number; date: string; added_by: string; note: string };
+
+    // The payment side of a restock, for orders the database has just restocked
+    // (it does the stock, the return records and the ReStock status in one go):
+    // a previously-Paid order's income and its draft journal entry are removed,
+    // and the payment goes to Cancel (a PdFee order keeps PdFee — the delivery
+    // fee was collected and stays booked).
+    const applyRestockPaymentSide = async (orderIds: string[], now: string) => {
+        const { data: orderDataList, error: readErr } = await supabase.from('sales').select('id, customer_snapshot, payment_status, amount_received, settle_date, deposit_amount, total').in('id', orderIds);
+        if (readErr) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + readErr.message);
+
+        // Previously-Paid orders leaving Paid for Cancel get the same cleanup
+        // as updateOrder's leaving-Paid branch (this path bypasses updateOrder):
+        // remove the income logged when the order was marked Paid, plus any
+        // draft journal entry it posted, and take back the Received amount and
+        // settle date below. Matched the same way income is looked up there.
+        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
+        const paidOrders = (orderDataList || []).filter(o => PAID_STATUSES.includes(o.payment_status || ''));
+        const removedTxnIds: string[] = [];
+        for (const paidOrder of paidOrders) {
+            const custName = paidOrder.customer_snapshot?.name || 'Customer';
+            // Deposit orders logged only the remainder as sales income — match
+            // that too. Zero amounts are excluded: real income rows are always
+            // > 0, and matching amount.eq.0 could only ever hit an unrelated
+            // row of the same customer.
+            const dep = Number(paidOrder.deposit_amount) || 0;
+            const received = Number(paidOrder.amount_received) || 0;
+            const total = Number(paidOrder.total) || 0;
+            const amountMatches = [received, total];
+            if (dep > 0) amountMatches.push(Math.max(0, received - dep), Math.max(0, total - dep));
+            const positiveMatches = amountMatches.filter(a => a > 0);
+            if (positiveMatches.length === 0) continue;
+            try {
+                const { data: paidTxns } = await supabase.from('transactions')
+                    .select('id')
+                    .eq('type', 'Income')
+                    // Also match the pre-rename category so older rows still clean up.
+                    .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
+                    .eq('description', custName)
+                    .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
+                    .limit(1);
+                if (paidTxns && paidTxns.length > 0) {
+                    await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
+                    removedTxnIds.push(paidTxns[0].id);
+
+                    // Also remove any Draft journal entry this payment posted.
+                    // Lines first, then the header, to satisfy the FK.
+                    const refId = 'TX-' + paidTxns[0].id;
+                    const { data: journalEntry } = await supabase.from('journal_entries')
+                        .select('id').eq('reference_id', refId).limit(1).maybeSingle();
+                    if (journalEntry) {
+                        await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntry.id);
+                        await supabase.from('journal_entries').delete().eq('id', journalEntry.id);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to remove income for bulk-restocked paid order:', e);
+            }
+        }
+        if (removedTxnIds.length > 0) {
+            setTransactions(prev => prev.filter(t => !removedTxnIds.includes(t.id)));
+        }
+
+        // Payment to Cancel (PdFee kept). The ReStock status and the edit
+        // stamp were written with the stock.
+        const pdFeeIds = new Set((orderDataList || []).filter(o => o.payment_status === 'PdFee').map(o => o.id));
+        const cancelIds = orderIds.filter(oid => !pdFeeIds.has(oid));
+        if (cancelIds.length > 0) {
+            const { error } = await supabase.from('sales').update({ payment_status: 'Cancel' }).in('id', cancelIds);
+            if (error) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + error.message);
+        }
+
+        // The payment reset applies only to the previously-Paid orders — a
+        // non-paid order's Received (e.g. a kept deposit) is left alone, same
+        // as the single-order Cancel path.
+        const paidOrderIds = paidOrders.map(o => o.id);
+        if (paidOrderIds.length > 0) {
+            await supabase.from('sales').update({
+                amount_received: 0,
+                settle_date: null
+            }).in('id', paidOrderIds);
+        }
+
+        // Local State Update
+        setSales(prev => prev.map(sale =>
+            orderIds.includes(sale.id)
+            ? {
+                ...sale,
+                paymentStatus: pdFeeIds.has(sale.id) ? 'PdFee' : 'Cancel',
+                ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined } : {}),
+                lastEditedAt: currentUser ? now : sale.lastEditedAt,
+                lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
+                shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any }
+            }
+            : sale
+        ));
+
+        dispatchActivity({
+            action: 'stock_restock',
+            description: `Restocked ${orderIds.length} order${orderIds.length === 1 ? '' : 's'}: ${orderIds.map(id => '#' + id.slice(0, 8)).join(', ')}`,
+            userId: currentUser?.id,
+            userName: currentUser?.name,
+            metadata: { orderIds }
+        });
+    };
+
+    // The restock records the database wrote, added to the cached history.
+    const addRestockRows = (rows: RestockRow[] | null | undefined) => {
+        if (!rows || rows.length === 0) return;
+        setRestocks(prev => [...rows.map(r => ({
+            id: r.id,
+            productId: r.product_id,
+            quantity: Number(r.quantity),
+            cost: Number(r.cost),
+            date: r.date,
+            addedBy: r.added_by,
+            note: r.note
+        })), ...prev]);
+    };
+
+    // Resolves true when the order is now at the status (or was already there
+    // and the tracking/courier were saved), false when the change was refused
+    // or failed — the user has been told why (opts.onRefused: handed the reason
+    // instead of an alert, for bulk runs that report a count), and nothing of it was written.
+    //
     // opts.skipDispatchGuard: for updateOrder, which has already run the same
     // post-dispatch check (or forces Delivered for Get File) before delegating here.
     // opts.shownStatus: the status the caller's screen showed. When the caller sends
     // that same status back (a tracking-only save) but the order has moved on since,
     // the real status is kept instead of being reverted.
+    // opts.expectedStatus: the status the caller decided from (updateOrder's own
+    // fresh read); refused if the order has moved on since.
     // opts.customer: the customer as saved in the same edit, for the stock records.
-    const updateOrderStatus = async (id: string, requestedStatus: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; customer?: { name?: string; phone?: string } }) => {
-        // Every stock decision below keys off the status BEFORE this change, and
-        // this tab's copy can be out of date (no realtime sync): deciding from it
-        // deducted or restored stock twice when the order had moved on elsewhere.
-        // Read the order and its items from the database instead.
+    const updateOrderStatus = async (id: string, requestedStatus: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; expectedStatus?: string; onRefused?: (message: string) => void; customer?: { name?: string; phone?: string } }): Promise<boolean> => {
+        const refuse = (message: string) => {
+            if (opts?.onRefused) opts.onRefused(message);
+            else alert(message);
+            return false;
+        };
+        // Every decision below keys off the status BEFORE this change, and this
+        // tab's copy can be out of date (no realtime sync). Read it from the
+        // database; the database function then refuses if it moves again before
+        // the change lands (a double click, a retry, another device).
         const { data: freshOrderRow, error: freshOrderErr } = await supabase
             .from('sales')
-            .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
+            .select('shipping_status, tracking_number')
             .eq('id', id)
             .single();
         if (freshOrderErr || !freshOrderRow) {
             console.error('Could not read current status before changing it:', freshOrderErr?.message);
-            alert('Could not verify this order’s current status. Please refresh and try again.');
-            throw freshOrderErr || new Error('Order not found');
+            return refuse('Could not verify this order’s current status. Please refresh and try again.');
         }
-        const freshOrder = mapSaleEntity(freshOrderRow);
         const freshStatus: string = freshOrderRow.shipping_status || 'Pending';
         const status = (opts?.shownStatus !== undefined && requestedStatus === opts.shownStatus && freshStatus !== requestedStatus
             ? freshStatus
             : requestedStatus) as NonNullable<Sale['shipping']>['status'];
+        const expectedStatus = opts?.expectedStatus !== undefined ? (opts.expectedStatus || 'Pending') : freshStatus;
 
-        // Checked before the optimistic setSales below — otherwise the row would flip to
-        // the new status on screen even though the change is rejected.
         // Already at the target status: no transition and no alert (bulk selections
         // routinely mix rows already there). Carry on so a tracking number or courier
         // passed with it is still saved.
         if (POST_DISPATCH_STATUSES.includes(status) && !opts?.skipDispatchGuard && freshStatus !== status) {
             const currentStatus = freshStatus;
             if (!canEnterPostDispatch(currentStatus, status)) {
-                if (currentUser?.roleId !== 'admin') {
-                    alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
-                    return;
-                }
-                if (!confirm(ADMIN_FORCE_STATUS_MESSAGE(currentStatus, status))) return;
+                if (currentUser?.roleId !== 'admin') return refuse(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, status));
+                if (!confirm(ADMIN_FORCE_STATUS_MESSAGE(currentStatus, status))) return false;
             }
         }
 
-        // Returned -> ReStock means the goods are back on the shelf. Every screen that
-        // offers ReStock lands here, and several used to change only the status,
-        // leaving the goods counted out. Run the one Restock flow instead: it needs
-        // the Restock permission, adds the stock and records the return, cancels the
-        // payment and removes income booked for it, and writes the ReStock status.
-        if (freshStatus === 'Returned' && status === 'ReStock') {
-            if (!hasPermission('restock_orders')) {
-                alert('You do not have permission to restock orders.');
-                return;
-            }
-            await bulkRestockOrders([id]);
-            if (trackingNumber !== undefined || shippingCompany) {
-                const extra: Record<string, string> = {};
-                if (trackingNumber !== undefined) extra.tracking_number = trackingNumber;
-                if (shippingCompany) extra.shipping_company = shippingCompany;
-                const { error: extraErr } = await supabase.from('sales').update(extra).eq('id', id);
-                if (extraErr) console.error('Failed to save tracking with the restock:', extraErr);
-            }
-            return;
+        // Returned -> ReStock means the goods are back on the shelf: the Restock
+        // flow (stock, return records, payment Cancel and income cleanup). It
+        // needs the Restock permission, and only a Returned order can be restocked.
+        const restocking = status === 'ReStock' && freshStatus !== 'ReStock';
+        if (restocking && freshStatus !== 'Returned') {
+            return refuse(`Only a Returned order can be restocked. This order is "${freshStatus}".`);
+        }
+        if (restocking && !hasPermission('restock_orders')) {
+            return refuse('You do not have permission to restock orders.');
         }
 
         const now = new Date().toISOString();
         const editorName = currentUser?.name;
+        const cachedOrder = sales.find(s => s.id === id);
+        const fields: Record<string, unknown> = {
+            ...orderStockFields(now),
+            customer_name: opts?.customer?.name || undefined,
+            customer_phone: opts?.customer?.phone || undefined,
+            fallback_customer_name: cachedOrder?.customer?.name || undefined,
+            fallback_customer_phone: cachedOrder?.customer?.phone || undefined,
+        };
+        // A defined check, not truthy: '' is a legitimate value now that
+        // Orders Management 2's drawer lets staff deliberately clear a
+        // tracking number.
+        if (trackingNumber !== undefined) fields.tracking_number = trackingNumber;
+        if (shippingCompany) fields.shipping_company = shippingCompany;
+
+        // Status, stock, inventory items, stock-out records (and for a restock the
+        // return records) in one database transaction: all of it or none of it.
+        const { data: result, error: rpcError } = await supabase.rpc('set_order_shipping_status', {
+            p_order_id: id,
+            p_expected_status: expectedStatus,
+            p_new_status: status,
+            p_fields: fields,
+        });
+        if (rpcError) {
+            console.error('Failed to update order status:', rpcError);
+            setSalesUpdatedAt(Date.now());
+            return refuse(orderRpcMessage(rpcError));
+        }
+        const res = (result || {}) as { stock?: Record<string, number>; restocked?: string[]; restocks?: RestockRow[] };
+        applyStockMap(res.stock);
 
         setSales(prev => prev.map(sale => {
             if (sale.id === id) {
@@ -2301,356 +2471,73 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         }),
                         status,
                         trackingNumber: trackingNumber ?? (sale.shipping?.trackingNumber || ''),
-                        company: shippingCompany ?? (sale.shipping?.company || '')
+                        company: shippingCompany || (sale.shipping?.company || '')
                     }
                 };
             }
             return sale;
         }));
 
-        // --- Stock Management Logic ---
-        // From the database row read above (status and items), never the cache.
-        // Customer details still come from the cache when present (the DB
-        // snapshot is used as a fallback below).
-        const cachedOrder = sales.find(s => s.id === id);
-        const salesOrder: Sale = { ...freshOrder, customer: freshOrder.customer || cachedOrder?.customer } as Sale;
-        // Did this transition take the goods out of stock? Entering any status that
-        // counts them out (Shipped, Delivered, Returned) from one where they are on
-        // hand: shipping, Get File or an admin forcing Delivered on an order that
-        // never shipped, or a restocked order being sent back to Returned (otherwise
-        // its next restock would add the goods a second time). Moving between
-        // counted-out statuses (Shipped -> Delivered, Returned -> Shipped) is not.
-        const stockDeductedThisTransition = (s: string, old: string) => holdsOrderStock(s) && !holdsOrderStock(old);
-        {
-            const oldStatus = freshStatus;
-
-            // Case 1: the goods leave stock -> DEDUCT. Shipped -> Delivered deliberately
-            // does not deduct: the goods already left at Shipped, and counting again
-            // would double-deduct. Re-shipping a Returned order is a stock no-op too
-            // (Case 2 deliberately keeps those goods counted out).
-            if (stockDeductedThisTransition(status, oldStatus)) {
-                for (const item of salesOrder.items) {
-                    // Local
-                    setProducts(prev => prev.map(p => {
-                        if (p.id === item.id) return { ...p, stock: Math.max(0, p.stock - item.quantity) };
-                        return p;
-                    }));
-                    // DB
-                    const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-                    if (current) {
-                        await supabase.from('products').update({ stock: Math.max(0, current.stock - item.quantity) }).eq('id', item.id);
-                    }
-
-                    // Deduct specific inventory items (FIFO)
-                    const { data: invItems } = await supabase.from('inventory_items')
-                        .select('id')
-                        .eq('product_id', item.id)
-                        .eq('status', 'in_stock')
-                        .order('created_at', { ascending: true })
-                        .limit(item.quantity);
-                    
-                    if (invItems && invItems.length > 0) {
-                        const idsToUpdate = invItems.map((i: any) => i.id);
-                        await supabase.from('inventory_items')
-                            .update({ status: 'sold', sale_id: id })
-                            .in('id', idsToUpdate);
-                    }
-                }
+        if (restocking) {
+            addRestockRows(res.restocks);
+            try {
+                await applyRestockPaymentSide([id], now);
+            } catch (e) {
+                // The restock itself is done; only the payment step is left.
+                console.error('Restock payment step failed:', e);
+                alert(e instanceof Error ? e.message : String(e));
             }
-            // Case 2: Changing FROM 'Shipped' or 'Delivered' (to non-shipped) -> RESTORE Stock
-            // EXCEPTION: If changing to 'Returned', do NOT restore stock automatically.
-            // 'Returned' means it's on the way back but hasn't arrived. (Restock button in Inventory will restore it).
-            // 'Returned' -> pre-ship (un-returning to Pending/Confirmed/Drafted) is a full
-            // reversal too: the goods are still counted out from the original shipment, so
-            // restore here — otherwise a later re-ship would deduct them a second time.
-            // ReStock is excluded from that: the Restock flow does its own stock restore.
-            else if ((isStockConsumed(oldStatus) || (oldStatus === 'Returned' && status !== 'ReStock')) && !isStockConsumed(status) && status !== 'Returned') {
-                for (const item of salesOrder.items) {
-                    // Local
-                    setProducts(prev => prev.map(p => {
-                        if (p.id === item.id) return { ...p, stock: p.stock + item.quantity };
-                        return p;
-                    }));
-                    // DB
-                    const { data: current } = await supabase.from('products').select('stock').eq('id', item.id).single();
-                    if (current) {
-                        await supabase.from('products').update({ stock: current.stock + item.quantity }).eq('id', item.id);
-                    }
-
-                    // Restore specific inventory items
-                    const { data: soldItems } = await supabase.from('inventory_items')
-                        .select('id')
-                        .eq('sale_id', id)
-                        .eq('product_id', item.id);
-                    
-                    if (soldItems && soldItems.length > 0) {
-                        const idsToUpdate = soldItems.map((i: any) => i.id);
-                        await supabase.from('inventory_items')
-                            .update({ status: 'in_stock', sale_id: null })
-                            .in('id', idsToUpdate);
-                    }
-                }
-                
-                // Delete stock-out records since the order is no longer shipped.
-                // Only the NEWEST generation: an order re-shipped after a return/restock
-                // cycle carries one out generation per shipment (each insert batch shares
-                // a created_at), and only the shipment being reversed here — one item
-                // set's worth of stock was restored above — may leave the ledger.
-                const { data: outRows } = await supabase.from('stock_movements')
-                    .select('id, created_at')
-                    .eq('reference_id', id)
-                    .eq('type', 'out');
-                if (outRows && outRows.length > 0) {
-                    const newest = outRows.reduce((m, r: any) => (r.created_at > m ? r.created_at : m), outRows[0].created_at);
-                    const idsToDelete = outRows.filter((r: any) => r.created_at === newest).map((r: any) => r.id);
-                    await supabase.from('stock_movements').delete().in('id', idsToDelete);
-                }
-            }
-        }
-        // ------------------------------
-
-        const updates: any = { shipping_status: status };
-        // A defined check, not truthy: '' is a legitimate value now that
-        // Orders Management 2's drawer lets staff deliberately clear a
-        // tracking number — a truthy check silently dropped that write
-        // while still showing "Saved" in the UI. Every existing caller only
-        // ever omits this argument (undefined) or passes a real value, so
-        // this doesn't change behavior for them.
-        if (trackingNumber !== undefined) updates.tracking_number = trackingNumber;
-        if (shippingCompany) updates.shipping_company = shippingCompany;
-
-        if (currentUser) {
-            updates.last_edited_at = now;
-            updates.last_edited_by = currentUser.name;
-        }
-
-        // Surface a failed status write instead of continuing on optimistic state —
-        // callers (e.g. the bulk-edit loops) rely on this to show their error toast.
-        const { error: statusWriteError } = await supabase.from('sales').update(updates).eq('id', id);
-        if (statusWriteError) {
-            console.error('Failed to update order status:', statusWriteError);
+            setProductsUpdatedAt(Date.now());
             setSalesUpdatedAt(Date.now());
-            throw statusWriteError;
+            return true;
         }
 
-        // Log the stock-out movement only when the order ships. Delivery must leave the
-        // existing record untouched — rewriting it re-dated the movement to the delivery
-        // day, which moved it in stock-out reports.
-        // Delivered logs here too when it is the transition that took the goods out
-        // (Get File / forced Delivered on an order that never shipped).
-        const deductedNow = stockDeductedThisTransition(status, freshStatus);
-        if (countsAsStockOut(status) || deductedNow) {
-            const oldStatus = freshStatus;
-            // Only log or update if this is a new transition
-            if (oldStatus !== status) {
-                // Check if stock-out records already exist for this order
-                const { data: existingMovements } = await supabase.from('stock_movements')
-                    .select('id')
-                    .eq('reference_id', id)
-                    .eq('type', 'out');
-
-                // The customer as saved in the same edit when updateOrder delegated here.
-                const customerName = opts?.customer?.name || salesOrder.customer?.name || '';
-                const customerPhone = opts?.customer?.phone || salesOrder.customer?.phone || '';
-
-                // If customer info is empty (order may not be fully loaded in local state), fetch from DB
-                let finalCustomerName = customerName;
-                let finalCustomerPhone = customerPhone;
-                if (!finalCustomerName) {
-                    const { data: dbSale } = await supabase.from('sales').select('customer_snapshot').eq('id', id).single();
-                    if (dbSale?.customer_snapshot) {
-                        finalCustomerName = dbSale.customer_snapshot.name || '';
-                        finalCustomerPhone = dbSale.customer_snapshot.phone || '';
-                    }
+        const oldTracking = freshOrderRow.tracking_number || '';
+        if (trackingNumber !== undefined && trackingNumber !== oldTracking) {
+            dispatchActivity({
+                action: 'order_updated',
+                description: `Tracking ID updated for Order #${id.slice(0, 8)}`,
+                userId: currentUser?.id,
+                userName: currentUser?.name,
+                metadata: {
+                    orderId: id,
+                    oldTracking,
+                    newTracking: trackingNumber
                 }
-                const customerInfo = [finalCustomerName, finalCustomerPhone].filter(Boolean).join(' | ');
-
-                // Did Case 1 above actually deduct stock on this transition? If so, this
-                // is a genuinely new shipment (e.g. a ReStock-reopened order shipping
-                // again) and must INSERT fresh out rows even when the first shipment's
-                // rows still exist — otherwise the ledger nets 0 while stock netted −N.
-                if (existingMovements && existingMovements.length > 0 && !deductedNow) {
-                    // Refresh existing records without re-dating them: a correction like
-                    // Delivered -> Shipped must keep the date the goods actually left.
-                    const { error: refreshErr } = await supabase.from('stock_movements')
-                        .update({
-                            reason: 'Shipped',
-                            source: 'Order Shipped',
-                            customer_name: finalCustomerName,
-                            customer_phone: finalCustomerPhone
-                        })
-                        .eq('reference_id', id)
-                        .eq('type', 'out');
-                    if (refreshErr) console.error('Failed to update stock-out movements:', refreshErr);
-                } else {
-                    // Insert new records. Awaited: updateOrder edits this shipment's
-                    // records right after (item changes in the same save), so they
-                    // must exist before it reads them.
-                    const stockOutMovements = salesOrder.items
-                        .filter(item => item.id)
-                        .map(item => ({
-                            product_id: item.id,
-                            product_name: item.name || 'Unknown',
-                            type: 'out',
-                            quantity: item.quantity,
-                            unit_price: item.price || 0,
-                            reason: 'Shipped',
-                            reference_id: id,
-                            source: 'Order Shipped',
-                            shipping_co: shippingCompany || (salesOrder.shipping?.company || ''),
-                            note: `Order #${id.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`,
-                            movement_date: getLocalYYYYMMDD(),
-                            created_by: currentUser?.id || 'unknown',
-                            customer_name: finalCustomerName,
-                            customer_phone: finalCustomerPhone
-                        }));
-
-                    if (stockOutMovements.length > 0) {
-                        const { error: logErr } = await supabase.from('stock_movements').insert(stockOutMovements);
-                        if (logErr) console.error('Failed to log stock-out movements:', logErr);
-                    }
-                }
-            }
-        }
-
-        if (salesOrder && trackingNumber !== undefined && trackingNumber !== salesOrder.shipping?.trackingNumber) {
-            dispatchActivity({ 
-                action: 'order_updated', 
-                description: `Tracking ID updated for Order #${id.slice(0, 8)}`, 
-                userId: currentUser?.id, 
-                userName: currentUser?.name, 
-                metadata: { 
-                    orderId: id, 
-                    oldTracking: salesOrder.shipping?.trackingNumber || '',
-                    newTracking: trackingNumber 
-                } 
             });
         }
 
         setSalesUpdatedAt(Date.now());
-        const oldStatus = salesOrder?.shipping?.status || 'Pending';
-        if (oldStatus !== status) {
+        if (freshStatus !== status) {
             dispatchActivity({ action: 'order_status', description: `Order #${id.slice(0, 8)} status → ${status}`, userId: currentUser?.id, userName: currentUser?.name, metadata: { orderId: id, status } });
         }
+        return true;
     };
 
-    // An order whose goods are already out of stock had its items edited: move
-    // stock by the difference per product, and change the newest stock-out
-    // generation (the shipment being edited) to match, so un-shipping, deleting
-    // or restocking later reverses exactly what left.
-    const applyItemEditToStock = async (
-        orderId: string,
-        before: { product_id: string | null; quantity: number; name: string | null; price: number | null }[],
-        after: Sale['items'],
-    ) => {
-        const qtyBefore = new Map<string, number>();
-        for (const r of before) if (r.product_id) qtyBefore.set(r.product_id, (qtyBefore.get(r.product_id) || 0) + (Number(r.quantity) || 0));
-        const qtyAfter = new Map<string, number>();
-        const lineAfter = new Map<string, Sale['items'][number]>();
-        for (const i of after) if (i.id) { qtyAfter.set(i.id, (qtyAfter.get(i.id) || 0) + (Number(i.quantity) || 0)); lineAfter.set(i.id, i); }
-        const deltas: [string, number][] = [];
-        for (const pid of new Set([...qtyBefore.keys(), ...qtyAfter.keys()])) {
-            const d = (qtyAfter.get(pid) || 0) - (qtyBefore.get(pid) || 0);
-            if (d !== 0) deltas.push([pid, d]);
+    // Replaces an order's items. When its goods are already out of stock, the
+    // database moves stock by the difference per product and changes the newest
+    // stock-out generation (the shipment being edited) to match, in the same
+    // transaction as the item replace, so un-shipping, deleting or restocking
+    // later reverses exactly what left — and a failure keeps the old items.
+    const replaceOrderItems = async (orderId: string, items: Sale['items']) => {
+        const { data, error } = await supabase.rpc('edit_order_items', {
+            p_order_id: orderId,
+            p_items: items.map(item => ({ id: item.id || null, name: item.name, price: item.price, quantity: item.quantity, image: item.image ?? null })),
+            p_fields: { created_by: currentUser?.id || 'unknown' },
+        });
+        if (error) throw new Error(orderRpcMessage(error));
+        const res = (data || {}) as { stock?: Record<string, number>; missing?: string[] };
+        applyStockMap(res.stock);
+        if (res.missing && res.missing.length > 0) {
+            alert(`The order was saved, but stock could not be updated for: ${res.missing.join(', ')}. Check these products' stock in Inventory.`);
         }
-        if (deltas.length === 0) return;
-
-        // Products whose stock could not be changed: their stock-out record is left
-        // alone too (so record and stock still agree), and the user is told.
-        const failed: string[] = [];
-        const applied: [string, number][] = [];
-        for (const [pid, d] of deltas) {
-            // d > 0: more units left with this order; d < 0: units came back off it.
-            const { data: current, error: readErr } = await supabase.from('products').select('stock').eq('id', pid).single();
-            if (readErr || !current) { console.error('Could not adjust stock for edited order item', pid, readErr); failed.push(lineAfter.get(pid)?.name || before.find(r => r.product_id === pid)?.name || pid); continue; }
-            const newStock = Math.max(0, Number(current.stock) - d);
-            const { error: writeErr } = await supabase.from('products').update({ stock: newStock }).eq('id', pid);
-            if (writeErr) { console.error('Could not adjust stock for edited order item', pid, writeErr); failed.push(lineAfter.get(pid)?.name || before.find(r => r.product_id === pid)?.name || pid); continue; }
-            applied.push([pid, d]);
-            setProducts(prev => prev.map(p => p.id === pid ? { ...p, stock: newStock } : p));
-            if (d > 0) {
-                const { data: invItems } = await supabase.from('inventory_items').select('id')
-                    .eq('product_id', pid).eq('status', 'in_stock').order('created_at', { ascending: true }).limit(d);
-                if (invItems && invItems.length > 0) {
-                    await supabase.from('inventory_items').update({ status: 'sold', sale_id: orderId }).in('id', invItems.map((i: { id: string }) => i.id));
-                }
-            } else {
-                const { data: soldItems } = await supabase.from('inventory_items').select('id')
-                    .eq('sale_id', orderId).eq('product_id', pid).limit(-d);
-                if (soldItems && soldItems.length > 0) {
-                    await supabase.from('inventory_items').update({ status: 'in_stock', sale_id: null }).in('id', soldItems.map((i: { id: string }) => i.id));
-                }
-            }
-        }
-
-        // The stock-out record. An order shipped before stock-out records existed has
-        // none; its stock is still corrected above.
-        const finish = () => {
-            setProductsUpdatedAt(Date.now());
-            if (failed.length > 0) {
-                alert(`The order was saved, but stock could not be updated for: ${failed.join(', ')}. Check these products' stock in Inventory.`);
-            }
-        };
-        const { data: outRows, error: outErr } = await supabase.from('stock_movements')
-            .select('*').eq('reference_id', orderId).eq('type', 'out');
-        if (outErr || !outRows || outRows.length === 0) { finish(); return; }
-        type OutRow = { id: string; created_at: string; product_id: string; quantity: number } & Record<string, unknown>;
-        const rows = outRows as OutRow[];
-        const newest = rows.reduce((m, r) => (r.created_at > m ? r.created_at : m), rows[0].created_at);
-        const generation = rows.filter(r => r.created_at === newest);
-        const template = generation[0];
-        const inserts: Record<string, unknown>[] = [];
-        for (const [pid, d] of applied) {
-            // One record per order line, so a product on several lines has several.
-            const productRows = generation.filter(r => r.product_id === pid);
-            if (productRows.length > 0 && d > 0) {
-                const row = productRows[0];
-                const { error } = await supabase.from('stock_movements').update({ quantity: (Number(row.quantity) || 0) + d }).eq('id', row.id);
-                if (error) console.error('Could not update the stock-out record for an edited order item:', error);
-            } else if (productRows.length > 0) {
-                // Take the reduction off the rows one by one, removing any that reach 0.
-                let remaining = -d;
-                for (const row of productRows) {
-                    if (remaining <= 0) break;
-                    const q = Number(row.quantity) || 0;
-                    const take = Math.min(q, remaining);
-                    remaining -= take;
-                    const { error } = q - take > 0
-                        ? await supabase.from('stock_movements').update({ quantity: q - take }).eq('id', row.id)
-                        : await supabase.from('stock_movements').delete().eq('id', row.id);
-                    if (error) console.error('Could not update the stock-out record for an edited order item:', error);
-                }
-            } else if (d > 0) {
-                const line = lineAfter.get(pid);
-                inserts.push({
-                    product_id: pid,
-                    product_name: line?.name || 'Unknown',
-                    type: 'out',
-                    quantity: d,
-                    unit_price: line?.price || 0,
-                    reason: template.reason,
-                    reference_id: orderId,
-                    source: template.source,
-                    shipping_co: template.shipping_co,
-                    note: template.note,
-                    // Same shipment: same day and same generation stamp, so a later
-                    // un-ship removes it together with the rest of this shipment.
-                    movement_date: template.movement_date,
-                    created_at: template.created_at,
-                    created_by: currentUser?.id || 'unknown',
-                    customer_name: template.customer_name,
-                    customer_phone: template.customer_phone,
-                });
-            }
-        }
-        if (inserts.length > 0) {
-            const { error } = await supabase.from('stock_movements').insert(inserts);
-            if (error) console.error('Could not add the stock-out record for an edited order item:', error);
-        }
-        finish();
     };
 
-    const updateOrder = async (id: string, updates: Partial<Sale>): Promise<void> => {
+    // Resolves false when not everything was saved (the user has been told why):
+    // a refusal before anything was written, a shipping status change the
+    // database refused (the rest of the edit is still saved, the status stays
+    // what it really is), or a failed write.
+    const updateOrder = async (id: string, updates: Partial<Sale>): Promise<boolean> => {
         // Find existing order BEFORE local update for checking status change
         let existingOrder = sales.find(s => s.id === id);
 
@@ -2677,7 +2564,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { data: freshStatusRow, error: freshStatusErr } = await supabase.from('sales').select('shipping_status').eq('id', id).single();
             if (freshStatusErr || !freshStatusRow) {
                 alert("Couldn't confirm this order's current status, so nothing was saved. Check your connection and try again.");
-                return;
+                return false;
             }
             shippingStatusBeforeUpdate = freshStatusRow.shipping_status || 'Pending';
         }
@@ -2698,9 +2585,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (isRealChange && !canEnterPostDispatch(currentStatus, updates.shipping.status)) {
                 if (currentUser?.roleId !== 'admin') {
                     alert(POST_DISPATCH_BLOCKED_MESSAGE(currentStatus, updates.shipping.status));
-                    return;
+                    return false;
                 }
-                if (!confirm(ADMIN_FORCE_STATUS_MESSAGE(currentStatus, updates.shipping.status))) return;
+                if (!confirm(ADMIN_FORCE_STATUS_MESSAGE(currentStatus, updates.shipping.status))) return false;
             }
         }
 
@@ -2717,7 +2604,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { data: freshRow, error: freshErr } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
             if (freshErr || !freshRow) {
                 alert("Couldn't confirm this order's current payment status, so nothing was saved. Check your connection and try again.");
-                return;
+                return false;
             }
             const toLocal = (row: typeof freshRow): Partial<Sale> => ({
                 paymentStatus: row.payment_status as Sale['paymentStatus'],
@@ -2738,7 +2625,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 setSales(prev => prev.map(s => s.id === id ? { ...s, ...freshPayment } : s));
                 setSalesUpdatedAt(Date.now());
                 alert(`This order was just marked ${currentStatus} by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.`);
-                return;
+                return false;
             }
 
             // An edit form opened before someone else recorded a payment, saved
@@ -2765,7 +2652,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const { data: claimed, error: claimErr } = await claimQuery.select('id');
                 if (claimErr) {
                     alert(`Failed to update order: ${claimErr.message}`);
-                    return;
+                    return false;
                 }
                 if (!claimed || claimed.length === 0) {
                     const { data: winner } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
@@ -2776,7 +2663,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (!sameOutcome) {
                         alert("This order's payment details were just changed by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.");
                     }
-                    return;
+                    // Same outcome: someone else (or this tab's first click) already
+                    // saved what was asked for.
+                    return sameOutcome;
                 }
             }
         }
@@ -3465,11 +3354,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 dbUpdates.page_source = updates.customer.page;
             }
         }
-        // Shipping updates
+        // Shipping updates. shipping_status is never written here: a real change
+        // goes through updateOrderStatus (step 2b), which moves the stock with it
+        // in one database transaction, and re-sending the current status would
+        // only risk overwriting a change made since the read above.
         if (updates.shipping !== undefined) {
             dbUpdates.shipping_company = updates.shipping.company;
             dbUpdates.tracking_number = updates.shipping.trackingNumber;
-            dbUpdates.shipping_status = updates.shipping.status;
             dbUpdates.shipping_cost = updates.shipping.cost;
         }
 
@@ -3480,31 +3371,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             dbUpdates.last_edited_by = currentUser.name;
         }
 
+        // The shipping status change was refused (permission, a Restock of an order
+        // that isn't Returned, the order changed elsewhere since it was read) or
+        // failed: nothing of it was written, the rest of this edit still is.
+        let statusChangeRefused = false;
         try {
             // 2b. A real shipping status change goes through updateOrderStatus, which
-            // owns stock: it deducts or restores products.stock and writes or removes
-            // the stock-out records together. This function used to change only the
-            // records, so cancelling a shipped order, Get File and the shipping editor
-            // left stock out of step with its history. Runs before the sales update
-            // below, which would otherwise make the transition invisible to it, and
-            // before the items are rewritten, so it reverses the items that left.
+            // owns stock: the database moves products.stock, inventory items and the
+            // stock-out records together with the status, in one transaction, and
+            // only if the order is still at the status read above. Runs before the
+            // sales update below and before the items are rewritten, so it reverses
+            // the items that left.
             if (shippingTransitionTo) {
                 // The courier and customer from this same save, so the stock records
                 // name them (the sales row is written after this).
-                await updateOrderStatus(id, shippingTransitionTo, undefined, updates.shipping?.company || undefined, {
+                const moved = await updateOrderStatus(id, shippingTransitionTo, undefined, updates.shipping?.company || undefined, {
                     skipDispatchGuard: true,
+                    expectedStatus: shippingStatusBeforeUpdate,
                     customer: updates.customer ? { name: updates.customer.name, phone: updates.customer.phone } : undefined,
                 });
-            }
-            const statusAfterUpdate = shippingTransitionTo || shippingStatusBeforeUpdate || 'Pending';
-            // Items that are currently out of stock for this order, read before they
-            // are replaced, so an edit to a shipped order moves stock by the difference.
-            let itemsBeforeEdit: { product_id: string | null; quantity: number; name: string | null; price: number | null }[] | null = null;
-            if (updates.items && updates.items.length > 0 && holdsOrderStock(statusAfterUpdate)) {
-                const { data: oldItemRows, error: oldItemsErr } = await supabase.from('sale_items')
-                    .select('product_id, quantity, name, price').eq('sale_id', id);
-                if (oldItemsErr) throw oldItemsErr;
-                itemsBeforeEdit = oldItemRows || [];
+                if (!moved) {
+                    statusChangeRefused = true;
+                    // The optimistic update above showed the new status; put back the real one.
+                    const { data: realRow } = await supabase.from('sales').select('shipping_status').eq('id', id).maybeSingle();
+                    const realStatus = (realRow?.shipping_status || shippingStatusBeforeUpdate || 'Pending') as NonNullable<Sale['shipping']>['status'];
+                    setSales(prev => prev.map(sale => sale.id === id && sale.shipping ? { ...sale, shipping: { ...sale.shipping, status: realStatus } } : sale));
+                }
             }
 
             // 3. Update 'sales' table
@@ -3529,32 +3421,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (error) throw error;
             }
 
-            // 4. Handle Items Update (Delete Old -> Insert New)
+            // 4. Items: replaced in one database transaction. When the order's goods
+            // are out of stock (by its status at that moment), stock moves by what
+            // the edit added or removed and the stock-out record is kept in step, so
+            // a later cancel, delete or restock reverses what actually left. A
+            // failure keeps the old items.
             if (updates.items && updates.items.length > 0) {
-                // A. Delete existing items
-                const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', id);
-                if (deleteError) throw deleteError;
-
-                // B. Insert new items
-                const itemsPayload = updates.items.map(item => ({
-                    id: generateUUID(),
-                    sale_id: id,
-                    product_id: item.id,
-                    name: item.name,
-                    price: item.price,
-                    quantity: item.quantity,
-                    image: item.image
-                }));
-
-                const { error: insertError } = await supabase.from('sale_items').insert(itemsPayload);
-                if (insertError) throw insertError;
-
-                // C. The goods for this order are already out of stock: move stock by
-                // what the edit added or removed, and keep the stock-out record in step,
-                // so a later cancel, delete or restock reverses what actually left.
-                if (itemsBeforeEdit) {
-                    await applyItemEditToStock(id, itemsBeforeEdit, updates.items);
-                }
+                await replaceOrderItems(id, updates.items);
             }
 
             let loggedSpecific = false;
@@ -3595,11 +3468,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
 
             // Stock-out records follow the shipping status in updateOrderStatus (step 2b).
-
+            return !statusChangeRefused;
         } catch (error: any) {
             console.error('Error updating order:', error);
             alert(`Failed to update order: ${error.message}`);
-            // Revert local state if needed (complex without previous state copy)
+            setSalesUpdatedAt(Date.now());
+            return false;
         }
     };
 
@@ -4250,242 +4124,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Only orders that are Returned right now: their goods are counted out
             // and are coming back. Anything else (a list or selection that is out of
             // date, an order already restocked, one never shipped) would add stock
-            // that never left. Read from the database, not the cache.
-            const { data: statusRows, error: statusErr } = await supabase.from('sales').select('id, shipping_status').in('id', requestedIds);
-            if (statusErr) throw statusErr;
-            const orderIds = (statusRows || []).filter(r => r.shipping_status === 'Returned').map(r => r.id);
+            // that never left. The database checks that under a lock and does the
+            // stock, inventory items, return records, stock-in movements and the
+            // ReStock status in one transaction, so a double click or a second
+            // device restocks an order once, and a failure restocks nothing.
+            const now = new Date().toISOString();
+            const { data, error } = await supabase.rpc('restock_returned_orders', {
+                p_ids: requestedIds,
+                p_fields: orderStockFields(now),
+            });
+            if (error) throw new Error(orderRpcMessage(error));
+            const res = (data || {}) as { restocked?: string[]; restocks?: RestockRow[]; stock?: Record<string, number> };
+            const orderIds = res.restocked || [];
             if (orderIds.length === 0) return 0;
 
-            // 1. Fetch DB items for all these orders
-            const { data: dbItems, error: itemsErr } = await supabase.from('sale_items').select('product_id, quantity, sale_id').in('sale_id', orderIds);
-            if (itemsErr) throw itemsErr;
+            addRestockRows(res.restocks);
+            applyStockMap(res.stock);
 
-            // Fetch customer info for all orders, plus the payment fields the
-            // leaving-Paid cleanup below needs to mirror updateOrder.
-            const { data: orderDataList } = await supabase.from('sales').select('id, customer_snapshot, payment_status, amount_received, settle_date, deposit_amount, total').in('id', orderIds);
-            const orderCustomerMap: Record<string, { name: string; phone: string }> = {};
-            (orderDataList || []).forEach(o => {
-                orderCustomerMap[o.id] = {
-                    name: o.customer_snapshot?.name || '',
-                    phone: o.customer_snapshot?.phone || ''
-                };
-            });
-
-            // 2. Aggregate quantities by product, track which orders contributed
-            const restockItems = dbItems || [];
-            const productUpdates: Record<string, number> = {};
-            // Track order-to-product mapping for notes
-            const productOrderSources: Record<string, Set<string>> = {};
-            
-            for (const item of restockItems) {
-                if (!item.product_id) continue;
-                const qty = Number(item.quantity);
-                if (isNaN(qty) || qty <= 0) continue;
-                productUpdates[item.product_id] = (productUpdates[item.product_id] || 0) + qty;
-                if (!productOrderSources[item.product_id]) productOrderSources[item.product_id] = new Set();
-                productOrderSources[item.product_id].add(item.sale_id);
-            }
-
-            // 3. Update product stock in DB and Local
-            // Return the shipments' FIFO items to the pool first (shipping marked
-            // them 'sold' with these sale_ids); the status guard keeps re-runs
-            // idempotent. Without this every restock permanently drains in_stock
-            // rows while products.stock recovers.
-            await supabase.from('inventory_items')
-                .update({ status: 'in_stock', sale_id: null })
-                .in('sale_id', orderIds)
-                .eq('status', 'sold');
-
-            const now = new Date().toISOString();
-            const restockRecords: any[] = [];
-            const localProductUpdates: Record<string, number> = {};
-
-            for (const [productId, addQty] of Object.entries(productUpdates)) {
-                // Fetch current stock from DB to avoid race conditions
-                const { data: originProduct } = await supabase.from('products').select('stock').eq('id', productId).single();
-                if (originProduct) {
-                    const newStock = Number(originProduct.stock) + addQty;
-                    await supabase.from('products').update({ stock: newStock }).eq('id', productId);
-                    localProductUpdates[productId] = newStock;
-                }
-
-                // Build note with customer info from contributing orders
-                const sourceOrderIds = productOrderSources[productId] ? [...productOrderSources[productId]] : [];
-                const customerInfoParts = sourceOrderIds.map(oid => {
-                    const c = orderCustomerMap[oid];
-                    const info = [c?.name, c?.phone].filter(Boolean).join(' ');
-                    return `#${oid.slice(0, 8)}${info ? ' (' + info + ')' : ''}`;
-                });
-                const noteText = `Bulk restocked from ${customerInfoParts.join(', ')}`;
-
-                const restockId = generateUUID();
-                restockRecords.push({
-                    id: restockId,
-                    product_id: productId,
-                    quantity: addQty,
-                    cost: 0,
-                    date: now,
-                    added_by: currentUser?.name || 'System',
-                    note: noteText
-                });
-            }
-
-            if (restockRecords.length > 0) {
-                await supabase.from('restocks').insert(restockRecords);
-                setRestocks(prev => [...restockRecords.map(r => ({
-                    id: r.id,
-                    productId: r.product_id,
-                    quantity: r.quantity,
-                    cost: r.cost,
-                    date: r.date,
-                    addedBy: r.added_by,
-                    note: r.note
-                })), ...prev]);
-
-                // Also log to stock_movements for Stock-In tracking
-                const stockMovements = restockRecords.map(r => {
-                    // A bulk restock can merge the same product from several orders, so
-                    // list every contributing customer. Without this the movement showed
-                    // "-" in the Supplier / Customer column even though the note named them.
-                    const sourceOrders = [...(productOrderSources[r.product_id] || [])];
-                    const names = [...new Set(sourceOrders.map(id => orderCustomerMap[id]?.name).filter(Boolean))];
-                    const phones = [...new Set(sourceOrders.map(id => orderCustomerMap[id]?.phone).filter(Boolean))];
-                    return {
-                        product_id: r.product_id,
-                        product_name: restockItems.find(i => i.product_id === r.product_id)?.product_id || r.product_id,
-                        type: 'in',
-                        quantity: r.quantity,
-                        unit_price: 0,
-                        source: 'Customer Return',
-                        shipping_co: '', // Bulk order returns mixed shipping companies
-                        note: r.note,
-                        movement_date: getLocalYYYYMMDD(),
-                        created_by: currentUser?.id || 'unknown',
-                        customer_name: names.join(', '),
-                        customer_phone: phones.join(', ')
-                    };
-                });
-
-                // Fetch product names for the movements
-                const productIds = [...new Set(stockMovements.map(m => m.product_id))];
-                const { data: productData } = await supabase.from('products').select('id, name').in('id', productIds);
-                const nameMap: Record<string, string> = {};
-                (productData || []).forEach(p => { nameMap[p.id] = p.name; });
-                stockMovements.forEach(m => { m.product_name = nameMap[m.product_id] || m.product_id; });
-
-                await supabase.from('stock_movements').insert(stockMovements).then(({ error }) => {
-                    if (error) console.error('Failed to log stock movements for bulk restock:', error);
-                });
-            }
-
-            setProducts(prev => prev.map(p => 
-                localProductUpdates[p.id] !== undefined 
-                ? { ...p, stock: localProductUpdates[p.id] } 
-                : p
-            ));
-            
-            // Previously-Paid orders leaving Paid for Cancel get the same cleanup
-            // as updateOrder's leaving-Paid branch (this path bypasses updateOrder):
-            // remove the income logged when the order was marked Paid, plus any
-            // draft journal entry it posted, and take back the Received amount and
-            // settle date below. Matched the same way income is looked up there.
-            const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
-            const paidOrders = (orderDataList || []).filter(o => PAID_STATUSES.includes(o.payment_status || ''));
-            const removedTxnIds: string[] = [];
-            for (const paidOrder of paidOrders) {
-                const custName = paidOrder.customer_snapshot?.name || 'Customer';
-                // Deposit orders logged only the remainder as sales income — match
-                // that too. Zero amounts are excluded: real income rows are always
-                // > 0, and matching amount.eq.0 could only ever hit an unrelated
-                // row of the same customer.
-                const dep = Number(paidOrder.deposit_amount) || 0;
-                const received = Number(paidOrder.amount_received) || 0;
-                const total = Number(paidOrder.total) || 0;
-                const amountMatches = [received, total];
-                if (dep > 0) amountMatches.push(Math.max(0, received - dep), Math.max(0, total - dep));
-                const positiveMatches = amountMatches.filter(a => a > 0);
-                if (positiveMatches.length === 0) continue;
-                try {
-                    const { data: paidTxns } = await supabase.from('transactions')
-                        .select('id')
-                        .eq('type', 'Income')
-                        // Also match the pre-rename category so older rows still clean up.
-                        .in('category', ['លក់រាយ', 'លក់ឥវ៉ាន់'])
-                        .eq('description', custName)
-                        .or(positiveMatches.map(a => `amount.eq.${a}`).join(','))
-                        .limit(1);
-                    if (paidTxns && paidTxns.length > 0) {
-                        await supabase.from('transactions').delete().eq('id', paidTxns[0].id);
-                        removedTxnIds.push(paidTxns[0].id);
-
-                        // Also remove any Draft journal entry this payment posted.
-                        // Lines first, then the header, to satisfy the FK.
-                        const refId = 'TX-' + paidTxns[0].id;
-                        const { data: journalEntry } = await supabase.from('journal_entries')
-                            .select('id').eq('reference_id', refId).limit(1).maybeSingle();
-                        if (journalEntry) {
-                            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntry.id);
-                            await supabase.from('journal_entries').delete().eq('id', journalEntry.id);
-                        }
-                    }
-                } catch (e) {
-                    console.error('Failed to remove income for bulk-restocked paid order:', e);
-                }
-            }
-            if (removedTxnIds.length > 0) {
-                setTransactions(prev => prev.filter(t => !removedTxnIds.includes(t.id)));
-            }
-
-            // 4. Update sales records to ReStock and Cancelled
-            // DB Update — stamped as an edit, so the Last Edit column shows the
-            // restock. Without the stamp a Returned order restocked today kept
-            // the older edit's date (this path bypasses updateOrder).
-            // A PdFee order keeps PdFee: the delivery fee was collected and stays
-            // booked, and the label is how Orders finds and reports it.
-            const pdFeeIds = new Set((orderDataList || []).filter(o => o.payment_status === 'PdFee').map(o => o.id));
-            const cancelIds = orderIds.filter(oid => !pdFeeIds.has(oid));
-            const stamp = currentUser ? { last_edited_at: now, last_edited_by: currentUser.name } : {};
-            if (cancelIds.length > 0) {
-                const { error } = await supabase.from('sales').update({ shipping_status: 'ReStock', payment_status: 'Cancel', ...stamp }).in('id', cancelIds);
-                if (error) throw error;
-            }
-            if (pdFeeIds.size > 0) {
-                const { error } = await supabase.from('sales').update({ shipping_status: 'ReStock', ...stamp }).in('id', [...pdFeeIds]);
-                if (error) throw error;
-            }
-
-            // The payment reset applies only to the previously-Paid orders — a
-            // non-paid order's Received (e.g. a kept deposit) is left alone, same
-            // as the single-order Cancel path.
-            const paidOrderIds = paidOrders.map(o => o.id);
-            if (paidOrderIds.length > 0) {
-                await supabase.from('sales').update({
-                    amount_received: 0,
-                    settle_date: null
-                }).in('id', paidOrderIds);
-            }
-
-            // Local State Update
-            setSales(prev => prev.map(sale =>
-                orderIds.includes(sale.id)
-                ? {
-                    ...sale,
-                    paymentStatus: pdFeeIds.has(sale.id) ? 'PdFee' : 'Cancel',
-                    ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined } : {}),
-                    lastEditedAt: currentUser ? now : sale.lastEditedAt,
-                    lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
-                    shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any }
-                }
-                : sale
-            ));
-
-            dispatchActivity({
-                action: 'stock_restock',
-                description: `Restocked ${orderIds.length} order${orderIds.length === 1 ? '' : 's'}: ${orderIds.map(id => '#' + id.slice(0, 8)).join(', ')}`,
-                userId: currentUser?.id,
-                userName: currentUser?.name,
-                metadata: { orderIds }
-            });
+            // The payment side (income cleanup, payment Cancel / PdFee kept).
+            await applyRestockPaymentSide(orderIds, now);
 
             // Trigger single refresh event for UI listeners
             setProductsUpdatedAt(Date.now());
@@ -4493,6 +4150,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return orderIds.length;
         } catch (error) {
             console.error('Error bulk restocking orders:', error);
+            setSalesUpdatedAt(Date.now());
             throw error;
         }
     };

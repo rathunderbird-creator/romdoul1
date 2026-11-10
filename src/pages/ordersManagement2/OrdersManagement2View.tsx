@@ -24,6 +24,8 @@ const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, s
     const [drawer, setDrawer] = useState<DrawerState>({ order: null, isOpen: false });
     const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
     const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+    // 'Mark shipped' is running: the button is disabled and further clicks ignored.
+    const [markingShipped, setMarkingShipped] = useState(false);
     const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
 
     const totals = useMemo(() => summarizeMoney(rangeOrders), [rangeOrders]);
@@ -149,7 +151,14 @@ const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, s
                     selectedOrders={selectedOrders}
                     onClear={() => setSelectedIds(new Set())}
                     onAddTracking={() => setIsTrackingModalOpen(true)}
-                    onMarkShipped={() => actions.onBulkMarkShipped(selectedOrders.map(o => o.id)).then(() => setSelectedIds(new Set()))}
+                    markShippedBusy={markingShipped}
+                    onMarkShipped={() => {
+                        if (markingShipped) return;
+                        setMarkingShipped(true);
+                        actions.onBulkMarkShipped(selectedOrders.map(o => o.id))
+                            .then(() => setSelectedIds(new Set()))
+                            .finally(() => setMarkingShipped(false));
+                    }}
                     onBulkEdit={() => setIsBulkEditOpen(true)}
                     onPrint={() => actions.onBulkPrint(selectedOrders.map(o => o.id))}
                     onExport={() => actions.onBulkExport(selectedOrders.map(o => o.id))}

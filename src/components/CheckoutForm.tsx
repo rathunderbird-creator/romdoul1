@@ -538,7 +538,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             };
 
             if (orderToEdit) {
-                await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date, expectedPaymentStatus: orderToEdit.paymentStatus, expectedShippingStatus: orderToEdit.shipping?.status || 'Pending' });
+                const saved = await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date, expectedPaymentStatus: orderToEdit.paymentStatus, expectedShippingStatus: orderToEdit.shipping?.status || 'Pending' });
+                if (!saved) {
+                    // Refused or only partly saved (e.g. the status change was refused);
+                    // the reason has been shown. Keep the form open, and no status
+                    // notification for a change that didn't happen.
+                    showToast('Not all changes were saved — see the message shown.', 'error');
+                    return;
+                }
                 showToast('Order updated', 'success');
 
                 // Send Telegram Notification if status changed

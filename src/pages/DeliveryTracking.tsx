@@ -244,6 +244,10 @@ const DeliveryTracking: React.FC = () => {
     const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    // Save Changes is in flight: a status change here moves stock, so a second
+    // click while the first save runs is ignored.
+    const [savingShipping, setSavingShipping] = useState(false);
+    const savingShippingRef = React.useRef(false);
 
     // Telegram Settings
     const [showTelegramSettings, setShowTelegramSettings] = useState(false);
@@ -745,24 +749,38 @@ const DeliveryTracking: React.FC = () => {
 
     const handleUpdateShipping = async () => {
         if (!selectedOrder) return;
+        if (savingShippingRef.current) return;
+        savingShippingRef.current = true;
+        setSavingShipping(true);
+        try {
+            // Update shipping info
+            // We need to use updateOrder to update the shipping object entirely or careful partial update
+            // But StoreContext has updateOrderStatus separately. Let's use updateOrder for full shipping object.
+            const updatedShipping = {
+                company: formData.company,
+                trackingNumber: formData.trackingNumber,
+                status: formData.status,
+                cost: formData.cost,
+                staffName: formData.staffName
+            };
 
-        // Update shipping info
-        // We need to use updateOrder to update the shipping object entirely or careful partial update
-        // But StoreContext has updateOrderStatus separately. Let's use updateOrder for full shipping object.
-        const updatedShipping = {
-            company: formData.company,
-            trackingNumber: formData.trackingNumber,
-            status: formData.status,
-            cost: formData.cost,
-            staffName: formData.staffName
-        };
-
-        // A status change here now moves stock (updateOrder hands it to
-        // updateOrderStatus), so wait for it before saying it's done. updateOrder
-        // alerts and does not throw when a save fails or is refused.
-        await updateOrder(selectedOrder.id, { shipping: updatedShipping, expectedShippingStatus: selectedOrder.shipping?.status || 'Pending' });
-        showToast('Shipping details updated', 'success');
-        setIsEditModalOpen(false);
+            // A status change here moves stock (updateOrder hands it to
+            // updateOrderStatus), so wait for it before saying it's done. updateOrder
+            // alerts and does not throw when a save fails or is refused; it resolves
+            // false then (e.g. a ReStock without permission or on an order that
+            // isn't Returned, or the order changed elsewhere), and the popup stays
+            // open instead of saying it was saved.
+            const saved = await updateOrder(selectedOrder.id, { shipping: updatedShipping, expectedShippingStatus: selectedOrder.shipping?.status || 'Pending' });
+            if (!saved) {
+                showToast('Not all shipping changes were saved — see the message shown.', 'error');
+                return;
+            }
+            showToast('Shipping details updated', 'success');
+            setIsEditModalOpen(false);
+        } finally {
+            savingShippingRef.current = false;
+            setSavingShipping(false);
+        }
     };
 
     const handleOpenEdit = (order: Sale) => {
@@ -1736,7 +1754,7 @@ const DeliveryTracking: React.FC = () => {
 
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
                                     <button onClick={() => setIsEditModalOpen(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
-                                    <button onClick={handleUpdateShipping} className="primary-button" style={{ padding: '8px 24px' }}>Save Changes</button>
+                                    <button onClick={handleUpdateShipping} disabled={savingShipping} className="primary-button" style={{ padding: '8px 24px' }}>{savingShipping ? 'Saving…' : 'Save Changes'}</button>
                                 </div>
                             </div>
                         </div>

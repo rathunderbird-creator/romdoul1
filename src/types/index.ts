@@ -177,13 +177,14 @@ export interface StoreContextType {
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => Promise<Sale | undefined>;
     addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<Sale>;
-    updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; customer?: { name?: string; phone?: string } }) => Promise<void>;
+    // Resolves false when the change was refused or failed (the user has been told; nothing of it was written).
+    updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; expectedStatus?: string; onRefused?: (message: string) => void; customer?: { name?: string; phone?: string } }) => Promise<boolean>;
     // Returns the created product (null on failure) so callers can select it.
     addProduct: (product: Omit<Product, 'id'>) => Promise<Product | null>;
     updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
     deleteProduct: (id: string) => Promise<void>;
     deleteProducts: (ids: string[]) => Promise<void>;
-    updateOrder: (id: string, updates: Partial<Sale>) => Promise<void>;
+    updateOrder: (id: string, updates: Partial<Sale>) => Promise<boolean>; // false: not everything was saved (the user has been told why)
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => Promise<void>;
     restoreOrders: (ids: string[]) => Promise<void>;
