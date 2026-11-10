@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Phone, Receipt, FileText, DollarSign, Trash2, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -122,8 +122,12 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
         totalPaid: filteredLedger.reduce((s, e) => s + e.paid, 0),
     }), [filteredLedger]);
 
+    // One delete at a time: a second click before the first finishes is ignored.
+    const deletingRef = useRef(false);
     const handleDelete = async (entry: LedgerEntry) => {
+        if (deletingRef.current) return;
         if (!window.confirm(`Delete this ${entry.type}? This cannot be undone.`)) return;
+        deletingRef.current = true;
         try {
             if (entry.id.startsWith('wo-')) {
                 const order = orders.find(o => o.id === entry.id.replace('wo-', ''));
@@ -132,7 +136,9 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                 await deleteCustomerPayment(entry.id.replace('pay-', ''));
             }
             await fetchData();
-        } catch { /* hook toasts */ }
+        } catch { /* hook toasts */ } finally {
+            deletingRef.current = false;
+        }
     };
 
     if (isLoading) {

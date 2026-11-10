@@ -2,9 +2,10 @@
 // read-only ledger of every supplier_payments row, independent of which PO
 // each one happened to settle. Recording a payment here is supplier-first:
 // pick the supplier and an amount, and the payment is applied against that
-// supplier's outstanding bills oldest-due-first (recordSupplierPayment still
-// books one payment row per bill it settles, so the ledger stays per-bill).
-import React, { useState, useEffect, useMemo } from 'react';
+// supplier's outstanding bills oldest-due-first (recordSupplierPayments still
+// books one payment row per bill it settles, so the ledger stays per-bill,
+// and saves all of the bills or none).
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt, Zap, CheckCircle2, HelpCircle } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -59,7 +60,7 @@ const SupplierPaymentsPage: React.FC = () => {
     const {
         purchaseOrders, supplierPayments, isLoading,
         fetchPurchaseOrders, fetchSupplierPayments,
-        recordSupplierPayment, deleteSupplierPayment,
+        recordSupplierPayments, deleteSupplierPayment,
     } = useProcurement();
     const { journalEntries, fetchJournalEntries, patchJournalEntry, accounts, fetchAccounts } = useAccounting();
 
@@ -259,6 +260,8 @@ const SupplierPaymentsPage: React.FC = () => {
     const [payRate, setPayRate] = useState('1');
     const [payNotes, setPayNotes] = useState('');
     const [paySaving, setPaySaving] = useState(false);
+    // Stops a second click that lands before the disabled button re-renders.
+    const paySavingRef = useRef(false);
     // Per-bill application amounts (USD), keyed by purchase order id.
     const [allocations, setAllocations] = useState<Record<string, string>>({});
     const paySupplier = supplierOptions.find(s => s.id === paySupplierId);
@@ -337,17 +340,20 @@ const SupplierPaymentsPage: React.FC = () => {
             payCurrency === 'KHR' ? `KHR ${entered.toLocaleString()} @ ${rate}` : '',
             payNotes.trim(),
         ].filter(Boolean).join(' · ');
+        if (paySavingRef.current) return;
+        paySavingRef.current = true;
         setPaySaving(true);
         try {
-            for (const po of payBills) {
-                const slice = Math.round((Number(allocations[po.id]) || 0) * 100) / 100;
-                if (slice <= 0) continue;
-                await recordSupplierPayment(po.id, paySupplierId, slice, payMethod, note, payDate, undefined, payAccountId || undefined, acc?.account_name);
-            }
+            // One call for every bill: they are all paid or, on any failure, none.
+            const slices = payBills
+                .map(po => ({ poId: po.id, amount: Math.round((Number(allocations[po.id]) || 0) * 100) / 100 }))
+                .filter(s => s.amount > 0);
+            await recordSupplierPayments(paySupplierId, slices, payMethod, note, payDate, undefined, payAccountId || undefined, acc?.account_name);
             setIsPayOpen(false);
         } catch {
             // toast handled in hook
         } finally {
+            paySavingRef.current = false;
             setPaySaving(false);
         }
     };

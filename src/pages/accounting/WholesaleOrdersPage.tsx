@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search, User, Calendar, FileSignature, Package, CheckCircle2, Eye, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, ChevronLeft, ChevronRight, Copy, PackageCheck, Ban, Printer, FilterX, Pencil } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -61,6 +61,23 @@ const WholesaleOrdersPage: React.FC = () => {
     const [notes, setNotes] = useState('');
     const [lines, setLines] = useState<Partial<WholesaleOrderItem>[]>([{ product_id: '', quantity: 1, unit_price: 0 }]);
     const [saving, setSaving] = useState(false);
+    // Stops a second click on Save that lands before the button re-renders.
+    const savingRef = useRef(false);
+    // The orders a Cancel / Mark Delivered / Delete / payment delete is running
+    // for: their buttons are disabled meanwhile, and the ref stops a second
+    // click that lands before React re-renders. Per order, so a slow action on
+    // one order never swallows a click on another.
+    const [busyOrderIds, setBusyOrderIds] = useState<ReadonlySet<string>>(() => new Set());
+    const busyOrderRef = useRef<Set<string>>(new Set());
+    const runOrderAction = async (orderId: string, run: () => Promise<unknown>) => {
+        if (busyOrderRef.current.has(orderId)) return;
+        busyOrderRef.current.add(orderId);
+        setBusyOrderIds(new Set(busyOrderRef.current));
+        try { await run(); } catch { /* hook toasts */ } finally {
+            busyOrderRef.current.delete(orderId);
+            setBusyOrderIds(new Set(busyOrderRef.current));
+        }
+    };
 
     // Payment modal (the form itself is RecordCustomerPaymentModal, shared with
     // Wholesale Payments — this page only tracks which order it's for).
@@ -182,7 +199,9 @@ const WholesaleOrdersPage: React.FC = () => {
         if (!customerName.trim()) { showToast('Enter the customer name', 'error'); return; }
         const validLines = lines.filter(l => l.product_id && (Number(l.quantity) || 0) > 0);
         if (validLines.length === 0) { showToast('Add at least one product line', 'error'); return; }
+        if (savingRef.current) return;
 
+        savingRef.current = true;
         setSaving(true);
         try {
             const items: Partial<WholesaleOrderItem>[] = validLines.map(l => ({
@@ -209,7 +228,7 @@ const WholesaleOrdersPage: React.FC = () => {
             }
             closeOrderModal();
             refreshData(true); // keep in-memory product stock in sync after the deduction/reconciliation
-        } catch { /* hook toasts */ } finally { setSaving(false); }
+        } catch { /* hook toasts */ } finally { savingRef.current = false; setSaving(false); }
     };
 
     // Printable A4 invoice for sending to the customer (print or save as PDF).
@@ -260,40 +279,44 @@ const WholesaleOrdersPage: React.FC = () => {
     const openPay = (o: WholesaleOrder) => { setPayOrder(o); };
 
     const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; receivedInAccountId?: string; receivedInAccountName?: string; notes?: string }) => {
-        if (!payOrder) return;
+        if (!payOrder || savingRef.current) return;
+        savingRef.current = true;
         setSaving(true);
         try {
             await recordCustomerPayment(payOrder.id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, currentUser?.name, data.receivedInAccountId, data.receivedInAccountName);
             setPayOrder(null);
-        } catch { /* hook toasts */ } finally { setSaving(false); }
+        } catch { /* hook toasts */ } finally { savingRef.current = false; setSaving(false); }
     };
 
     const handleDelete = async (o: WholesaleOrder) => {
+        if (busyOrderRef.current.has(o.id)) return;
         if (!confirm(`Delete wholesale order for ${o.customer_name}? Stock will be returned.`)) return;
-        try { await deleteWholesaleOrder(o); } catch { /* hook toasts */ }
+        await runOrderAction(o.id, () => deleteWholesaleOrder(o));
     };
 
     // Delete a payment from the View Details popup: reverts the order balance and
     // removes the linked Income transaction (handled inside deleteCustomerPayment).
     const handleDeleteViewPayment = async (p: { id: string; amount: number }) => {
-        if (!viewOrder) return;
+        if (!viewOrder || busyOrderRef.current.has(viewOrder.id)) return;
         if (!confirm(`Delete this payment of ${fmt(Number(p.amount) || 0)}? The order balance will be restored.`)) return;
-        try {
+        await runOrderAction(viewOrder.id, async () => {
             await deleteCustomerPayment(p.id);
             const newPaid = Math.max(0, (viewOrder.amount_paid || 0) - Number(p.amount));
             const newStatus = newPaid === 0 ? 'Unpaid' : (newPaid >= (viewOrder.total_amount || 0) ? 'Paid' : 'Partial');
             setViewOrder({ ...viewOrder, amount_paid: newPaid, payment_status: newStatus as WholesaleOrder['payment_status'], payments: (viewOrder.payments || []).filter(x => x.id !== p.id) });
-        } catch { /* hook toasts */ }
+        });
     };
 
     const handleMarkDelivered = async (o: WholesaleOrder) => {
+        if (busyOrderRef.current.has(o.id)) return;
         if (!confirm(`Mark ${o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`} as Delivered?`)) return;
-        try { await updateWholesaleOrderStatus(o, 'Delivered'); } catch { /* hook toasts */ }
+        await runOrderAction(o.id, () => updateWholesaleOrderStatus(o, 'Delivered'));
     };
 
     const handleCancelOrder = async (o: WholesaleOrder) => {
+        if (busyOrderRef.current.has(o.id)) return;
         if (!confirm(`Cancel this order for ${o.customer_name}? Stock will be returned to inventory.`)) return;
-        try { await updateWholesaleOrderStatus(o, 'Cancelled'); } catch { /* hook toasts */ }
+        await runOrderAction(o.id, () => updateWholesaleOrderStatus(o, 'Cancelled'));
     };
 
     const filtered = useMemo(() => {
@@ -724,12 +747,12 @@ const WholesaleOrdersPage: React.FC = () => {
                                                     <Printer size={15} />
                                                 </button>
                                                 {o.status === 'Open' && (
-                                                    <button onClick={() => handleMarkDelivered(o)} title="Mark Delivered" style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: 'pointer', color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <button onClick={() => handleMarkDelivered(o)} disabled={busyOrderIds.has(o.id)} title="Mark Delivered" style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <PackageCheck size={15} />
                                                     </button>
                                                 )}
                                                 {o.status !== 'Cancelled' && (
-                                                    <button onClick={() => handleCancelOrder(o)} title="Cancel Order (returns stock)" style={{ background: 'rgba(245,158,11,0.1)', border: 'none', cursor: 'pointer', color: '#d97706', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <button onClick={() => handleCancelOrder(o)} disabled={busyOrderIds.has(o.id)} title="Cancel Order (returns stock)" style={{ background: 'rgba(245,158,11,0.1)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#d97706', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <Ban size={15} />
                                                     </button>
                                                 )}
@@ -738,7 +761,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                                         <DollarSign size={15} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => handleDelete(o)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                <button onClick={() => handleDelete(o)} disabled={busyOrderIds.has(o.id)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#ef4444', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Trash2 size={15} />
                                                 </button>
                                             </div>
@@ -1042,7 +1065,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                         <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{fmt(Number(p.amount) || 0)}</div>
-                                                        <button onClick={() => handleDeleteViewPayment(p)} title="Delete Payment" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
+                                                        <button onClick={() => handleDeleteViewPayment(p)} disabled={busyOrderIds.has(viewOrder.id)} title="Delete Payment" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: busyOrderIds.has(viewOrder.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(viewOrder.id) ? 0.6 : 1, color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
                                                             <Trash2 size={14} />
                                                         </button>
                                                     </div>

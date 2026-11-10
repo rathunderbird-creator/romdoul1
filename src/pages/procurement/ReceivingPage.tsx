@@ -15,7 +15,6 @@ import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
-import { receivePurchaseOrderStock } from '../../utils/receivePurchaseOrder';
 import type { PurchaseOrder } from '../../types';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -57,7 +56,7 @@ const PRINT_CSS = `
 const ReceivingPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
-    const { currentUser, addStock, warehouses } = useStore();
+    const { currentUser, receivePurchaseOrder, warehouses } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, isLoading, fetchPurchaseOrders, savePurchaseOrder } = useProcurement();
     const { journalEntries, fetchJournalEntries } = useAccounting();
@@ -157,11 +156,11 @@ const ReceivingPage: React.FC = () => {
         processingIds.current.add(po.id);
         setReceivingId(po.id);
         try {
-            // Adds only what hasn't arrived yet for this PO (safe to retry), and
-            // throws on failure so the PO stays pending.
-            await receivePurchaseOrderStock(po.id, po.items || [], po.supplier?.name || '', addStock);
-            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || [], { quiet: true });
+            // One transaction: adds only what hasn't arrived yet, marks the PO
+            // Received and books the purchase — or, on failure, changes nothing.
+            const notices = await receivePurchaseOrder(po.id);
             showToast(`${poShortId(po.id)} received successfully`, 'success');
+            for (const n of notices) showToast(n, 'info');
             setIsPicking(false);
             setReceiveTargetId('');
             await fetchPurchaseOrders(true);

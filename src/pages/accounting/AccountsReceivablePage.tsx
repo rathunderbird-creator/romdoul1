@@ -245,6 +245,11 @@ const AccountsReceivablePage: React.FC = () => {
         if (!receiptFor) return;
         const amount = Number(receiptAmount);
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        // More than is still owed would over-credit the receivable.
+        if (receiptFor.source === 'wholesale' && amount > receiptFor.balance + 0.005) {
+            showToast(`That's more than the ${receiptFor.balance.toFixed(2)} still owed on this order`, 'error');
+            return;
+        }
         // "Received into" is required for wholesale receipts whenever cash/bank accounts exist.
         if (receiptFor.source === 'wholesale' && paymentAccounts.length > 0 && !receiveAccountId) {
             showToast('Choose the account this payment is received into', 'error');

@@ -75,7 +75,10 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
         setAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
     }, [isOpen, remainingBalance, wholesaleSettings.defaultPaymentAccountId, paymentAccounts]);
 
-    const canRecord = Number(amount) > 0 && !(paymentAccounts.length > 0 && !accountId);
+    // More than the balance would over-credit the receivable (the database
+    // refuses it too).
+    const overBalance = remainingBalance > 0 && Number(amount) > remainingBalance + 0.005;
+    const canRecord = Number(amount) > 0 && !overBalance && !(paymentAccounts.length > 0 && !accountId);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -100,8 +103,13 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
                         type="number" min="0.01" step="0.01"
                         value={amount}
                         onChange={e => setAmount(parseFloat(e.target.value) || '')}
-                        style={{ ...inputStyle, fontSize: '16px', fontWeight: 600, border: `1px solid ${Number(amount) <= 0 ? 'red' : 'var(--color-border)'}` }}
+                        style={{ ...inputStyle, fontSize: '16px', fontWeight: 600, border: `1px solid ${Number(amount) <= 0 || overBalance ? 'red' : 'var(--color-border)'}` }}
                     />
+                    {overBalance && (
+                        <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '6px' }}>
+                            More than the remaining balance — enter at most {remainingBalance.toFixed(2)}.
+                        </div>
+                    )}
                     {remainingBalance > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
                             {QUICK_FILLS.map(({ label, pct, color }) => {
