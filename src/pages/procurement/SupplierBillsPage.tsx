@@ -73,7 +73,7 @@ const inputStyle: React.CSSProperties = {
     background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px', outline: 'none', boxSizing: 'border-box',
 };
 
-interface BillModalState { poId: string; reference: string; dueDate: string; locked: boolean }
+interface BillModalState { poId: string; reference: string; billDate: string; dueDate: string; locked: boolean }
 
 const SupplierBillsPage = () => {
     const { setHeaderContent } = useHeader();
@@ -140,6 +140,10 @@ const SupplierBillsPage = () => {
 
     // A "bill" = a Received delivery that's been given a reference.
     const bills = useMemo(() => purchaseOrders.filter(po => po.status === 'Received' && !!po.invoice_number), [purchaseOrders]);
+    // Billed Date needs migrations/add_purchase_order_bill_date.sql. The orders are
+    // loaded with select('*'), so the column shows up on every row once it exists;
+    // until then the field and column stay hidden.
+    const hasBillDate = useMemo(() => purchaseOrders.some(po => 'bill_date' in po), [purchaseOrders]);
     // Received deliveries still waiting to be billed — the New Bill picker's pool.
     const billableDeliveries = useMemo(() => purchaseOrders.filter(po => po.status === 'Received' && !po.invoice_number), [purchaseOrders]);
 
@@ -193,10 +197,10 @@ const SupplierBillsPage = () => {
             due.setDate(due.getDate() + Math.round(termsDays));
             dueDate = dayKeyFromDate(due);
         }
-        setBillModal({ poId: preselectedPoId || '', reference: reference || '', dueDate, locked: !!preselectedPoId });
+        setBillModal({ poId: preselectedPoId || '', reference: reference || '', billDate: today, dueDate, locked: !!preselectedPoId });
     };
     const openEditBill = (po: PurchaseOrder) => {
-        setBillModal({ poId: po.id, reference: po.invoice_number || '', dueDate: (po.payment_due_date || '').slice(0, 10), locked: true });
+        setBillModal({ poId: po.id, reference: po.invoice_number || '', billDate: (po.bill_date || '').slice(0, 10), dueDate: (po.payment_due_date || '').slice(0, 10), locked: true });
     };
     const submitBillModal = async () => {
         if (!billModal || !billModal.poId || !billModal.reference.trim()) {
@@ -205,7 +209,7 @@ const SupplierBillsPage = () => {
         }
         setIsSavingBill(true);
         try {
-            await saveBillReference(billModal.poId, billModal.reference.trim(), billModal.dueDate || null);
+            await saveBillReference(billModal.poId, billModal.reference.trim(), billModal.dueDate || null, hasBillDate ? (billModal.billDate || null) : undefined);
             setBillModal(null);
         } catch {
             // toast handled in hook
@@ -320,6 +324,7 @@ const SupplierBillsPage = () => {
   <div class="muted">${escapeHtml(po.invoice_number || poShortId(po))}</div>
   <div class="meta">
     <b>Supplier</b><span>${escapeHtml(po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—')}</span>
+    ${hasBillDate ? `<b>Billed</b><span>${escapeHtml(fmtDate(po.bill_date))}</span>` : ''}
     <b>Due</b><span>${escapeHtml(fmtDate(po.payment_due_date))}</span>
     <b>Status</b><span>${escapeHtml(billStatusOf(po))}</span>
   </div>
@@ -338,6 +343,7 @@ const SupplierBillsPage = () => {
             <tr>
                 <td>${escapeHtml(po.invoice_number || poShortId(po))}</td>
                 <td>${escapeHtml(po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—')}</td>
+                ${hasBillDate ? `<td>${escapeHtml(fmtDate(po.bill_date))}</td>` : ''}
                 <td>${escapeHtml(fmtDate(po.payment_due_date))}</td>
                 <td class="num">${fmtUsd(po.total_amount)}</td>
                 <td class="num">${fmtUsd((po.total_amount || 0) - (po.amount_paid || 0))}</td>
@@ -349,17 +355,18 @@ const SupplierBillsPage = () => {
   <h1>Romdoul ERP System Solution — Supplier Bills</h1>
   <div class="muted">${filteredBills.length} ${filteredBills.length === 1 ? 'bill' : 'bills'} · Printed ${new Date().toLocaleString()}</div>
   <table>
-    <thead><tr><th>Reference</th><th>Supplier</th><th>Due</th><th class="num">Total</th><th class="num">Outstanding</th><th>Status</th></tr></thead>
+    <thead><tr><th>Reference</th><th>Supplier</th>${hasBillDate ? '<th>Billed</th>' : ''}<th>Due</th><th class="num">Total</th><th class="num">Outstanding</th><th>Status</th></tr></thead>
     <tbody>${rowsHtml}</tbody>
-    <tfoot><tr><td colspan="3">Total</td><td class="num">${fmtUsd(totalAmt)}</td><td class="num">${fmtUsd(totalOut)}</td><td></td></tr></tfoot>
+    <tfoot><tr><td colspan="${hasBillDate ? 4 : 3}">Total</td><td class="num">${fmtUsd(totalAmt)}</td><td class="num">${fmtUsd(totalOut)}</td><td></td></tr></tfoot>
   </table>`);
     };
     const exportCsv = () => {
         const cell = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-        const head = ['Reference', 'Supplier', 'Due', 'Total', 'Outstanding', 'Status'];
+        const head = ['Reference', 'Supplier', ...(hasBillDate ? ['Billed'] : []), 'Due', 'Total', 'Outstanding', 'Status'];
         const body = filteredBills.map(po => [
             po.invoice_number || poShortId(po),
             po.supplier?.name || supplierById.get(po.supplier_id)?.name || '',
+            ...(hasBillDate ? [String(po.bill_date || '').slice(0, 10)] : []),
             String(po.payment_due_date || '').slice(0, 10),
             (po.total_amount || 0).toFixed(2),
             ((po.total_amount || 0) - (po.amount_paid || 0)).toFixed(2),
@@ -474,7 +481,7 @@ const SupplierBillsPage = () => {
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                                         <span className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'} · Due {fmtDate(po.payment_due_date)}
+                                            {po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}{hasBillDate && po.bill_date ? ` · Billed ${fmtDate(po.bill_date)}` : ''} · Due {fmtDate(po.payment_due_date)}
                                         </span>
                                         {outstanding > 0.005 && <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>{fmtUsd(outstanding)}</span>}
                                     </div>
@@ -492,6 +499,7 @@ const SupplierBillsPage = () => {
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                                     <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Reference</th>
                                     <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Supplier</th>
+                                    {hasBillDate && <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Billed</th>}
                                     <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Due</th>
                                     <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
                                     <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Outstanding</th>
@@ -507,6 +515,7 @@ const SupplierBillsPage = () => {
                                         <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                             <td style={{ padding: '12px 20px', fontSize: '12.5px', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{po.invoice_number || poShortId(po)}</td>
                                             <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}</td>
+                                            {hasBillDate && <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(po.bill_date)}</td>}
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(po.payment_due_date)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(po.total_amount)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: outstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>{fmtUsd(outstanding)}</td>
@@ -534,7 +543,7 @@ const SupplierBillsPage = () => {
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    <td colSpan={3} style={{ padding: '12px 20px', fontSize: '12.5px', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                    <td colSpan={hasBillDate ? 4 : 3} style={{ padding: '12px 20px', fontSize: '12.5px', fontWeight: 700, color: 'var(--color-text-main)' }}>
                                         Total Records: {filteredBills.length}
                                     </td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'var(--color-text-main)' }}>{fmtUsd(billTotals.totalAmount)}</td>
@@ -573,6 +582,12 @@ const SupplierBillsPage = () => {
                             <label style={labelStyle}>Reference <span style={{ color: 'red' }}>*</span></label>
                             <input type="text" value={billModal.reference} onChange={e => setBillModal({ ...billModal, reference: e.target.value })} placeholder="e.g. BIL-20261022-001" style={inputStyle} />
                         </div>
+                        {hasBillDate && (
+                            <div>
+                                <label style={labelStyle}>Billed date</label>
+                                <input type="date" value={billModal.billDate} onChange={e => setBillModal({ ...billModal, billDate: e.target.value })} style={inputStyle} />
+                            </div>
+                        )}
                         <div>
                             <label style={labelStyle}>Due date</label>
                             <input type="date" value={billModal.dueDate} onChange={e => setBillModal({ ...billModal, dueDate: e.target.value })} style={inputStyle} />
@@ -600,6 +615,12 @@ const SupplierBillsPage = () => {
                             <span style={{ color: 'var(--color-text-main)' }}>{viewPO.invoice_number || poShortId(viewPO)}</span>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Supplier</span>
                             <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewPO.supplier?.name || supplierById.get(viewPO.supplier_id)?.name || '—'}</span>
+                            {hasBillDate && (
+                                <>
+                                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Billed</span>
+                                    <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewPO.bill_date)}</span>
+                                </>
+                            )}
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Due</span>
                             <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewPO.payment_due_date)}</span>
                             <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>

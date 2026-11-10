@@ -594,6 +594,7 @@ export interface PurchaseOrder {
     amount_paid?: number;
     payment_due_date?: string;
     invoice_number?: string;
+    bill_date?: string | null; // YYYY-MM-DD, when the delivery was billed (needs migrations/add_purchase_order_bill_date.sql)
     notes?: string;
     created_at?: string;
     // Joined fields for UI

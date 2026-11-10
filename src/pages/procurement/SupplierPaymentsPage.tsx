@@ -14,6 +14,7 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
+import DateRangePicker from '../../components/DateRangePicker';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { SupplierPayment, PurchaseOrder } from '../../types';
 
@@ -444,11 +445,9 @@ const SupplierPaymentsPage: React.FC = () => {
                     <option value="Posted">Posted</option>
                     <option value="Draft">Draft</option>
                 </select>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
-                </div>
+                {/* Same date picker as the Accounting pages (presets + calendar); the range
+                    is still remembered per browser via usePersistedDateRange. */}
+                <DateRangePicker value={spDateRange} onChange={setSpDateRange} />
                 <button onClick={() => { fetchSupplierPayments(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>

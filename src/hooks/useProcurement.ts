@@ -778,11 +778,19 @@ export const useProcurement = () => {
     // rollback on a failed re-insert. A narrow UPDATE of just these two
     // columns can't touch items, inventory, or the PO's receipt journal
     // entry either way.
-    const saveBillReference = useCallback(async (poId: string, invoiceNumber: string, dueDate: string | null) => {
+    // billDate: undefined leaves the stored billed date alone.
+    const saveBillReference = useCallback(async (poId: string, invoiceNumber: string, dueDate: string | null, billDate?: string | null) => {
         try {
-            const { error } = await supabase.from('purchase_orders')
-                .update({ invoice_number: invoiceNumber || null, payment_due_date: dueDate || null })
-                .eq('id', poId);
+            const update: Record<string, unknown> = { invoice_number: invoiceNumber || null, payment_due_date: dueDate || null };
+            if (billDate !== undefined) update.bill_date = billDate || null;
+            let { error } = await supabase.from('purchase_orders').update(update).eq('id', poId);
+            // Billed Date needs migrations/add_purchase_order_bill_date.sql; until an
+            // instance has run it, save the bill without that one column.
+            if (error && /bill_date/i.test(error.message || '') && 'bill_date' in update) {
+                delete update.bill_date;
+                ({ error } = await supabase.from('purchase_orders').update(update).eq('id', poId));
+                if (!error) console.info('Saved without the Billed Date — run migrations/add_purchase_order_bill_date.sql to store it');
+            }
             if (error) throw error;
             showToast('Bill saved', 'success');
             await fetchPurchaseOrders(true);
@@ -798,9 +806,15 @@ export const useProcurement = () => {
     // its inventory effect, its receipt journal entry) is untouched.
     const clearBillReference = useCallback(async (poId: string) => {
         try {
-            const { error } = await supabase.from('purchase_orders')
-                .update({ invoice_number: null, payment_due_date: null })
+            let { error } = await supabase.from('purchase_orders')
+                .update({ invoice_number: null, payment_due_date: null, bill_date: null })
                 .eq('id', poId);
+            // Instances without the Billed Date column: clear the rest.
+            if (error && /bill_date/i.test(error.message || '')) {
+                ({ error } = await supabase.from('purchase_orders')
+                    .update({ invoice_number: null, payment_due_date: null })
+                    .eq('id', poId));
+            }
             if (error) throw error;
             showToast('Bill removed — the delivery stays received', 'success');
             await fetchPurchaseOrders(true);
