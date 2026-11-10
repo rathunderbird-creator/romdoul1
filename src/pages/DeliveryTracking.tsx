@@ -743,7 +743,7 @@ const DeliveryTracking: React.FC = () => {
 
 
 
-    const handleUpdateShipping = () => {
+    const handleUpdateShipping = async () => {
         if (!selectedOrder) return;
 
         // Update shipping info
@@ -757,7 +757,10 @@ const DeliveryTracking: React.FC = () => {
             staffName: formData.staffName
         };
 
-        updateOrder(selectedOrder.id, { shipping: updatedShipping });
+        // A status change here now moves stock (updateOrder hands it to
+        // updateOrderStatus), so wait for it before saying it's done. updateOrder
+        // alerts and does not throw when a save fails or is refused.
+        await updateOrder(selectedOrder.id, { shipping: updatedShipping, expectedShippingStatus: selectedOrder.shipping?.status || 'Pending' });
         showToast('Shipping details updated', 'success');
         setIsEditModalOpen(false);
     };

@@ -315,7 +315,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             // as a silent no-op, so this is harmless when only tracking
             // changed, and is exactly what applies the transition when
             // status did change.
-            await onSave({ orderId: order.id, orderStatus, trackingNumber, shippingCompany: order.shipping?.company });
+            await onSave({ orderId: order.id, orderStatus, trackingNumber, shippingCompany: order.shipping?.company, expectedShippingStatus: baseline.orderStatus });
             setBaseline(b => ({ ...b, orderStatus, trackingNumber }));
             setTrackingSaved(true);
             setTimeout(() => setTrackingSaved(false), 2000);

@@ -47,6 +47,8 @@ export const orderBalance = (order: Sale): number => {
         return Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0));
     }
     const s = order.shipping?.status;
-    if (order.paymentStatus === 'Cancel' || s === 'ReStock' || s === 'Drafted' || s === 'Pending' || s === 'Cancelled') return 0;
+    // PdFee: the customer refused the goods and paid only the delivery fee, so
+    // nothing more is owed — same as Cancel.
+    if (order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee' || s === 'ReStock' || s === 'Drafted' || s === 'Pending' || s === 'Cancelled') return 0;
     return order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0));
 };

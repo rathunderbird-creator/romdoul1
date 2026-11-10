@@ -42,6 +42,13 @@ const localDayBound = (dateStr: string, edge: 'start' | 'end'): Date => {
     return edge === 'start' ? new Date(y, m - 1, d, 0, 0, 0, 0) : new Date(y, m - 1, d, 23, 59, 59, 999);
 };
 
+// Restock only acts on orders that are Returned right now; say what was skipped.
+const restockResultMessage = (restocked: number, requested: number) => {
+    const skipped = requested - restocked;
+    if (restocked === 0) return `Nothing restocked: only Returned orders can be restocked (${requested} selected).`;
+    return `Restocked ${restocked} order${restocked === 1 ? '' : 's'}` + (skipped > 0 ? `. ${skipped} skipped because they are not Returned.` : '');
+};
+
 const getStatusBorderColor = (s: string) => {
     switch (s) {
         case 'Pending': return '#D97706';
@@ -677,7 +684,7 @@ const lockedOrderMessage = (order: Sale) =>
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, restockOrder, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
     // The fetched page of orders (declared early: the header effect below lists
@@ -1034,9 +1041,10 @@ const Orders: React.FC = () => {
         }
         if (confirm(`Are you sure you want to restock ${selectedIds.size} orders ? `)) {
             try {
-                await bulkRestockOrders(Array.from(selectedIds));
+                const requested = selectedIds.size;
+                const restocked = await bulkRestockOrders(Array.from(selectedIds));
                 setSelectedIds(new Set());
-                showToast('Orders restocked successfully', 'success');
+                showToast(restockResultMessage(restocked, requested), restocked > 0 ? 'success' : 'error');
                 await fetchOrders();
             } catch (error: any) {
                 console.error('Failed to restock orders:', error);
@@ -2209,6 +2217,17 @@ const Orders: React.FC = () => {
                 // logging movements. Sequential: parallel updates on orders sharing
                 // a product would race the read-modify-write of its stock. Rows
                 // already at the target status are skipped as quiet no-ops.
+                if (value === 'ReStock') {
+                    // ReStock means the returned goods are back on the shelf. Changing only
+                    // the status marked orders restocked without returning any stock, so
+                    // this goes through the Restock flow (stock, return record, payment
+                    // Cancel). Only orders that are Returned right now are restocked.
+                    const restocked = await bulkRestockOrders(ids);
+                    showToast(restockResultMessage(restocked, ids.length), restocked > 0 ? 'success' : 'error');
+                    setSelectedIds(new Set());
+                    await fetchOrders();
+                    return;
+                }
                 for (const id of ids) {
                     const current = (serverOrders.find(s => s.id === id) || sales.find(s => s.id === id))?.shipping?.status;
                     if (current === value) continue;
@@ -2219,7 +2238,7 @@ const Orders: React.FC = () => {
                 await updateOrders(ids, updates);
             } else if (field === 'paymentStatus') {
                 const now = new Date().toISOString();
-                const promises = ids.map(id => {
+                const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
                     if (!order) return Promise.resolve();
                     
@@ -2245,8 +2264,11 @@ const Orders: React.FC = () => {
                     }
                     
                     return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus });
-                });
-                await Promise.all(promises);
+                };
+                // Get File moves stock (an unshipped order is counted out as Delivered), and
+                // stock is read-modify-write per product, so those saves go one at a time:
+                // in parallel, two orders with the same product would overwrite each other.
+                if (value === 'Get File') { for (const id of ids) await saveOne(id); } else { await Promise.all(ids.map(saveOne)); }
             }
 
             showToast(`Updated ${ids.length} orders`, 'success');
@@ -3447,9 +3469,8 @@ const Orders: React.FC = () => {
                                                 try {
                                                     await updateOrderStatus(id, status);
                                                     if (status === 'ReStock') {
-                                                        // Pass the shipping status so updateOrder doesn't reset it to Pending.
-                                                        await updateOrder(id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
-                                                        restockOrder(id);
+                                                        // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
+                                                        // PdFee kept — and income cleanup). Nothing more to do here.
                                                     } else if (status === 'Returned' || status === 'Cancelled') {
                                                         // null, not undefined — updateOrder skips undefined fields,
                                                         // which left the old settle_date on cancelled orders.
@@ -3942,9 +3963,8 @@ const Orders: React.FC = () => {
                                                                                     try {
                                                                                         await updateOrderStatus(order.id, newStatus as any);
                                                                                         if (newStatus === 'ReStock') {
-                                                                                            // Pass the shipping status so updateOrder doesn't reset it to Pending.
-                                                                                            await updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
-                                                                                            restockOrder(order.id);
+                                                                                            // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
+                                                                                            // PdFee kept — and income cleanup). Nothing more to do here.
                                                                                         } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
                                                                                             // null, not undefined — updateOrder skips undefined fields,
                                                                                             // which left the old settle_date on cancelled orders.

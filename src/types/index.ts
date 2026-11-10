@@ -65,6 +65,7 @@ export interface Sale {
     depositAccountName?: string; // transient, UI-only: resolved account name passed through updateOrder() for the income transaction's "Pay by" — never persisted to the sales table itself
     receiptReference?: string; // transient, UI-only: cheque/transfer reference passed through updateOrder() for the income transaction — never persisted to the sales table
     receiptNotes?: string; // transient, UI-only: note passed through updateOrder() for the income transaction — never persisted to the sales table
+    expectedShippingStatus?: string; // transient, UI-only: the shipping status an edit form showed, so updateOrder() can tell a status left alone from a requested change — never persisted
     expectedPaymentStatus?: string; // transient, UI-only: the status an edit form loaded with, so updateOrder() can tell a field left alone from a requested change — never persisted
     postToLedger?: boolean; // transient, UI-only: when true, updateOrder() also posts a Draft journal entry for this payment — never persisted to the sales table
     lastEditedAt?: string; // ISO string
@@ -176,7 +177,7 @@ export interface StoreContextType {
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => Promise<Sale | undefined>;
     addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<Sale>;
-    updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string) => void;
+    updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; customer?: { name?: string; phone?: string } }) => Promise<void>;
     // Returns the created product (null on failure) so callers can select it.
     addProduct: (product: Omit<Product, 'id'>) => Promise<Product | null>;
     updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
@@ -268,7 +269,7 @@ export interface StoreContextType {
     importProducts: (products: any[]) => Promise<void>;
     importOrders: (orders: any[]) => Promise<void>;
     restockOrder: (orderId: string) => Promise<void>;
-    bulkRestockOrders: (orderIds: string[]) => Promise<void>;
+    bulkRestockOrders: (orderIds: string[]) => Promise<number>; // resolves to how many orders were restocked (only Returned ones are)
     backupData: () => Promise<void>;
     restoreData: (jsonData: any) => Promise<void>;
 

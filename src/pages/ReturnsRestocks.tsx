@@ -9,7 +9,7 @@ import type { Sale } from '../types';
 import { getShippingCoColor } from '../utils/orderUtils';
 
 const ReturnsRestocks: React.FC = () => {
-    const { restockOrder, bulkRestockOrders, updateOrder, salesUpdatedAt } = useStore();
+    const { bulkRestockOrders, salesUpdatedAt } = useStore();
     const isMobile = useMobile();
 
     // Historical Orders State
@@ -130,9 +130,12 @@ const ReturnsRestocks: React.FC = () => {
         
         setIsRestocking(true);
         try {
-            await bulkRestockOrders(Array.from(selectedReturnedOrderIds));
+            const requested = selectedReturnedOrderIds.size;
+            const restocked = await bulkRestockOrders(Array.from(selectedReturnedOrderIds));
             setSelectedReturnedOrderIds(new Set());
-            alert('Successfully Added Product back to Stock');
+            alert(restocked === requested
+                ? 'Successfully Added Product back to Stock'
+                : `Added ${restocked} of ${requested} orders back to stock. The others are no longer Returned (already restocked or changed by someone else).`);
             await fetchHistoricalOrders();
         } catch (error: any) {
              console.error("Bulk restock failed:", error);
@@ -270,12 +273,10 @@ const ReturnsRestocks: React.FC = () => {
                                                 onClick={async () => {
                                                     if (confirm('Restock items from this order?')) {
                                                         try {
-                                                            await updateOrder(order.id, {
-                                                                paymentStatus: 'Cancel',
-                                                                shipping: { ...order.shipping, status: 'ReStock' } as any
-                                                            });
-                                                            await restockOrder(order.id);
-                                                            alert('Successfully Added Product back to Stock');
+                                                            // The same Restock flow as the bulk button: only a Returned order, stock and
+                                                            // the return record, payment Cancel (PdFee kept) and income cleanup.
+                                                            const restocked = await bulkRestockOrders([order.id]);
+                                                            alert(restocked > 0 ? 'Successfully Added Product back to Stock' : 'This order is no longer Returned (already restocked or changed by someone else), so nothing was added.');
                                                             await fetchHistoricalOrders();
                                                         } catch (error: any) {
                                                             console.error("Restock failed:", error);

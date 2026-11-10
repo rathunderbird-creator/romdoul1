@@ -73,7 +73,11 @@ const OrdersManagement2Page: React.FC = () => {
         if (edit.orderStatus !== undefined || edit.trackingNumber !== undefined || edit.shippingCompany !== undefined) {
             const order = data.orders.find(o => o.id === edit.orderId) || data.rangeOrders.find(o => o.id === edit.orderId);
             const targetStatus = edit.orderStatus ?? (order?.shipping?.status || 'Confirmed');
-            await updateOrderStatus(edit.orderId, targetStatus as any, edit.trackingNumber, edit.shippingCompany);
+            // shownStatus: the drawer always sends its status; when that is just the
+            // status it showed and the order moved on since, the real one is kept.
+            await updateOrderStatus(edit.orderId, targetStatus as any, edit.trackingNumber, edit.shippingCompany, {
+                shownStatus: edit.expectedShippingStatus ?? (edit.orderStatus === undefined ? order?.shipping?.status : undefined),
+            });
         }
         if (Object.keys(updates).length > 0) await updateOrder(edit.orderId, updates as any);
         await logActivity('order_update', `Updated order ${edit.orderId}`, currentUser?.id, currentUser?.name, { edit });
@@ -122,7 +126,10 @@ const OrdersManagement2Page: React.FC = () => {
         onBulkAddTracking: async (updates) => {
             for (const u of updates) {
                 const order = data.orders.find(o => o.id === u.orderId);
-                await updateOrderStatus(u.orderId, (order?.shipping?.status || 'Shipped') as any, u.trackingNumber, order?.shipping?.company);
+                // Tracking only: the status is the one this page showed, so if the order
+                // moved on since, updateOrderStatus keeps the real one (shownStatus).
+                const shown = order?.shipping?.status || 'Shipped';
+                await updateOrderStatus(u.orderId, shown as any, u.trackingNumber, order?.shipping?.company, { shownStatus: shown });
             }
             await logActivity('bulk_tracking', `Added tracking IDs to ${updates.length} order(s)`, currentUser?.id, currentUser?.name, { count: updates.length });
             data.refresh();
@@ -165,7 +172,7 @@ const OrdersManagement2Page: React.FC = () => {
                 await updateOrders(orderIds, { settleDate: value ? new Date(value).toISOString() : null as any });
             } else if (field === 'paymentStatus') {
                 const now = new Date().toISOString();
-                await Promise.all(orderIds.map(id => {
+                const saveOne = (id: string) => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     if (!order) return Promise.resolve();
                     const individualUpdates: Record<string, unknown> = { paymentStatus: value };
@@ -182,7 +189,11 @@ const OrdersManagement2Page: React.FC = () => {
                     }
                     individualUpdates.expectedPaymentStatus = order.paymentStatus;
                     return updateOrder(id, individualUpdates as any);
-                }));
+                };
+                // Get File moves stock (an unshipped order is counted out as Delivered), and
+                // stock is read-modify-write per product, so those saves go one at a time:
+                // in parallel, two orders with the same product would overwrite each other.
+                if (value === 'Get File') { for (const id of orderIds) await saveOne(id); } else { await Promise.all(orderIds.map(saveOne)); }
             }
             await logActivity('bulk_edit', `Bulk edited ${orderIds.length} order(s): ${field}`, currentUser?.id, currentUser?.name, { count: orderIds.length, field, value });
             data.refresh();

@@ -32,7 +32,7 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrders, updateOrderStatus, restockOrder, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
@@ -223,7 +223,7 @@ const PaymentTracking: React.FC = () => {
                 }
             } else if (field === 'paymentStatus') {
                 const now = settleDateInput ? new Date(settleDateInput).toISOString() : new Date().toISOString();
-                const promises = ids.map(id => {
+                const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id);
                     if (!order) return Promise.resolve();
 
@@ -244,8 +244,11 @@ const PaymentTracking: React.FC = () => {
                     }
                     
                     return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus });
-                });
-                await Promise.all(promises);
+                };
+                // Get File moves stock (an unshipped order is counted out as Delivered), and
+                // stock is read-modify-write per product, so those saves go one at a time:
+                // in parallel, two orders with the same product would overwrite each other.
+                if (value === 'Get File') { for (const id of ids) await saveOne(id); } else { await Promise.all(ids.map(saveOne)); }
             }
 
             setSelectedIds(new Set());
@@ -1258,10 +1261,8 @@ const PaymentTracking: React.FC = () => {
                                                 try {
                                                     await updateOrderStatus(order.id, newStatus as any);
                                                     if (newStatus === 'ReStock') {
-                                                        // Pass the shipping status (like the Orders handlers) so
-                                                        // updateOrder's Cancel branch doesn't reset it to Pending.
-                                                        await updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'ReStock' } as any });
-                                                        restockOrder(order.id);
+                                                        // updateOrderStatus ran the Restock flow (stock, return record, payment Cancel —
+                                                        // PdFee kept — and income cleanup). Nothing more to do here.
                                                     } else if (newStatus === 'Returned') {
                                                         await updateOrder(order.id, { paymentStatus: 'Cancel', shipping: { ...order.shipping, status: 'Returned' } as any });
                                                     }
