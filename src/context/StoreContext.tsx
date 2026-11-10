@@ -2013,7 +2013,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (error) {
             // A genuinely different order colliding on the same millisecond id:
             // let the next try mint a fresh id instead of re-sending this one.
-            if (/already exists/i.test(error.message || '')) pendingOrderIds.delete(signature);
+            if (/already exists|duplicate key/i.test(error.message || '')) pendingOrderIds.delete(signature);
             console.error('Error creating online order:', error);
             throw new Error('Failed to create order: ' + orderPaymentRpcMessage(error));
         }
@@ -2667,6 +2667,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (updates.customer?.name) pUpdates.customer_name = updates.customer.name;
             if (updates.customer?.phone) pUpdates.customer_phone = updates.customer.phone;
             if (updates.shipping?.company) pUpdates.shipping_company = updates.shipping.company;
+            // The deposit this save decided from (the fresh read above): the
+            // database refuses when the stored deposit has moved since, so a
+            // second stale screen can't quietly lower the deposit under the
+            // amounts already booked.
+            if (updates.depositAmount !== undefined && paymentRow) pUpdates.expected_deposit_amount = Number(paymentRow.deposit_amount) || 0;
             const paySignature = 'pay:' + id + ':' + JSON.stringify(pUpdates);
             const [payTxId] = paymentTxKeys.take(paySignature);
             pUpdates.tx_id = payTxId;
@@ -2680,6 +2685,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 p_fields: {
                     added_by: currentUser?.name || 'System',
                     today: getLocalYYYYMMDD(),
+                    // Minutes east of UTC, so settle-day comparisons run on the
+                    // user's LOCAL days (localDayOf's job, now in the database).
+                    tz_offset_min: -new Date().getTimezoneOffset(),
                     ...(currentUser ? { last_edited_by: currentUser.name, now: new Date().toISOString() } : {}),
                 },
             });

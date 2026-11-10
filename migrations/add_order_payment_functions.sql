@@ -50,6 +50,13 @@
 -- "Deposit into" on sales — the account the settled amount landed in.
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_account_id TEXT;
 
+-- Deposits must survive delete+restore. full_schema.sql has these, but an
+-- instance created before them may not (the standalone ALTER file never
+-- shipped), and delete_retail_orders archives these columns unconditionally.
+ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
+ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS deposit_date DATE;
+ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS deposit_method TEXT;
+
 -- The probe the app uses to ask whether this file has been run.
 CREATE OR REPLACE FUNCTION order_payment_functions_ready()
 RETURNS BOOLEAN
@@ -70,6 +77,30 @@ IMMUTABLE
 AS $$
     SELECT CASE WHEN p_raw ~ '^\d{4}-\d{2}-\d{2}$' THEN (p_raw || 'T00:00:00Z')::timestamptz
                 ELSE p_raw::timestamptz END;
+$$;
+
+-- The user's LOCAL calendar day of a stored instant (p_tz_min: minutes east
+-- of UTC, e.g. 420 for ICT — the app sends -getTimezoneOffset()). A settle
+-- stamped between midnight and 07:00 local lives on the previous UTC day, so
+-- comparing UTC days would miss a genuine one-day correction (and move the
+-- income row on a non-change). Port of the app's localDayOf.
+CREATE OR REPLACE FUNCTION wp_internal.op_local_day(p_ts TIMESTAMPTZ, p_tz_min INT)
+RETURNS DATE
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT ((p_ts AT TIME ZONE 'UTC') + make_interval(mins => COALESCE(p_tz_min, 0)))::date;
+$$;
+
+-- Same, for a raw value from the app: a plain YYYY-MM-DD day is already a
+-- local day and passes through (as in localDayOf); a timestamp converts.
+CREATE OR REPLACE FUNCTION wp_internal.op_local_day_of(p_raw TEXT, p_tz_min INT)
+RETURNS DATE
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT CASE WHEN p_raw ~ '^\d{4}-\d{2}-\d{2}$' THEN p_raw::date
+                ELSE wp_internal.op_local_day(p_raw::timestamptz, p_tz_min) END;
 $$;
 
 -- One Income & Expense row, as the app writes it. Returns the row as jsonb
@@ -281,6 +312,12 @@ BEGIN
         RAISE EXCEPTION 'An order with this id already exists. Nothing was saved — try again.';
     END IF;
 
+    -- Two terminals creating different orders in the same millisecond collide
+    -- on the clock-generated id. The SELECT above can't see a row that isn't
+    -- committed yet, so the loser lands on the primary key instead: give it
+    -- the same plain message as the committed-row path (the app then mints a
+    -- fresh id for the next try) rather than a raw "duplicate key" error.
+    BEGIN
     INSERT INTO sales (id, total, discount, date, payment_method, type, salesman, customer_care,
                        amount_received, payment_status, deposit_amount, deposit_date, deposit_method,
                        customer_snapshot, order_status, page_source, shipping_company, tracking_number,
@@ -305,6 +342,9 @@ BEGIN
             p_order->>'tracking_number',
             p_order->>'shipping_status',
             p_order->>'remark');
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION 'An order with this id already exists. Nothing was saved — try again.';
+    END;
 
     INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity)
     SELECT gen_random_uuid(), v_id, NULLIF(i->>'id', ''), i->>'name',
@@ -400,7 +440,11 @@ $$;
 -- customer_name, customer_phone, shipping_company, tx_id (retry id for the
 -- income row this save may create — if that row already exists, it is not
 -- booked again).
--- p_fields: added_by, today (the user's local day, for deposit entry dates).
+-- p_updates may also carry expected_deposit_amount: the deposit the screen
+-- decided from — when the stored deposit differs, the save is refused (or,
+-- when it already equals what this save asks, reported as already applied).
+-- p_fields: added_by, today (the user's local day, for deposit entry dates),
+-- tz_offset_min (minutes east of UTC, for local-day comparisons).
 --
 -- What runs, mirroring the app:
 --   * entering Paid/Settled: income for the amount minus any deposit already
@@ -439,6 +483,7 @@ DECLARE
     v_shown TEXT;
     v_added_by TEXT := COALESCE(NULLIF(v_fields->>'added_by', ''), 'System');
     v_today DATE := COALESCE(NULLIF(v_fields->>'today', '')::DATE, CURRENT_DATE);
+    v_tz INT := COALESCE(NULLIF(v_fields->>'tz_offset_min', '')::INT, 0);
     v_txs JSONB := '[]'::jsonb;
     v_removed JSONB := '[]'::jsonb;
     v_notices TEXT[] := '{}';
@@ -509,6 +554,23 @@ BEGIN
                                   'notices', to_jsonb(v_notices));
     END IF;
 
+    -- The deposit amount this save decided from (the app's fresh read), the
+    -- compare-and-set the client used to run: two screens that both still
+    -- show the old deposit must not quietly overwrite each other — the loser
+    -- would lower the deposit column below the deposits actually booked, and
+    -- the settle later books the remainder over the lowered figure, so
+    -- revenue would overstate by exactly the clobbered delta.
+    IF u ? 'expected_deposit_amount' AND u ? 'deposit_amount'
+       AND abs(COALESCE(NULLIF(u->>'expected_deposit_amount', '')::NUMERIC, 0) - COALESCE(s.deposit_amount, 0)) > 0.005 THEN
+        IF v_dep_given IS NOT NULL AND abs(v_dep_given - COALESCE(s.deposit_amount, 0)) <= 0.005 THEN
+            -- A double submit / a retry whose first try won: already saved.
+            RETURN jsonb_build_object('already_applied', true, 'payment', wp_internal.op_payment_of(s),
+                                      'transactions_added', v_txs, 'transactions_removed', v_removed,
+                                      'notices', to_jsonb(v_notices));
+        END IF;
+        RAISE EXCEPTION 'This order''s payment details were just changed by someone else, so your change wasn''t saved. The list has been refreshed. Please check the order and try again.';
+    END IF;
+
     v_entering_paid := v_target IN ('Paid', 'Settled', 'Paid/Settled') AND v_cur NOT IN ('Paid', 'Settled', 'Paid/Settled');
     v_leaving_paid := v_target_given AND v_target NOT IN ('Paid', 'Settled', 'Paid/Settled') AND v_cur IN ('Paid', 'Settled', 'Paid/Settled');
 
@@ -560,8 +622,9 @@ BEGIN
                 IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
             END IF;
         ELSIF v_post THEN
-            -- Deposit covered the whole order: book just the cost side.
-            PERFORM wp_internal.op_post_cogs_only(p_order_id, v_date::DATE, v_name);
+            -- Deposit covered the whole order: book just the cost side, dated
+            -- on the user's LOCAL day of the settle instant (as the app did).
+            PERFORM wp_internal.op_post_cogs_only(p_order_id, wp_internal.op_local_day(v_date, v_tz), v_name);
         END IF;
     ELSIF v_target = 'PdFee' AND v_cur <> 'PdFee' THEN
         -- The order is treated as cancelled, but the delivery fee was paid:
@@ -618,8 +681,12 @@ BEGIN
     ELSIF v_target IN ('Paid', 'Settled', 'Paid/Settled') AND NOT v_leaving_paid THEN
         -- A paid order's settle date, received amount or Pay By was
         -- corrected without a transition: the income row follows.
+        -- Compared as the user's LOCAL days (a settle stamped between midnight
+        -- and 07:00 local lives on the previous UTC day — UTC days would miss
+        -- a genuine one-day correction across that window).
         v_settle_day_changed := v_settle IS NOT NULL
-            AND wp_internal.op_norm_ts(v_settle)::DATE IS DISTINCT FROM s.settle_date::DATE;
+            AND wp_internal.op_local_day_of(v_settle, v_tz)
+                IS DISTINCT FROM wp_internal.op_local_day(s.settle_date, v_tz);
         IF v_settle_day_changed
            OR (u ? 'amount_received' AND COALESCE(v_amount_received, 0) > 0 AND v_amount_received IS DISTINCT FROM COALESCE(s.amount_received, 0))
            OR (u ? 'payment_method' AND NULLIF(u->>'payment_method', '') IS DISTINCT FROM NULLIF(s.payment_method, '')) THEN
@@ -768,22 +835,50 @@ BEGIN
 
     -- The orders' income (ORD-7/OM2-9: a deleted paid order must not leave
     -- its revenue behind). Matched by order_id, plus the legacy #DEP marker
-    -- deposits carried before the order link existed.
-    FOR r IN SELECT id, COALESCE(NULLIF(customer_snapshot->>'name', ''), 'Customer') AS cname
-               FROM sales WHERE id = ANY(v_ids)
+    -- deposits carried before the order link existed. The marker holds only
+    -- the first 8 of the 13 clock digits, so every order of the same customer
+    -- within a ~28-hour window carries the SAME marker: a legacy row is only
+    -- deleted when no SURVIVING order of that customer shares it (it is left
+    -- behind, with a notice, rather than risk a sibling order's deposit).
+    FOR r IN SELECT s2.id, COALESCE(NULLIF(s2.customer_snapshot->>'name', ''), 'Customer') AS cname,
+                    EXISTS (SELECT 1 FROM sales sib
+                             WHERE sib.id <> s2.id AND NOT (sib.id = ANY(v_ids))
+                               AND left(sib.id, 8) = left(s2.id, 8)
+                               AND COALESCE(NULLIF(sib.customer_snapshot->>'name', ''), 'Customer')
+                                   = COALESCE(NULLIF(s2.customer_snapshot->>'name', ''), 'Customer')) AS has_sibling
+               FROM sales s2 WHERE s2.id = ANY(v_ids)
     LOOP
         FOR t IN SELECT id FROM transactions
                   WHERE type = 'Income'
                     AND (order_id = r.id
                          -- Legacy deposits from before the order link: the
                          -- exact description the app wrote for THIS order.
-                         OR (category = 'កក់ប្រាក់' AND order_id IS NULL
+                         OR (NOT r.has_sibling AND category = 'កក់ប្រាក់' AND order_id IS NULL
                              AND description = r.cname || ' #DEP-' || left(r.id, 8)))
         LOOP
             v_notice := wp_internal.op_remove_tx_entry(t.id);
             IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
             DELETE FROM transactions WHERE id = t.id;
             v_removed := v_removed || to_jsonb(t.id);
+        END LOOP;
+        IF r.has_sibling AND EXISTS (SELECT 1 FROM transactions
+                                      WHERE type = 'Income' AND category = 'កក់ប្រាក់' AND order_id IS NULL
+                                        AND description = r.cname || ' #DEP-' || left(r.id, 8)) THEN
+            v_notices := v_notices || format('An older deposit row "%s" could belong to another order of this customer, so it was left in Income & Expense — remove it there if it was this order''s.',
+                                             r.cname || ' #DEP-' || left(r.id, 8));
+        END IF;
+        -- The cost-side entry of a deposit-covered order (reference
+        -- ORD-<id>-COGS) has no income row of its own: same rule as the TX-
+        -- entries — a Draft one goes with the order, a Posted one stays.
+        FOR t IN SELECT id, COALESCE(status, 'Posted') AS status FROM journal_entries
+                  WHERE reference_id = 'ORD-' || r.id || '-COGS' FOR UPDATE
+        LOOP
+            IF t.status <> 'Draft' THEN
+                v_notices := v_notices || 'This order has a POSTED cost-of-goods ledger entry — record a reversing entry manually.'::TEXT;
+            ELSE
+                DELETE FROM journal_entry_lines WHERE journal_entry_id = t.id;
+                DELETE FROM journal_entries WHERE id = t.id;
+            END IF;
         END LOOP;
     END LOOP;
 
@@ -848,6 +943,8 @@ $$;
 
 GRANT EXECUTE ON FUNCTION order_payment_functions_ready() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_norm_ts(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_local_day(TIMESTAMPTZ, INT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_local_day_of(TEXT, INT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_insert_income(UUID, TIMESTAMPTZ, TEXT, NUMERIC, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;

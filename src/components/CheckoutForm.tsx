@@ -597,7 +597,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             onSuccess();
         } catch (error) {
             console.error('Checkout failed:', error);
-            showToast('Failed to save order. Please try again.', 'error');
+            // The thrown message says what actually went wrong — on a store
+            // that hasn't run migrations/add_order_payment_functions.sql it
+            // names the file to run, and a retry can't succeed until then.
+            const message = error instanceof Error && error.message ? error.message : '';
+            showToast(message || 'Failed to save order. Please try again.', 'error');
         } finally {
             setIsSubmitting(false);
         }
