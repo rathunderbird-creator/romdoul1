@@ -7,6 +7,7 @@ import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { dayKeyFromDate } from '../utils/dateRange';
 import { createInFlightGuard } from '../utils/inFlightGuard';
+import { outstandingReceipt, poReceiveMarker } from '../utils/receivePurchaseOrder';
 
 const supplierPaymentGuard = createInFlightGuard();
 
@@ -387,7 +388,8 @@ export const useProcurement = () => {
         }
     }, [showToast]);
 
-    const savePurchaseOrder = useCallback(async (po: Partial<PurchaseOrder>, items: Partial<PurchaseOrderItem>[]) => {
+    // opts.quiet: no success toast (the PO form saves twice when it receives).
+    const savePurchaseOrder = useCallback(async (po: Partial<PurchaseOrder>, items: Partial<PurchaseOrderItem>[], opts?: { quiet?: boolean }) => {
         try {
             let currentPoId = po.id;
             let wasReceived = false;
@@ -395,8 +397,66 @@ export const useProcurement = () => {
             if (currentPoId) {
                 // The old status decides whether a Cancelled save needs to take a
                 // received PO's inventory entry back off the books (see below).
-                const { data: oldPo } = await supabase.from('purchase_orders').select('status').eq('id', currentPoId).single();
+                const { data: oldPo, error: oldErr } = await supabase.from('purchase_orders').select('status').eq('id', currentPoId).single();
+                if (oldErr) throw oldErr;
                 wasReceived = oldPo?.status === 'Received';
+
+                // Goods from this PO that reached stock (the restocks its receive
+                // made) are on the shelf, and on a Received PO also in the books.
+                // Cancelling the PO, or cutting a product below what arrived, used
+                // to change or remove the inventory entry with no stock change, so
+                // stock and the books stopped matching. A return to the supplier
+                // goes through Adjust Stock. Prices can still be corrected (that
+                // only revalues the entry). This keys on goods actually arriving,
+                // not the Received label: an opening balance, or an order marked
+                // Received before this check, has none and stays editable.
+                const { data: arrivedRows, error: arrErr } = await supabase.from('restocks')
+                    .select('product_id, quantity').like('note', `%${poReceiveMarker(currentPoId)}%`);
+                if (arrErr) throw arrErr;
+                if (arrivedRows && arrivedRows.length > 0) {
+                    if (po.status === 'Cancelled' || (wasReceived && po.status !== undefined && po.status !== 'Received')) {
+                        throw new Error("Goods from this purchase order are already in stock, so it can't be cancelled or moved off Received. Record a return to the supplier with Adjust Stock instead.");
+                    }
+                    const totals = (rows: { product_id?: string | null; quantity?: number | null }[]) => {
+                        const m = new Map<string, number>();
+                        for (const r of rows) if (r.product_id) m.set(r.product_id, (m.get(r.product_id) || 0) + (Number(r.quantity) || 0));
+                        return m;
+                    };
+                    const after = totals(items);
+                    if (wasReceived) {
+                        // Fully received: the order is the record of what arrived.
+                        const { data: oldItems, error: oldItemsErr } = await supabase.from('purchase_order_items')
+                            .select('product_id, quantity').eq('purchase_order_id', currentPoId);
+                        if (oldItemsErr) throw oldItemsErr;
+                        const before = totals(oldItems || []);
+                        const same = before.size === after.size && [...before].every(([pid, q]) => after.get(pid) === q);
+                        if (!same) {
+                            throw new Error("This purchase order has been received into stock, so its products and quantities can't be changed. Use Adjust Stock for any difference.");
+                        }
+                    } else {
+                        // Part-received (a receive that stopped part-way): more can be
+                        // ordered, but no product can drop below what already arrived.
+                        const arrived = totals(arrivedRows);
+                        const short = [...arrived].some(([pid, q]) => (after.get(pid) || 0) < q);
+                        if (short) {
+                            throw new Error("Some of this order's goods are already in stock, so their quantities can't go below what arrived. Use Adjust Stock for any difference.");
+                        }
+                    }
+                }
+            }
+
+            // Becoming Received records the purchase in the books (Dr Inventory /
+            // Cr Payable), so the goods must actually have been added to stock by
+            // the receive first. Saving Received straight from the form booked the
+            // purchase while stock never changed.
+            if (po.status === 'Received' && !wasReceived) {
+                const outstanding = currentPoId ? await outstandingReceipt(currentPoId, items) : [{ missing: 1 }];
+                if (outstanding.some(o => o.missing > 0)) {
+                    throw new Error('Receive the goods into stock first: this purchase order has items that have not been added to stock yet.');
+                }
+            }
+
+            if (currentPoId) {
                 // Update. payment_status/amount_paid are owned by the payment
                 // flow (recordSupplierPayment) — only write them when the caller
                 // explicitly passes them, otherwise an ordinary edit (fixing a
@@ -488,7 +548,7 @@ export const useProcurement = () => {
                 await cancelPurchaseReceiptEntry(currentPoId, showToast);
             }
 
-            showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
+            if (!opts?.quiet) showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
             await fetchPurchaseOrders(true); // silent fetch
             return currentPoId;
         } catch (error: any) {
@@ -500,6 +560,25 @@ export const useProcurement = () => {
 
     const deletePurchaseOrder = useCallback(async (id: string) => {
         try {
+            // A PO whose goods reached stock, or whose purchase is posted in the
+            // books, can't be deleted: deleting removed the PO and its inventory
+            // entry (Posted ones too) while the goods stayed in stock, so stock and
+            // the books stopped matching and the supplier balance vanished.
+            // (Keyed on goods actually arriving, not the Received label: an opening
+            // balance or an order marked Received without a receive has no stock.)
+            const [{ data: arrived, error: arrErr }, { data: entries, error: entErr }] = await Promise.all([
+                supabase.from('restocks').select('id').like('note', `%${poReceiveMarker(id)}%`).limit(1),
+                supabase.from('journal_entries').select('*').eq('reference_id', 'PO-' + id),
+            ]);
+            if (arrErr) throw arrErr;
+            if (entErr) throw entErr;
+            if (arrived && arrived.length > 0) {
+                throw new Error("it has been received into stock. Deleting it would leave the goods in stock with no purchase on the books. Record a return to the supplier with Adjust Stock instead.");
+            }
+            // A missing status column counts as Posted, same as the journal page.
+            if ((entries || []).some(e => ((e as { status?: string }).status || 'Posted') !== 'Draft')) {
+                throw new Error('its inventory entry is posted in the books. Unpost the entry first if this purchase really should be removed.');
+            }
             // Payments cascade away with the PO — capture their ids FIRST (a
             // failed read aborts the delete), remove the PO, then clean their
             // linked Expense rows. A partial failure at worst leaves an
@@ -541,7 +620,7 @@ export const useProcurement = () => {
             await fetchPurchaseOrders(true);
         } catch (error: any) {
             console.error('Failed to delete purchase order:', error);
-            showToast('Failed to delete purchase order: ' + error.message, 'error');
+            showToast("Can't delete this purchase order: " + error.message, 'error');
             throw error;
         }
     }, [showToast, fetchPurchaseOrders]);

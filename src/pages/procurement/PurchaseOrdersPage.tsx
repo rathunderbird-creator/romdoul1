@@ -5,13 +5,14 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useToast } from '../../context/ToastContext';
-import { supabase } from '../../lib/supabase';
 import type { PurchaseOrderItem, PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
 import { useAccounting } from '../../hooks/useAccounting';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, MobileMultiChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 import DateRangePicker from '../../components/DateRangePicker';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { receivePurchaseOrderStock, poReceiveMarker } from '../../utils/receivePurchaseOrder';
+import { supabase } from '../../lib/supabase';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -209,6 +210,20 @@ const PurchaseOrdersPage = () => {
     const [invoiceNumber, setInvoiceNumber] = useState('');
     const [paymentDueDate, setPaymentDueDate] = useState('');
     const [status, setStatus] = useState<'Draft' | 'Sent' | 'Received' | 'Cancelled'>('Draft');
+    // The status the edited PO had when the form opened (null for a new PO). A
+    // received PO keeps its status, products and quantities: its goods are in
+    // stock and its purchase is in the books.
+    const [openedStatus, setOpenedStatus] = useState<PurchaseOrder['status'] | null>(null);
+    // Whether a Received PO's goods actually reached stock. One marked Received
+    // without them (an opening balance, or one saved Received before receiving
+    // went through stock) stays editable, as before. Saving it never adds stock:
+    // its goods may have been restocked by hand, so that is a decision for a
+    // person, not a side effect of a save.
+    const [openedStockArrived, setOpenedStockArrived] = useState(true);
+    const openedCheckRef = useRef(0);
+    const linesLocked = openedStatus === 'Received' && openedStockArrived;
+    const [isSavingPO, setIsSavingPO] = useState(false);
+    const savingPORef = useRef(false);
     const [notes, setNotes] = useState('');
     const [lines, setLines] = useState<Partial<PurchaseOrderItem>[]>([
         { product_id: '', quantity: 1, unit_price: 0 }
@@ -278,6 +293,8 @@ const PurchaseOrdersPage = () => {
             setPaymentDueDate('');
         }
         setStatus('Draft');
+        setOpenedStatus(null);
+        setOpenedStockArrived(true);
         setNotes('');
         setLines([{ product_id: '', quantity: 1, unit_price: 0 }]);
         setIsModalOpen(true);
@@ -291,6 +308,15 @@ const PurchaseOrdersPage = () => {
         setInvoiceNumber(po.invoice_number || '');
         setPaymentDueDate(po.payment_due_date ? po.payment_due_date.split('T')[0] : '');
         setStatus(po.status || 'Draft');
+        setOpenedStatus(po.status || 'Draft');
+        setOpenedStockArrived(true);
+        // Only the newest form's check may set the lock: a slow answer for a PO
+        // opened earlier must not unlock the one open now.
+        const check = ++openedCheckRef.current;
+        if (po.status === 'Received') {
+            supabase.from('restocks').select('id').like('note', `%${poReceiveMarker(po.id)}%`).limit(1)
+                .then(({ data, error }) => { if (!error && check === openedCheckRef.current) setOpenedStockArrived(!!data && data.length > 0); });
+        }
         setNotes(po.notes || '');
         if (po.items && po.items.length > 0) {
             setLines(po.items.map((i: any) => ({
@@ -306,7 +332,11 @@ const PurchaseOrdersPage = () => {
 
     const handleDeletePO = async (id: string) => {
         if (window.confirm('Are you sure you want to delete this purchase order?')) {
-            await deletePurchaseOrder(id);
+            try {
+                await deletePurchaseOrder(id);
+            } catch {
+                // deletePurchaseOrder already told the user why.
+            }
         }
     };
 
@@ -317,21 +347,10 @@ const PurchaseOrdersPage = () => {
         receivingRef.current.add(po.id);
         setReceivingId(po.id);
         try {
-            // Idempotent per item: addStock throws on failure (the PO then stays
-            // un-received), so a RETRY must skip items whose restock record
-            // already landed — otherwise their stock would be added twice.
-            if (po.items && po.items.length > 0) {
-                const marker = `Received from PO-${po.id.substring(0, 8)}`;
-                for (const item of po.items) {
-                    if (item.product_id) {
-                        const { data: already } = await supabase.from('restocks')
-                            .select('id').eq('product_id', item.product_id).like('note', `%${marker}%`).limit(1);
-                        if (already && already.length > 0) continue;
-                        await addStock(item.product_id, item.quantity, item.unit_price, marker, po.supplier?.name || '');
-                    }
-                }
-            }
-            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || []);
+            // Adds only what hasn't arrived yet for this PO (safe to retry), and
+            // throws on failure so the PO stays un-received.
+            await receivePurchaseOrderStock(po.id, po.items || [], po.supplier?.name || '', addStock);
+            await savePurchaseOrder({ ...po, status: 'Received' }, po.items || [], { quiet: true });
             showToast(`PO-${po.id.substring(0, 8).toUpperCase()} received into stock`, 'success');
             fetchPurchaseOrders(true);
         } catch (error: any) {
@@ -366,25 +385,52 @@ const PurchaseOrdersPage = () => {
     const isFormValid = supplierId && lines.every(l => l.product_id && l.quantity && l.quantity > 0);
 
     const handleSave = async () => {
-        if (!isFormValid) return;
+        if (!isFormValid || savingPORef.current) return;
+        // Choosing Received here receives the goods, the same as the Receive
+        // button: the PO is saved, its items are added to stock, and only then is
+        // it marked Received (which books the purchase). Saving Received alone
+        // used to book the purchase while stock never changed.
+        const receivingNow = status === 'Received' && openedStatus !== 'Received';
+        if (receivingNow && !window.confirm('Saving this order as Received adds its items to stock now. Continue?')) return;
+        savingPORef.current = true;
+        setIsSavingPO(true);
+        const base = {
+            supplier_id: supplierId,
+            order_date: orderDate,
+            expected_delivery_date: expectedDeliveryDate || undefined,
+            invoice_number: invoiceNumber || undefined,
+            payment_due_date: paymentDueDate || undefined,
+            total_amount: totalAmount,
+            notes: notes || undefined
+        };
         try {
-            await savePurchaseOrder(
-                { 
-                    id: editingPOId || undefined,
-                    supplier_id: supplierId, 
-                    order_date: orderDate, 
-                    expected_delivery_date: expectedDeliveryDate || undefined,
-                    invoice_number: invoiceNumber || undefined,
-                    payment_due_date: paymentDueDate || undefined,
-                    status,
-                    total_amount: totalAmount,
-                    notes: notes || undefined
-                },
-                lines
+            const firstStatus = receivingNow ? (openedStatus || 'Draft') : status;
+            const savedId = await savePurchaseOrder(
+                { ...base, id: editingPOId || undefined, status: firstStatus },
+                lines,
+                { quiet: receivingNow }
             );
+            if (receivingNow && savedId) {
+                // The order now exists: if a later step fails and the user saves
+                // again, that must continue this order, not create a second one.
+                setEditingPOId(savedId);
+                setOpenedStatus(firstStatus);
+                const supplierName = suppliers.find(s => s.id === supplierId)?.name || '';
+                try {
+                    await receivePurchaseOrderStock(savedId, lines, supplierName, addStock);
+                } catch (error) {
+                    showToast('The order was saved, but receiving it into stock failed: ' + (error instanceof Error ? error.message : String(error)) + '. Use Receive to try again.', 'error');
+                    setIsModalOpen(false);
+                    return;
+                }
+                await savePurchaseOrder({ ...base, id: savedId, status: 'Received' }, lines);
+            }
             setIsModalOpen(false);
         } catch (error) {
             // Error handled in hook
+        } finally {
+            savingPORef.current = false;
+            setIsSavingPO(false);
         }
     };
 
@@ -1258,6 +1304,8 @@ const PurchaseOrdersPage = () => {
                                             style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                             value={status}
                                             onChange={(e) => setStatus(e.target.value as any)}
+                                            disabled={linesLocked}
+                                            title={linesLocked ? 'Received into stock: the status can no longer change' : undefined}
                                         >
                                             <option value="Draft">Draft</option>
                                             <option value="Sent">Sent</option>
@@ -1316,11 +1364,17 @@ const PurchaseOrdersPage = () => {
                                     <button 
                                         className="primary-button" 
                                         onClick={addLine} 
+                                        disabled={linesLocked}
                                         style={{ padding: '7px 14px', fontSize: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}
                                     >
                                         <Plus size={14} /> Add Line
                                     </button>
                                 </div>
+                                {linesLocked && (
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 10px' }}>
+                                        Received into stock: products and quantities can't change (unit costs still can). Use Adjust Stock for any difference.
+                                    </p>
+                                )}
                                 {/* Mobile: fixed-width columns scroll sideways inside the card */}
                                 <div style={{ borderRadius: '10px', overflow: 'hidden', overflowX: 'auto', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '560px' : undefined }}>
@@ -1343,6 +1397,7 @@ const PurchaseOrdersPage = () => {
                                                             className="input-field"
                                                             style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }}
                                                             value={line.product_id}
+                                                            disabled={linesLocked}
                                                             onChange={(e) => {
                                                                 if (e.target.value === '__new__') { setAddProductForLine(index); return; }
                                                                 updateLine(index, 'product_id', e.target.value);
@@ -1354,7 +1409,7 @@ const PurchaseOrdersPage = () => {
                                                         </select>
                                                     </td>
                                                     <td style={{ padding: '10px 12px' }}>
-                                                        <input type="number" className="input-field" style={{ width: '100%', padding: '8px 10px', textAlign: 'right', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.quantity || ''} min="1" onChange={(e) => updateLine(index, 'quantity', parseInt(e.target.value) || 0)} />
+                                                        <input type="number" className="input-field" style={{ width: '100%', padding: '8px 10px', textAlign: 'right', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.quantity || ''} min="1" disabled={linesLocked} onChange={(e) => updateLine(index, 'quantity', parseInt(e.target.value) || 0)} />
                                                     </td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <input type="number" className="input-field" style={{ width: '100%', padding: '8px 10px', textAlign: 'right', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} value={line.unit_price === 0 && line.product_id === '' ? '' : line.unit_price} min="0" step="0.01" onChange={(e) => updateLine(index, 'unit_price', parseFloat(e.target.value) || 0)} />
@@ -1365,7 +1420,7 @@ const PurchaseOrdersPage = () => {
                                                     <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                                         <button 
                                                             onClick={() => removeLine(index)} 
-                                                            disabled={lines.length <= 1} 
+                                                            disabled={lines.length <= 1 || linesLocked} 
                                                             style={{ 
                                                                 background: lines.length > 1 ? 'rgba(239,68,68,0.08)' : 'transparent', 
                                                                 border: 'none', 
@@ -1394,8 +1449,8 @@ const PurchaseOrdersPage = () => {
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
                                 <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
-                                <button className="primary-button" onClick={handleSave} disabled={!isFormValid} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
-                                    <CheckCircle2 size={16} /> {editingPOId ? 'Update Order' : 'Create Order'}
+                                <button className="primary-button" onClick={handleSave} disabled={!isFormValid || isSavingPO} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
+                                    <CheckCircle2 size={16} /> {isSavingPO ? 'Saving…' : editingPOId ? 'Update Order' : 'Create Order'}
                                 </button>
                             </div>
                         </div>
