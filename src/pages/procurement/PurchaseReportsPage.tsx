@@ -1,5 +1,7 @@
-// Purchase Reports — three views over the same purchase-order ledger this
-// app already treats as "bills" (a Received PO with an invoice_number):
+// Purchase Reports — three views over the purchase-order ledger. A payable
+// here is any RECEIVED PO (that's when the books credit A/P), invoiced yet
+// or not — the same definition the Accounts Payable page and the Financial
+// Dashboard use, so all these screens reconcile:
 // AP Aging (who we owe and how overdue), Supplier Statement (one supplier's
 // bill/payment history with a running balance, mirroring the General
 // Ledger's per-account card), and Open Orders (what's still to arrive —
@@ -16,7 +18,9 @@ import { useHeader } from '../../context/HeaderContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useMobile } from '../../hooks/useMobile';
 import { dayKeyFromDate } from '../../utils/dateRange';
-import { outstandingAsAt, statementPayments } from '../../utils/apReportRules';
+import { outstandingAsAt, owedFromDateOf, statementPayments } from '../../utils/apReportRules';
+import { supabase } from '../../lib/supabase';
+import { fetchAll } from '../../utils/fetchAll';
 import type { PurchaseOrder } from '../../types';
 
 type TabKey = 'aging' | 'statement' | 'open';
@@ -67,12 +71,47 @@ const PurchaseReportsPage: React.FC = () => {
     const reload = useCallback(() => { fetchSuppliers(); fetchPurchaseOrders(); fetchSupplierPayments(); }, [fetchSuppliers, fetchPurchaseOrders, fetchSupplierPayments]);
     useEffect(() => { reload(); }, [reload]);
 
-    // Every "bill" in this app is a received PO with an invoice number.
-    const bills = useMemo(() => purchaseOrders.filter(po => po.status === 'Received' && !!po.invoice_number), [purchaseOrders]);
+    // Rule (PRO-5): a received-but-unbilled PO is owed from the day it was
+    // RECEIVED — the date of its 'PO-<id>' receipt journal entry, the moment
+    // the ledger credits A/P (the PO row has no received-at column; same
+    // proxy the Purchase Dashboard uses). Without it, such a PO would be aged
+    // from its possibly months-earlier order date and could not reconcile to
+    // the A/P ledger balance. Minimal columns, paged past the row cap; on
+    // failure the aging falls back to order dates rather than failing.
+    const [receiptDates, setReceiptDates] = useState<Map<string, string>>(() => new Map());
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const rows = await fetchAll<{ id: string; date: string; reference_id: string | null }>((from, to) => supabase
+                    .from('journal_entries')
+                    .select('id, date, reference_id')
+                    .like('reference_id', 'PO-%')
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'PurchaseReportsPage.receiptDates' });
+                if (cancelled) return;
+                const m = new Map<string, string>();
+                for (const r of rows) {
+                    const poId = (r.reference_id || '').slice(3);
+                    const d = String(r.date || '').slice(0, 10);
+                    if (!poId || !d) continue;
+                    // Keep the earliest entry — the receive; later 'PO-' refs
+                    // (if any) would only postdate the payable.
+                    const prev = m.get(poId);
+                    if (!prev || d < prev) m.set(poId, d);
+                }
+                setReceiptDates(m);
+            } catch (err) {
+                console.error('Failed to load PO receipt dates:', err);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
     // Rule (PRO-5): A/P is credited when goods are RECEIVED, invoiced or not
-    // (see postPurchaseReceiptEntry), so AP Aging must cover every received
-    // PO — a received-but-unbilled delivery used to never appear although it
-    // sits in the Accounts Payable ledger account.
+    // (see postPurchaseReceiptEntry), so AP Aging AND the Supplier Statement
+    // must cover every received PO — a received-but-unbilled delivery used to
+    // never appear although it sits in the Accounts Payable ledger account.
     const receivedPOs = useMemo(() => purchaseOrders.filter(po => po.status === 'Received'), [purchaseOrders]);
     const openOrders = useMemo(() => purchaseOrders.filter(po => po.status === 'Draft' || po.status === 'Sent'), [purchaseOrders]);
 
@@ -97,11 +136,12 @@ const PurchaseReportsPage: React.FC = () => {
         const bySupplier = new Map<string, { current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; credit: number }>();
         for (const po of receivedPOs) {
             // Rule (PRO-5): the whole aging is struck AS AT the chosen date —
-            // a bill dated after it doesn't exist yet, and only payments made
-            // by then reduce the balance. The old code aged today's
-            // outstanding (total − current amount_paid) into asAt buckets, so
-            // a month-end aging silently included later bills and payments.
-            const out = outstandingAsAt(po, supplierPayments, asAt);
+            // a bill not yet owed then (billed/received later) contributes
+            // only its prepayments, as a credit, and only payments made by
+            // then reduce the balance. The old code aged today's outstanding
+            // (total − current amount_paid) into asAt buckets, so a month-end
+            // aging silently included later bills and payments.
+            const out = outstandingAsAt(po, supplierPayments, asAt, receiptDates.get(po.id));
             if (Math.abs(out) < 0.005) continue;
             const entry = bySupplier.get(po.supplier_id) || { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, credit: 0 };
             if (out < 0) {
@@ -126,7 +166,7 @@ const PurchaseReportsPage: React.FC = () => {
             d61_90: t.d61_90 + r.d61_90, d90plus: t.d90plus + r.d90plus, credit: t.credit + r.credit, total: t.total + r.total,
         }), { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, credit: 0, total: 0 });
         return { rows, totals };
-    }, [receivedPOs, supplierPayments, suppliers, asAt, daysOverdueAsOf, supplierCodes]);
+    }, [receivedPOs, supplierPayments, receiptDates, suppliers, asAt, daysOverdueAsOf, supplierCodes]);
 
     // ── Supplier Statement ──
     const [statementSupplierId, setStatementSupplierId] = useState('');
@@ -137,21 +177,33 @@ const PurchaseReportsPage: React.FC = () => {
         if (!statementSupplierId) return [];
         type Entry = { date: string; ref: string; description: string; amount: number };
         const entries: Entry[] = [];
-        for (const po of bills) {
+        // Rule (PRO-5 + FIN-2): the statement charges every RECEIVED PO —
+        // invoiced or not — because A/P is credited at receive, and it uses
+        // the same payable definition as AP Aging on the next tab (they must
+        // reconcile: a received-but-unbilled delivery used to owe in Aging
+        // but close at zero on the Statement). Each charge is dated the day
+        // the payable arose (bill date, else receive date, else order date).
+        for (const po of receivedPOs) {
             if (po.supplier_id !== statementSupplierId) continue;
-            entries.push({ date: po.order_date, ref: poRef(po), description: `Bill${po.invoice_number ? ` · ${po.invoice_number}` : ''}`, amount: po.total_amount || 0 });
+            entries.push({
+                date: owedFromDateOf(po, receiptDates.get(po.id)),
+                ref: poRef(po),
+                description: po.invoice_number ? `Bill · ${po.invoice_number}` : 'Bill · received, no invoice yet',
+                amount: po.total_amount || 0,
+            });
         }
-        // Rule (PRO-5): subtract only payments applied to the bills shown
-        // above. A deposit on an unbilled or unreceived PO has no matching
-        // charge on this statement, so netting it off understated (even
-        // negated) what is really owed.
-        const billIds = new Set(bills.filter(po => po.supplier_id === statementSupplierId).map(po => po.id));
-        for (const p of statementPayments(supplierPayments, statementSupplierId, billIds)) {
+        // Rule (PRO-5): subtract a payment only when its charge is shown
+        // above (any received PO of the supplier) or it isn't linked to a PO
+        // at all. A deposit on an unreceived PO has no matching charge on
+        // this statement, so netting it off understated (even negated) what
+        // is really owed.
+        const chargePoIds = new Set(receivedPOs.filter(po => po.supplier_id === statementSupplierId).map(po => po.id));
+        for (const p of statementPayments(supplierPayments, statementSupplierId, chargePoIds)) {
             entries.push({ date: p.payment_date, ref: `PAY-${p.id.slice(0, 8).toUpperCase()}`, description: `Payment${p.payment_method ? ` · ${p.payment_method}` : ''}`, amount: -(p.amount || 0) });
         }
         entries.sort((a, b) => a.date.localeCompare(b.date));
         return entries;
-    }, [bills, supplierPayments, statementSupplierId]);
+    }, [receivedPOs, receiptDates, supplierPayments, statementSupplierId]);
 
     const statement = useMemo(() => {
         const opening = statementEntries.filter(e => statementFrom && e.date < statementFrom).reduce((s, e) => s + e.amount, 0);

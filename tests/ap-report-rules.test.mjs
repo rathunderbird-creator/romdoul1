@@ -41,19 +41,47 @@ const poNov = { id: 'po3', bill_date: '2026-11-03', order_date: '2026-11-03', to
 check('a bill dated after asAt owes nothing as of that date', m.outstandingAsAt(poNov, [], '2026-10-31') === 0);
 check('the same bill is owed once asAt reaches its date', m.outstandingAsAt(poNov, [], '2026-11-03') === 500);
 
-// ── statementPayments: only payments applied to the statement's bills ──
+// A payment made BEFORE the bill is owed is a prepayment: it must show as a
+// CREDIT as at that date, not silently vanish from the aging.
+const poPrepaid = { id: 'po4', bill_date: '2026-11-03', order_date: '2026-10-01', total_amount: 500 };
+const prepayment = [{ purchase_order_id: 'po4', payment_date: '2026-10-15', amount: 200 }];
+check('a prepayment on a not-yet-owed bill shows as a credit (−200)', m.outstandingAsAt(poPrepaid, prepayment, '2026-10-31') === -200);
+check('once the bill is owed, the prepayment nets off (300)', m.outstandingAsAt(poPrepaid, prepayment, '2026-11-03') === 300);
+
+// ── owedFromDateOf: a received-but-unbilled PO is owed from its RECEIVE date ──
+const unbilled = { bill_date: null, order_date: '2026-06-01' };
+check('owedFromDateOf prefers bill_date', m.owedFromDateOf({ bill_date: '2026-10-05', order_date: '2026-06-01' }, '2026-09-10') === '2026-10-05');
+check('owedFromDateOf uses the receive date when unbilled', m.owedFromDateOf(unbilled, '2026-09-10') === '2026-09-10');
+check('owedFromDateOf falls back to order_date', m.owedFromDateOf(unbilled, null) === '2026-06-01');
+// The verifier's reconciliation scenario: ordered June 1, received Sept 10 —
+// an "As at July 31" aging must NOT show it (the ledger credits A/P at the
+// receive), but a September 30 one must.
+const poJun = { id: 'po5', bill_date: null, order_date: '2026-06-01', total_amount: 800 };
+check('unbilled PO not owed between order and receive', m.outstandingAsAt(poJun, [], '2026-07-31', '2026-09-10') === 0);
+check('unbilled PO owed once received', m.outstandingAsAt(poJun, [], '2026-09-30', '2026-09-10') === 800);
+
+// ── legacyPaidOf: amount_paid set with no payment rows (pre-payments-table data) ──
+const legacy = { id: 'po6', bill_date: '2025-03-01', order_date: '2025-02-20', total_amount: 1200, amount_paid: 1200 };
+check('legacy fully-paid bill (no payment rows) owes 0, not its full total', m.outstandingAsAt(legacy, [], '2026-11-11') === 0);
+const legacyPartRows = [{ purchase_order_id: 'po6', payment_date: '2025-03-05', amount: 400 }];
+check('legacyPaidOf is only the UNexplained part of amount_paid', m.legacyPaidOf(legacy, legacyPartRows) === 800);
+check('rows + legacy remainder together settle the bill', m.outstandingAsAt(legacy, legacyPartRows, '2026-11-11') === 0);
+check('legacyPaidOf never negative when rows exceed amount_paid', m.legacyPaidOf({ id: 'po7', amount_paid: 100 }, [{ purchase_order_id: 'po7', payment_date: '2025-01-01', amount: 150 }]) === 0);
+
+// ── statementPayments: payments applied to the statement's charges, plus
+// supplier-level payments not linked to any PO ──
 const supPayments = [
-    { id: 'a', supplier_id: 's1', purchase_order_id: 'bill1' },  // on a shown bill
-    { id: 'b', supplier_id: 's1', purchase_order_id: 'sentPO' }, // deposit on an unbilled PO
+    { id: 'a', supplier_id: 's1', purchase_order_id: 'bill1' },  // on a shown charge
+    { id: 'b', supplier_id: 's1', purchase_order_id: 'sentPO' }, // deposit on an unreceived PO
     { id: 'c', supplier_id: 's2', purchase_order_id: 'bill1' },  // other supplier
-    { id: 'd', supplier_id: 's1', purchase_order_id: '' },       // unlinked
+    { id: 'd', supplier_id: 's1', purchase_order_id: null },     // unlinked supplier-level payment
 ];
 const kept = m.statementPayments(supPayments, 's1', new Set(['bill1']));
-check('keeps the payment applied to a shown bill', kept.some(p => p.id === 'a'));
-check('drops a deposit on an unbilled/unreceived PO', !kept.some(p => p.id === 'b'));
+check('keeps the payment applied to a shown charge', kept.some(p => p.id === 'a'));
+check('drops a deposit on an unreceived PO (no matching charge)', !kept.some(p => p.id === 'b'));
 check("drops another supplier's payment", !kept.some(p => p.id === 'c'));
-check('drops a payment not linked to any bill', !kept.some(p => p.id === 'd'));
-check('keeps exactly one payment', kept.length === 1);
+check('keeps a payment not linked to any PO (still money paid to the supplier)', kept.some(p => p.id === 'd'));
+check('keeps exactly two payments', kept.length === 2);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

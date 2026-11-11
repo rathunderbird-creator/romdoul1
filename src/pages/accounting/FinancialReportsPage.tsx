@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
 import DateRangePicker from '../../components/DateRangePicker';
+import { resolveRangePreset, type RangePreset } from '../../utils/dateRangePresets';
 import FinancialStatements, { type TabKey } from './FinancialStatements';
 
 const displayDate = (ymd: string): string => {
@@ -26,16 +27,23 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
     const isMobile = useMobile();
     // Rule (FIN-4): the default year-to-date range is computed FRESH on every
     // visit — only a range the user deliberately picked is persisted and
-    // restored (saved with `custom: true` when the picker changes). The old
-    // code wrote the first visit's default into localStorage immediately, so
-    // the "as at" date froze on that day forever and later entries vanished
-    // from the statements. Old flagless saved values (that frozen default)
-    // are deliberately ignored, which also heals already-affected browsers.
-    // A deliberate 'Lifetime' pick ({start:'', end:''}) now persists too — it
-    // used to fail the truthiness check and revert to YTD on reload.
+    // restored. A quick-pick preset ('Today', 'This month', …) is stored by
+    // NAME and re-resolved on every load, so its meaning stays current; only
+    // a hand-picked calendar range is stored as literal dates (`custom:
+    // true`). The old code wrote the first visit's default into localStorage
+    // immediately, so the "as at" date froze on that day forever and later
+    // entries vanished from the statements. Old flagless saved values (that
+    // frozen default) are deliberately ignored, which also heals
+    // already-affected browsers. A deliberate 'Lifetime' pick ({start:'',
+    // end:''}) now persists too — it used to fail the truthiness check and
+    // revert to YTD on reload.
     const [range, setRangeState] = useState<{ start: string; end: string }>(() => {
         try {
             const saved = JSON.parse(localStorage.getItem('financial_reports_range') || 'null');
+            if (saved && typeof saved.preset === 'string') {
+                const resolved = resolveRangePreset(saved.preset);
+                if (resolved) return resolved;
+            }
             if (saved && saved.custom === true && typeof saved.start === 'string' && typeof saved.end === 'string') {
                 return { start: saved.start, end: saved.end };
             }
@@ -43,10 +51,11 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
         return { start: `${new Date().getFullYear()}-01-01`, end: todayYmd() };
     });
 
-    const setRange = (r: { start: string; end: string }) => {
+    const setRange = (r: { start: string; end: string }, preset?: RangePreset) => {
         setRangeState(r);
         try {
-            localStorage.setItem('financial_reports_range', JSON.stringify({ ...r, custom: true }));
+            localStorage.setItem('financial_reports_range',
+                JSON.stringify(preset ? { preset } : { ...r, custom: true }));
         } catch { /* storage unavailable — the picker still works for this visit */ }
     };
 

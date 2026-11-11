@@ -143,10 +143,16 @@ const PurchaseDashboardPage: React.FC = () => {
     const committed = openOrders.reduce((s, po) => s + (po.total_amount || 0), 0);
 
     // ── Payables: who we owe, bucketed by due date ──
+    // Rule (FIN-2): a payable exists once the goods are RECEIVED — that's when
+    // the ledger credits A/P — with or without a supplier invoice number on
+    // file yet. Same definition as the Financial Dashboard's Payables and the
+    // Accounts Payable page, so the dashboards always agree (a received-but-
+    // unbilled delivery used to raise theirs but not this card).
     const payable = useMemo(() => {
         const due7 = addDays(today, 7), due30 = addDays(today, 30);
         let overdue = 0, within7 = 0, within30 = 0, outstanding = 0, billCount = 0;
-        for (const po of bills) {
+        for (const po of purchaseOrders) {
+            if (po.status !== 'Received') continue;
             const out = outstandingOf(po);
             if (out <= 0.005) continue;
             billCount++;
@@ -157,7 +163,7 @@ const PurchaseDashboardPage: React.FC = () => {
             if (dueDate && dueDate >= today && dueDate <= due30) within30 += out;
         }
         return { overdue, within7, within30, outstanding, billCount };
-    }, [bills, today]);
+    }, [purchaseOrders, today]);
 
     // Days Payable Outstanding: what's owed, expressed in days of buying —
     // reused for both the "Overdue to pay" tile's subtitle and the Payables

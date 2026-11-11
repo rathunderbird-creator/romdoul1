@@ -2,16 +2,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
+import { RANGE_PRESETS, resolveRangePreset, type RangePreset } from '../utils/dateRangePresets';
 
 interface DateRangePickerProps {
     value: { start: string; end: string };
-    onChange: (range: { start: string; end: string }) => void;
+    /**
+     * `preset` names the quick-pick the user applied (absent for a hand-picked
+     * range). Rule (FIN-4): a preset means "this month"/"today" SEMANTICALLY —
+     * a caller that persists the pick should store the preset name and
+     * re-resolve it with resolveRangePreset() on load, not freeze the literal
+     * dates the preset happened to resolve to that day.
+     */
+    onChange: (range: { start: string; end: string }, preset?: RangePreset) => void;
     className?: string;
     style?: React.CSSProperties;
     compact?: boolean;
 }
 
-type Preset = 'Lifetime' | 'Today' | 'Yesterday' | 'Last 7 days' | 'This week' | 'Last week' | 'Last 30 days' | 'This month' | 'Last month' | 'Custom Range';
+type Preset = RangePreset | 'Custom Range';
 
 const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style, compact = false }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -59,90 +67,17 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
         return `${year}-${month}-${day}`;
     };
 
-    const getToday = () => {
-        const d = new Date();
-        d.setHours(0, 0, 0, 0);
-        return d;
-    };
-
-    const presets: { label: Preset; getValue: () => { start: Date | null; end: Date | null } }[] = [
-        { label: 'Lifetime', getValue: () => ({ start: null, end: null }) },
-        {
-            label: 'Today',
-            getValue: () => {
-                const now = getToday();
-                return { start: now, end: now };
-            }
-        },
-        {
-            label: 'Yesterday',
-            getValue: () => {
-                const d = getToday();
-                d.setDate(d.getDate() - 1);
-                return { start: d, end: d };
-            }
-        },
-        {
-            label: 'Last 7 days',
-            getValue: () => {
-                const end = getToday();
-                const start = getToday();
-                start.setDate(start.getDate() - 6);
-                return { start, end };
-            }
-        },
-        {
-            label: 'This week',
-            getValue: () => {
-                const start = getToday();
-                const day = start.getDay();
-                const diff = start.getDate() - day + (day === 0 ? -6 : 1);
-                start.setDate(diff);
-                const end = new Date(start);
-                end.setDate(start.getDate() + 6);
-                return { start, end };
-            }
-        },
-        {
-            label: 'Last week',
-            getValue: () => {
-                const start = getToday();
-                const day = start.getDay();
-                const diff = start.getDate() - day + (day === 0 ? -6 : 1) - 7;
-                start.setDate(diff);
-                const end = new Date(start);
-                end.setDate(start.getDate() + 6);
-                return { start, end };
-            }
-        },
-        {
-            label: 'Last 30 days',
-            getValue: () => {
-                const end = getToday();
-                const start = getToday();
-                start.setDate(start.getDate() - 29);
-                return { start, end };
-            }
-        },
-        {
-            label: 'This month',
-            getValue: () => {
-                const now = getToday();
-                const start = new Date(now.getFullYear(), now.getMonth(), 1);
-                const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                return { start, end };
-            }
-        },
-        {
-            label: 'Last month',
-            getValue: () => {
-                const now = getToday();
-                const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                const end = new Date(now.getFullYear(), now.getMonth(), 0);
-                return { start, end };
-            }
-        },
-    ];
+    // Each quick-pick resolves through the shared, exported resolveRangePreset
+    // so a persisted preset re-resolves to the same dates on load (FIN-4).
+    const presets: { label: RangePreset; getValue: () => { start: Date | null; end: Date | null } }[] =
+        RANGE_PRESETS
+            .map(label => ({
+                label,
+                getValue: () => {
+                    const r = resolveRangePreset(label) || { start: '', end: '' };
+                    return { start: parseLocalDate(r.start), end: parseLocalDate(r.end) };
+                },
+            }));
 
     const handlePresetClick = (preset: typeof presets[0]) => {
         setActivePreset(preset.label);
@@ -189,10 +124,16 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
     };
 
     const handleApply = () => {
-        onChange({
-            start: startDate ? formatDate(startDate) : '',
-            end: endDate ? formatDate(endDate) : ''
-        });
+        onChange(
+            {
+                start: startDate ? formatDate(startDate) : '',
+                end: endDate ? formatDate(endDate) : ''
+            },
+            // Clicking any calendar day resets activePreset to 'Custom Range',
+            // so a preset is only reported when the applied range really IS
+            // that preset's (FIN-4: preset picks carry their semantics).
+            activePreset !== 'Custom Range' ? activePreset : undefined
+        );
         setIsOpen(false);
     };
 

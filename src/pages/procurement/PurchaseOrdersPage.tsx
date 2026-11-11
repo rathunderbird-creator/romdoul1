@@ -459,6 +459,18 @@ const PurchaseOrdersPage = () => {
 
     const handleSavePayment = async () => {
         if (!paymentAmount) return;
+        // Guard (FIN-1): never book a payment on a PO that is not Received —
+        // the DB function record_supplier_payments debits A/P only when the
+        // PO's receive entry exists, otherwise it books the amount as purchase
+        // EXPENSE, and the later receive then books Dr Inventory for the full
+        // total again, double-counting the cost. Same refusal (and reason) as
+        // the Accounts Payable page; the row's status can have changed since
+        // the modal opened, so this re-checks the live row.
+        const payingPO = purchaseOrders.find(po => po.id === payingPOId);
+        if (!payingPO || payingPO.status !== 'Received') {
+            showToast('This purchase order has not been received yet — receive the goods first, then record the payment.', 'error');
+            return;
+        }
         // "Paid from" is required whenever cash/bank accounts exist to pick.
         if (paymentAccounts.length > 0 && !payingAccountId) {
             showToast('Choose the account this payment is paid from', 'error');
@@ -1147,7 +1159,10 @@ const PurchaseOrdersPage = () => {
                                                             : <PackageCheck size={15} />}
                                                     </button>
                                                 )}
-                                                {po.payment_status !== 'Paid' && (
+                                                {/* Rule (FIN-1): payments are only offered on RECEIVED POs — paying a
+                                                    Draft/Sent PO would book the cost as expense now and Dr Inventory
+                                                    again at receive (see the guard in handleSavePayment). */}
+                                                {po.status === 'Received' && po.payment_status !== 'Paid' && (
                                                     <button
                                                         onClick={() => handleOpenPaymentModal(po)}
                                                         style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
