@@ -213,9 +213,12 @@ const FinancialDashboardPage: React.FC = () => {
         return { overdue, within7, within30, outstanding };
     }, [openReceivables, today]);
 
-    // ── Payables: supplier bills still owed (same computation as Purchase
-    // Dashboard's own Payables card). ──
-    const bills = useMemo(() => purchaseOrders.filter(po => po.status === 'Received' && !!po.invoice_number), [purchaseOrders]);
+    // ── Payables: supplier bills still owed. Rule (FIN-2): a payable exists
+    // once the goods are RECEIVED — that's when the ledger credits A/P — with
+    // or without a supplier invoice number on file yet. This is the same
+    // definition Accounts Payable now uses, so the two screens always agree
+    // (a Received-but-unbilled delivery used to show there but not here). ──
+    const bills = useMemo(() => purchaseOrders.filter(po => po.status === 'Received'), [purchaseOrders]);
     const payable = useMemo(() => {
         const due7 = addDays(today, 7), due30 = addDays(today, 30);
         let overdue = 0, within7 = 0, within30 = 0, outstanding = 0;

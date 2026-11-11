@@ -53,8 +53,18 @@ const selectStyle: React.CSSProperties = {
 // "150"); every longer code is bucketed under the nearest parent whose
 // code*10 it's at or above. A type with no parent rows (e.g. Equity, which
 // is usually just one flat account) renders as a single ungrouped list.
-function buildGroups(accounts: ChartOfAccount[], type: AccountType): AccountGroup[] {
-    const sameType = accounts.filter(a => a.account_type === type && a.is_active !== false);
+//
+// Rule (FIN-3): no silent omissions — the sheet must include every account
+// that holds a posted balance, or Assets stops equalling Liabilities + Equity
+// with no warning. Two cases the old filter dropped:
+//  · a DEACTIVATED account that still has ledger activity (an old bank
+//    account, a deactivated A/R) — `hasActivity` keeps it on the sheet;
+//    inactive accounts with no activity stay hidden as before;
+//  · a PARENT (group) account posted to directly (e.g. '100 Current Assets')
+//    — its own balance used to vanish because parents were labels only, so
+//    a parent with activity is now also listed as the first row of its group.
+function buildGroups(accounts: ChartOfAccount[], type: AccountType, hasActivity: (accountId: string) => boolean): AccountGroup[] {
+    const sameType = accounts.filter(a => a.account_type === type && (a.is_active !== false || hasActivity(a.id)));
     const isParent = (a: ChartOfAccount) => a.account_code.length <= 3 && /^\d+$/.test(a.account_code);
     const parents = sameType.filter(isParent)
         .map(a => ({ account: a, num: parseInt(a.account_code, 10) }))
@@ -62,7 +72,12 @@ function buildGroups(accounts: ChartOfAccount[], type: AccountType): AccountGrou
     const leaves = sameType.filter(a => !isParent(a));
     if (parents.length === 0) return [{ label: null, accounts: leaves }];
 
-    const groups = parents.map(p => ({ label: p.account.account_name, num: p.num, accounts: [] as ChartOfAccount[] }));
+    const groups = parents.map(p => ({
+        label: p.account.account_name,
+        num: p.num,
+        // The parent's own posted balance counts too (see rule above).
+        accounts: hasActivity(p.account.id) ? [p.account] : [] as ChartOfAccount[],
+    }));
     const orphans: ChartOfAccount[] = [];
     for (const a of leaves) {
         const n = parseInt(a.account_code, 10);
@@ -175,9 +190,17 @@ const BalanceSheetPage: React.FC = () => {
         return columns.map(col => signedBalancesAsOf(src, accounts, col.endYmd));
     }, [columns, lines, accounts]);
 
-    const assetGroups = useMemo(() => buildGroups(accounts, 'Asset'), [accounts]);
-    const liabilityGroups = useMemo(() => buildGroups(accounts, 'Liability'), [accounts]);
-    const equityGroups = useMemo(() => buildGroups(accounts, 'Equity'), [accounts]);
+    // Accounts with any posted line at all — feeds the FIN-3 inclusion rule.
+    const activeLedgerAccountIds = useMemo(() => {
+        const s = new Set<string>();
+        for (const l of lines || []) s.add(l.accountId);
+        return s;
+    }, [lines]);
+    const hasActivity = useCallback((accountId: string) => activeLedgerAccountIds.has(accountId), [activeLedgerAccountIds]);
+
+    const assetGroups = useMemo(() => buildGroups(accounts, 'Asset', hasActivity), [accounts, hasActivity]);
+    const liabilityGroups = useMemo(() => buildGroups(accounts, 'Liability', hasActivity), [accounts, hasActivity]);
+    const equityGroups = useMemo(() => buildGroups(accounts, 'Equity', hasActivity), [accounts, hasActivity]);
 
     const valueOf = useCallback((accountId: string, colIndex: number) => balancesByColumn[colIndex]?.get(accountId) || 0, [balancesByColumn]);
     const groupTotal = useCallback((group: AccountGroup, colIndex: number) => group.accounts.reduce((s, a) => s + valueOf(a.id, colIndex), 0), [valueOf]);
@@ -214,6 +237,17 @@ const BalanceSheetPage: React.FC = () => {
     }, [columns, assetGroups, liabilityGroups, equityGroups, valueOf, groupTotal, typeTotal, retainedEarningsAt, equityTotal]);
 
     const header = useMemo(() => ['Account', ...columns.map(c => c.label)], [columns]);
+
+    // Rule (FIN-3, second half): the sheet must say so when it does NOT
+    // balance (Assets ≠ Liabilities + Equity, e.g. an unbalanced manual
+    // entry) instead of printing silently wrong totals. Checked on the YTD
+    // column, which covers every posted line of the year.
+    const imbalance = useMemo(() => {
+        if (loading) return 0;
+        const ytdIndex = columns.findIndex(c => c.key === 'ytd');
+        if (ytdIndex < 0) return 0;
+        return typeTotal(assetGroups, ytdIndex) - (typeTotal(liabilityGroups, ytdIndex) + equityTotal(ytdIndex));
+    }, [loading, columns, typeTotal, assetGroups, liabilityGroups, equityTotal]);
 
     const exportCsv = () => {
         const csvHeader = ['Code', 'Account', ...columns.map(c => c.label)];
@@ -281,6 +315,12 @@ const BalanceSheetPage: React.FC = () => {
                     </button>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All figures are in USD.</div>
+
+                {!loading && Math.abs(imbalance) > 0.005 && (
+                    <div style={{ ...cardStyle, padding: '10px 16px', borderColor: '#F59E0B', color: '#B45309', fontSize: '13px', fontWeight: 600 }}>
+                        This sheet does not balance: Assets differ from Liabilities + Equity by {fmt(imbalance)} (YTD). Check for unbalanced or misclassified journal entries.
+                    </div>
+                )}
 
                 <div style={{ ...cardStyle, overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>

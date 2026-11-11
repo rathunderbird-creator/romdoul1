@@ -16,6 +16,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useMobile } from '../../hooks/useMobile';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { outstandingAsAt, statementPayments } from '../../utils/apReportRules';
 import type { PurchaseOrder } from '../../types';
 
 type TabKey = 'aging' | 'statement' | 'open';
@@ -29,7 +30,6 @@ const BLUE = '#5469d4', RED = '#DC2626';
 const fmt = (n: number): string => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const cellText = (n: number): string => (Math.abs(n) < 0.005 ? '—' : fmt(n));
 const todayYmd = (): string => dayKeyFromDate(new Date());
-const outstandingOf = (po: PurchaseOrder): number => (po.total_amount || 0) - (po.amount_paid || 0);
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const poRef = (po: PurchaseOrder): string => po.invoice_number || `PO-${po.id.slice(0, 8).toUpperCase()}`;
 
@@ -69,6 +69,11 @@ const PurchaseReportsPage: React.FC = () => {
 
     // Every "bill" in this app is a received PO with an invoice number.
     const bills = useMemo(() => purchaseOrders.filter(po => po.status === 'Received' && !!po.invoice_number), [purchaseOrders]);
+    // Rule (PRO-5): A/P is credited when goods are RECEIVED, invoiced or not
+    // (see postPurchaseReceiptEntry), so AP Aging must cover every received
+    // PO — a received-but-unbilled delivery used to never appear although it
+    // sits in the Accounts Payable ledger account.
+    const receivedPOs = useMemo(() => purchaseOrders.filter(po => po.status === 'Received'), [purchaseOrders]);
     const openOrders = useMemo(() => purchaseOrders.filter(po => po.status === 'Draft' || po.status === 'Sent'), [purchaseOrders]);
 
     // SUP001, SUP002, ... in creation order — not a stored field.
@@ -90,8 +95,13 @@ const PurchaseReportsPage: React.FC = () => {
 
     const aging = useMemo(() => {
         const bySupplier = new Map<string, { current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; credit: number }>();
-        for (const po of bills) {
-            const out = outstandingOf(po);
+        for (const po of receivedPOs) {
+            // Rule (PRO-5): the whole aging is struck AS AT the chosen date —
+            // a bill dated after it doesn't exist yet, and only payments made
+            // by then reduce the balance. The old code aged today's
+            // outstanding (total − current amount_paid) into asAt buckets, so
+            // a month-end aging silently included later bills and payments.
+            const out = outstandingAsAt(po, supplierPayments, asAt);
             if (Math.abs(out) < 0.005) continue;
             const entry = bySupplier.get(po.supplier_id) || { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, credit: 0 };
             if (out < 0) {
@@ -116,7 +126,7 @@ const PurchaseReportsPage: React.FC = () => {
             d61_90: t.d61_90 + r.d61_90, d90plus: t.d90plus + r.d90plus, credit: t.credit + r.credit, total: t.total + r.total,
         }), { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, credit: 0, total: 0 });
         return { rows, totals };
-    }, [bills, suppliers, asAt, daysOverdueAsOf, supplierCodes]);
+    }, [receivedPOs, supplierPayments, suppliers, asAt, daysOverdueAsOf, supplierCodes]);
 
     // ── Supplier Statement ──
     const [statementSupplierId, setStatementSupplierId] = useState('');
@@ -131,8 +141,12 @@ const PurchaseReportsPage: React.FC = () => {
             if (po.supplier_id !== statementSupplierId) continue;
             entries.push({ date: po.order_date, ref: poRef(po), description: `Bill${po.invoice_number ? ` · ${po.invoice_number}` : ''}`, amount: po.total_amount || 0 });
         }
-        for (const p of supplierPayments) {
-            if (p.supplier_id !== statementSupplierId) continue;
+        // Rule (PRO-5): subtract only payments applied to the bills shown
+        // above. A deposit on an unbilled or unreceived PO has no matching
+        // charge on this statement, so netting it off understated (even
+        // negated) what is really owed.
+        const billIds = new Set(bills.filter(po => po.supplier_id === statementSupplierId).map(po => po.id));
+        for (const p of statementPayments(supplierPayments, statementSupplierId, billIds)) {
             entries.push({ date: p.payment_date, ref: `PAY-${p.id.slice(0, 8).toUpperCase()}`, description: `Payment${p.payment_method ? ` · ${p.payment_method}` : ''}`, amount: -(p.amount || 0) });
         }
         entries.sort((a, b) => a.date.localeCompare(b.date));

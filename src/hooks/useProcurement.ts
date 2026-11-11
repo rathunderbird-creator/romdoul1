@@ -151,7 +151,12 @@ export const postOpeningBalanceEntry = async (
     offsetAccountId: string,
     supplierName: string,
     showToast: ToastFn,
-    invoiceNumber?: string
+    invoiceNumber?: string,
+    // Rule (PRO-4): an opening balance is a payable carried over AS AT a
+    // chosen cut-off date — its journal entry must be dated that day, not the
+    // day someone happened to load it, or a balance sheet / A/P balance for
+    // any date before the load leaves the opening payables out entirely.
+    entryDate?: string
 ): Promise<boolean> => {
     try {
         const amount = Math.round((Number(totalAmount) || 0) * 100) / 100;
@@ -173,7 +178,8 @@ export const postOpeningBalanceEntry = async (
             return false;
         }
 
-        const date = dayKeyFromDate(new Date());
+        // The caller's as-at date (see PRO-4 rule above); today only as a fallback.
+        const date = (entryDate || '').slice(0, 10) || dayKeyFromDate(new Date());
         const entryNumber = await nextJournalEntryNumber('OPA', date);
         const invoiceLabel = invoiceNumber?.trim() || 'NO-INV';
         const entryPayload: Record<string, unknown> = {

@@ -1658,7 +1658,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateShippingRate = (company: string, rate: number) => {
-        return updateConfigOps({ shippingRates: { op: 'merge', value: { [company]: rate } } });
+        return updateShippingRates({ [company]: rate });
+    };
+
+    // Save several companies' rates in ONE write, scoped to the shippingRates
+    // key (DSH-2). The old per-company loop built every upsert from the same
+    // stale closure config, so with N changed rates only the last write to
+    // land kept its new value. One merge op through updateConfigOps saves all
+    // the changed rates together and touches nothing else in the config.
+    const updateShippingRates = (rates: Record<string, number>) => {
+        return updateConfigOps({ shippingRates: { op: 'merge', value: { ...rates } } });
     };
 
     // Tracking page URL per shipping company ({tracking} = waybill number).
@@ -4421,6 +4430,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             shippingCompanies: config.shippingCompanies || [],
             shippingRates: config.shippingRates || {},
             updateShippingRate,
+            updateShippingRates,
             trackingUrlTemplates: config.trackingUrlTemplates || {},
             updateTrackingUrlTemplate,
             salesmen: config.salesmen || [],

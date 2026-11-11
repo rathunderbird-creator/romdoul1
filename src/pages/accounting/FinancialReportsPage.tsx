@@ -24,17 +24,31 @@ const todayYmd = (): string => {
 const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab }) => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
-    const [range, setRange] = useState<{ start: string; end: string }>(() => {
+    // Rule (FIN-4): the default year-to-date range is computed FRESH on every
+    // visit — only a range the user deliberately picked is persisted and
+    // restored (saved with `custom: true` when the picker changes). The old
+    // code wrote the first visit's default into localStorage immediately, so
+    // the "as at" date froze on that day forever and later entries vanished
+    // from the statements. Old flagless saved values (that frozen default)
+    // are deliberately ignored, which also heals already-affected browsers.
+    // A deliberate 'Lifetime' pick ({start:'', end:''}) now persists too — it
+    // used to fail the truthiness check and revert to YTD on reload.
+    const [range, setRangeState] = useState<{ start: string; end: string }>(() => {
         try {
             const saved = JSON.parse(localStorage.getItem('financial_reports_range') || 'null');
-            if (saved && saved.start && saved.end) return saved;
+            if (saved && saved.custom === true && typeof saved.start === 'string' && typeof saved.end === 'string') {
+                return { start: saved.start, end: saved.end };
+            }
         } catch { /* corrupted value — fall through to the default */ }
         return { start: `${new Date().getFullYear()}-01-01`, end: todayYmd() };
     });
 
-    useEffect(() => {
-        localStorage.setItem('financial_reports_range', JSON.stringify(range));
-    }, [range]);
+    const setRange = (r: { start: string; end: string }) => {
+        setRangeState(r);
+        try {
+            localStorage.setItem('financial_reports_range', JSON.stringify({ ...r, custom: true }));
+        } catch { /* storage unavailable — the picker still works for this visit */ }
+    };
 
     useEffect(() => {
         setHeaderContent({

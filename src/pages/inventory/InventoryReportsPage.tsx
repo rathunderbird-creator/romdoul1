@@ -17,6 +17,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import { dayKeyFromDate, addDays } from '../../utils/dateRange';
+import { productWarehouseLines } from '../../utils/stockOnHand';
 import type { Product } from '../../types';
 
 interface MovementRow {
@@ -92,11 +93,6 @@ const InventoryReportsPage: React.FC = () => {
         for (const ws of warehouseStock) m.set(`${ws.productId}::${ws.warehouseId}`, (m.get(`${ws.productId}::${ws.warehouseId}`) || 0) + (Number(ws.quantity) || 0));
         return m;
     }, [warehouseStock]);
-    const anyWarehouseStockByProduct = useMemo(() => {
-        const s = new Set<string>();
-        for (const ws of warehouseStock) if ((Number(ws.quantity) || 0) !== 0) s.add(ws.productId);
-        return s;
-    }, [warehouseStock]);
 
     const filteredProducts = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -107,9 +103,17 @@ const InventoryReportsPage: React.FC = () => {
         });
     }, [activeProducts, category, search]);
 
-    // One row per (product, warehouse) that actually holds stock — a product
-    // with stock but no warehouse_stock rows at all still gets one
-    // "Unassigned" row, so nothing silently disappears from the report.
+    // Rule (INV-1): products.stock is the authoritative company total (every
+    // flow maintains it), while warehouse_stock is written only by the flows
+    // that record a warehouse (posted stock adjustments, wholesale, A/R
+    // restocks, stock movements) — retail orders and PO receipts don't touch
+    // it, so a product's warehouse rows go stale the moment those flows move
+    // it. The old report trusted warehouse_stock outright whenever a product
+    // had any row there, showing old quantities and valuations. Now each
+    // product's rows are its tracked warehouse figures PLUS an explicit
+    // "Unassigned" remainder, so the lines always sum to the real company
+    // stock (see productWarehouseLines). A single-warehouse view can only
+    // show the tracked figure — the note under the filter says so.
     const stockLines = useMemo<StockLine[]>(() => {
         const lines: StockLine[] = [];
         for (const p of filteredProducts) {
@@ -119,17 +123,26 @@ const InventoryReportsPage: React.FC = () => {
                 if (qty !== 0) lines.push({ product: p, warehouseName: warehouses.find(w => w.id === warehouseId)?.name || 'Unknown', qty, unitCost });
                 continue;
             }
-            let any = false;
-            for (const w of warehouses) {
-                const qty = warehouseStockByProductAndWarehouse.get(`${p.id}::${w.id}`) || 0;
-                if (qty !== 0) { lines.push({ product: p, warehouseName: w.name, qty, unitCost }); any = true; }
-            }
-            if (!any && !anyWarehouseStockByProduct.has(p.id) && (Number(p.stock) || 0) !== 0) {
-                lines.push({ product: p, warehouseName: 'Unassigned', qty: Number(p.stock) || 0, unitCost });
+            const tracked = warehouses.map(w => ({
+                warehouseId: w.id,
+                warehouseName: w.name,
+                qty: warehouseStockByProductAndWarehouse.get(`${p.id}::${w.id}`) || 0,
+            }));
+            for (const entry of productWarehouseLines(Number(p.stock) || 0, tracked)) {
+                lines.push({ product: p, warehouseName: entry.warehouseName, qty: entry.qty, unitCost });
             }
         }
         return lines;
-    }, [filteredProducts, warehouseId, warehouses, warehouseStockByProductAndWarehouse, anyWarehouseStockByProduct]);
+    }, [filteredProducts, warehouseId, warehouses, warehouseStockByProductAndWarehouse]);
+
+    // Shown whenever a single warehouse is selected (Stock on Hand + Valuation).
+    const warehouseCaveat = warehouseId ? (
+        <p style={{ fontSize: '12px', color: '#B45309', margin: 0, maxWidth: '680px' }}>
+            Per-warehouse figures cover only movements that record a warehouse (posted stock adjustments, wholesale, stock movements).
+            Retail orders and purchase receipts update company stock without a warehouse, so a single warehouse view is partial —
+            select “All warehouses” for the full, reconciled company stock (untracked stock appears there as “Unassigned”).
+        </p>
+    ) : null;
 
     const totalQty = stockLines.reduce((s, l) => s + l.qty, 0);
     const totalValue = stockLines.reduce((s, l) => s + l.qty * l.unitCost, 0);
@@ -272,6 +285,8 @@ const InventoryReportsPage: React.FC = () => {
                             <button onClick={exportCsv} style={btnStyle}><Download size={14} /> Export CSV</button>
                         </div>
 
+                        {warehouseCaveat}
+
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
                             <div style={{ ...cardStyle, padding: '14px 18px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Lines</div>
@@ -393,6 +408,7 @@ const InventoryReportsPage: React.FC = () => {
                                 </select>
                             </div>
                         </div>
+                        {warehouseCaveat}
                         <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '640px' }}>
                             Valued at each product's purchase cost — this system doesn't track FIFO/LIFO cost layers yet, so this stays the same regardless of the Default Costing Method chosen in Inventory Settings.
                         </p>

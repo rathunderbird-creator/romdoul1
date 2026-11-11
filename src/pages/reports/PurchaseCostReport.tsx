@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
 import { Package, DollarSign, TrendingUp, ShoppingBag } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import type { Sale } from '../../types';
+import { isRevenueOrder } from '../../utils/orderMoney';
+import { fetchAllProducts } from '../../utils/fetchAllProducts';
+import type { Sale, Product } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
 
 
@@ -15,14 +17,28 @@ const PurchaseCostReport: React.FC = () => {
 
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
 
+    // Rule (DSH-1/DSH-4): sold items of DEACTIVATED products must be costed at
+    // their stored purchase cost — useStore().products is active-only (and
+    // capped at ~1000), which zeroed their cost and showed 100% margins. The
+    // full catalogue (inactive included, uncapped) is fetched once; the store
+    // list fills in while it loads or if the fetch fails.
+    const [allProducts, setAllProducts] = useState<Product[] | null>(null);
+    useEffect(() => {
+        let alive = true;
+        fetchAllProducts()
+            .then(rows => { if (alive) setAllProducts(rows); })
+            .catch(e => console.error('Failed to fetch the full product catalogue for costing:', e));
+        return () => { alive = false; };
+    }, []);
+
     // Build a product lookup map for purchaseCost
     const productCostMap = useMemo(() => {
         const map = new Map<string, { purchaseCost: number; name: string; image: string }>();
-        products.forEach(p => {
+        (allProducts ?? products).forEach(p => {
             map.set(p.id, { purchaseCost: p.purchaseCost || 0, name: p.name, image: p.image });
         });
         return map;
-    }, [products]);
+    }, [allProducts, products]);
 
     const { productData, dailyData, totalItems, totalPurchaseCost, totalSellValue, grossProfit } = useMemo(() => {
         const productMap = new Map<string, {
@@ -36,7 +52,18 @@ const PurchaseCostReport: React.FC = () => {
 
         (reportSales || []).forEach((sale: Sale) => {
             const status = sale.shipping?.status || 'Pending';
-            if (statusFilter.size > 0 && !statusFilter.has(status)) return;
+            // Rule (DSH-4): this report's stated meaning is the purchase cost
+            // of SOLD items, so by default (no status chip picked) it counts
+            // only orders that count as revenue — Confirmed / Shipped /
+            // Delivered and not Cancel-paid (the app's canonical rule,
+            // isRevenueOrder). Cancelled, Returned, Drafted and Pending orders
+            // used to inflate Purchase Cost, Sell Value and Gross Profit by
+            // default. Picking status chips still shows any status explicitly.
+            if (statusFilter.size > 0) {
+                if (!statusFilter.has(status)) return;
+            } else if (!isRevenueOrder(sale)) {
+                return;
+            }
 
             // Extract date as YYYY-MM-DD
             const dateKey = sale.date ? dayKeyFromDate(new Date(sale.date)) : 'Unknown';

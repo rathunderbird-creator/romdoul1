@@ -220,6 +220,8 @@ export interface StoreContextType {
     shippingCompanies: string[];
     shippingRates: Record<string, number>;
     updateShippingRate: (company: string, rate: number) => Promise<void>;
+    /** Saves several companies' rates in one config write (scoped to shippingRates). */
+    updateShippingRates: (rates: Record<string, number>) => Promise<void>;
     // Per-company tracking page URL templates ({tracking} = waybill number).
     trackingUrlTemplates: Record<string, string>;
     updateTrackingUrlTemplate: (company: string, template: string) => Promise<void>;
