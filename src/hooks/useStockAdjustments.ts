@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import { rpcWithSession } from '../utils/dbFunctions';
 import type { StockAdjustment, StockAdjustmentReason } from '../types';
 
 // Reasons that correct the books rather than record a real-world loss: an
@@ -90,7 +91,7 @@ export function useStockAdjustments() {
     ) => {
         const lineProblem = checkLines(lines);
         if (lineProblem) throw new Error(lineProblem);
-        const { error } = await supabase.rpc('save_stock_adjustment', {
+        const { error } = await rpcWithSession('save_stock_adjustment', {
             p_id: id,
             p_header: { ...header, notes: header.notes ?? null },
             p_lines: lines,
@@ -128,7 +129,7 @@ export function useStockAdjustments() {
     // refused rather than clamped.
     const postAdjustment = useCallback(async (adjustment: StockAdjustment, createdBy?: string) => {
         if (adjustment.status !== 'Draft') throw new Error('This adjustment has already been posted.');
-        const { data, error } = await supabase.rpc('post_stock_adjustment', { p_id: adjustment.id, p_created_by: createdBy || null });
+        const { data, error } = await rpcWithSession('post_stock_adjustment', { p_id: adjustment.id, p_created_by: createdBy || null });
         await fetchAdjustments(true);
         if (error) throw new Error(rpcMessage(error));
         const ledger = (data as { ledger?: string } | null)?.ledger;
