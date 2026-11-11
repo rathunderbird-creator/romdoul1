@@ -13,9 +13,17 @@
 --   * add_wholesale_procurement_functions.sql
 --   * add_stock_adjustment_posting.sql  (after create_stock_adjustments.sql)
 --   * add_config_functions.sql
--- If you ever RE-RUN one of those pack files, re-run THIS file afterwards:
--- a pack re-run recreates its public functions unguarded, and this file's
--- mover block is what swaps them back behind the guards.
+-- If you ever RE-RUN one of those pack files, re-run THIS file IMMEDIATELY
+-- afterwards, in the same SQL-editor session: a pack re-run recreates its
+-- public functions unguarded BESIDE the guarded wrappers, and until this
+-- file is re-run (its mover block swaps them back behind the guards):
+--   * every session-less call to that function — every OLD app build, and
+--     the new build's missing-function fallback — fails with "function ...
+--     is not unique" (PostgREST PGRST203): the feature is DOWN for those
+--     terminals, not merely unguarded;
+--   * the recreated unguarded copy is callable by anyone with the anon key.
+-- Calls that DO send p_session keep working (only the guarded signature has
+-- that parameter), which is why the window mostly hurts old builds.
 --
 -- WHAT THIS DOES
 --   Until now every write function was callable by anyone holding the anon
@@ -54,12 +62,19 @@
 -- PERMISSION MAP (same permission the client checks for that action today;
 -- where the client checks nothing, the route's required permission is used
 -- and marked [route]):
---   set_order_shipping_status   manage_orders   (Orders/OM2/Delivery pages)
+--   set_order_shipping_status   manage_orders / create_orders / view_orders
+--                               (Orders Management 2 admits all three and
+--                               gates edits per ORDER, not per permission —
+--                               those per-order rules stay client-side until
+--                               phase 2 ports them); a ReStock transition is
+--                               gated on restock_orders alone, exactly as the
+--                               client refuses it (StoreContext updateOrderStatus)
 --   edit_order_items            manage_orders
 --   restock_returned_orders     restock_orders  (explicit client check)
 --   create_retail_order         create_orders
---   set_order_payment           manage_orders   [route /payment-tracking,
---                                               /orders bulk edits]
+--   set_order_payment           manage_orders / create_orders / view_orders
+--                               [routes /payment-tracking, /orders bulk edits
+--                               AND OM2's drawer, which all three reach]
 --   delete_retail_orders        manage_orders
 --   apply_restock_payment_side  restock_orders  (part of the restock flow)
 --   create/update/delete_wholesale_order,
@@ -74,8 +89,18 @@
 --     roles            admin, or manage_users under the same caps the client
 --                      enforces (no admin role edits, no own-role additions,
 --                      no granting permissions the caller's role lacks,
---                      whole-list replacement admin-only)
---     users (legacy)   admin only
+--                      whole-list replacement admin-only; ops must identify
+--                      roles by idKey 'id' — the executor would otherwise
+--                      match by an attacker-chosen key and sidestep the caps).
+--                      STRICT: roles (and the legacy users key) require a
+--                      valid session even while enforcement is off — this key
+--                      is what sg_permission reads, so leaving it open during
+--                      rollout would let the anon key grant any role anything
+--                      and defeat every other guard, the users functions
+--                      included. Consequence: the Settings role editor on OLD
+--                      app builds (no session sent) fails until the new build
+--                      is deployed; all other config keys keep working.
+--     users (legacy)   admin only (and session-strict, see roles)
 --     blockedCustomers manage_orders   (Scammers lives under /orders)
 --     pinnedProducts   create_orders / process_sales / manage_inventory
 --                      [no client check today: pinning happens while
@@ -84,13 +109,27 @@
 --                      written as a side effect of creating an order]
 --     pinnedOrderColumns view/create/manage_orders [no client check: a
 --                      per-store Orders-table layout preference]
+--     productOrder     manage_inventory / view_inventory_stock (the /inventory
+--                      drag-reorder; the route admits both and the drag has no
+--                      further client check)
 --     purchaseSettings manage_procurement [route /procurement/setup]
 --     wholesaleSettings manage_orders    [route /wholesale/setup]
---     shippingCompanies, salesmen, categories, pages, customerCare,
---     paymentMethods, cities, shippingRates, trackingUrlTemplates
+--     customDistricts, customCommunes, removedDistrictCodes,
+--     removedCommuneCodes
+--                      manage_settings / manage_orders (Sales Setup,
+--                      route /orders/setup = manage_orders)
+--     shippingCompanies, salesmen, pages, customerCare, paymentMethods,
+--     cities           manage_settings / manage_orders / manage_inventory /
+--                      create_orders (edited from Settings, Sales Setup and
+--                      Inventory alike, AND added inline from the checkout
+--                      form's ConfigModal while taking an order — the same
+--                      reason pinnedProducts accepts create_orders)
+--     categories, trackingUrlTemplates
 --                      manage_settings / manage_orders / manage_inventory
---                      (edited from Settings, Sales Setup and Inventory
---                      Categories alike)
+--     shippingRates    manage_settings / manage_orders / manage_inventory /
+--                      view_reports (the Shipping report at /reports/shipping
+--                      has an inline rate editor and the route needs only
+--                      view_reports)
 --     anything else    manage_settings
 --
 -- USERS TABLE LOCKDOWN (finishes SEC-3 server-side)
@@ -125,12 +164,20 @@
 --
 -- ROLLOUT
 --   step 1  run this file (enforcement off). Nothing changes for old or
---           new app builds except: invalid sessions are refused, and user
---           management needs the new build (see above).
+--           new app builds except: invalid sessions are refused, user
+--           management and role edits need the new build (see above).
 --   step 2  deploy the matching app build (it sends p_session everywhere).
 --   step 3  after every terminal has refreshed and logged in again (token
 --           logins), flip enforce_sessions = true per store (see above).
 --   rollback: flip enforce_sessions = false.
+--   Honest caveat for the step-1/step-2 window (enforcement still off): any
+--   NON-strict guarded write still accepts a NULL session, so the anon key
+--   alone can still perform orders/payments/stock/config writes — exactly as
+--   open as before this migration. The permission guarantees only become
+--   real once enforce_sessions = true: flipping the switch is the point of
+--   the rollout, not optional hardening. (The roles/users config keys and
+--   the four users functions are strict from step 1, so the permission
+--   DATA and the accounts themselves are protected during the window.)
 --
 -- WHAT PHASE 1 DOES **NOT** COVER (phase 2+)
 --   * direct writes that never went through functions: sales/transactions/
@@ -388,7 +435,10 @@ END $$;
 -- old signatures are gone from public (moved above), so no unguarded
 -- variant remains callable through the API.
 
--- Order status pack — client gate: manage_orders / restock_orders.
+-- Order status pack — client gates (see the header's permission map): OM2
+-- admits manage/create/view_orders and rules per ORDER (client-side until
+-- phase 2); a ReStock transition is gated on restock_orders alone, like
+-- StoreContext's updateOrderStatus (admins pass either way via sg_check).
 CREATE OR REPLACE FUNCTION public.set_order_shipping_status(
     p_order_id TEXT, p_expected_status TEXT, p_new_status TEXT,
     p_fields JSONB DEFAULT '{}'::jsonb, p_session JSONB DEFAULT NULL)
@@ -397,7 +447,11 @@ LANGUAGE plpgsql
 SET search_path = public, sg_internal, pg_temp
 AS $$
 BEGIN
-    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_orders'], 'change an order''s shipping status');
+    IF p_new_status = 'ReStock' THEN
+        PERFORM sg_internal.sg_check(p_session, ARRAY['restock_orders'], 'restock orders');
+    ELSE
+        PERFORM sg_internal.sg_check(p_session, ARRAY['manage_orders', 'create_orders', 'view_orders'], 'change an order''s shipping status');
+    END IF;
     RETURN sg_internal.set_order_shipping_status(p_order_id, p_expected_status, p_new_status, p_fields);
 END;
 $$;
@@ -447,7 +501,9 @@ LANGUAGE plpgsql
 SET search_path = public, sg_internal, pg_temp
 AS $$
 BEGIN
-    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_orders'], 'save an order''s payment');
+    -- OM2's drawer and bulk edit save payments and are reachable with
+    -- create_orders / view_orders (per-order rules client-side, see header).
+    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_orders', 'create_orders', 'view_orders'], 'save an order''s payment');
     RETURN sg_internal.set_order_payment(p_order_id, p_expected_status, p_updates, p_fields);
 END;
 $$;
@@ -672,6 +728,18 @@ BEGIN
     IF NOT sg_internal.sg_permission(p_user.role_id, 'manage_users') THEN
         RAISE EXCEPTION 'You do not have permission to manage roles.';
     END IF;
+    -- The executor (cfg_internal) matches removeItems/updateItems by the
+    -- caller-supplied idKey (plus norm); the checks below inspect 'id'. A
+    -- non-'id' idKey (or any norm) would let the matcher and the guard look
+    -- at different fields — e.g. removeItems by name deleting the stored
+    -- Administrator role while the guard sees no admin id. The client's
+    -- role editor always sends idKey 'id' and no norm, so refuse the rest.
+    IF (p_op ? 'idKey') AND (p_op ->> 'idKey') IS DISTINCT FROM 'id' THEN
+        RAISE EXCEPTION 'Role operations must identify roles by their id.';
+    END IF;
+    IF p_op ? 'norm' THEN
+        RAISE EXCEPTION 'Role operations must identify roles by their id.';
+    END IF;
     v_own := sg_internal.sg_role_perms(p_user.role_id);
 
     IF v_kind IN ('append', 'prepend') THEN
@@ -721,8 +789,12 @@ END;
 $$;
 
 -- One config key's write permission. p_user may be the all-NULL row
--- (enforcement off, no session supplied): then every key passes, exactly
--- as open as the pre-lockdown direct writes were.
+-- (enforcement off, no session supplied): then every key passes — exactly
+-- as open as the pre-lockdown direct writes were — EXCEPT roles and the
+-- legacy users key, which require a session even then: app_config.data.roles
+-- is what sg_permission reads, so a sessionless roles write during the
+-- rollout window would let the bare anon key grant any role anything and
+-- defeat every other guard (the strict users functions included).
 CREATE OR REPLACE FUNCTION sg_internal.sg_config_key_check(p_user users, p_key TEXT, p_op JSONB)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -734,7 +806,11 @@ DECLARE
     v_perms TEXT[];
 BEGIN
     IF p_user.id IS NULL THEN
-        RETURN; -- no caller identity: only reachable while enforcement is off
+        -- No caller identity: only reachable while enforcement is off.
+        IF p_key IN ('roles', 'users') THEN
+            RAISE EXCEPTION 'Your session has expired — log in again.';
+        END IF;
+        RETURN;
     END IF;
     IF p_user.role_id = 'admin' THEN
         RETURN;
@@ -752,16 +828,25 @@ BEGIN
         WHEN 'pinnedProducts'     THEN ARRAY['create_orders', 'process_sales', 'manage_inventory']
         WHEN 'salesOrder'         THEN ARRAY['create_orders', 'manage_orders']
         WHEN 'pinnedOrderColumns' THEN ARRAY['view_orders', 'create_orders', 'manage_orders']
+        WHEN 'productOrder'       THEN ARRAY['manage_inventory', 'view_inventory_stock']
         WHEN 'purchaseSettings'   THEN ARRAY['manage_procurement']
         WHEN 'wholesaleSettings'  THEN ARRAY['manage_orders']
-        WHEN 'shippingCompanies'  THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
-        WHEN 'salesmen'           THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
+        -- Sales Setup's district/commune overrides (route /orders/setup).
+        WHEN 'customDistricts'      THEN ARRAY['manage_settings', 'manage_orders']
+        WHEN 'customCommunes'       THEN ARRAY['manage_settings', 'manage_orders']
+        WHEN 'removedDistrictCodes' THEN ARRAY['manage_settings', 'manage_orders']
+        WHEN 'removedCommuneCodes'  THEN ARRAY['manage_settings', 'manage_orders']
+        -- The six lists the checkout form's ConfigModal can add to while an
+        -- order is being taken: create_orders included (see the header).
+        WHEN 'shippingCompanies'  THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'create_orders']
+        WHEN 'salesmen'           THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'create_orders']
+        WHEN 'pages'              THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'create_orders']
+        WHEN 'customerCare'       THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'create_orders']
+        WHEN 'paymentMethods'     THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'create_orders']
+        WHEN 'cities'             THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'create_orders']
         WHEN 'categories'         THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
-        WHEN 'pages'              THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
-        WHEN 'customerCare'       THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
-        WHEN 'paymentMethods'     THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
-        WHEN 'cities'             THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
-        WHEN 'shippingRates'      THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
+        -- view_reports: the Shipping report's inline rate editor (see header).
+        WHEN 'shippingRates'      THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'view_reports']
         WHEN 'trackingUrlTemplates' THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
         ELSE ARRAY['manage_settings']
     END;
@@ -822,10 +907,15 @@ REVOKE INSERT, UPDATE, DELETE ON app_config FROM authenticated;
 --   * only admins assign a role holding permissions the caller's role
 --     lacks ("you cannot build a puppet richer than yourself");
 --   * only admins edit (name/email/PIN/role) or delete an account whose
---     role outranks theirs — an admin account outranks every non-admin;
+--     CURRENT role outranks theirs — an admin account outranks every
+--     non-admin, and the check is on the target's current role so an
+--     outranking account cannot be demoted first and taken over after;
 --   * payroll/target fields are a separate, milder path: manage_payroll
---     may edit base_salary and the sales targets of anyone, admins
---     included (setting the owner's salary is payroll, not escalation).
+--     (or manage_users) may edit base_salary and the sales targets of
+--     anyone, admins included (setting the owner's salary is payroll, not
+--     escalation); target-ONLY edits additionally accept view_reports,
+--     because the Staff Performance report (/reports/staff, view_reports)
+--     has always offered its Set Targets modal with no further client gate.
 -- All four are SECURITY DEFINER (direct writes on users are revoked below)
 -- and REQUIRE a valid session even while enforcement is off (see header).
 -- No dynamic SQL anywhere; error messages name rules, never stored values.
@@ -853,10 +943,20 @@ BEGIN
     SELECT u.role_id INTO v_target_role FROM users u WHERE u.id = v_id;
     v_exists := FOUND;
 
-    -- Identity and credentials of an admin account are admin-only.
-    IF v_exists AND v_target_role = 'admin' AND NOT v_is_admin
+    -- Identity, credentials and role of an account whose CURRENT role
+    -- outranks the caller's are admin-only — an admin account outranks every
+    -- non-admin. Checking only the NEW role here would let a manage_users
+    -- holder DEMOTE an outranking account to a weak role and then re-PIN it:
+    -- a two-step account takeover. (Payroll/target fields are deliberately
+    -- not in this list — see update_user_work_fields.)
+    IF v_exists AND NOT v_is_admin
        AND (p_user ? 'name' OR p_user ? 'email' OR p_user ? 'pin' OR p_user ? 'role_id') THEN
-        RAISE EXCEPTION 'Only an administrator can edit an admin account.';
+        IF v_target_role = 'admin' THEN
+            RAISE EXCEPTION 'Only an administrator can edit an admin account.';
+        END IF;
+        IF v_id <> v_caller.id AND sg_internal.sg_role_outranks(v_target_role, v_caller.role_id) THEN
+            RAISE EXCEPTION 'You cannot edit an account whose role has permissions your own role does not have. Ask an administrator.';
+        END IF;
     END IF;
 
     -- Role assignment rules (also for the role a NEW account is born with).
@@ -872,12 +972,6 @@ BEGIN
                 RAISE EXCEPTION 'You cannot assign a role that has permissions your own role does not have. Ask an administrator.';
             END IF;
         END IF;
-    END IF;
-
-    -- Changing someone else's PIN: capped at accounts you do not outrank.
-    IF p_user ? 'pin' AND v_exists AND v_id <> v_caller.id AND NOT v_is_admin
-       AND sg_internal.sg_role_outranks(v_target_role, v_caller.role_id) THEN
-        RAISE EXCEPTION 'You cannot change the password of an account whose role has permissions your own role does not have. Ask an administrator.';
     END IF;
 
     IF v_exists THEN
@@ -977,7 +1071,10 @@ DECLARE
 BEGIN
     -- Payroll flow: base salary and the sales targets only, allowed on any
     -- account (setting the owner's salary is payroll, not an escalation).
-    v_caller := sg_internal.sg_check_strict(p_session, ARRAY['manage_payroll', 'manage_users'], 'edit payroll fields');
+    -- Field names are validated first because the permission depends on
+    -- them: sales-target-ONLY edits also accept view_reports — the Staff
+    -- Performance report (view_reports route, no further client gate) has
+    -- always offered target editing. base_salary stays payroll/users-only.
     IF p_fields IS NULL OR jsonb_typeof(p_fields) <> 'object' THEN
         RAISE EXCEPTION 'update_user_work_fields: p_fields must be an object.';
     END IF;
@@ -986,6 +1083,11 @@ BEGIN
             RAISE EXCEPTION 'update_user_work_fields only accepts payroll fields, not "%".', v_key;
         END IF;
     END LOOP;
+    IF p_fields ? 'base_salary' THEN
+        v_caller := sg_internal.sg_check_strict(p_session, ARRAY['manage_payroll', 'manage_users'], 'edit payroll fields');
+    ELSE
+        v_caller := sg_internal.sg_check_strict(p_session, ARRAY['manage_payroll', 'manage_users', 'view_reports'], 'edit sales targets');
+    END IF;
     UPDATE users SET
         base_salary    = CASE WHEN p_fields ? 'base_salary'    THEN COALESCE((p_fields ->> 'base_salary')::NUMERIC, 0)    ELSE base_salary END,
         daily_target   = CASE WHEN p_fields ? 'daily_target'   THEN COALESCE((p_fields ->> 'daily_target')::NUMERIC, 0)   ELSE daily_target END,

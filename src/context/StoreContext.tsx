@@ -5,7 +5,7 @@ import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
-import { callDbFunction, noticesOf, rpcWithSession } from '../utils/dbFunctions';
+import { callDbFunction, noticesOf, rpcWithSession, resetGuardedSignatureCache } from '../utils/dbFunctions';
 import { setSessionAuth, registerSessionExpiredHandler } from '../utils/session';
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
@@ -788,6 +788,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         localStorage.setItem('currentUser', JSON.stringify(user));
         inMemorySessionToken = sessionToken;
         setSessionAuth(user.id, sessionToken); // SEC-1: guarded RPCs attach this session
+        // A fresh login is the natural moment to forget stale "this function
+        // is unguarded" probe verdicts (the store may have migrated since).
+        resetGuardedSignatureCache();
         try {
             if (sessionToken) localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
             else localStorage.removeItem(SESSION_TOKEN_KEY); // legacy path: no stale token from a previous user
@@ -1257,7 +1260,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         telegramConfigs: []
                     };
                     setConfig(defaultConfig);
-                    const { error: seedErr } = await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
+                    let seedErr: { code?: string; message: string } | null =
+                        (await supabase.from('app_config').insert({ id: 1, data: defaultConfig })).error;
+                    if (seedErr && seedErr.code !== '23505' && /permission denied/i.test(seedErr.message || '')) {
+                        // SEC-1: a store that ran add_session_guards.sql revoked
+                        // direct app_config writes — seed the defaults through
+                        // the guarded merge instead (per-key set ops; the roles
+                        // key needs a session, so an un-logged-in terminal still
+                        // fails here and simply leaves configLoadedRef false).
+                        const seedOps = Object.fromEntries(Object.entries(defaultConfig as unknown as Record<string, unknown>)
+                            .map(([k, v]) => [k, { op: 'set', value: v }]));
+                        ({ error: seedErr } = await rpcWithSession('update_app_config', { p_ops: seedOps }));
+                    }
                     if (!seedErr) {
                         // The database CONFIRMED there is no config row and our
                         // seed landed, so these defaults really are the store's
@@ -4093,8 +4107,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (jsonData.appConfig && typeof jsonData.appConfig === 'object') {
                 const { telegramConfigs: _staleBlobCopy, ...restoredConfig } = jsonData.appConfig as Record<string, unknown>;
                 void _staleBlobCopy;
-                const { error } = await supabase.from('app_config').upsert({ id: 1, data: restoredConfig });
-                if (error) throw new Error('Restore failed while writing the settings (app_config): ' + error.message);
+                // SEC-1: a store that ran add_session_guards.sql revoked direct
+                // app_config writes, so the blob goes through update_app_config
+                // as per-key 'set' ops with the restoring admin's session (the
+                // roles key is admin-only, which a restore should be anyway).
+                // The direct upsert survives ONLY behind the missing-RPC probe
+                // (a store that never ran add_config_functions.sql).
+                const restoreOps = Object.fromEntries(Object.entries(restoredConfig).map(([k, v]) => [k, { op: 'set', value: v }]));
+                if (Object.keys(restoreOps).length > 0) {
+                    const { error: rpcError } = await rpcWithSession('update_app_config', { p_ops: restoreOps });
+                    if (rpcError) {
+                        if (!isRpcMissingError(rpcError)) {
+                            throw new Error('Restore failed while writing the settings (app_config): ' + rpcError.message);
+                        }
+                        const { error } = await supabase.from('app_config').upsert({ id: 1, data: restoredConfig });
+                        if (error) throw new Error('Restore failed while writing the settings (app_config): ' + error.message);
+                    }
+                }
             }
 
             const skippedNote = skipped.length > 0
@@ -4153,6 +4182,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const beyond = permsOf(target.roleId).filter(p => !ownPerms.includes(p));
             if (beyond.length > 0) {
                 throw new Error('You cannot change the password of an account whose role has permissions your own role does not have. Ask an administrator.');
+            }
+        }
+        // Parity with save_user's generic outranks rule (SEC-1 review): the
+        // identity, credentials and role of an account whose CURRENT role
+        // outranks the caller's are admin-only — checking only the new role
+        // (above) would allow demote-then-re-PIN, a two-step takeover.
+        // Payroll/target-only updates stay out of this list on purpose.
+        if (target && target.id !== currentUser?.id && target.roleId !== 'admin'
+            && (action === 'delete' || ['name', 'email', 'pin', 'roleId'].some(k => (updates as Record<string, unknown>)[k] !== undefined))) {
+            const beyond = permsOf(target.roleId).filter(p => !ownPerms.includes(p));
+            if (beyond.length > 0) {
+                throw new Error(action === 'delete'
+                    ? 'You cannot delete an account whose role has permissions your own role does not have. Ask an administrator.'
+                    : 'You cannot edit an account whose role has permissions your own role does not have. Ask an administrator.');
             }
         }
     };
