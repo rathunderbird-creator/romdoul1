@@ -71,6 +71,8 @@ const ROLES = [
     { id: 'stocker', name: 'Stocker', permissions: ['manage_inventory'] },
     { id: 'payrollist', name: 'Payroll', permissions: ['manage_payroll'] },
     { id: 'richrole', name: 'Rich', permissions: ['manage_users', 'manage_orders', 'manage_settings', 'create_orders', 'view_orders', 'manage_procurement'] },
+    { id: 'reporter', name: 'Reports', permissions: ['view_reports'] },
+    { id: 'restocker', name: 'Restock clerk', permissions: ['restock_orders', 'view_orders'] },
 ];
 await q(`UPDATE app_config SET data = jsonb_set(data, '{roles}', $1::jsonb, true) WHERE id = 1`, [JSON.stringify(ROLES)]);
 await q(`INSERT INTO users (id, name, email, role_id, pin) VALUES
@@ -78,7 +80,9 @@ await q(`INSERT INTO users (id, name, email, role_id, pin) VALUES
     ('mgr','Mara','m@x.com','manager','2222'),
     ('sal','Sok','s@x.com','salesman','3333'),
     ('stk','Stody','k@x.com','stocker','4444'),
-    ('pay','Pel','p@x.com','payrollist','5555')
+    ('pay','Pel','p@x.com','payrollist','5555'),
+    ('rep','Rina','r@x.com','reporter','6666'),
+    ('rst','Rotha','t@x.com','restocker','7777')
     ON CONFLICT (id) DO NOTHING`);
 await q(`INSERT INTO products (id, name, price, stock) VALUES ('prod1', 'Speaker', 50, 10)`);
 
@@ -92,6 +96,8 @@ const S = {
     sal: await login('sal', '3333'),
     stk: await login('stk', '4444'),
     pay: await login('pay', '5555'),
+    rep: await login('rep', '6666'),
+    rst: await login('rst', '7777'),
 };
 const BAD = JSON.stringify({ user_id: 'boss', token: 'deadbeef' });
 
@@ -146,7 +152,7 @@ const probes = [
     ['set_order_shipping_status', `SELECT set_order_shipping_status(p_order_id=>'nope', p_expected_status=>'Open', p_new_status=>'Shipped', p_session=>$1::jsonb)`, S.stk, S.mgr],
     ['edit_order_items', `SELECT edit_order_items(p_order_id=>'nope', p_items=>'[]'::jsonb, p_session=>$1::jsonb)`, S.sal, S.mgr],
     ['restock_returned_orders', `SELECT restock_returned_orders(p_ids=>ARRAY['nope'], p_session=>$1::jsonb)`, S.mgr, S.boss],
-    ['set_order_payment', `SELECT set_order_payment(p_order_id=>'nope', p_expected_status=>'x', p_updates=>'{}'::jsonb, p_session=>$1::jsonb)`, S.sal, S.mgr],
+    ['set_order_payment', `SELECT set_order_payment(p_order_id=>'nope', p_expected_status=>'x', p_updates=>'{}'::jsonb, p_session=>$1::jsonb)`, S.stk, S.mgr],
     ['delete_retail_orders', `SELECT delete_retail_orders(p_ids=>ARRAY['nope'], p_session=>$1::jsonb)`, S.sal, S.mgr],
     ['apply_restock_payment_side', `SELECT apply_restock_payment_side(p_ids=>ARRAY['nope'], p_session=>$1::jsonb)`, S.mgr, S.boss],
     ['update_wholesale_order', `SELECT update_wholesale_order(p_id=>gen_random_uuid(), p_updates=>'{}'::jsonb, p_items=>NULL, p_session=>$1::jsonb)`, S.stk, S.mgr],
@@ -267,6 +273,73 @@ check('salary really saved', Number(base_salary) === 1000);
 check('work fields: only payroll columns accepted', noPerm(await workFields('boss', { name: 'Haxx' }, S.pay)) || /only accepts payroll fields/i.test(await workFields('boss', { name: 'Haxx' }, S.pay)));
 check('work fields: salesman refused', noPerm(await workFields('sal', { base_salary: 9 }, S.sal)));
 check('work fields: null session refused', expired(await workFields('sal', { base_salary: 9 }, null)));
+
+// ---------------------------------------------------------------------------
+// Review fixes (still enforcement OFF).
+// ---------------------------------------------------------------------------
+// A ReStock transition is gated on restock_orders alone (the client's gate);
+// other transitions accept manage/create/view_orders (OM2 admits all three).
+const reaches = m => !noPerm(m) && !expired(m); // guard passed; impl's own error is fine
+const shipStatus = (newStatus, session) => errOf(
+    `SELECT set_order_shipping_status(p_order_id=>'nope', p_expected_status=>'Returned', p_new_status=>$2, p_session=>$1::jsonb)`,
+    [session, newStatus]);
+check('ReStock passes for a restock clerk (no manage_orders)', reaches(await shipStatus('ReStock', S.rst)));
+check('ReStock refused for a salesman (no restock_orders)', noPerm(await shipStatus('ReStock', S.sal)));
+check('status change passes for a salesman (OM2 parity: create/view_orders)', reaches(await shipStatus('Shipped', S.sal)));
+check('status change passes for the restock clerk too (view_orders)', reaches(await shipStatus('Shipped', S.rst)));
+check('status change still refused for a stocker', noPerm(await shipStatus('Shipped', S.stk)));
+check('payment save passes for a salesman (OM2 parity)', reaches(await errOf(
+    `SELECT set_order_payment(p_order_id=>'nope', p_expected_status=>'x', p_updates=>'{}'::jsonb, p_session=>$1::jsonb)`, [S.sal])));
+
+// Config keys written outside Settings: productOrder (inventory drag),
+// Sales Setup's district/commune overrides, checkout's inline adds, and the
+// Shipping report's inline rate editor.
+check('config: productOrder ok for stocker (manage_inventory)', await cfg({ productOrder: { op: 'set', value: ['prod1'] } }, S.stk) === '');
+check('config: productOrder refused for salesman', noPerm(await cfg({ productOrder: { op: 'set', value: [] } }, S.sal)));
+check('config: customDistricts ok for manager (manage_orders)', await cfg({ customDistricts: { op: 'append', items: [{ code: 'D1', khmer: 'ក', latin: 'K' }], idKey: 'code' } }, S.mgr) === '');
+check('config: removedCommuneCodes ok for manager', await cfg({ removedCommuneCodes: { op: 'append', items: ['C9'] } }, S.mgr) === '');
+check('config: customDistricts refused for stocker', noPerm(await cfg({ customDistricts: { op: 'append', items: [{ code: 'D2' }], idKey: 'code' } }, S.stk)));
+check('config: cities ok for salesman (checkout inline add)', await cfg({ cities: { op: 'append', items: ['PP'] } }, S.sal) === '');
+check('config: pages ok for salesman (checkout inline add)', await cfg({ pages: { op: 'append', items: ['FB Page'] } }, S.sal) === '');
+check('config: paymentMethods ok for salesman (checkout inline add)', await cfg({ paymentMethods: { op: 'append', items: ['ABA'] } }, S.sal) === '');
+check('config: shippingRates ok for reporter (view_reports inline editor)', await cfg({ shippingRates: { op: 'merge', value: { VET: 1.5 } } }, S.rep) === '');
+check('config: shippingRates refused for restock clerk', noPerm(await cfg({ shippingRates: { op: 'merge', value: { VET: 9 } } }, S.rst)));
+
+// The roles (and legacy users) keys are strict: a NULL session is refused
+// even while enforcement is off — sg_permission reads this key, so leaving
+// it sessionless during rollout would defeat every other guard.
+check('roles: NULL session refused even while enforcement is off', expired(await cfg({ roles: { op: 'set', value: ROLES } }, null)));
+check('users key: NULL session refused even while enforcement is off', expired(await cfg({ users: { op: 'set', value: [] } }, null)));
+check('other keys still pass with a NULL session while off', await cfg({ storeName: { op: 'set', value: 'Still open' } }, null) === '');
+
+// Roles-op identity bypass: the executor matches by the caller's idKey/norm,
+// the guard inspects 'id' — so any non-'id' idKey (or any norm) is refused
+// for non-admin callers.
+const byId = m => /identify roles by their id/i.test(m);
+check('roles: removeItems by name refused (idKey bypass)', byId(await cfg({ roles: { op: 'removeItems', values: [{ name: 'Administrator' }], idKey: 'name' } }, S.mgr)));
+check('roles: updateItems by name refused (idKey bypass)', byId(await cfg({ roles: { op: 'updateItems', items: [{ name: 'Salesman', permissions: [] }], idKey: 'name' } }, S.mgr)));
+check('roles: norm refused (normalized-identity bypass)', byId(await cfg({ roles: { op: 'removeItems', values: ['!!!'], idKey: 'id', norm: 'phone' } }, S.mgr)));
+const { rows: [{ admin_still }] } = await q(
+    `SELECT EXISTS (SELECT 1 FROM app_config c, jsonb_array_elements(c.data->'roles') r WHERE c.id=1 AND r->>'id'='admin') AS admin_still`);
+check('admin role survived the bypass attempts', admin_still === true);
+
+// save_user checks the target's CURRENT role: a manage_users holder cannot
+// demote / rename / re-PIN an account whose role outranks theirs (the
+// demote-then-re-PIN two-step takeover). The stocker outranks the manager
+// (manage_inventory is not among the manager's permissions).
+check('save_user: manager cannot demote an outranking account', noPerm(await saveUser({ id: 'stk', role_id: 'salesman' }, S.mgr)));
+check('save_user: manager cannot rename an outranking account', noPerm(await saveUser({ id: 'stk', name: 'Hx' }, S.mgr)));
+check('save_user: manager cannot re-PIN an outranking account', noPerm(await saveUser({ id: 'stk', pin: '0001' }, S.mgr)));
+const { rows: [stkRow] } = await q(`SELECT name, role_id FROM users WHERE id='stk'`);
+check('the outranking account is untouched', stkRow.name === 'Stody' && stkRow.role_id === 'stocker');
+check('save_user: payroll-only fields of an outranking account stay editable (milder path)',
+    await saveUser({ id: 'stk', daily_target: 7 }, S.mgr) === '');
+
+// Target-ONLY work-field edits accept view_reports (Staff Performance's Set
+// Targets modal); base_salary stays manage_payroll / manage_users.
+check('work fields: reporter may set sales targets', await workFields('sal', { daily_target: 3, monthly_target: 90 }, S.rep) === '');
+check('work fields: reporter cannot touch base_salary', noPerm(await workFields('sal', { base_salary: 5, daily_target: 3 }, S.rep)));
+check('work fields: payrollist still edits salary + targets together', await workFields('sal', { base_salary: 5, daily_target: 4 }, S.pay) === '');
 
 // ---------------------------------------------------------------------------
 // anon cannot write users / app_config / security_settings directly.

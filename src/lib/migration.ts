@@ -1,5 +1,6 @@
 
 import { supabase } from './supabase';
+import { rpcWithSession } from '../utils/dbFunctions';
 import type { Product, Customer, Sale } from '../types';
 
 export const migrateData = async () => {
@@ -121,14 +122,21 @@ export const migrateData = async () => {
         if (configStr) {
             console.log("Migrating config...");
             const config = JSON.parse(configStr);
-            const { error } = await supabase.from('app_config').upsert({
-                id: 1,
-                data: config
-            });
-            if (error) {
-                // If table doesn't exist, we might get error. But we assume schema exists.
-                console.error("Config error", error);
-                // Don't throw, just log.
+            // SEC-1: on a store that ran add_session_guards.sql the direct
+            // app_config write is revoked — try the guarded per-key merge
+            // first, keep the direct upsert for never-migrated stores.
+            const ops = Object.fromEntries(Object.entries(config as Record<string, unknown>).map(([k, v]) => [k, { op: 'set', value: v }]));
+            const { error: rpcError } = await rpcWithSession('update_app_config', { p_ops: ops });
+            if (rpcError) {
+                const { error } = await supabase.from('app_config').upsert({
+                    id: 1,
+                    data: config
+                });
+                if (error) {
+                    // If table doesn't exist, we might get error. But we assume schema exists.
+                    console.error("Config error", rpcError, error);
+                    // Don't throw, just log.
+                }
             }
         }
 

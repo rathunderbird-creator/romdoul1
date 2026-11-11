@@ -36,6 +36,15 @@ export function dbFunctionMessage(error: unknown, area: string): string {
 // on a fresh login, which replaces the whole screen anyway.
 const guardedSignatureKnown = new Map<string, boolean>();
 
+// Forget every cached probe verdict. StoreContext calls this on each login:
+// a terminal that probed "unguarded" BEFORE the store ran the guards
+// migration would otherwise keep calling session-less for the whole app
+// load, and once enforcement flips on, land in a logout loop that only a
+// full page reload fixes (re-login must re-probe, not replay the stale map).
+export const resetGuardedSignatureCache = (): void => {
+    guardedSignatureKnown.clear();
+};
+
 const isMissingFunctionError = (error: unknown): boolean => {
     const code = String((error as { code?: unknown })?.code || '');
     const msg = String((error as { message?: unknown })?.message || '');
@@ -67,6 +76,13 @@ export async function rpcWithSession(name: string, args: Record<string, unknown>
         // The pack itself is missing: forget the cached "unguarded" verdict
         // so a store migrated later (guards included) is probed afresh.
         guardedSignatureKnown.delete(name);
+    } else if (isSessionExpiredError(res.error.message)) {
+        // A session-less call refused as expired is proof the guards NOW
+        // exist with enforcement on (the store migrated mid-session): the
+        // cached "unguarded" verdict is stale, and the user must log in
+        // again — same forced logout as on the guarded path above.
+        guardedSignatureKnown.delete(name);
+        notifySessionExpired(res.error.message);
     }
     return res;
 }

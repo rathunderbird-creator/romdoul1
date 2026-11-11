@@ -188,5 +188,44 @@ for (const [i, ops] of parityOps.entries()) {
         deepEq(sqlCfg, jsCfg), { sqlCfg, jsCfg });
 }
 
+// ---------------------------------------------------------------------------
+// SEC-1 addendum: the same pack behind the session guards. The guards
+// migration (add_session_guards.sql) moves update_app_config(jsonb) into
+// sg_internal and exposes a session-checking wrapper; prove the pack's merge
+// semantics survive the move when a session is supplied, and that the strict
+// keys behave (the full matrix lives in tests/sec1-session-guards.test.mjs).
+// ---------------------------------------------------------------------------
+await db.exec(`
+CREATE TABLE users (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, role_id TEXT, pin TEXT,
+    base_salary NUMERIC DEFAULT 0, daily_target NUMERIC DEFAULT 0,
+    weekly_target NUMERIC DEFAULT 0, monthly_target NUMERIC DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now());
+GRANT ALL ON users TO anon, authenticated;
+INSERT INTO users (id, name, role_id, pin) VALUES ('mgr','Mara','manager','2222');
+`);
+await db.exec(strip(path.join(repo, 'migrations', 'applied', 'secure_pin_check.sql')));
+await db.exec(strip(path.join(repo, 'migrations', 'add_auth_guards.sql')));
+await db.exec(strip(path.join(repo, 'migrations', 'add_session_guards.sql')));
+await q(`UPDATE app_config SET data = jsonb_set(data, '{roles}', $1::jsonb, true) WHERE id = 1`,
+    [JSON.stringify([{ id: 'manager', name: 'Manager', permissions: ['manage_users', 'manage_settings', 'manage_orders'] }])]);
+const { rows: [loginRow] } = await q(`SELECT * FROM login_with_pin('2222','mgr')`);
+const SESSION = JSON.stringify({ user_id: 'mgr', token: loginRow.session_token });
+const guarded = async (ops, session) =>
+    (await q(`SELECT update_app_config(p_ops=>$1::jsonb, p_session=>$2::jsonb) AS cfg`, [JSON.stringify(ops), session])).rows[0].cfg;
+
+check('guards: old single-argument signature is gone',
+    (await q(`SELECT to_regprocedure('public.update_app_config(jsonb)') IS NULL AS gone`)).rows[0].gone === true);
+const guardedCfg = await guarded({ categories: { op: 'append', items: ['Stands'] } }, SESSION);
+check('guards: append still merges with a session', deepEq(guardedCfg.categories, [...jsCfg.categories, 'Stands']));
+jsCfg = applyConfigOpsLocally(jsCfg, { categories: { op: 'append', items: ['Stands'] } });
+check('guards: parity holds through the wrapper', deepEq(guardedCfg.categories, jsCfg.categories));
+const errOfG = async (ops, session) => { try { await guarded(ops, session); return ''; } catch (e) { return String(e.message || e); } };
+check('guards: NULL session still passes while enforcement is off', await errOfG({ taxRate: { op: 'set', value: 11 } }, null) === '');
+check('guards: an invalid session is always refused',
+    /session has expired/i.test(await errOfG({ taxRate: { op: 'set', value: 12 } }, JSON.stringify({ user_id: 'mgr', token: 'bad' }))));
+check('guards: the roles key refuses a NULL session even while off',
+    /session has expired/i.test(await errOfG({ roles: { op: 'set', value: [] } }, null)));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -28,7 +28,11 @@ per-key config merge (`update_app_config`): set/merge/unsetKeys/remove,
 append/prepend/removeItems/updateItems with idKey + phone normalization,
 the APP-1 scenario (two stale terminals, both edits survive), malformed
 input, and op-for-op parity with the JS mirror
-`src/utils/configOps.ts` (transpiled with the repo's esbuild). Same PGlite
+`src/utils/configOps.ts` (transpiled with the repo's esbuild). A SEC-1
+addendum then layers `add_auth_guards.sql` + `add_session_guards.sql` on
+top and proves the same merge semantics survive behind the guarded
+`update_app_config(p_ops, p_session)` wrapper (the full guard matrix lives
+in sec1-session-guards.test.mjs). Same PGlite
 setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
