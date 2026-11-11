@@ -115,7 +115,9 @@ const Payroll: React.FC = () => {
             showToast('Base salary updated successfully', 'success');
             setEditingUserId(null);
         } catch (err) {
-            showToast('Failed to update base salary', 'error');
+            // Surface the store's refusal reason (e.g. a SEC-3 guard) instead
+            // of a generic failure the user would just retry blindly.
+            showToast(err instanceof Error && err.message ? err.message : 'Failed to update base salary', 'error');
         } finally {
             setSavingId(null);
         }

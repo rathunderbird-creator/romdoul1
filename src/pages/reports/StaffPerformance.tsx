@@ -28,6 +28,8 @@ const StaffPerformance: React.FC = () => {
     const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
     const [targetModalUserId, setTargetModalUserId] = useState<string | null>(null);
     const [tempTargets, setTempTargets] = useState<Record<string, { dailyTarget: number; weeklyTarget: number; monthlyTarget: number }>>({});
+    // In-flight guard: a double-click on Save must not send the batch twice.
+    const [isSavingTargets, setIsSavingTargets] = useState(false);
 
     // Fetch monthly sales for targets (relative to the selected endDate or current month)
     useEffect(() => {
@@ -155,6 +157,8 @@ const StaffPerformance: React.FC = () => {
     };
 
     const handleSaveTargets = async () => {
+        if (isSavingTargets) return;
+        setIsSavingTargets(true);
         try {
             const promises = Object.entries(tempTargets).map(async ([userId, tgs]) => {
                 const u = users.find(usr => usr.id === userId);
@@ -173,7 +177,11 @@ const StaffPerformance: React.FC = () => {
             setIsTargetModalOpen(false);
         } catch (err) {
             console.error(err);
-            showToast(t('targets.saveError'), 'error');
+            // Surface the store's refusal reason (e.g. a SEC-3 guard); other
+            // users' targets in the same batch may still have been saved.
+            showToast(err instanceof Error && err.message ? err.message : t('targets.saveError'), 'error');
+        } finally {
+            setIsSavingTargets(false);
         }
     };
 
@@ -508,8 +516,8 @@ const StaffPerformance: React.FC = () => {
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
                             <button onClick={() => setIsTargetModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: '14px' }}>Cancel</button>
-                            <button onClick={handleSaveTargets} style={{ padding: '8px 20px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 500 }}>
-                                <Save size={16} /> Save
+                            <button onClick={handleSaveTargets} disabled={isSavingTargets} style={{ padding: '8px 20px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: isSavingTargets ? 'not-allowed' : 'pointer', opacity: isSavingTargets ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 500 }}>
+                                <Save size={16} /> {isSavingTargets ? 'Saving…' : 'Save'}
                             </button>
                         </div>
                     </div>

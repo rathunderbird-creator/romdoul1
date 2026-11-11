@@ -12,7 +12,7 @@ import { useActivityLog } from '../../context/ActivityLogContext';
 import { useUrlFilters, UndoToast, type UndoToastHandle } from './ui2';
 import { useOrdersM2Data } from './useOrdersM2Data';
 import { exportOrdersXlsx } from './exportOrders';
-import { statusChangeRefusal, paymentChangeRefusal } from '../../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../../utils/orderStatusRules';
 import { useLocalStorageState } from '../dashboard2/ui';
 import OM2View from './OrdersManagement2View';
 import type { OM2Actions, OrderEdit } from './types';
@@ -53,7 +53,30 @@ const OrdersManagement2Page: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent]);
 
-    const applyEdit = async (edit: OrderEdit) => {
+    // PAY-1/ORD-9: the row drawer (the single-order edit path) obeys the same
+    // per-order rules as the single-row badges and Bulk Edit — RowDrawer
+    // deliberately offers every option, so the page refuses here. `enforceRules`
+    // is false only for the Undo paths: an undo is only reachable right after
+    // this same user's own successful edit, and its expectedPaymentStatus /
+    // shownStatus guards already refuse it once anything else moved the order.
+    const applyEdit = async (edit: OrderEdit, enforceRules = true) => {
+        if (enforceRules) {
+            const order = data.orders.find(o => o.id === edit.orderId) || data.rangeOrders.find(o => o.id === edit.orderId);
+            const actor = { isAdmin: currentUser?.roleId === 'admin', canRestock: hasPermission('restock_orders') };
+            const view = { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus };
+            const refusal =
+                (edit.orderStatus !== undefined && edit.orderStatus !== order?.shipping?.status
+                    ? statusChangeRefusal(view, edit.orderStatus, actor) : null)
+                // paymentChangeRefusal also locks same-status saves on
+                // Paid/PdFee/Cancel rows: the drawer's payment save rewrites
+                // received amount / settle date / pay-by even when the status
+                // itself did not change.
+                ?? (edit.paymentStatus !== undefined
+                    ? paymentChangeRefusal(view, edit.paymentStatus, actor) : null)
+                ?? (edit.paymentStatus === undefined && edit.settleDate !== undefined
+                    ? settleDateChangeRefusal(view, actor) : null);
+            if (refusal) { showToast(refusal, 'error'); return false; }
+        }
         const updates: Record<string, unknown> = {};
         if (edit.paymentStatus !== undefined) updates.paymentStatus = edit.paymentStatus;
         if (edit.expectedPaymentStatus !== undefined) updates.expectedPaymentStatus = edit.expectedPaymentStatus;
@@ -138,7 +161,7 @@ const OrdersManagement2Page: React.FC = () => {
             data.refresh();
             if (!saved) return false;
             toastHandle.current?.show('Order updated.', () => {
-                applyEdit(previousEdit).catch((e: unknown) => { console.error('Undo failed:', e); return false; }).then(ok => {
+                applyEdit(previousEdit, false).catch((e: unknown) => { console.error('Undo failed:', e); return false; }).then(ok => {
                     if (!ok) showToast('The undo was not saved.', 'error');
                     data.refresh();
                 });
@@ -146,7 +169,7 @@ const OrdersManagement2Page: React.FC = () => {
             return true;
         },
         onUndoEdit: async (edit) => {
-            const ok = await applyEdit(edit).catch((e: unknown) => { console.error('Undo failed:', e); return false; });
+            const ok = await applyEdit(edit, false).catch((e: unknown) => { console.error('Undo failed:', e); return false; });
             if (!ok) showToast('The undo was not saved.', 'error');
             data.refresh();
         },
@@ -176,9 +199,21 @@ const OrdersManagement2Page: React.FC = () => {
                 // and the toast says what happened.
                 let shipped = 0;
                 let lastReason = '';
+                const actor = { isAdmin: currentUser?.roleId === 'admin', canRestock: hasPermission('restock_orders') };
                 for (const id of orderIds) {
+                    const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
+                    const shown = order?.shipping?.status;
+                    if (shown === 'Shipped') { shipped++; continue; } // already there: quiet no-op
+                    // PAY-1/ORD-9: same per-order rules as Bulk Edit's status path —
+                    // without this, "Mark shipped" moved Delivered/Returned/Cancelled
+                    // orders back to Shipped for non-admins.
+                    const refusal = statusChangeRefusal(
+                        { shippingStatus: shown, paymentStatus: order?.paymentStatus },
+                        'Shipped',
+                        actor
+                    );
+                    if (refusal) { lastReason = refusal; continue; }
                     // shownStatus: refused if the order is no longer at the status this page showed.
-                    const shown = (data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id))?.shipping?.status;
                     if (await updateOrderStatus(id, 'Shipped', undefined, undefined, { shownStatus: shown || 'Pending', onRefused: m => { lastReason = m; } })) shipped++;
                 }
                 const notShipped = orderIds.length - shipped;
@@ -236,7 +271,20 @@ const OrdersManagement2Page: React.FC = () => {
                     if (!moved) notSaved++;
                 }
             } else if (field === 'settleDate') {
-                await updateOrders(orderIds, { settleDate: value ? new Date(value).toISOString() : null as any });
+                // ORD-9: a posted Paid/PdFee/Cancel order's settle date is its
+                // booked receipt's day — same lock as the payment badge.
+                const allowedIds = orderIds.filter(id => {
+                    const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
+                    const refusal = settleDateChangeRefusal(
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        actor
+                    );
+                    if (refusal) { lastReason = refusal; notSaved++; return false; }
+                    return true;
+                });
+                if (allowedIds.length > 0) {
+                    await updateOrders(allowedIds, { settleDate: value ? new Date(value).toISOString() : null as any });
+                }
             } else if (field === 'paymentStatus') {
                 const now = new Date().toISOString();
                 const saveOne = (id: string) => {
