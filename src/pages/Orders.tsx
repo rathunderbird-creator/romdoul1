@@ -1433,6 +1433,13 @@ const Orders: React.FC = () => {
     // covers every match (or the aggregate fetch failed), and the footer then
     // sums the loaded rows as before.
     const [aggOrders, setAggOrders] = useState<Sale[] | null>(null);
+    // The last aggregate result, keyed by the applyOrderFilters identity (it
+    // is rebuilt exactly when any filter, the search term, the user scope or
+    // a realtime sale update changes — and NOT by pagination or sorting), so
+    // paging through the table reuses the totals instead of re-downloading
+    // every matching row. rows === null caches "the footer falls back to page
+    // sums" (single-page match sets and truncated fetches).
+    const aggCacheRef = React.useRef<{ filtersKey: unknown; rows: Sale[] | null } | null>(null);
 
     // (serverOrders is declared near the top of the component.)
     const [isLoadingOrders, setIsLoadingOrders] = useState(false);
@@ -1931,6 +1938,14 @@ const Orders: React.FC = () => {
                 if (isStale()) return;
                 setHasMoreMobile(!serverRanDry && rows.length < (count || 0));
             } else {
+                // The filters changed since the cached footer aggregate was
+                // built: drop it NOW, before the page query, so the footer
+                // never shows the previous filter's all-match totals beside
+                // the new filter's rows while the aggregate refetch runs.
+                if (aggCacheRef.current && aggCacheRef.current.filtersKey !== applyOrderFilters) {
+                    aggCacheRef.current = null;
+                    setAggOrders(null);
+                }
                 // Desktop: one page. Built here (not before the branch) so the mobile
                 // path doesn't pay for a filtered query it never executes —
                 // applyOrderFilters can run real sale_items subqueries.
@@ -1992,29 +2007,58 @@ const Orders: React.FC = () => {
                 // back to the page sums, exactly as before this fix.
                 try {
                     if ((count || 0) <= (data?.length || 0)) {
+                        aggCacheRef.current = { filtersKey: applyOrderFilters, rows: null };
                         if (!isStale()) setAggOrders(null);
+                    } else if (aggCacheRef.current && aggCacheRef.current.filtersKey === applyOrderFilters) {
+                        // Same filters as the cached aggregate (this fetch was
+                        // a page/sort change): the totals are unchanged, reuse
+                        // them instead of re-downloading every matching row.
+                        if (!isStale()) setAggOrders(aggCacheRef.current.rows);
                     } else {
+                        // Debounce: a keystroke in the search box re-runs
+                        // fetchOrders per character, and each aggregate is up
+                        // to 20 chunked requests (times the per-chunk search
+                        // probes). Waiting here lets the next keystroke's
+                        // fetch supersede this one BEFORE any aggregate
+                        // network work starts — only the settled filter pays.
+                        await new Promise(resolve => setTimeout(resolve, 400));
+                        if (isStale()) return;
+                        const MAX_AGG_ROWS = 20000;
                         const aggRows = await fetchAll<FooterAggRow>(async (from, to) => {
                             const built = await applyOrderFilters(extra =>
                                 supabase.from('sales').select(`id, total, amount_received, deposit_amount, payment_status, shipping_status, items:sale_items(quantity, name)${extra}`)
                             );
                             return (built.query as unknown as FooterAggQuery).order('id', { ascending: true }).range(from, to);
-                        }, 1000, { label: 'Orders desktop footer totals', maxRows: 20000 });
-                        // Minimal Sale shape — exactly the fields the shared
-                        // orderMoney rules and the chip counts read.
-                        const mappedAgg = aggRows.map(r => ({
-                            id: String(r.id),
-                            total: Number(r.total) || 0,
-                            amountReceived: Number(r.amount_received) || 0,
-                            depositAmount: Number(r.deposit_amount) || 0,
-                            paymentStatus: r.payment_status,
-                            shipping: { status: r.shipping_status },
-                            items: (r.items || []).map(i => ({ name: i.name, quantity: Number(i.quantity) || 0 })),
-                        })) as unknown as Sale[];
-                        if (!isStale()) setAggOrders(mappedAgg);
+                        }, 1000, { label: 'Orders desktop footer totals', maxRows: MAX_AGG_ROWS });
+                        // fetchAll stops silently at its row ceiling. Partial
+                        // sums presented as "every match" would be WRONG (and
+                        // biased to the oldest orders — the scan is id-asc),
+                        // so past the ceiling the footer falls back to the
+                        // page sums, exactly like a failed fetch (ORD-11's
+                        // rule is all-matches-or-plainly-page).
+                        if (aggRows.length >= MAX_AGG_ROWS) {
+                            aggCacheRef.current = { filtersKey: applyOrderFilters, rows: null };
+                            if (!isStale()) setAggOrders(null);
+                        } else {
+                            // Minimal Sale shape — exactly the fields the shared
+                            // orderMoney rules and the chip counts read.
+                            const mappedAgg = aggRows.map(r => ({
+                                id: String(r.id),
+                                total: Number(r.total) || 0,
+                                amountReceived: Number(r.amount_received) || 0,
+                                depositAmount: Number(r.deposit_amount) || 0,
+                                paymentStatus: r.payment_status,
+                                shipping: { status: r.shipping_status },
+                                items: (r.items || []).map(i => ({ name: i.name, quantity: Number(i.quantity) || 0 })),
+                            })) as unknown as Sale[];
+                            aggCacheRef.current = { filtersKey: applyOrderFilters, rows: mappedAgg };
+                            if (!isStale()) setAggOrders(mappedAgg);
+                        }
                     }
                 } catch (aggErr) {
                     console.error('Failed to compute footer totals across all matches:', aggErr);
+                    // Not cached: the next fetch with these filters retries.
+                    aggCacheRef.current = null;
                     if (!isStale()) setAggOrders(null);
                 }
             }

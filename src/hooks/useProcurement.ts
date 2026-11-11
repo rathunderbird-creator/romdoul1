@@ -373,15 +373,20 @@ export const useProcurement = () => {
     const fetchSupplierPayments = useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            // Paged (fetchAll): a single select is silently truncated at the
+            // API's ~1000-row cap, dropping the OLDEST payments first (the
+            // list is newest-first) — AP Aging and the Supplier Statement then
+            // treat long-paid bills as still owed. The unique id is the LAST
+            // order so chunk windows stay stable across ties.
+            const data = await fetchAll<SupplierPayment>((from, to) => supabase
                 .from('supplier_payments')
                 .select('*, supplier:suppliers(*)')
                 // payment_date is a plain date — same tie-break as Purchase Orders.
                 .order('payment_date', { ascending: false })
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            setSupplierPayments(data || []);
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'useProcurement.fetchSupplierPayments' });
+            setSupplierPayments(data);
         } catch (error: any) {
             console.error('Failed to fetch supplier payments:', error);
             showToast('Failed to fetch supplier payments: ' + error.message, 'error');

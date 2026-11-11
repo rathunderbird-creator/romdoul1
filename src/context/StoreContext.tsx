@@ -1878,6 +1878,43 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Persistence - REMOVED (Migrated to Supabase)
     // LocalStorage syncing caused QuotaExceededError and is no longer needed.
 
+    // Save several companies' shipping rates in ONE write, scoped to the
+    // shippingRates key (DSH-2). The old per-company Save All loop built every
+    // upsert from the same stale closure config, so with N changed rates only
+    // the last write to land kept its new value — the others reverted — and
+    // every write also replayed the rest of the stale config blob over edits
+    // made on another terminal. Rule: read the live config first, merge ONLY
+    // shippingRates into it, and never write after a failed read.
+    //
+    // NOTE for the branch that merges after fix/settings-overwrites: once that
+    // branch's per-key config ops land, re-express this as a single
+    // `updateConfigOps({ shippingRates: { op: 'merge', value: rates } })` and
+    // delete the read-merge-upsert below — it duplicates (with a wider race
+    // window) what update_app_config does under a row lock.
+    const updateShippingRates = async (rates: Record<string, number>) => {
+        // Optimistic UI, rolling back ONLY this key on failure — restoring a
+        // whole config snapshot captured at render time would clobber
+        // unrelated keys changed in between.
+        let previousRates: ConfigState['shippingRates'];
+        setConfig(prev => {
+            previousRates = prev.shippingRates;
+            return { ...prev, shippingRates: { ...(prev.shippingRates || {}), ...rates } };
+        });
+        const rollback = () => setConfig(prev => ({ ...prev, shippingRates: previousRates }));
+        const { data: cfgRow, error: readErr } = await supabase.from('app_config').select('data').eq('id', 1).single();
+        if (readErr || !cfgRow?.data || typeof cfgRow.data !== 'object') {
+            rollback();
+            throw new Error('Failed to save shipping rates: could not read the current configuration' + (readErr?.message ? ` (${readErr.message})` : ''));
+        }
+        const freshData = cfgRow.data as ConfigState;
+        const merged = { ...freshData, shippingRates: { ...(freshData.shippingRates || {}), ...rates } };
+        const { error } = await supabase.from('app_config').upsert({ id: 1, data: merged });
+        if (error) {
+            console.error('Failed to save shipping rates:', error);
+            rollback();
+            throw new Error('Failed to save shipping rates: ' + error.message);
+        }
+    };
 
     // Cart Actions
     const addToCart = (product: Product) => {

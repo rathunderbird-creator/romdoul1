@@ -8,16 +8,38 @@
 //    has not reduced the balance yet as of that date. The old code used
 //    today's amount_paid and included every bill regardless of date, so a
 //    month-end aging was wrong whenever anything happened since.
-//  · The Supplier Statement only subtracts payments applied to the bills it
-//    shows. The old code subtracted EVERY payment of the supplier, including
-//    deposits on unbilled or unreceived POs whose bill never appears on the
-//    statement, so the closing balance dropped below what is really owed
-//    (and could go negative).
+//  · A payable arises when the goods are RECEIVED (that is when the ledger
+//    credits A/P, see postPurchaseReceiptEntry) — so a received-but-unbilled
+//    PO is owed from its receive date (the receipt journal entry's date, the
+//    PO row has no received-at column), not backdated to its order date.
+//  · A payment made before the bill is owed (a prepayment) shows as a CREDIT
+//    as at that date instead of silently vanishing.
+//  · Payments recorded before the supplier_payments table existed only set
+//    amount_paid on the PO. The part of amount_paid that no payment row
+//    explains is reconciled in as an undated payment, so a legacy-paid bill
+//    doesn't reappear as outstanding.
+//  · The Supplier Statement nets off a payment only when its charge is on the
+//    statement too (any received PO of the supplier, or a payment not linked
+//    to a PO at all). A deposit on an unreceived PO has no matching charge,
+//    so netting it off understated (even negated) what is really owed.
 import type { PurchaseOrder, SupplierPayment } from '../types';
 
 /** The date a bill is owed from: the billed date when stored, else the order date. */
 export const billDateOf = (po: Pick<PurchaseOrder, 'bill_date' | 'order_date'>): string =>
     String(po.bill_date || po.order_date || '').slice(0, 10);
+
+/**
+ * The date the payable actually arose: the billed date when stored, else the
+ * RECEIVE date when known (the 'PO-<id>' receipt journal entry's date — the
+ * ledger credits A/P on that day), else the order date as a last resort. This
+ * keeps an as-at aging reconcilable to the A/P ledger balance: a PO ordered in
+ * June and received in September is not owed in July.
+ */
+export const owedFromDateOf = (
+    po: Pick<PurchaseOrder, 'bill_date' | 'order_date'>,
+    receiptDate?: string | null
+): string =>
+    String(po.bill_date || receiptDate || po.order_date || '').slice(0, 10);
 
 /** Sum of the payments applied to this PO on or before `asAt`. */
 export const paidAsAt = (
@@ -31,27 +53,53 @@ export const paidAsAt = (
             : 0), 0);
 
 /**
- * A bill's outstanding balance AS AT a date: its full total minus the
- * payments made by then. A bill dated after `asAt` did not exist yet, so it
- * contributes nothing.
+ * The part of po.amount_paid that no supplier_payments row explains: payments
+ * recorded before the payments table existed (savePurchaseOrder accepts
+ * amount_paid directly). Treated as an UNDATED payment that counts at every
+ * as-at date — the alternative, ignoring it, made long-settled legacy bills
+ * reappear as fully outstanding in AP Aging while the Accounts Payable page
+ * (total − amount_paid) showed them paid.
  */
-export const outstandingAsAt = (
-    po: Pick<PurchaseOrder, 'id' | 'bill_date' | 'order_date' | 'total_amount'>,
-    payments: Pick<SupplierPayment, 'purchase_order_id' | 'payment_date' | 'amount'>[],
-    asAt: string
+export const legacyPaidOf = (
+    po: Pick<PurchaseOrder, 'id' | 'amount_paid'>,
+    payments: Pick<SupplierPayment, 'purchase_order_id' | 'payment_date' | 'amount'>[]
 ): number => {
-    if (billDateOf(po) > asAt) return 0;
-    return (Number(po.total_amount) || 0) - paidAsAt(po.id, payments, asAt);
+    const explained = payments.reduce((s, p) =>
+        s + (p.purchase_order_id === po.id ? (Number(p.amount) || 0) : 0), 0);
+    return Math.max((Number(po.amount_paid) || 0) - explained, 0);
 };
 
 /**
- * The payments a supplier statement subtracts: only those applied to one of
- * the statement's own bills (`billIds`). A deposit on a PO that is not (yet)
- * a bill has no matching charge on the statement and must not be netted off.
+ * A bill's outstanding balance AS AT a date: its full total minus the
+ * payments made by then (dated rows plus the undated legacy remainder).
+ * A bill not yet owed as of `asAt` contributes only its payments, as a
+ * negative balance — a prepayment is a CREDIT as at that date, not nothing.
+ * `receiptDate` is the PO's receipt journal entry date, when known (see
+ * owedFromDateOf).
+ */
+export const outstandingAsAt = (
+    po: Pick<PurchaseOrder, 'id' | 'bill_date' | 'order_date' | 'total_amount' | 'amount_paid'>,
+    payments: Pick<SupplierPayment, 'purchase_order_id' | 'payment_date' | 'amount'>[],
+    asAt: string,
+    receiptDate?: string | null
+): number => {
+    const paid = paidAsAt(po.id, payments, asAt) + legacyPaidOf(po, payments);
+    if (owedFromDateOf(po, receiptDate) > asAt) return -paid;
+    return (Number(po.total_amount) || 0) - paid;
+};
+
+/**
+ * The payments a supplier statement subtracts: those applied to one of the
+ * statement's own charges (`chargePoIds` — every received PO it lists), plus
+ * payments not linked to any PO (supplier_payments.purchase_order_id is
+ * nullable; a supplier-level payment is still money paid to that supplier).
+ * A deposit on a PO that is NOT charged on the statement (Draft/Sent) has no
+ * matching charge and must not be netted off.
  */
 export const statementPayments = <P extends Pick<SupplierPayment, 'supplier_id' | 'purchase_order_id'>>(
     payments: P[],
     supplierId: string,
-    billIds: ReadonlySet<string>
+    chargePoIds: ReadonlySet<string>
 ): P[] =>
-    payments.filter(p => p.supplier_id === supplierId && !!p.purchase_order_id && billIds.has(p.purchase_order_id));
+    payments.filter(p => p.supplier_id === supplierId
+        && (!p.purchase_order_id || chargePoIds.has(p.purchase_order_id)));

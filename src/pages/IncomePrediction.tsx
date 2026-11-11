@@ -98,7 +98,7 @@ const MULTI_MONTH_DATE_COL_WIDTH = 170;
 const IncomePrediction: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
-    const { currentUser, shippingRates } = useStore();
+    const { products, currentUser, shippingRates } = useStore();
 
     // Any inclusive span of local days (default: the current calendar month).
     const [range, setRange] = useState<DateRange>(() => defaultRange(new Date()));
@@ -196,6 +196,11 @@ const IncomePrediction: React.FC = () => {
     // Only the newest fetchData may publish its result: a long range takes seconds,
     // so an older load finishing late must not overwrite the range now on screen.
     const fetchSeq = useRef(0);
+    // The store's (active-only) products, read through a ref so the COGS
+    // fallback below doesn't make fetchData re-run the whole report load
+    // whenever the store refreshes its product list.
+    const storeProductsRef = useRef(products);
+    storeProductsRef.current = products;
 
     const fetchData = useCallback(async () => {
         const seq = ++fetchSeq.current;
@@ -263,15 +268,23 @@ const IncomePrediction: React.FC = () => {
                 // silently zeroed those items' cost and overstated profit.
                 // fetchAllProducts() is the same uncapped, inactive-inclusive
                 // read Prediction by Page / by Product / by Staff already use.
-                fetchAllProducts()
+                // Its failure must NOT reject the whole Promise.all (the page
+                // would render nothing): fall back to the store's active
+                // products, like PurchaseCostReport does — COGS then degrades
+                // for deactivated products instead of the report vanishing.
+                fetchAllProducts().catch((err: unknown) => {
+                    console.error('Failed to load the full product catalogue for costing:', err);
+                    return null;
+                })
             ]);
 
             // A newer load has started meanwhile (range switched / refreshed): drop this one.
             if (seq !== fetchSeq.current) return;
 
-            // Cost per product id over the FULL catalogue (see DSH-1 note above).
+            // Cost per product id over the FULL catalogue (see DSH-1 note
+            // above); on a failed catalogue fetch, the store's active products.
             const productCostMap = new Map<string, number>();
-            allProducts.forEach(p => productCostMap.set(p.id, p.purchaseCost || 0));
+            (allProducts ?? storeProductsRef.current).forEach(p => productCostMap.set(p.id, p.purchaseCost || 0));
 
             if (staffRes.error) {
                 const missing = isMissingTableError(staffRes.error);
