@@ -223,7 +223,9 @@ const ProtectedApp = () => {
             <Route path="general" element={<GeneralSettings />} />
             <Route path="telegram" element={<TelegramSettings />} />
             <Route path="security" element={<SecuritySettings />} />
-            <Route path="database" element={<DatabaseSettings />} />
+            {/* SEC-4: Backup/Restore/Migrate needs its own permission, not just
+                manage_settings — admin-only unless explicitly granted. */}
+            <Route path="database" element={<ProtectedRoute requiredPermission="manage_database"><DatabaseSettings /></ProtectedRoute>} />
           </Route>
 
           {/* ERP Routes */}

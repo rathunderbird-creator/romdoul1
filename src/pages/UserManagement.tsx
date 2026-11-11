@@ -99,6 +99,7 @@ const PERMISSION_GROUPS: PermissionGroup[] = [
         permissions: [
             { key: 'manage_users', label: 'Manage Users', description: 'Create users and roles, assign permissions' },
             { key: 'manage_settings', label: 'Manage Settings', description: 'Store profile, security and system settings' },
+            { key: 'manage_database', label: 'Manage Database', description: 'Backup, Restore and Migrate tools (Settings > Database) — admin only by default' },
         ],
     },
 ];
@@ -143,6 +144,17 @@ const UserManagement: React.FC = () => {
     const [userSearch, setUserSearch] = useState('');
     const [userRoleFilter, setUserRoleFilter] = useState('all');
     const [showUserPassword, setShowUserPassword] = useState(false);
+    // In-flight guards: a double-click must not save or delete twice.
+    const [isSavingUser, setIsSavingUser] = useState(false);
+    const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+
+    // SEC-3: Manage Users is not admin. Non-admins cannot touch admin accounts
+    // or hand out the admin role; nobody edits their own role. The same rules
+    // are enforced again in the store (updateUser/addUser/deleteUser), so this
+    // is UI honesty, not the actual guard.
+    const isAdminActor = currentUser?.roleId === 'admin';
+    const canTouchUser = (user: User) => isAdminActor || user.roleId !== 'admin';
+    const assignableRoles = isAdminActor ? roles : roles.filter(r => r.id !== 'admin');
 
     const closeUserModal = () => {
         setIsUserModalOpen(false);
@@ -202,6 +214,7 @@ const UserManagement: React.FC = () => {
     };
 
     const handleSaveUser = async () => {
+        if (isSavingUser) return;
         const name = userFormData.name?.trim();
         const email = userFormData.email?.trim();
         if (!name || !email || !userFormData.roleId) {
@@ -225,6 +238,7 @@ const UserManagement: React.FC = () => {
             return;
         }
 
+        setIsSavingUser(true);
         try {
             if (editingUser) {
                 // PINs can't be read back anymore, so the form field starts empty
@@ -242,13 +256,23 @@ const UserManagement: React.FC = () => {
             closeUserModal();
         } catch (error) {
             showToast(error instanceof Error ? error.message : 'Failed to save user', 'error');
+        } finally {
+            setIsSavingUser(false);
         }
     };
 
     const handleDeleteUser = async (id: string) => {
-        if (confirm('Are you sure you want to delete this user?')) {
+        if (deletingUserId) return;
+        if (!confirm('Are you sure you want to delete this user?')) return;
+        setDeletingUserId(id);
+        try {
             await deleteUser(id);
             showToast('User deleted successfully', 'success');
+        } catch (error) {
+            // e.g. the SEC-3 guard: non-admins cannot delete an admin account.
+            showToast(error instanceof Error ? error.message : 'Failed to delete user', 'error');
+        } finally {
+            setDeletingUserId(null);
         }
     };
 
@@ -405,7 +429,7 @@ const UserManagement: React.FC = () => {
     const userEmailDuplicate = !!userEmailTrimmed && users.some(
         u => u.id !== editingUser?.id && u.email.trim().toLowerCase() === userEmailTrimmed.toLowerCase()
     );
-    const canSaveUser = !!userNameTrimmed && !!userFormData.roleId && userEmailValid && !userEmailDuplicate;
+    const canSaveUser = !!userNameTrimmed && !!userFormData.roleId && userEmailValid && !userEmailDuplicate && !isSavingUser;
 
     return (
         <div style={{ padding: '24px', maxWidth: '100%', margin: '0 auto' }}>
@@ -522,10 +546,12 @@ const UserManagement: React.FC = () => {
                                             </td>
                                             <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                    <button onClick={() => handleOpenUserModal(user)} title="Edit user" style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>
+                                                    {/* SEC-3: only admins may edit or delete an admin account
+                                                        (the store enforces this too — these are honest buttons). */}
+                                                    <button onClick={() => handleOpenUserModal(user)} disabled={!canTouchUser(user)} title={canTouchUser(user) ? 'Edit user' : 'Only an administrator can edit an admin account'} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: canTouchUser(user) ? 'pointer' : 'not-allowed', opacity: canTouchUser(user) ? 1 : 0.35, transition: 'background 0.2s' }} onMouseOver={e => { if (canTouchUser(user)) e.currentTarget.style.background = 'var(--color-bg-secondary)'; }} onMouseOut={e => e.currentTarget.style.background = 'none'}>
                                                         <Edit2 size={16} />
                                                     </button>
-                                                    <button onClick={() => handleDeleteUser(user.id)} title="Delete user" style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'} onMouseOut={e => e.currentTarget.style.background = 'none'}>
+                                                    <button onClick={() => handleDeleteUser(user.id)} disabled={!canTouchUser(user) || deletingUserId !== null} title={canTouchUser(user) ? 'Delete user' : 'Only an administrator can delete an admin account'} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: canTouchUser(user) && !deletingUserId ? 'pointer' : 'not-allowed', opacity: canTouchUser(user) ? 1 : 0.35, transition: 'background 0.2s' }} onMouseOver={e => { if (canTouchUser(user)) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }} onMouseOut={e => e.currentTarget.style.background = 'none'}>
                                                         <Trash2 size={16} />
                                                     </button>
                                                 </div>
@@ -826,16 +852,30 @@ const UserManagement: React.FC = () => {
                             </div>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Role <span style={{ color: 'var(--color-red)' }}>*</span></label>
+                                {/* SEC-3: non-admins never see the Administrator option, and
+                                    nobody can change their OWN role (the store refuses both too). */}
                                 <select
                                     value={userFormData.roleId}
                                     onChange={e => setUserFormData({ ...userFormData, roleId: e.target.value })}
-                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                    disabled={!!editingUser && editingUser.id === currentUser?.id}
+                                    title={editingUser && editingUser.id === currentUser?.id ? 'You cannot change your own role — ask another administrator' : undefined}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box', cursor: editingUser && editingUser.id === currentUser?.id ? 'not-allowed' : undefined }}
                                 >
                                     <option value="" disabled>Select a role</option>
-                                    {roles.map(role => (
+                                    {assignableRoles.map(role => (
                                         <option key={role.id} value={role.id}>{role.name}</option>
                                     ))}
+                                    {/* Keep the current value visible even when not assignable
+                                        (e.g. an admin editing their own admin account). */}
+                                    {userFormData.roleId && !assignableRoles.some(r => r.id === userFormData.roleId) && (
+                                        <option value={userFormData.roleId}>{roles.find(r => r.id === userFormData.roleId)?.name || userFormData.roleId}</option>
+                                    )}
                                 </select>
+                                {editingUser && editingUser.id === currentUser?.id && (
+                                    <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                        You cannot change your own role.
+                                    </div>
+                                )}
                                 {userFormData.roleId && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                         {roles.find(r => r.id === userFormData.roleId)?.id === 'admin'
@@ -897,7 +937,7 @@ const UserManagement: React.FC = () => {
                                 disabled={!canSaveUser}
                                 style={{ padding: '10px 18px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: canSaveUser ? 'pointer' : 'not-allowed', fontWeight: 500, opacity: canSaveUser ? 1 : 0.5 }}
                             >
-                                {editingUser ? 'Save Changes' : 'Create User'}
+                                {isSavingUser ? 'Saving…' : (editingUser ? 'Save Changes' : 'Create User')}
                             </button>
                         </div>
                     </div>

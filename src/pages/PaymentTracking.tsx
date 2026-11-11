@@ -8,6 +8,7 @@ import type { Sale } from '../types';
 import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
+import { statusChangeRefusal, paymentChangeRefusal } from '../utils/orderStatusRules';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -32,11 +33,12 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
     const isAdmin = currentUser?.roleId === 'admin';
+    const canRestock = hasPermission('restock_orders');
 
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
@@ -221,8 +223,16 @@ const PaymentTracking: React.FC = () => {
                 // race the read-modify-write of its stock. Rows already at the
                 // target status are skipped as quiet no-ops.
                 for (const id of ids) {
-                    const current = serverOrders.find(s => s.id === id)?.shipping?.status;
+                    const order = serverOrders.find(s => s.id === id);
+                    const current = order?.shipping?.status;
                     if (current === value) continue;
+                    // ORD-9: same per-order rules as the single-row controls.
+                    const refusal = statusChangeRefusal(
+                        { shippingStatus: current, paymentStatus: order?.paymentStatus },
+                        value,
+                        { isAdmin, canRestock }
+                    );
+                    if (refusal) { lastReason = refusal; notSaved++; continue; }
                     // shownStatus: refused if the order is no longer at the status this list showed.
                     const moved = await updateOrderStatus(id, value, undefined, undefined, {
                         shownStatus: current || 'Pending',
@@ -235,6 +245,14 @@ const PaymentTracking: React.FC = () => {
                 const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id);
                     if (!order) return Promise.resolve(true);
+
+                    // ORD-9: a non-admin can't bulk-unpay or bulk-cancel Paid orders.
+                    const refusal = paymentChangeRefusal(
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                        value,
+                        { isAdmin, canRestock }
+                    );
+                    if (refusal) { lastReason = refusal; return Promise.resolve(false); }
 
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
 

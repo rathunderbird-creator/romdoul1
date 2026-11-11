@@ -7,6 +7,7 @@ import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, 
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker, Modal } from '../components';
 import { getShippingCoColor } from '../utils/orderUtils';
+import { statusChangeRefusal, nonAdminDisabledStatusOptions } from '../utils/orderStatusRules';
 import { buildTrackingUrl } from '../utils/tracking';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
@@ -170,7 +171,7 @@ const EditableRemark = ({ order, updateOrder }: { order: Sale, updateOrder: (id:
 };
 
 const DeliveryTracking: React.FC = () => {
-    const { sales, salesUpdatedAt, updateOrderStatus, updateOrder, users, currentUser, shippingCompanies, customerCare, refreshData, telegramBotToken, telegramChatId, updateStoreProfile, trackingUrlTemplates } = useStore();
+    const { sales, salesUpdatedAt, updateOrderStatus, updateOrder, users, currentUser, hasPermission, shippingCompanies, customerCare, refreshData, telegramBotToken, telegramChatId, updateStoreProfile, trackingUrlTemplates } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
 
@@ -1506,9 +1507,25 @@ const DeliveryTracking: React.FC = () => {
                                         <StatusBadge
                                             status={order.shipping?.status || 'Pending'}
                                             // shownStatus: refused if the order is no longer at the status this row showed.
-                                            onChange={(newStatus) => updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' })}
+                                            // The refusal check is the PAY-1 backstop — the same single-row
+                                            // rules Orders.tsx enforces, so this badge can no longer move
+                                            // Delivered/Shipped orders back to pre-ship statuses for non-admins.
+                                            onChange={(newStatus) => {
+                                                const refusal = statusChangeRefusal(
+                                                    { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                                                    newStatus,
+                                                    { isAdmin: currentUser?.roleId === 'admin', canRestock: hasPermission('restock_orders') }
+                                                );
+                                                if (refusal) { showToast(refusal, 'error'); return; }
+                                                updateOrderStatus(order.id, newStatus as 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' });
+                                            }}
                                             bold={false}
                                             unrestricted={currentUser?.roleId === 'admin'}
+                                            // PAY-1: same locks as the Orders page's status badge.
+                                            readOnly={currentUser?.roleId !== 'admin' && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel')}
+                                            disabledOptions={currentUser?.roleId === 'admin'
+                                                ? (hasPermission('restock_orders') ? [] : ['ReStock'])
+                                                : nonAdminDisabledStatusOptions(order.shipping?.status || 'Pending').concat(hasPermission('restock_orders') ? [] : ['ReStock'])}
                                         />
                                     </td>}
                                     {visibleColumns.includes('cost') && <td style={{ textAlign: 'right', width: `var(--col-delivery-cost-width, ${columnWidths.cost}px)` }}>${(order.shipping?.cost || 0).toFixed(2)}</td>}

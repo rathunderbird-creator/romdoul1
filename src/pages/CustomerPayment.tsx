@@ -923,8 +923,15 @@ const CustomerPaymentPage: React.FC = () => {
     // Deletes the selected payments outright — any status, not just Draft. A
     // selected row with a linked journal entry (Posted or Draft) has that entry
     // removed too, or it would be left behind pointing at a deleted transaction.
+    // Admin-only (PAY-2): deleting a posted payment removes booked income and
+    // its journal entry while the order stays Paid/Deposit — the same class of
+    // correction as Unpost, which has always been admin-gated on this page.
     const handleBulkDelete = async () => {
         const rows = selectedAllRows;
+        if (!isAdmin) {
+            showToast('Only an administrator can delete payments.', 'error');
+            return;
+        }
         if (rows.length === 0 || isBulkDeleting) return;
         const linkedCount = rows.filter(r => ledgerReady && ledger.byTx.has(r.id)).length;
         const warn = linkedCount > 0
@@ -1247,19 +1254,23 @@ const CustomerPaymentPage: React.FC = () => {
                             {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
                         </button>
                     )}
-                    <button
-                        onClick={handleBulkDelete}
-                        disabled={bulkBusy}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: '6px',
-                            padding: '8px 16px', borderRadius: '8px', border: 'none',
-                            background: '#EF4444', color: '#fff',
-                            fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
-                            opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
-                        }}
-                    >
-                        <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedAllRows.length})`}
-                    </button>
+                    {/* PAY-2: deleting payment rows (posted ones included) is an
+                        admin correction, like Unpost above. */}
+                    {isAdmin && (
+                        <button
+                            onClick={handleBulkDelete}
+                            disabled={bulkBusy}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                background: '#EF4444', color: '#fff',
+                                fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                            }}
+                        >
+                            <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedAllRows.length})`}
+                        </button>
+                    )}
                     <button
                         onClick={() => setSelectedIds(new Set())}
                         disabled={bulkBusy}

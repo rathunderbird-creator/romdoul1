@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
+import { statusChangeRefusal, paymentChangeRefusal } from '../utils/orderStatusRules';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
@@ -2264,6 +2265,11 @@ const Orders: React.FC = () => {
                     // the status marked orders restocked without returning any stock, so
                     // this goes through the Restock flow (stock, return record, payment
                     // Cancel). Only orders that are Returned right now are restocked.
+                    // ORD-9: same permission the single-row badge requires.
+                    if (!canRestock) {
+                        showToast('You do not have permission to restock orders.', 'error');
+                        return;
+                    }
                     const restocked = await bulkRestockOrders(ids);
                     showToast(restockResultMessage(restocked, ids.length), restocked > 0 ? 'success' : 'error');
                     setSelectedIds(new Set());
@@ -2271,8 +2277,17 @@ const Orders: React.FC = () => {
                     return;
                 }
                 for (const id of ids) {
-                    const current = (serverOrders.find(s => s.id === id) || sales.find(s => s.id === id))?.shipping?.status;
+                    const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
+                    const current = order?.shipping?.status;
                     if (current === value) continue;
+                    // ORD-9: Bulk Edit obeys the same per-order rules as the
+                    // single-row badge — refused orders are skipped and counted.
+                    const refusal = statusChangeRefusal(
+                        { shippingStatus: current, paymentStatus: order?.paymentStatus },
+                        value,
+                        { isAdmin, canRestock }
+                    );
+                    if (refusal) { lastReason = refusal; notSaved++; continue; }
                     // shownStatus: the status this list showed; if the order has moved
                     // on since, the change is refused rather than applied to the
                     // status someone else set.
@@ -2290,6 +2305,15 @@ const Orders: React.FC = () => {
                 const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
                     if (!order) return Promise.resolve(true);
+
+                    // ORD-9: same rules as the single-row payment badge — a
+                    // non-admin can't bulk-unpay or bulk-cancel Paid orders.
+                    const refusal = paymentChangeRefusal(
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                        value,
+                        { isAdmin, canRestock }
+                    );
+                    if (refusal) { lastReason = refusal; return Promise.resolve(false); }
 
                     const individualUpdates: Partial<Sale> = { paymentStatus: value };
 
