@@ -12,6 +12,7 @@ import { useActivityLog } from '../../context/ActivityLogContext';
 import { useUrlFilters, UndoToast, type UndoToastHandle } from './ui2';
 import { useOrdersM2Data } from './useOrdersM2Data';
 import { exportOrdersXlsx } from './exportOrders';
+import { statusChangeRefusal, paymentChangeRefusal } from '../../utils/orderStatusRules';
 import { useLocalStorageState } from '../dashboard2/ui';
 import OM2View from './OrdersManagement2View';
 import type { OM2Actions, OrderEdit } from './types';
@@ -209,6 +210,9 @@ const OrdersManagement2Page: React.FC = () => {
             // reason kept in lastReason): reported instead of a blanket success.
             let notSaved = 0;
             let lastReason = '';
+            // ORD-9: Bulk Edit obeys the same per-order rules as the single-row
+            // controls (shared with classic Orders via orderStatusRules).
+            const actor = { isAdmin: currentUser?.roleId === 'admin', canRestock: hasPermission('restock_orders') };
             if (field === 'date') {
                 await updateOrders(orderIds, { date: new Date(value).toISOString() });
             } else if (field === 'status') {
@@ -218,6 +222,12 @@ const OrdersManagement2Page: React.FC = () => {
                 for (const id of orderIds) {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     if (order?.shipping?.status === value) continue;
+                    const refusal = statusChangeRefusal(
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        value,
+                        actor
+                    );
+                    if (refusal) { lastReason = refusal; notSaved++; continue; }
                     // shownStatus: refused if the order is no longer at the status this page showed.
                     const moved = await updateOrderStatus(id, value as any, undefined, undefined, {
                         shownStatus: order?.shipping?.status || 'Pending',
@@ -232,6 +242,13 @@ const OrdersManagement2Page: React.FC = () => {
                 const saveOne = (id: string) => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     if (!order) return Promise.resolve(true);
+                    // ORD-9: a non-admin can't bulk-unpay or bulk-cancel Paid orders.
+                    const refusal = paymentChangeRefusal(
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                        value,
+                        actor
+                    );
+                    if (refusal) { lastReason = refusal; return Promise.resolve(false); }
                     const individualUpdates: Record<string, unknown> = { paymentStatus: value };
                     if (value === 'Paid' || value === 'Settled') {
                         individualUpdates.amountReceived = order.total;

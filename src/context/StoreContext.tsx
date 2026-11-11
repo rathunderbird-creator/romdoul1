@@ -553,6 +553,10 @@ export const StoreContext = createContext<StoreContextType | undefined>(undefine
 // fast-changing tables (sales, transactions, restocks, customers) are NOT
 // snapshotted — pages fetch those themselves and show their own loaders.
 const BOOT_SNAPSHOT_KEY = 'pos_boot_snapshot_v1';
+// Proof of login minted by login_with_pin (add_auth_guards.sql). Its own key —
+// not a field on the currentUser blob — so the refresh revalidation's
+// localStorage rewrites of currentUser can never drop it.
+const SESSION_TOKEN_KEY = 'pos_session_token_v1';
 
 interface BootSnapshot {
     url: string;               // Supabase instance the data came from
@@ -680,9 +684,43 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (!safePin) return false;
 
         let user: User | undefined;
+        // Minted by login_with_pin (add_auth_guards.sql): proof this terminal
+        // really logged in, re-checked via verify_session on every refresh. A
+        // store that hasn't run that migration yet keeps today's behaviour.
+        let sessionToken: string | null = null;
 
-        // Server-side verification (check_pin, SECURITY DEFINER): the PIN is
-        // compared in the database and never needs to exist in the browser.
+        // Preferred path: login_with_pin verifies the PIN server-side AND
+        // returns a session token (SEC-2 — a forged localStorage blob can't
+        // produce one, so the next refresh logs the forger out).
+        const { data: minted, error: mintError } = await supabase.rpc('login_with_pin', {
+            p_pin: safePin,
+            p_user_id: userId || null
+        });
+        if (!mintError) {
+            const row = Array.isArray(minted) ? minted[0] : minted;
+            if (row) {
+                const known = users.find(u => u.id === row.id);
+                user = {
+                    ...(known || {}),
+                    id: row.id,
+                    name: row.name,
+                    email: row.email,
+                    roleId: row.role_id
+                } as User;
+                sessionToken = row.session_token || null;
+            }
+            if (user) return finishLogin(user, sessionToken);
+            return false;
+        }
+        if (!isRpcMissingError(mintError)) {
+            // Real failure (network blip, server error) — see the matching
+            // branch below. Never reported as a wrong password.
+            console.error('login_with_pin failed:', mintError);
+            throw new Error('Could not verify password — check the connection and try again');
+        }
+
+        // add_auth_guards.sql not applied yet: fall back to check_pin (no
+        // session token — refreshes behave exactly as before the migration).
         const { data: matched, error: rpcError } = await supabase.rpc('check_pin', {
             p_pin: safePin,
             p_user_id: userId || null
@@ -719,19 +757,59 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             throw new Error('Could not verify password — check the connection and try again');
         }
 
-        if (user) {
-            // Note: the stored snapshot never contains the PIN.
-            setCurrentUser(user);
-            localStorage.setItem('currentUser', JSON.stringify(user));
-            dispatchActivity({ action: 'user_login', description: `${user.name} logged in`, userId: user.id, userName: user.name });
-            return true;
-        }
+        if (user) return finishLogin(user, sessionToken);
         return false;
+    };
+
+    // Shared tail of both login paths. Note: the stored snapshot never
+    // contains the PIN; the session token lives under its own key so the
+    // refresh revalidation's currentUser rewrites can never drop it.
+    const finishLogin = (user: User, sessionToken: string | null): true => {
+        setCurrentUser(user);
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        try {
+            if (sessionToken) localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+            else localStorage.removeItem(SESSION_TOKEN_KEY); // legacy path: no stale token from a previous user
+        } catch { /* storage full/blocked — login still works, next refresh re-verifies */ }
+        dispatchActivity({ action: 'user_login', description: `${user.name} logged in`, userId: user.id, userName: user.name });
+        return true;
     };
 
     const logout = () => {
         setCurrentUser(null);
         localStorage.removeItem('currentUser');
+        try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
+    };
+
+    // SEC-2: re-verify the persisted session against the server-minted token.
+    // Only ever logs out on a definitive "no" from verify_session:
+    //   * RPC missing (migration not applied) → keep today's behaviour;
+    //   * network/server error → never log out on a blip;
+    //   * FALSE → the token is wrong or missing (forged/stale localStorage,
+    //     or a login that predates add_auth_guards.sql) → this terminal is out.
+    const verifyStoredSession = async (userId: string) => {
+        let token = '';
+        try { token = localStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { /* treated as missing */ }
+        try {
+            const { data, error } = await supabase.rpc('verify_session', {
+                p_user_id: userId,
+                p_token: token
+            });
+            if (error) {
+                if (!isRpcMissingError(error)) console.error('verify_session failed:', error);
+                return;
+            }
+            const valid = Array.isArray(data) ? data[0] : data;
+            // Only act when THIS user is still the live session (the refresh
+            // may have spanned a logout or user switch).
+            if (valid === false && currentUserRef.current?.id === userId) {
+                setCurrentUser(null);
+                localStorage.removeItem('currentUser');
+                try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
+            }
+        } catch (e) {
+            console.error('verify_session failed:', e);
+        }
     };
 
     const hasPermission = (permission: Permission): boolean => {
@@ -1004,6 +1082,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // spanning a logout or user switch acts on the current user.
                 const liveUser = currentUserRef.current;
                 if (liveUser) {
+                    // SEC-2: prove this terminal really logged in (a forged
+                    // localStorage session has no valid token). Fire-and-forget:
+                    // the rest of the refresh never waits on it.
+                    void verifyStoredSession(liveUser.id);
                     const freshSelf = usersResult.data.find((u: any) => u.id === liveUser.id);
                     if (!freshSelf) {
                         setCurrentUser(null);
@@ -1082,7 +1164,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 id: 'store_manager',
                                 name: 'Store Manager',
                                 description: 'Manage store operations',
-                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders', 'manage_attendance'] as any[]
+                                // SEC-3/SEC-4: manage_users is no longer a Store Manager
+                                // default (the live stores had already removed it) — an
+                                // admin can still grant it per store.
+                                permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'create_orders', 'view_orders', 'manage_attendance'] as any[]
                             },
                             {
                                 id: 'cashier',
@@ -1173,7 +1258,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     const baseRoles = [
                         { id: 'admin', name: 'Administrator', description: 'Full system access', permissions: ['view_dashboard', 'manage_inventory', 'process_sales', 'view_reports', 'manage_settings', 'manage_users', 'manage_orders', 'create_orders', 'view_orders', 'view_inventory_stock', 'manage_income_expense', 'manage_attendance', 'manage_payroll'] },
                         { id: 'accountant', name: 'Accountant', description: 'Manage finances and records', permissions: ['view_dashboard', 'view_reports', 'manage_income_expense', 'view_orders'] },
-                        { id: 'store_manager', name: 'Store Manager', description: 'Manage store operations', permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'manage_users', 'create_orders', 'view_orders', 'manage_attendance'] },
+                        // SEC-3/SEC-4: no manage_users by default (see the seed above).
+                        { id: 'store_manager', name: 'Store Manager', description: 'Manage store operations', permissions: ['view_dashboard', 'process_sales', 'view_reports', 'manage_orders', 'create_orders', 'view_orders', 'manage_attendance'] },
                         { id: 'salesman', name: 'Salesman', description: 'Sales and order viewing', permissions: ['process_sales', 'view_dashboard', 'manage_orders', 'view_orders', 'create_orders'] },
                         { id: 'cashier', name: 'Cashier', description: 'Process sales and payments', permissions: ['process_sales', 'view_dashboard', 'create_orders', 'view_orders'] },
                         { id: 'customer_care', name: 'Customer Care', description: 'Manage support and orders', permissions: ['view_dashboard', 'manage_orders', 'view_orders', 'manage_settings', 'create_orders', 'process_sales'] }
@@ -1239,7 +1325,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     useEffect(() => {
         // Hydrated from a snapshot → refresh silently in the background
         // (a non-silent refresh would re-raise the full-screen loading gate).
+        // Mount-only on purpose: same pattern (and same disable) as the
+        // refreshData effect in UserManagement.tsx.
         refreshData(!!bootSnapshot);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Persist the boot snapshot whenever its slow-changing pieces settle, so
@@ -3705,7 +3794,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     // User & Role Management
+    //
+    // SEC-3 guards: having "Manage Users" is not the same as being an admin.
+    // Without these, anyone with manage_users (historically the Store Manager
+    // default) could set their own role to Administrator, or reset the real
+    // admin's password and log in as them. Client-side defence-in-depth only —
+    // honest server-side enforcement needs per-caller identity, i.e. Supabase
+    // Auth + RLS (the separate SEC-1 project): the app writes the users table
+    // directly with the shared anon key, so a SQL guard function could not
+    // know who is asking.
+    const assertCanTouchUser = (targetId: string | null, updates: Partial<User>) => {
+        if (currentUser?.roleId === 'admin') return;
+        const target = targetId ? users.find(u => u.id === targetId) : null;
+        if (target?.roleId === 'admin') {
+            throw new Error('Only an administrator can edit or delete an admin account.');
+        }
+        if (updates.roleId === 'admin') {
+            throw new Error('Only an administrator can assign the Administrator role.');
+        }
+    };
+
     const addUser = async (userData: Omit<User, 'id'>) => {
+        assertCanTouchUser(null, userData);
         const newUser: User = { ...userData, id: Date.now().toString() + Math.random().toString(36).substring(2) };
 
         // No .select() on the insert: it would request RETURNING * — and once
@@ -3732,6 +3842,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateUser = async (id: string, updates: Partial<User>) => {
+        assertCanTouchUser(id, updates);
+        // Nobody — admin included — changes their own role: promoting yourself
+        // is the SEC-3 attack, and an admin demoting themselves could leave
+        // the store with no admin at all. Another admin does it instead.
+        const targetNow = users.find(u => u.id === id);
+        if (id === currentUser?.id && updates.roleId && updates.roleId !== (targetNow?.roleId ?? currentUser.roleId)) {
+            throw new Error('You cannot change your own role. Ask another administrator to do it.');
+        }
         const dbUpdates: any = {};
         if (updates.name) dbUpdates.name = updates.name;
         if (updates.email) dbUpdates.email = updates.email;
@@ -3752,6 +3870,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const deleteUser = async (id: string) => {
+        assertCanTouchUser(id, {});
         const { error } = await supabase.from('users').delete().eq('id', id);
         if (error) {
             console.error('Failed to delete user:', error);
@@ -3797,6 +3916,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             !updates.permissions.includes('manage_users')
         ) {
             throw new Error('You cannot remove "Manage Users" from your own role — you would lock yourself out of this page.');
+        }
+        // SEC-3: a non-admin may not escalate through the role editor —
+        // neither by widening their OWN role, nor by granting any role a
+        // permission their own role does not hold (grant it to a spare role,
+        // switch to it, and the lack of a self-role-change guard elsewhere
+        // would not even be needed). Removing permissions stays allowed.
+        if (updates.permissions && currentUser && currentUser.roleId !== 'admin') {
+            const targetRole = (config.roles || []).find(r => r.id === id);
+            const added = updates.permissions.filter(p => !(targetRole?.permissions || []).includes(p));
+            if (added.length > 0) {
+                if (id === currentUser.roleId) {
+                    throw new Error('You cannot add permissions to your own role. Ask an administrator.');
+                }
+                const ownPerms = (config.roles || []).find(r => r.id === currentUser.roleId)?.permissions || [];
+                const beyondOwn = added.filter(p => !ownPerms.includes(p));
+                if (beyondOwn.length > 0) {
+                    throw new Error(`You cannot grant permissions your own role does not have: ${beyondOwn.join(', ')}. Ask an administrator.`);
+                }
+            }
         }
         const newRoles = (config.roles || []).map(r => r.id === id ? { ...r, ...updates } : r);
         await updateConfig({ ...config, roles: newRoles });

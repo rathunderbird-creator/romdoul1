@@ -3,10 +3,12 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Store, Globe, Bell, Shield, Database } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useHeader } from '../../context/HeaderContext';
+import { useStore } from '../../context/StoreContext';
 
 const SettingsLayout: React.FC = () => {
     const { t } = useLanguage();
     const { setHeaderContent } = useHeader();
+    const { hasPermission } = useStore();
     const location = useLocation();
 
     // Default header (subpages will override this, but good to have a fallback during transitions)
@@ -27,7 +29,10 @@ const SettingsLayout: React.FC = () => {
         { path: '/settings/general', icon: Globe, label: 'General' },
         { path: '/settings/telegram', icon: Bell, label: 'Telegram' },
         { path: '/settings/security', icon: Shield, label: t('settings.security') },
-        { path: '/settings/database', icon: Database, label: 'Database' }
+        // SEC-4: Backup/Restore/Migrate has its own permission (admin-only by
+        // default) — manage_settings alone no longer shows it. The route is
+        // guarded too (App.tsx), so typing the URL doesn't bypass this.
+        ...(hasPermission('manage_database') ? [{ path: '/settings/database', icon: Database, label: 'Database' }] : [])
     ];
 
     return (
