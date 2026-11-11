@@ -79,9 +79,16 @@ export const useAccounting = () => {
             // Paged (fetchAll): the ledger holds thousands of entries, far past
             // PostgREST's ~1000-row cap. date ties constantly (it's a plain
             // DATE), so the unique id breaks the tie for a stable page order.
+            // The embedded account is trimmed to the columns consumers actually
+            // read (plus ChartOfAccount's required is_active): every line
+            // carries its own account copy, so on a tens-of-thousands-line
+            // ledger the full-row embed multiplied the payload for nothing.
+            // Only base-schema columns here — selecting a migration-added
+            // column (e.g. sub_type) would fail the whole fetch on instances
+            // that haven't run that migration.
             const data = await fetchAll<JournalEntry>((from, to) => supabase
                 .from('journal_entries')
-                .select('*, lines:journal_entry_lines(*, account:chart_of_accounts(*))')
+                .select('*, lines:journal_entry_lines(*, account:chart_of_accounts(id, account_code, account_name, account_type, is_active))')
                 .order('date', { ascending: false })
                 .order('id', { ascending: true })
                 .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries' });

@@ -382,12 +382,16 @@ const CustomerPaymentPage: React.FC = () => {
                 let rows: JeRow[];
                 let statusMissing = false;
                 try {
-                    rows = await load(`reference_id, status, ${lineCols}`);
+                    // `id` is selected so fetchAll's merge-by-id is active: without
+                    // it a row repeated across a shifted page boundary would pass
+                    // through twice (harmless for these Maps today, but the helper's
+                    // contract asks every caller to include the unique column).
+                    rows = await load(`id, reference_id, status, ${lineCols}`);
                 } catch (err) {
                     // Instances without migrations/add_entry_status.sql: every entry counts as Posted.
                     if (!/status/i.test((err as { message?: string })?.message || '')) throw err;
                     statusMissing = true;
-                    rows = await load(`reference_id, ${lineCols}`);
+                    rows = await load(`id, reference_id, ${lineCols}`);
                 }
                 const byTx = new Map<string, LedgerStatus>();
                 const debitAccountByTx = new Map<string, string>();

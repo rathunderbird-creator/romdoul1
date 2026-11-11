@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Phone, Receipt, FileText, DollarSign, Trash2, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { fetchAll } from '../../utils/fetchAll';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useWholesale } from '../../hooks/useWholesale';
@@ -57,12 +58,17 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
             setHeaderContent({ title: header(`${cust.name} — Ledger`, 'Account statement and payment history') });
 
             // Orders for this customer (matched by name), with items + payments.
-            const { data: ordData, error: oErr } = await supabase
+            // Paged (fetchAll, date + unique id for a stable order): the account
+            // statement and outstanding balance are summed from this list, so a
+            // customer past ~1000 orders must not lose rows to the row cap.
+            const ordData = await fetchAll<WholesaleOrder>((from, to) => supabase
                 .from('wholesale_orders')
                 .select('*, items:wholesale_order_items(*), payments:customer_payments(*)')
-                .ilike('customer_name', cust.name);
-            if (oErr) throw oErr;
-            setOrders((ordData || []) as WholesaleOrder[]);
+                .ilike('customer_name', cust.name)
+                .order('order_date', { ascending: true })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'WholesaleCustomerDetailsPage orders' });
+            setOrders(ordData);
         } catch (error: any) {
             console.error('Error fetching customer ledger:', error);
             showToast('Failed to load customer details: ' + error.message, 'error');
