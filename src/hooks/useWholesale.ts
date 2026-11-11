@@ -6,6 +6,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import { createInFlightGuard } from '../utils/inFlightGuard';
 import { createRetryKeys } from '../utils/retryKey';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
+import { fetchAll } from '../utils/fetchAll';
 
 // Stock, payments and the books for wholesale orders move inside the
 // database (migrations/add_wholesale_procurement_functions.sql): each save is
@@ -55,13 +56,17 @@ export const useWholesale = () => {
     const fetchCustomerPayments = useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            // Paged (fetchAll): the payments ledger and per-customer balances
+            // sum this list, so it must not stop at the ~1000-row cap. The
+            // unique id breaks payment_date/created_at ties for a stable order.
+            const data = await fetchAll<CustomerPayment>((from, to) => supabase
                 .from('customer_payments')
                 .select('*, wholesale_order:wholesale_orders(*)')
                 .order('payment_date', { ascending: false })
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            setCustomerPayments((data || []) as CustomerPayment[]);
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'useWholesale.fetchCustomerPayments' });
+            setCustomerPayments(data);
         } catch (error: any) {
             console.error('Failed to fetch customer payments:', error);
             showToast('Failed to fetch customer payments: ' + error.message, 'error');
@@ -73,20 +78,26 @@ export const useWholesale = () => {
     const fetchWholesaleOrders = useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('wholesale_orders')
-                .select('*, items:wholesale_order_items(*), payments:customer_payments(*)')
-                // order_date is a plain date, so same-day orders tie — break the tie
-                // with created_at so the newest transaction is always on top.
-                .order('order_date', { ascending: false })
-                .order('created_at', { ascending: false });
-            if (error) {
+            // Paged (fetchAll): Sales/Outstanding/Overdue totals, per-customer
+            // balances and A/R are summed from this list, so the oldest unpaid
+            // invoices must not fall off the ~1000-row cap.
+            try {
+                const data = await fetchAll<WholesaleOrder>((from, to) => supabase
+                    .from('wholesale_orders')
+                    .select('*, items:wholesale_order_items(*), payments:customer_payments(*)')
+                    // order_date is a plain date, so same-day orders tie — break the tie
+                    // with created_at so the newest transaction is always on top,
+                    // then with the unique id for a stable page order.
+                    .order('order_date', { ascending: false })
+                    .order('created_at', { ascending: false })
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'useWholesale.fetchWholesaleOrders' });
+                setTableMissing(false);
+                setWholesaleOrders(data);
+            } catch {
                 // Most likely the migration hasn't been run yet.
                 setTableMissing(true);
                 setWholesaleOrders([]);
-            } else {
-                setTableMissing(false);
-                setWholesaleOrders((data || []) as WholesaleOrder[]);
             }
         } finally {
             if (!silent) setIsLoading(false);
@@ -251,8 +262,17 @@ export const useWholesale = () => {
 
     // --- Customer directory (mirror of suppliers) ---
     const fetchCustomers = useCallback(async () => {
-        const { data, error } = await supabase.from('wholesale_customers').select('*').order('name', { ascending: true });
-        if (!error) setCustomers((data || []) as WholesaleCustomer[]);
+        try {
+            // Paged (fetchAll); names can tie, so the unique id breaks the tie.
+            const data = await fetchAll<WholesaleCustomer>((from, to) => supabase
+                .from('wholesale_customers').select('*')
+                .order('name', { ascending: true })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'useWholesale.fetchCustomers' });
+            setCustomers(data);
+        } catch (error) {
+            console.error('Failed to fetch wholesale customers:', error);
+        }
     }, []);
 
     const saveCustomer = useCallback(async (customer: Partial<WholesaleCustomer>) => {
@@ -300,14 +320,21 @@ export const useWholesale = () => {
     const nextInvoiceNumber = useCallback(async (prefix: string = 'WO'): Promise<string> => {
         const p = (prefix || 'WO').trim().replace(/-+$/, '') || 'WO';
         try {
-            const { data, error } = await supabase.from('wholesale_orders')
-                .select('invoice_number')
-                .like('invoice_number', `${p}-%`);
-            if (error) throw error;
+            // Max-scan over EVERY matching invoice, paged past the ~1000-row
+            // cap — a single unpaged read sees an arbitrary 1000 rows, so the
+            // computed max could repeat an existing number. (A same-second
+            // collision between two users remains possible until the database
+            // enforces uniqueness — that needs a migration.)
+            const data = await fetchAll<{ id: string; invoice_number: string | null }>((from, to) => supabase
+                .from('wholesale_orders')
+                .select('id, invoice_number')
+                .like('invoice_number', `${p}-%`)
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'useWholesale.nextInvoiceNumber' });
             const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const pattern = new RegExp(`^${escaped}-(\\d+)$`, 'i');
             let max = 0;
-            for (const r of data || []) {
+            for (const r of data) {
                 const m = String(r.invoice_number || '').match(pattern);
                 if (m) max = Math.max(max, parseInt(m[1], 10));
             }

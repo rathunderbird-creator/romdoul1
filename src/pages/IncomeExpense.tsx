@@ -14,6 +14,7 @@ import { getPaymentLogo, getPaymentColor } from '../utils/payment';
 import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { dayKeyFromDate } from '../utils/dateRange';
+import { fetchAll } from '../utils/fetchAll';
 
 // Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
 const parseDate = (dateStr: string) => {
@@ -230,42 +231,62 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         fetchAllCategories();
     }, []);
 
+    // Monotonic fetch id: a slower earlier fetch must never overwrite a newer
+    // filter's results after the filters change mid-flight.
+    const fetchSeqRef = useRef(0);
+
     const fetchTransactions = React.useCallback(async () => {
+        const seq = ++fetchSeqRef.current;
         setIsLoadingTransactions(true);
         try {
-            let query = supabase.from('transactions').select('*');
+            const buildQuery = (from: number, to: number) => {
+                let query = supabase.from('transactions').select('*');
 
-            if (dateRange.start) {
-                const start = new Date(dateRange.start);
-                start.setHours(0, 0, 0, 0);
-                query = query.gte('date', start.toISOString());
-            }
-            if (dateRange.end) {
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                query = query.lte('date', end.toISOString());
-            }
+                if (dateRange.start) {
+                    const start = new Date(dateRange.start);
+                    start.setHours(0, 0, 0, 0);
+                    query = query.gte('date', start.toISOString());
+                }
+                if (dateRange.end) {
+                    const end = new Date(dateRange.end);
+                    end.setHours(23, 59, 59, 999);
+                    query = query.lte('date', end.toISOString());
+                }
 
-            // Apply the exact-match filters in the query too. With no date range only
-            // the newest 1000 rows are loaded, so a category that only exists further
-            // back (e.g. the old "J&T"/"VET" shipping categories) would otherwise
-            // filter down to an empty list even though matching rows exist.
-            if (filterType !== 'All') query = query.eq('type', filterType);
-            if (filterCategory !== 'All') query = query.eq('category', filterCategory);
-            if (filterShippingCo !== 'All') query = query.eq('shipping_co', filterShippingCo);
+                // Apply the exact-match filters in the query too. With no date range only
+                // the newest 1000 rows are loaded, so a category that only exists further
+                // back (e.g. the old "J&T"/"VET" shipping categories) would otherwise
+                // filter down to an empty list even though matching rows exist.
+                if (filterType !== 'All') query = query.eq('type', filterType);
+                if (filterCategory !== 'All') query = query.eq('category', filterCategory);
+                if (filterShippingCo !== 'All') query = query.eq('shipping_co', filterShippingCo);
 
+                // Many payments share one timestamp (UTC midnight), so the
+                // unique id breaks date ties for a stable page order.
+                return query
+                    .order('date', { ascending: false })
+                    .order('id', { ascending: true })
+                    .range(from, to);
+            };
+
+            let data: Transaction[];
             if (!dateRange.start && !dateRange.end) {
-                query = query.limit(1000); // Limit to prevent freezing on "All" dates
+                // Deliberately one page on "All" dates, to prevent freezing.
+                const { data: page, error } = await buildQuery(0, 999);
+                if (error) throw error;
+                data = (page || []) as Transaction[];
+            } else {
+                // A date range drives totals, the category breakdown and the
+                // Excel export — page past the ~1000-row cap so none of them
+                // silently undercount.
+                data = await fetchAll<Transaction>(buildQuery, 1000, { label: 'IncomeExpense.fetchTransactions' });
             }
 
-            const { data, error } = await query.order('date', { ascending: false });
-            if (error) throw error;
-
-            setLocalTransactions((data || []) as Transaction[]);
+            if (seq === fetchSeqRef.current) setLocalTransactions(data);
         } catch (error) {
             console.error("Failed to fetch transactions:", error);
         } finally {
-            setIsLoadingTransactions(false);
+            if (seq === fetchSeqRef.current) setIsLoadingTransactions(false);
         }
     }, [dateRange, filterType, filterCategory, filterShippingCo]);
 

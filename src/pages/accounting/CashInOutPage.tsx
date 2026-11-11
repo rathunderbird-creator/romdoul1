@@ -12,6 +12,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
 import type { ChartOfAccount } from '../../types';
 import { dayKeyFromDate, addDays, daysBetween } from '../../utils/dateRange';
+import { fetchAll } from '../../utils/fetchAll';
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const BLUE = '#3B82F6', RED = '#EF4444', GREEN = '#10B981';
@@ -66,17 +67,15 @@ const CashInOutPage: React.FC = () => {
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
                 if (accErr) throw accErr;
 
-                const all: RawEntry[] = [];
-                for (let from = 0; from < 100000; from += 1000) {
-                    const { data, error } = await supabase
-                        .from('journal_entries')
-                        .select('*, lines:journal_entry_lines(*)')
-                        .order('date', { ascending: true })
-                        .range(from, from + 999);
-                    if (error) throw error;
-                    all.push(...((data || []) as RawEntry[]));
-                    if (!data || data.length < 1000) break;
-                }
+                // Paged with the unique id breaking date ties (date is a plain
+                // DATE, so dozens of entries share each value) and merged by
+                // id, so entries are neither double-counted nor skipped.
+                const all = await fetchAll<RawEntry>((from, to) => supabase
+                    .from('journal_entries')
+                    .select('*, lines:journal_entry_lines(*)')
+                    .order('date', { ascending: true })
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'CashInOutPage ledger' });
                 if (!alive) return;
                 setAccounts(accs || []);
                 setEntries(all);
