@@ -10,6 +10,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useWholesale } from '../../hooks/useWholesale';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
+import { fetchAll } from '../../utils/fetchAll';
 import { RecordCustomerPaymentModal } from '../../components';
 import Modal from '../../components/Modal';
 import type { CustomerPayment } from '../../types';
@@ -88,7 +89,21 @@ const WholesalePaymentsPage: React.FC = () => {
         let alive = true;
         (async () => {
             if (customerPayments.length === 0) { setPaymentStatus(new Map()); return; }
-            const { data: txs } = await supabase.from('transactions').select('id, description').like('description', '%#WSP-%');
+            // Paged (fetchAll, ordered by the unique id): one marker transaction
+            // exists per payment, so past ~1000 payments a single unpaged read
+            // returns an arbitrary 1000 rows and every payment whose marker fell
+            // off would wrongly show as Draft (and could flap between loads).
+            let txs: { id: string; description: string | null }[] = [];
+            try {
+                txs = await fetchAll((from, to) => supabase
+                    .from('transactions')
+                    .select('id, description')
+                    .like('description', '%#WSP-%')
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'WholesalePaymentsPage marker transactions' });
+            } catch (e) {
+                console.error('Failed to load payment marker transactions:', e);
+            }
             if (!alive) return;
             const entryByRef = new Map(journalEntries.map(e => [e.reference_id, e]));
             const next = new Map<string, PayStatus>();

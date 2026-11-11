@@ -7,6 +7,7 @@ import { createInFlightGuard } from '../utils/inFlightGuard';
 import { createRetryKeys } from '../utils/retryKey';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 import { fetchAll } from '../utils/fetchAll';
+import { isMissingTableError, errMessage } from '../utils/supabaseErrors';
 
 // Stock, payments and the books for wholesale orders move inside the
 // database (migrations/add_wholesale_procurement_functions.sql): each save is
@@ -94,15 +95,23 @@ export const useWholesale = () => {
                     .range(from, to), 1000, { label: 'useWholesale.fetchWholesaleOrders' });
                 setTableMissing(false);
                 setWholesaleOrders(data);
-            } catch {
-                // Most likely the migration hasn't been run yet.
-                setTableMissing(true);
-                setWholesaleOrders([]);
+            } catch (error) {
+                // Only a missing relation means "migration hasn't been run yet".
+                // The paged load makes several sequential requests, so one
+                // transient network blip mid-paging must not discard the rows
+                // already on screen or flip the UI into the migration banner.
+                if (isMissingTableError(error)) {
+                    setTableMissing(true);
+                    setWholesaleOrders([]);
+                } else {
+                    console.error('Failed to fetch wholesale orders:', error);
+                    showToast('Failed to fetch wholesale orders: ' + errMessage(error), 'error');
+                }
             }
         } finally {
             if (!silent) setIsLoading(false);
         }
-    }, []);
+    }, [showToast]);
 
     // Create a wholesale credit sale: stock leaves the company now, money comes
     // later. One database function (create_wholesale_order) checks the stock
@@ -320,23 +329,36 @@ export const useWholesale = () => {
     const nextInvoiceNumber = useCallback(async (prefix: string = 'WO'): Promise<string> => {
         const p = (prefix || 'WO').trim().replace(/-+$/, '') || 'WO';
         try {
-            // Max-scan over EVERY matching invoice, paged past the ~1000-row
-            // cap — a single unpaged read sees an arbitrary 1000 rows, so the
-            // computed max could repeat an existing number. (A same-second
-            // collision between two users remains possible until the database
-            // enforces uniqueness — that needs a migration.)
-            const data = await fetchAll<{ id: string; invoice_number: string | null }>((from, to) => supabase
+            // Highest numeric suffix computed SERVER-SIDE-ordered, never from a
+            // client scan of every matching row (the old full paged scan made
+            // one sequential request per 1000 invoices on every save and, past
+            // the pager's 50k ceiling, silently computed the max from a prefix
+            // of the rows — which could repeat an existing number). Within one
+            // digit-LENGTH class ("WO-____" = exactly four characters after the
+            // dash), lexicographic order equals numeric order, so each class's
+            // max sits at the top of a descending sort. Classes of 1..10 digits
+            // are probed in parallel: a constant ten small requests however
+            // large the table grows. (A same-second collision between two users
+            // remains possible until the database enforces uniqueness — that
+            // needs a migration.)
+            const classes = await Promise.all(Array.from({ length: 10 }, (_, i) => supabase
                 .from('wholesale_orders')
-                .select('id, invoice_number')
-                .like('invoice_number', `${p}-%`)
-                .order('id', { ascending: true })
-                .range(from, to), 1000, { label: 'useWholesale.nextInvoiceNumber' });
+                .select('invoice_number')
+                .like('invoice_number', `${p}-${'_'.repeat(i + 1)}`)
+                .order('invoice_number', { ascending: false })
+                .limit(200)));
             const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const pattern = new RegExp(`^${escaped}-(\\d+)$`, 'i');
             let max = 0;
-            for (const r of data) {
-                const m = String(r.invoice_number || '').match(pattern);
-                if (m) max = Math.max(max, parseInt(m[1], 10));
+            for (const { data, error } of classes) {
+                if (error) throw error;
+                // The first digits-only value in the descending page is this
+                // class's numeric max; same-length values with other characters
+                // sort above the digits and are skipped by the pattern.
+                for (const r of data || []) {
+                    const m = String(r.invoice_number || '').match(pattern);
+                    if (m) { max = Math.max(max, parseInt(m[1], 10)); break; }
+                }
             }
             return `${p}-${String(max + 1).padStart(4, '0')}`;
         } catch (e) {

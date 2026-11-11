@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Phone, Receipt, FileText, DollarSign, Trash2, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { fetchAll } from '../../utils/fetchAll';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
@@ -100,21 +101,26 @@ const SupplierDetailsPage = () => {
                     )
                 });
 
-                // Fetch POs
-                const { data: poData, error: poError } = await supabase
+                // Fetch POs — paged (fetchAll, unique id order): the supplier's
+                // statement and balance are summed from these lists, so a
+                // high-volume supplier past ~1000 POs or payments must not
+                // lose rows to the ~1000-row cap.
+                const poData = await fetchAll((from, to) => supabase
                     .from('purchase_orders')
                     .select('*, items:purchase_order_items(*, product:products(name))')
-                    .eq('supplier_id', id);
-                if (poError) throw poError;
-                setPurchaseOrders(poData || []);
+                    .eq('supplier_id', id)
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'SupplierDetailsPage purchase orders' });
+                setPurchaseOrders(poData);
 
-                // Fetch Payments
-                const { data: payData, error: payError } = await supabase
+                // Fetch Payments — paged for the same reason.
+                const payData = await fetchAll((from, to) => supabase
                     .from('supplier_payments')
                     .select('*, purchase_order:purchase_orders(id)')
-                    .eq('supplier_id', id);
-                if (payError) throw payError;
-                setPayments(payData || []);
+                    .eq('supplier_id', id)
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'SupplierDetailsPage payments' });
+                setPayments(payData);
 
             } catch (error: any) {
                 console.error("Error fetching supplier ledger:", error);

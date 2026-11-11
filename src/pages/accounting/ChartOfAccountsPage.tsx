@@ -7,6 +7,7 @@ import { Modal } from '../../components';
 import { useAccounting } from '../../hooks/useAccounting';
 import type { ChartOfAccount } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { fetchAll } from '../../utils/fetchAll';
 
 const SAMPLE_ACCOUNTS = [
     { account_code: '100', account_name: 'Current Assets', account_type: 'Asset', is_active: true },
@@ -133,19 +134,18 @@ const ChartOfAccountsPage = () => {
         (async () => {
             try {
                 const sums: Record<string, { debit: number; credit: number }> = {};
-                for (let from = 0; from < 100000; from += 1000) {
-                    const { data, error } = await supabase
-                        .from('journal_entry_lines')
-                        .select('account_id, debit, credit')
-                        .order('id', { ascending: true })
-                        .range(from, from + 999);
-                    if (error) throw error;
-                    for (const l of data || []) {
-                        const s = sums[l.account_id] || (sums[l.account_id] = { debit: 0, credit: 0 });
-                        s.debit += Number(l.debit) || 0;
-                        s.credit += Number(l.credit) || 0;
-                    }
-                    if (!data || data.length < 1000) break;
+                // Paged through fetchAll so a line posted while the pages load
+                // can't be returned twice across a shifted page boundary and be
+                // summed twice — fetchAll merges rows by the selected unique id.
+                const lines = await fetchAll<{ id: string; account_id: string; debit: number | null; credit: number | null }>((from, to) => supabase
+                    .from('journal_entry_lines')
+                    .select('id, account_id, debit, credit')
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'ChartOfAccountsPage balances' });
+                for (const l of lines) {
+                    const s = sums[l.account_id] || (sums[l.account_id] = { debit: 0, credit: 0 });
+                    s.debit += Number(l.debit) || 0;
+                    s.credit += Number(l.credit) || 0;
                 }
                 if (alive) setLineSums(sums);
             } catch (e) {

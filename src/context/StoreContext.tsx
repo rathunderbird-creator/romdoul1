@@ -823,6 +823,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     return { data, error: null };
                 } catch (error) { return { data: null, error }; }
             };
+            const fetchAllCustomers = async () => {
+                try {
+                    // Paged: customers grow with every new retail buyer, and the
+                    // POS customer picker and checkout's existing-customer lookup
+                    // read this list — past the ~1000-row cap an unpaged read
+                    // would silently drop older customers (live counts were 0 at
+                    // the time of this change; paged anyway so growth can't
+                    // reintroduce the bug).
+                    const data = await fetchAll((from, to) => supabase
+                        .from('customers')
+                        // All customer detail fields, not just id/name/phone: the checkout
+                        // form saves email/address/city/platform/page, and a narrower select
+                        // would silently drop them from the in-memory store on every reload.
+                        .select('id, name, phone, email, address, city, platform, page')
+                        .order('id', { ascending: true })
+                        .range(from, to), 1000, { label: 'StoreContext.refreshData customers' });
+                    return { data, error: null };
+                } catch (error) { return { data: null, error }; }
+            };
             const fetchAllWarehouseStock = async () => {
                 try {
                     const data = await fetchAll((from, to) => supabase
@@ -837,10 +856,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Fetch core data.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult, warehousesResult, warehouseStockResult] = await Promise.all([
                 fetchAllProductsRows(),
-                // Select all customer detail fields, not just id/name/phone: the checkout
-                // form saves email/address/city/platform/page, and a narrower select would
-                // silently drop them from the in-memory store on every reload.
-                supabase.from('customers').select('id, name, phone, email, address, city, platform, page'),
+                fetchAllCustomers(),
                 fetchAllSales(),
                 supabase.from('app_config').select('data').eq('id', 1).single(),
                 // Explicit columns — never the pin. PINs are verified server-side

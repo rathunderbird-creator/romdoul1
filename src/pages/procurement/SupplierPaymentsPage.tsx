@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
 import DateRangePicker from '../../components/DateRangePicker';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { fetchAll } from '../../utils/fetchAll';
 import type { SupplierPayment, PurchaseOrder } from '../../types';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -105,7 +106,21 @@ const SupplierPaymentsPage: React.FC = () => {
         let alive = true;
         (async () => {
             if (supplierPayments.length === 0) { setPaymentStatus(new Map()); setPaymentEntryId(new Map()); return; }
-            const { data: txs } = await supabase.from('transactions').select('id, description').like('description', '%#SPP-%');
+            // Paged (fetchAll, ordered by the unique id): one marker transaction
+            // exists per payment, so past ~1000 payments a single unpaged read
+            // returns an arbitrary 1000 rows and every payment whose marker fell
+            // off would wrongly show as Draft with no entry to post.
+            let txs: { id: string; description: string | null }[] = [];
+            try {
+                txs = await fetchAll((from, to) => supabase
+                    .from('transactions')
+                    .select('id, description')
+                    .like('description', '%#SPP-%')
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'SupplierPaymentsPage marker transactions' });
+            } catch (e) {
+                console.error('Failed to load payment marker transactions:', e);
+            }
             if (!alive) return;
             const entryByRef = new Map(journalEntries.map(e => [e.reference_id, e]));
             const next = new Map<string, PayStatus>();

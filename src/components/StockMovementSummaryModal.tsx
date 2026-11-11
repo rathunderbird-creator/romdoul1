@@ -133,12 +133,16 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
             // those queries return, keeping the rollback math consistent.
             let whQty: Map<string, number> | null = null;
             if (warehouseId) {
-                const { data: whRows, error: whErr } = await supabase
+                // Paged (fetchAll): warehouse_stock grows as products × warehouses,
+                // so one warehouse stocking >1000 products would lose rows to the
+                // row cap and compute old/new stock from 0 for those products.
+                const whRows = await fetchAll<{ id: string; product_id: string; quantity: number | null }>((from, to) => supabase
                     .from('warehouse_stock')
-                    .select('product_id, quantity')
-                    .eq('warehouse_id', warehouseId);
-                if (whErr) throw whErr;
-                whQty = new Map((whRows || []).map((ws: any) => [ws.product_id, ws.quantity || 0]));
+                    .select('id, product_id, quantity')
+                    .eq('warehouse_id', warehouseId)
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'StockMovementSummaryModal warehouse stock' });
+                whQty = new Map(whRows.map(ws => [ws.product_id, ws.quantity || 0]));
                 if (isStale()) return;
             }
 
