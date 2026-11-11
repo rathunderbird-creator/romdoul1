@@ -8,6 +8,7 @@ import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
+import { applyConfigOpsLocally, type ConfigOps } from '../utils/configOps';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -685,6 +686,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const currentUserRef = useRef(currentUser);
     currentUserRef.current = currentUser;
 
+    // APP-2: true only once the config on screen is the store's REAL config —
+    // loaded from the database, or freshly created after the database
+    // confirmed there was none. While false, the state above may be nothing
+    // but factory defaults (a boot snapshot also starts false: it is real but
+    // possibly stale, and the first edit re-reads before writing anyway).
+    const configLoadedRef = useRef(false);
+    // Whether update_app_config (migrations/add_config_functions.sql) exists
+    // in this store's database: unknown until the first write probes it.
+    const configRpcReadyRef = useRef<boolean | null>(null);
+
     const login = async (pin: string, userId?: string): Promise<boolean> => {
         const safePin = String(pin).trim();
         if (!safePin) return false;
@@ -1224,8 +1235,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     };
                     setConfig(defaultConfig);
                     await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
+                    // The database CONFIRMED there is no config row, so these
+                    // defaults really are the store's config now.
+                    configLoadedRef.current = true;
                 }
-                // If it's another error (e.g. network), do nothing to DB, retain current state fallback
+                // If it's another error (e.g. network), do nothing to DB, retain
+                // current state fallback — and leave configLoadedRef false, so a
+                // settings edit re-reads from the database first instead of
+                // treating the factory defaults as the real config (APP-2).
             } else if (configResult.data) {
                 const loadedConfig = configResult.data.data;
 
@@ -1337,6 +1354,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 } else {
                     setConfig(loadedConfig);
                 }
+                configLoadedRef.current = true;
             }
         } catch (error) {
             console.error("Error fetching data:", error);
@@ -1393,102 +1411,167 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return Array.from(new Set([...userNames, ...(config.customerCare || [])])).filter(Boolean);
     }, [users, config.customerCare]);
 
-    // Sync Config to DB. Optimistic: the UI updates at once; if the save
-    // fails the change is ROLLED BACK and the error rethrown, so callers can
-    // show it — otherwise a failed write (e.g. RLS on app_config of a
-    // misconfigured instance) silently vanished on the next reload.
-    const updateConfig = async (newConfig: ConfigState) => {
-        const previous = config;
-        setConfig(newConfig);
-        const { error } = await supabase.from('app_config').upsert({ id: 1, data: newConfig });
-        if (error) {
-            console.error('Failed to update config in Supabase:', error);
-            setConfig(previous);
-            throw new Error('Failed to update configuration: ' + error.message);
+    // Merge a config blob the database handed back into local state.
+    // telegramConfigs is dropped: those live in their own table (injected by
+    // refreshData) and an old blob may still carry a stale legacy copy.
+    const absorbServerConfig = (server: Record<string, unknown>) => {
+        const { telegramConfigs: _staleBlobCopy, ...rest } = server;
+        void _staleBlobCopy;
+        setConfig(prev => ({ ...prev, ...rest } as ConfigState));
+        configLoadedRef.current = true;
+    };
+
+    // Sync Config to DB — per-key operations (audit APP-1). Every settings
+    // write used to upsert the ENTIRE blob from this terminal's in-memory
+    // copy (re-read only on boot/20-min refresh), silently reverting whatever
+    // other terminals had saved since. Now the client sends only the changed
+    // keys' operations and the database (update_app_config,
+    // migrations/add_config_functions.sql) locks the row and merges them into
+    // the STORED value: writers to different keys both win; same-key 'set' is
+    // last-write-wins (fine for scalars); array keys use append/removeItems
+    // so two terminals marking different scammers both keep theirs.
+    //
+    // Optimistic: the UI updates at once; if the save fails the change is
+    // rolled back and the error rethrown so callers can show it.
+    const updateConfigOps = async (ops: ConfigOps) => {
+        // APP-2: never write from a config that never loaded — the in-memory
+        // state would be factory defaults, and even a scoped op (say roles
+        // updateItems) built from them can be wrong. Re-read first; refuse
+        // the edit if that also fails.
+        if (!configLoadedRef.current) {
+            const { data: row, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
+            if (!error && row?.data && typeof row.data === 'object') {
+                absorbServerConfig(row.data as Record<string, unknown>);
+            } else if (error?.code === 'PGRST116') {
+                // The database CONFIRMED there is no config row: this really
+                // is a fresh store, so the defaults are its config.
+                configLoadedRef.current = true;
+            } else {
+                throw new Error('Settings have not loaded from the database yet and could not be re-read, so this change was NOT saved — otherwise it could overwrite the store\'s real settings with defaults. Check the connection and try again.');
+            }
+        }
+        let snapshot: ConfigState | null = null;
+        setConfig(prev => {
+            snapshot = prev;
+            return applyConfigOpsLocally(prev, ops);
+        });
+        try {
+            // Preferred path: merge inside the database.
+            if (configRpcReadyRef.current !== false) {
+                const { data, error } = await supabase.rpc('update_app_config', { p_ops: ops });
+                if (!error) {
+                    configRpcReadyRef.current = true;
+                    if (data && typeof data === 'object' && !Array.isArray(data)) {
+                        // Refresh the cache from the merged result, picking up
+                        // other terminals' edits along the way.
+                        absorbServerConfig(data as Record<string, unknown>);
+                    }
+                    return;
+                }
+                if (!isRpcMissingError(error)) {
+                    throw new Error('Failed to update configuration: ' + error.message);
+                }
+                // add_config_functions.sql not run in this store yet — no
+                // refusal (config edits are routine): legacy path below.
+                configRpcReadyRef.current = false;
+                console.warn('update_app_config is missing: run migrations/add_config_functions.sql in this store\'s Supabase SQL editor so settings merge safely across terminals. Falling back to whole-blob writes until then.');
+            }
+            // Legacy fallback: read the stored blob, apply the SAME operations
+            // to it, write it back. Still scoped to the changed keys — a stale
+            // screen no longer reverts other keys; only two same-moment
+            // writers can still race (the old behaviour, until the migration
+            // is run).
+            const { data: row, error: readErr } = await supabase.from('app_config').select('data').eq('id', 1).single();
+            let base: Record<string, unknown>;
+            if (!readErr && row?.data && typeof row.data === 'object') {
+                base = row.data as Record<string, unknown>;
+            } else if (readErr?.code === 'PGRST116') {
+                base = {}; // genuinely no row yet: a fresh store
+            } else {
+                // Read failed, but the config on screen IS a real loaded one
+                // (guarded above) — keep the edit working from it, exactly
+                // like the pre-migration behaviour.
+                base = { ...(snapshot ?? config) } as unknown as Record<string, unknown>;
+            }
+            const merged = applyConfigOpsLocally(base, ops);
+            const { error: writeErr } = await supabase.from('app_config').upsert({ id: 1, data: merged });
+            if (writeErr) throw new Error('Failed to update configuration: ' + writeErr.message);
+            absorbServerConfig(merged);
+        } catch (e) {
+            console.error('Failed to update config in Supabase:', e);
+            if (snapshot) setConfig(snapshot); // roll back the optimistic update
+            throw e instanceof Error ? e : new Error(String(e));
         }
     };
 
     // Prepend a new order id to config.salesOrder WITHOUT clobbering the rest
-    // of the config. Order creation used to upsert the entire in-memory blob,
-    // so a terminal holding a stale config (roles, blocklist, settings edited
-    // on another machine) silently reverted those edits with every new order.
-    // Read-merge-write scopes the change to salesOrder alone.
+    // of the config — now just a scoped op; losing the manual row position is
+    // never worth failing the order, so errors are only logged.
     const prependToSalesOrder = async (saleId: string) => {
-        setConfig(prev => ({ ...prev, salesOrder: [saleId, ...(prev.salesOrder || [])] }));
         try {
-            const { data: cfgRow, error: readErr } = await supabase.from('app_config').select('data').eq('id', 1).single();
-            // NEVER write after a failed/empty read: merging into {} would
-            // replace the whole config blob with just salesOrder, destroying
-            // roles, the scammer blocklist, shipping settings, everything.
-            // The manual row position for one order is not worth that risk.
-            if (readErr || !cfgRow?.data || typeof cfgRow.data !== 'object') {
-                console.error('Skipped persisting sales order position (config read failed):', readErr?.message || 'no config data');
-                return;
-            }
-            const freshData = cfgRow.data as any;
-            const merged = { ...freshData, salesOrder: [saleId, ...(freshData.salesOrder || [])] };
-            const { error } = await supabase.from('app_config').upsert({ id: 1, data: merged });
-            if (error) console.error('Failed to persist sales order position:', error);
+            await updateConfigOps({ salesOrder: { op: 'prepend', items: [saleId] } });
         } catch (e) {
             console.error('Failed to persist sales order position:', e);
         }
     };
 
-    // The add/remove helpers RETURN updateConfig's promise so the UI (e.g.
-    // ConfigModal) can await and surface a failed save; the lists are read
-    // defensively for the same reason as the load-time normalisation above.
+    // The add/remove helpers RETURN updateConfigOps' promise so the UI (e.g.
+    // ConfigModal) can await and surface a failed save. Each sends ONLY its
+    // own key's operation: appends/removals merge additively in the database,
+    // so two terminals editing different lists — or adding different entries
+    // to the SAME list — no longer overwrite each other (APP-1). The "already
+    // there" early-returns stay as a UI nicety, but the database's identity
+    // check is what actually prevents duplicates.
     const addShippingCompany = (name: string) => {
-        const list = config.shippingCompanies || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, shippingCompanies: [...list, name] });
+        if ((config.shippingCompanies || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ shippingCompanies: { op: 'append', items: [name] } });
     };
 
     const removeShippingCompany = (name: string) => {
-        return updateConfig({ ...config, shippingCompanies: (config.shippingCompanies || []).filter(c => c !== name) });
+        return updateConfigOps({ shippingCompanies: { op: 'removeItems', values: [name] } });
     };
 
     const updateShippingRate = (company: string, rate: number) => {
-        return updateConfig({ ...config, shippingRates: { ...(config.shippingRates || {}), [company]: rate } });
+        return updateConfigOps({ shippingRates: { op: 'merge', value: { [company]: rate } } });
     };
 
     // Tracking page URL per shipping company ({tracking} = waybill number).
     // An empty template removes the override (a recognised carrier such as
     // J&T then falls back to its built-in template).
     const updateTrackingUrlTemplate = (company: string, template: string) => {
-        const next = { ...(config.trackingUrlTemplates || {}) };
         const t = template.trim();
-        if (t) next[company] = t; else delete next[company];
-        return updateConfig({ ...config, trackingUrlTemplates: next });
+        return updateConfigOps({
+            trackingUrlTemplates: t
+                ? { op: 'merge', value: { [company]: t } }
+                : { op: 'unsetKeys', keys: [company] }
+        });
     };
 
     const addSalesman = (name: string) => {
-        const list = config.salesmen || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, salesmen: [...list, name] });
+        if ((config.salesmen || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ salesmen: { op: 'append', items: [name] } });
     };
 
     const removeSalesman = (name: string) => {
-        return updateConfig({ ...config, salesmen: (config.salesmen || []).filter(s => s !== name) });
+        return updateConfigOps({ salesmen: { op: 'removeItems', values: [name] } });
     };
 
     const addCategory = (name: string) => {
-        const list = config.categories || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, categories: [...list, name] });
+        if ((config.categories || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ categories: { op: 'append', items: [name] } });
     };
 
     const removeCategory = (name: string) => {
-        return updateConfig({ ...config, categories: (config.categories || []).filter(c => c !== name) });
+        return updateConfigOps({ categories: { op: 'removeItems', values: [name] } });
     };
 
     const addPage = (name: string) => {
-        const list = config.pages || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, pages: [...list, name] });
+        if ((config.pages || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ pages: { op: 'append', items: [name] } });
     };
 
     const removePage = (name: string) => {
-        return updateConfig({ ...config, pages: (config.pages || []).filter(p => p !== name) });
+        return updateConfigOps({ pages: { op: 'removeItems', values: [name] } });
     };
 
     // Districts/communes layered on top of the official src/data/cambodia.json
@@ -1499,70 +1582,70 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const trimmed = name.trim();
         if (!trimmed) return Promise.resolve();
         const entry = { code: `custom-${generateUUID()}`, provinceCode, khmer: trimmed, latin: trimmed };
-        return updateConfig({ ...config, customDistricts: [...(config.customDistricts || []), entry] });
+        return updateConfigOps({ customDistricts: { op: 'append', items: [entry], idKey: 'code' } });
     };
 
     const removeDistrictEntry = (code: string, isCustom: boolean) => {
         if (isCustom) {
-            return updateConfig({ ...config, customDistricts: (config.customDistricts || []).filter(d => d.code !== code) });
+            return updateConfigOps({ customDistricts: { op: 'removeItems', values: [code], idKey: 'code' } });
         }
         if ((config.removedDistrictCodes || []).includes(code)) return Promise.resolve();
-        return updateConfig({ ...config, removedDistrictCodes: [...(config.removedDistrictCodes || []), code] });
+        return updateConfigOps({ removedDistrictCodes: { op: 'append', items: [code] } });
     };
 
     const addCustomCommune = (districtCode: string, name: string) => {
         const trimmed = name.trim();
         if (!trimmed) return Promise.resolve();
         const entry = { code: `custom-${generateUUID()}`, districtCode, khmer: trimmed, latin: trimmed };
-        return updateConfig({ ...config, customCommunes: [...(config.customCommunes || []), entry] });
+        return updateConfigOps({ customCommunes: { op: 'append', items: [entry], idKey: 'code' } });
     };
 
     const removeCommuneEntry = (code: string, isCustom: boolean) => {
         if (isCustom) {
-            return updateConfig({ ...config, customCommunes: (config.customCommunes || []).filter(c => c.code !== code) });
+            return updateConfigOps({ customCommunes: { op: 'removeItems', values: [code], idKey: 'code' } });
         }
         if ((config.removedCommuneCodes || []).includes(code)) return Promise.resolve();
-        return updateConfig({ ...config, removedCommuneCodes: [...(config.removedCommuneCodes || []), code] });
+        return updateConfigOps({ removedCommuneCodes: { op: 'append', items: [code] } });
     };
 
     const addCustomerCare = (name: string) => {
-        const list = config.customerCare || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, customerCare: [...list, name] });
+        if ((config.customerCare || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ customerCare: { op: 'append', items: [name] } });
     };
 
     const removeCustomerCare = (name: string) => {
-        return updateConfig({ ...config, customerCare: (config.customerCare || []).filter(c => c !== name) });
+        return updateConfigOps({ customerCare: { op: 'removeItems', values: [name] } });
     };
 
     const addPaymentMethod = (name: string) => {
-        const list = config.paymentMethods || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, paymentMethods: [...list, name] });
+        if ((config.paymentMethods || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ paymentMethods: { op: 'append', items: [name] } });
     };
 
     const removePaymentMethod = (name: string) => {
-        return updateConfig({ ...config, paymentMethods: (config.paymentMethods || []).filter(p => p !== name) });
+        return updateConfigOps({ paymentMethods: { op: 'removeItems', values: [name] } });
     };
 
     const addCity = (name: string) => {
-        const list = config.cities || [];
-        if (list.includes(name)) return Promise.resolve();
-        return updateConfig({ ...config, cities: [...list, name] });
+        if ((config.cities || []).includes(name)) return Promise.resolve();
+        return updateConfigOps({ cities: { op: 'append', items: [name] } });
     };
 
     const removeCity = (name: string) => {
-        return updateConfig({ ...config, cities: (config.cities || []).filter(c => c !== name) });
+        return updateConfigOps({ cities: { op: 'removeItems', values: [name] } });
     };
 
     // All blocklist matching is by normalized (digits-only) phone — entries and
     // order snapshots carry mixed formats, and exact-string comparison let
-    // blocked customers slip through.
+    // blocked customers slip through. The database applies the same rule
+    // (norm: 'phone'), so two terminals marking DIFFERENT scammers at the same
+    // moment both land on the list, and marking the same one twice doesn't
+    // duplicate it (APP-1's scenario).
     const addBlockedCustomer = async (customer: BlockedCustomer) => {
         const existing = config.blockedCustomers || [];
         if (existing.some(c => normalizePhone(c.phone) === normalizePhone(customer.phone))) return; // already blocked
         try {
-            await updateConfig({ ...config, blockedCustomers: [...existing, customer] });
+            await updateConfigOps({ blockedCustomers: { op: 'append', items: [customer], idKey: 'phone', norm: 'phone' } });
         } catch (error: any) {
             alert("Failed to mark scammer: " + error.message);
         }
@@ -1580,41 +1663,36 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         if (newCustomers.length === 0) return;
         try {
-            await updateConfig({ ...config, blockedCustomers: [...existing, ...newCustomers] });
+            await updateConfigOps({ blockedCustomers: { op: 'append', items: newCustomers, idKey: 'phone', norm: 'phone' } });
         } catch (error: any) {
             alert("Failed to mark scammers: " + error.message);
         }
     };
 
     const removeBlockedCustomer = (phone: string) => {
-        const key = normalizePhone(phone);
-        const existing = config.blockedCustomers || [];
-        updateConfig({ ...config, blockedCustomers: existing.filter(c => normalizePhone(c.phone) !== key) });
+        updateConfigOps({ blockedCustomers: { op: 'removeItems', values: [phone], idKey: 'phone', norm: 'phone' } });
     };
 
-    // Batched unblock in ONE config write: looping removeBlockedCustomer built
-    // every removal from the same stale array, so only the last call survived.
+    // Batched unblock in ONE config write.
     const removeBlockedCustomers = (phones: string[]) => {
-        const keys = new Set(phones.map(normalizePhone));
-        const existing = config.blockedCustomers || [];
-        updateConfig({ ...config, blockedCustomers: existing.filter(c => !keys.has(normalizePhone(c.phone))) });
+        updateConfigOps({ blockedCustomers: { op: 'removeItems', values: phones, idKey: 'phone', norm: 'phone' } });
     };
 
+    // The phone is the entry's identity: updates may change name/reason/etc.,
+    // never the phone itself (block the new number instead).
     const updateBlockedCustomer = (phone: string, updates: Partial<BlockedCustomer>) => {
         const key = normalizePhone(phone);
-        const existing = config.blockedCustomers || [];
-        updateConfig({
-            ...config,
-            blockedCustomers: existing.map(c => normalizePhone(c.phone) === key ? { ...c, ...updates } : c)
-        });
+        const entry = (config.blockedCustomers || []).find(c => normalizePhone(c.phone) === key);
+        if (!entry) return;
+        updateConfigOps({ blockedCustomers: { op: 'updateItems', items: [{ ...entry, ...updates, phone: entry.phone }], idKey: 'phone', norm: 'phone' } });
     };
 
     const toggleProductPin = (productId: string) => {
         const pinned = config.pinnedProducts || [];
         if (pinned.includes(productId)) {
-            updateConfig({ ...config, pinnedProducts: pinned.filter(id => id !== productId) });
+            updateConfigOps({ pinnedProducts: { op: 'removeItems', values: [productId] } });
         } else {
-            updateConfig({ ...config, pinnedProducts: [...pinned, productId] });
+            updateConfigOps({ pinnedProducts: { op: 'append', items: [productId] } });
         }
     };
 
@@ -1642,8 +1720,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     };
 
+    // A drag reorder is a whole-array statement by nature: 'set' (last write
+    // wins for simultaneous drags, which is the only sane outcome) — but it
+    // no longer touches any OTHER key, so an Inventory drag can't wipe the
+    // blocklist or roles any more.
     const updateProductOrder = (order: string[]) => {
-        updateConfig({ ...config, productOrder: order });
+        updateConfigOps({ productOrder: { op: 'set', value: order } });
     };
 
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -3281,9 +3363,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Insert items
             remainingItems.splice(insertIndex, 0, ...itemsToMove);
 
-            // Update Config
+            // Update Config (whole-array 'set': a manual reorder IS a statement
+            // about the whole order; scoped to this one key)
             const newOrderIds = remainingItems.map(s => s.id);
-            updateConfig({ ...config, salesOrder: newOrderIds });
+            updateConfigOps({ salesOrder: { op: 'set', value: newOrderIds } }).catch(e =>
+                console.error('Failed to persist sales order position:', e));
 
             return remainingItems;
         });
@@ -3667,31 +3751,69 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    // ---- Backup / Restore (audit APP-3) ----
+    //
+    // The old Backup exported the IN-MEMORY state: 50 orders, app-shaped
+    // camelCase objects, no transactions/journals — and Restore upserted those
+    // app-shaped objects straight into PostgREST, which rejected the non-column
+    // keys, so restore always failed. Now Backup exports the REAL tables, as
+    // raw rows (snake_case, exactly as PostgREST serves them), paged past the
+    // ~1000-row cap, with a manifest; Restore inserts those rows back — but
+    // ONLY into an empty store. Restoring over live data is refused outright:
+    // mixing two stores' records half-way is far worse than asking for help.
+    //
+    // Parents before children (sales before sale_items, warehouses before
+    // warehouse_stock, journal_entries before their lines) so restore can
+    // insert in this same order without FK failures.
+    const BACKUP_FORMAT = 'romdoul-backup';
+    const BACKUP_FORMAT_VERSION = 2;
+    const BACKUP_TABLES = [
+        'products', 'customers', 'users', 'warehouses', 'warehouse_stock',
+        'sales', 'sale_items', 'restocks', 'transactions',
+        'journal_entries', 'journal_entry_lines', 'telegram_notifications'
+    ] as const;
+    // users: explicit columns — pin and session_tokens are revoked from the
+    // anon role (secure_pin_check.sql), so `*` would fail, and credentials
+    // do not belong in a backup file anyway.
+    const BACKUP_SELECTS: Record<string, string> = {
+        users: 'id, name, email, role_id, created_at, base_salary, daily_target, weekly_target, monthly_target'
+    };
+    // Tables that may already hold rows on a working store without making a
+    // restore dishonest: skipped (with a notice) instead of refusing. users is
+    // never empty — the admin doing the restore is logged in with one.
+    const RESTORE_SKIP_IF_OCCUPIED = new Set(['users', 'telegram_notifications']);
+
     const backupData = async () => {
-        const data = {
-            timestamp: new Date().toISOString(),
-            products,
-            sales,
-            customers,
-            users: config.users || [],
-            roles: config.roles || [],
-            config: {
-                shippingCompanies: config.shippingCompanies,
-                salesmen: config.salesmen,
-                categories: config.categories,
-                pages: config.pages,
-                customerCare: config.customerCare,
-                paymentMethods: config.paymentMethods,
-                cities: config.cities,
-                storeName: config.storeName,
-                storeAddress: config.storeAddress,
-                email: config.email,
-                phone: config.phone,
-                khrExchangeRate: config.khrExchangeRate || 4100
-            }
+        const tables: Record<string, unknown[]> = {};
+        for (const table of BACKUP_TABLES) {
+            tables[table] = await fetchAll((from, to) => supabase
+                .from(table)
+                .select(BACKUP_SELECTS[table] || '*')
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: `backup ${table}`, maxRows: 500000 });
+        }
+        // The config blob straight from the database, not the possibly-stale
+        // in-memory copy.
+        const { data: cfgRow, error: cfgErr } = await supabase.from('app_config').select('data').eq('id', 1).single();
+        if (cfgErr && cfgErr.code !== 'PGRST116') {
+            throw new Error('Backup failed reading app_config: ' + cfgErr.message);
+        }
+        const appConfig = (cfgRow?.data && typeof cfgRow.data === 'object') ? cfgRow.data as Record<string, unknown> : null;
+
+        const payload = {
+            format: BACKUP_FORMAT,
+            formatVersion: BACKUP_FORMAT_VERSION,
+            manifest: {
+                storeName: String(appConfig?.storeName || config.storeName || ''),
+                date: new Date().toISOString(),
+                appVersion: String(import.meta.env.VITE_APP_VERSION || 'dev'),
+                rowCounts: Object.fromEntries(BACKUP_TABLES.map(t => [t, tables[t].length]))
+            },
+            appConfig,
+            tables
         };
 
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -3702,115 +3824,61 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         URL.revokeObjectURL(url);
     };
 
+    // Throws on any refusal/failure — the Database settings page shows the
+    // message as a toast. Only reloads on success.
     const restoreData = async (jsonData: any) => {
+        if (!jsonData || jsonData.format !== BACKUP_FORMAT || !jsonData.tables || typeof jsonData.tables !== 'object') {
+            throw new Error('This file is not a backup made by the current Backup Database button (old backup files held only a fraction of the data and cannot be restored). Make a fresh backup to use here.');
+        }
         setIsLoading(true);
         try {
-            // 1. Validate (Simple check)
-            if (!jsonData.products || !jsonData.sales || !jsonData.customers) {
-                throw new Error("Invalid backup file format");
+            // Refuse unless the data tables this backup would write are empty.
+            const occupied: string[] = [];
+            const skipped: string[] = [];
+            const toRestore: Array<{ table: string; rows: unknown[] }> = [];
+            for (const table of BACKUP_TABLES) {
+                const rows = jsonData.tables[table];
+                if (!Array.isArray(rows) || rows.length === 0) continue;
+                const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
+                if (error) throw new Error(`Restore aborted: could not check the "${table}" table (${error.message}). Nothing was changed.`);
+                if ((count || 0) > 0) {
+                    if (RESTORE_SKIP_IF_OCCUPIED.has(table)) skipped.push(table);
+                    else occupied.push(`${table}: ${count} rows`);
+                } else {
+                    toRestore.push({ table, rows });
+                }
+            }
+            if (occupied.length > 0) {
+                throw new Error(
+                    `Restore refused: this store already contains data (${occupied.join(', ')}). ` +
+                    'Restoring a backup over live data is not supported — it could silently mix two stores\' records. ' +
+                    'Nothing was changed. Contact your administrator or support to restore onto a fresh database.'
+                );
             }
 
-            // 2. Restore Products
-            if (jsonData.products.length > 0) {
-                const { error } = await supabase.from('products').upsert(jsonData.products);
-                if (error) throw new Error("Failed to restore products: " + error.message);
-                setProductsUpdatedAt(Date.now());
-            }
-
-            // 3. Restore Customers
-            if (jsonData.customers.length > 0) {
-                const { error } = await supabase.from('customers').upsert(jsonData.customers);
-                if (error) throw new Error("Failed to restore customers: " + error.message);
-            }
-
-            // 4. Restore Sales
-            if (jsonData.sales.length > 0) {
-                // We need to map back to DB structure for sales
-                const dbSales = jsonData.sales.map((s: Sale) => ({
-                    id: s.id,
-                    total: s.total,
-                    discount: s.discount,
-                    date: s.date,
-                    payment_method: s.paymentMethod,
-                    type: s.type,
-                    salesman: s.salesman,
-                    customer_care: s.customerCare,
-                    remark: s.remark,
-                    amount_received: s.amountReceived,
-                    settle_date: s.settleDate,
-                    payment_status: s.paymentStatus,
-                    order_status: s.orderStatus,
-                    shipping_company: s.shipping?.company,
-                    tracking_number: s.shipping?.trackingNumber,
-                    shipping_status: s.shipping?.status,
-                    shipping_cost: s.shipping?.cost,
-                    customer_snapshot: s.customer
-                }));
-                const { error: salesError } = await supabase.from('sales').upsert(dbSales);
-                if (salesError) throw new Error("Failed to restore sales: " + salesError.message);
-
-                // Restore Sale Items
-                // We need to flatten all items from all sales
-                const allItems: any[] = [];
-                jsonData.sales.forEach((s: Sale) => {
-                    if (s.items) {
-                        s.items.forEach(item => {
-                            allItems.push({
-                                id: Date.now().toString() + Math.random().toString(36).substring(2), // Generate new ID
-                                sale_id: s.id,
-                                product_id: item.id, // This is product ID
-                                name: item.name,
-                                price: item.price,
-                                quantity: item.quantity,
-                                image: item.image
-                            });
-                        });
+            // Insert, parents before children (BACKUP_TABLES order), in chunks.
+            const CHUNK = 500;
+            for (const { table, rows } of toRestore) {
+                for (let i = 0; i < rows.length; i += CHUNK) {
+                    const { error } = await supabase.from(table).insert(rows.slice(i, i + CHUNK));
+                    if (error) {
+                        throw new Error(`Restore failed while writing "${table}": ${error.message}. ` +
+                            'The store may be PARTIALLY restored — contact support before retrying.');
                     }
-                });
-
-                if (allItems.length > 0) {
-                    // Delete existing items for these sales to avoid duplicates?
-                    // Actually upsert might be tricky without ID.
-                    // For safety, let's delete items for these sales first
-                    const saleIds = jsonData.sales.map((s: Sale) => s.id);
-                    await supabase.from('sale_items').delete().in('sale_id', saleIds);
-
-                    const { error: itemsError } = await supabase.from('sale_items').insert(allItems);
-                    if (itemsError) throw new Error("Failed to restore sale items: " + itemsError.message);
                 }
             }
 
-            // 5. Restore Config
-            if (jsonData.config) {
-                // Upsert config to ID 1
-                const { error } = await supabase.from('app_config').upsert({
-                    id: 1,
-                    data: {
-                        shippingCompanies: jsonData.config.shippingCompanies,
-                        salesmen: jsonData.config.salesmen,
-                        categories: jsonData.config.categories,
-                        pages: jsonData.config.pages,
-                        customerCare: jsonData.config.customerCare,
-                        paymentMethods: jsonData.config.paymentMethods,
-                        cities: jsonData.config.cities,
-                        users: jsonData.users,
-                        roles: jsonData.roles,
-                        storeName: jsonData.config.storeName,
-                        storeAddress: jsonData.config.storeAddress,
-                        email: jsonData.config.email,
-                        phone: jsonData.config.phone,
-                        khrExchangeRate: jsonData.config.khrExchangeRate || 4100
-                    }
-                });
-                if (error) throw new Error("Failed to restore config: " + error.message);
+            // Settings blob last, over the fresh store's default row.
+            if (jsonData.appConfig && typeof jsonData.appConfig === 'object') {
+                const { error } = await supabase.from('app_config').upsert({ id: 1, data: jsonData.appConfig });
+                if (error) throw new Error('Restore failed while writing the settings (app_config): ' + error.message);
             }
 
-            alert("Restore completed successfully! Page will reload.");
+            const skippedNote = skipped.length > 0
+                ? ` (${skipped.join(' and ')} kept — this store already has its own)`
+                : '';
+            alert(`Restore completed${skippedNote}. Page will reload.`);
             window.location.reload();
-
-        } catch (e: any) {
-            console.error("Restore failed:", e);
-            alert("Restore failed: " + e.message);
         } finally {
             setIsLoading(false);
         }
@@ -3935,19 +4003,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Purchasing module defaults — one object inside the shared config blob.
     const purchaseSettings = config.purchaseSettings || {};
     const updatePurchaseSettings = async (settings: PurchaseSettings) => {
-        await updateConfig({ ...config, purchaseSettings: settings });
+        // The settings form submits the whole object: 'set' on this ONE key
+        // (last write wins for the purchase settings, acceptable).
+        await updateConfigOps({ purchaseSettings: { op: 'set', value: settings } });
     };
 
     // Wholesale module defaults — same pattern.
     const wholesaleSettings = config.wholesaleSettings || {};
     const updateWholesaleSettings = async (settings: WholesaleSettings) => {
-        await updateConfig({ ...config, wholesaleSettings: settings });
+        await updateConfigOps({ wholesaleSettings: { op: 'set', value: settings } });
     };
 
+    // Roles live in one array keyed by id: add/update/delete are item-level
+    // operations, so editing role A here never reverts role B saved elsewhere.
     const addRole = async (roleData: Omit<Role, 'id'>) => {
         const newRole: Role = { ...roleData, id: Date.now().toString() };
-        const newRoles = [...(config.roles || []), newRole];
-        await updateConfig({ ...config, roles: newRoles });
+        await updateConfigOps({ roles: { op: 'append', items: [newRole], idKey: 'id' } });
         // Hand the caller the new role so the UI can select it right away.
         return newRole;
     };
@@ -3988,8 +4059,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
             }
         }
-        const newRoles = (config.roles || []).map(r => r.id === id ? { ...r, ...updates } : r);
-        await updateConfig({ ...config, roles: newRoles });
+        const current = (config.roles || []).find(r => r.id === id);
+        if (!current) throw new Error('This role no longer exists — refresh and try again.');
+        await updateConfigOps({ roles: { op: 'updateItems', items: [{ ...current, ...updates }], idKey: 'id' } });
     };
 
     const deleteRole = async (id: string) => {
@@ -4002,32 +4074,34 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (currentUser?.roleId === id) {
             throw new Error('You cannot delete the role you are currently signed in with.');
         }
-        const newRoles = (config.roles || []).filter(r => r.id !== id);
-        await updateConfig({ ...config, roles: newRoles });
+        await updateConfigOps({ roles: { op: 'removeItems', values: [id], idKey: 'id' } });
     };
 
     const updateStoreAddress = async (address: string) => {
-        updateConfig({ ...config, storeAddress: address });
+        await updateConfigOps({ storeAddress: { op: 'set', value: address } });
     };
 
     const updateKhrExchangeRate = async (rate: number) => {
-        updateConfig({ ...config, khrExchangeRate: rate });
+        await updateConfigOps({ khrExchangeRate: { op: 'set', value: rate } });
     };
 
     const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => {
         const { telegramConfigs, ...restData } = data;
-        let newConfig = { ...config, ...restData };
-        
+
         if (telegramConfigs !== undefined) {
             // First, find what's deleted
             const currentIds = config.telegramConfigs?.map(c => c.id) || [];
             const newIds = telegramConfigs.map(c => c.id);
             const deletedIds = currentIds.filter(id => !newIds.includes(id));
-            
+
             if (deletedIds.length > 0) {
-                await supabase.from('telegram_notifications').delete().in('id', deletedIds);
+                const { error } = await supabase.from('telegram_notifications').delete().in('id', deletedIds);
+                if (error) {
+                    console.error("Error deleting telegram configs:", error);
+                    throw new Error("Database error removing telegram group: " + error.message);
+                }
             }
-            
+
             // Upsert remaining
             if (telegramConfigs.length > 0) {
                 const upsertData = telegramConfigs.map(tc => ({
@@ -4045,24 +4119,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     throw new Error("Database error saving telegram config: " + error.message);
                 }
             }
-            
-            newConfig.telegramConfigs = telegramConfigs;
+
+            // telegram_notifications is their real home — they are NOT written
+            // into the config blob any more (a legacy blob copy went stale the
+            // moment another terminal edited it). Local state only:
+            setConfig(prev => ({ ...prev, telegramConfigs }));
         }
 
-        updateConfig(newConfig);
+        // Only the fields the caller actually passed, each as its own 'set'.
+        const ops: ConfigOps = {};
+        for (const [key, value] of Object.entries(restData)) {
+            if (value !== undefined) ops[key] = { op: 'set', value };
+        }
+        if (Object.keys(ops).length > 0) await updateConfigOps(ops);
     };
 
     // Timezone
     const updateTimezone = async (timezone: string) => {
-        updateConfig({ ...config, timezone });
+        await updateConfigOps({ timezone: { op: 'set', value: timezone } });
     };
 
     const updateTaxRate = async (taxRate: number) => {
-        updateConfig({ ...config, taxRate });
+        await updateConfigOps({ taxRate: { op: 'set', value: taxRate } });
     };
 
     const updateCurrency = async (currency: string) => {
-        updateConfig({ ...config, currency });
+        await updateConfigOps({ currency: { op: 'set', value: currency } });
     };
 
     // Authentication logic moved to top

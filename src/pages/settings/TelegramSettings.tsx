@@ -40,10 +40,30 @@ const TelegramSettings: React.FC = () => {
         setLocalState(originalState);
     }, [telegramBotToken, telegramChatId, telegramConfigs]);
 
+    // In-flight guard: committing or removing twice in a row would race the
+    // delete/upsert against itself.
+    const [isCommitting, setIsCommitting] = useState(false);
+
+    const commitTelegramConfigs = useCallback(async (mergedConfigs: TelegramConfig[], successMessage: string) => {
+        if (isCommitting) return;
+        setIsCommitting(true);
+        try {
+            await updateStoreProfile({
+                telegramConfigs: mergedConfigs
+            });
+            showToast(successMessage, 'success');
+        } catch (error: any) {
+            console.error(error);
+            showToast('Failed to commit Telegram configuration: ' + (error.message || 'Unknown error'), 'error');
+        } finally {
+            setIsCommitting(false);
+        }
+    }, [isCommitting, updateStoreProfile, showToast]);
+
     const handleCommitTelegramConfigs = useCallback(async (configId: string) => {
         const originalConfigs: TelegramConfig[] = originalStateRef.current.telegramConfigs || [];
         const localConfig = localState.telegramConfigs.find(c => c.id === configId);
-        
+
         let mergedConfigs = [...originalConfigs];
         if (!localConfig) {
             mergedConfigs = originalConfigs.filter((c: TelegramConfig) => c.id !== configId);
@@ -55,17 +75,27 @@ const TelegramSettings: React.FC = () => {
                 mergedConfigs.push(localConfig);
             }
         }
-        
-        try {
-            await updateStoreProfile({
-                telegramConfigs: mergedConfigs
-            });
-            showToast('Telegram Configuration committed!', 'success');
-        } catch (error: any) {
-            console.error(error);
-            showToast('Failed to commit Telegram configuration: ' + (error.message || 'Unknown error'), 'error');
+
+        await commitTelegramConfigs(mergedConfigs, 'Telegram Configuration committed!');
+    }, [localState, commitTelegramConfigs]);
+
+    // HR-1: Remove must pass the shrunken list DIRECTLY. The old handler set
+    // state and then called handleCommitTelegramConfigs, whose useCallback
+    // closure still held the OLD localState — it found the row, took the
+    // replace branch and saved the group right back (and saved never-committed
+    // "New Group" rows along the way).
+    const handleRemoveTelegramConfig = useCallback(async (configId: string) => {
+        setLocalState(prev => ({ ...prev, telegramConfigs: prev.telegramConfigs.filter(c => c.id !== configId) }));
+        const originalConfigs: TelegramConfig[] = originalStateRef.current.telegramConfigs || [];
+        if (!originalConfigs.some(c => c.id === configId)) {
+            // A never-committed "+ Add Group" draft: discard locally, nothing
+            // to delete or re-save in the database.
+            showToast('Group removed', 'success');
+            return;
         }
-    }, [localState, updateStoreProfile, showToast]);
+        const remaining = originalConfigs.filter(c => c.id !== configId);
+        await commitTelegramConfigs(remaining, 'Telegram group removed');
+    }, [commitTelegramConfigs, showToast]);
 
     useEffect(() => {
         setHeaderContent({
@@ -128,13 +158,10 @@ const TelegramSettings: React.FC = () => {
                             />
                             <div>
                                 <button
-                                    onClick={() => {
-                                        const newConfigs = localState.telegramConfigs.filter((_, i) => i !== index);
-                                        setLocalState({ ...localState, telegramConfigs: newConfigs });
-                                        // Auto-commit removals since there's no overall Save button for telegram easily accessible
-                                        handleCommitTelegramConfigs(config.id);
-                                    }}
-                                    style={{ padding: '6px 12px', fontSize: '12px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                                    // Auto-commit removals since there's no overall Save button for telegram easily accessible
+                                    onClick={() => handleRemoveTelegramConfig(config.id)}
+                                    disabled={isCommitting}
+                                    style={{ padding: '6px 12px', fontSize: '12px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: '4px', cursor: isCommitting ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: isCommitting ? 0.6 : 1 }}
                                 >
                                     Remove
                                 </button>
@@ -280,10 +307,10 @@ const TelegramSettings: React.FC = () => {
                                 </button>
                                 <button
                                     onClick={() => handleCommitTelegramConfigs(config.id)}
-                                    disabled={!isRowChanged}
-                                    style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: isRowChanged ? 'pointer' : 'not-allowed', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap', opacity: isRowChanged ? 1 : 0.5 }}
+                                    disabled={!isRowChanged || isCommitting}
+                                    style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRowChanged && !isCommitting) ? 'pointer' : 'not-allowed', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap', opacity: (isRowChanged && !isCommitting) ? 1 : 0.5 }}
                                 >
-                                    Commit
+                                    {isCommitting ? 'Saving…' : 'Commit'}
                                 </button>
                         </div>
                         {templateDropdownOpen[index] && (

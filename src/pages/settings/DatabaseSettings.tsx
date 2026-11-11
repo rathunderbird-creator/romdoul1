@@ -15,6 +15,11 @@ const DatabaseSettings: React.FC = () => {
 
     const [showDataManagement, setShowDataManagement] = useState(false);
     const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+    // In-flight guards: a second click while a backup is being assembled or a
+    // restore is writing would run the whole thing twice.
+    const [isBackingUp, setIsBackingUp] = useState(false);
+    const [isRestoring, setIsRestoring] = useState(false);
+    const busy = isBackingUp || isRestoring;
 
     useEffect(() => {
         setHeaderContent({
@@ -73,14 +78,24 @@ const DatabaseSettings: React.FC = () => {
                         <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={async () => {
-                                    await backupData();
-                                    showToast('Backup download started', 'success');
+                                    if (busy) return;
+                                    setIsBackingUp(true);
+                                    try {
+                                        await backupData();
+                                        showToast('Backup downloaded', 'success');
+                                    } catch (err) {
+                                        console.error(err);
+                                        showToast('Backup failed: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error');
+                                    } finally {
+                                        setIsBackingUp(false);
+                                    }
                                 }}
+                                disabled={busy}
                                 className="primary-button"
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', opacity: busy ? 0.6 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}
                             >
                                 <Save size={18} />
-                                {t('settings.backupDatabase')}
+                                {isBackingUp ? 'Backing up…' : t('settings.backupDatabase')}
                             </button>
                             <div style={{ position: 'relative' }}>
                                 <input
@@ -92,19 +107,27 @@ const DatabaseSettings: React.FC = () => {
                                         const file = e.target.files?.[0];
                                         if (!file) return;
 
-                                        if (!confirm(`Are you sure you want to restore from ${file.name}? This will OVERWRITE existing data with the same IDs.`)) {
+                                        if (!confirm(`Restore from ${file.name}? This only works into an EMPTY store — if this store already has data, the restore will refuse and change nothing.`)) {
                                             e.target.value = ''; // Reset
                                             return;
                                         }
 
                                         const reader = new FileReader();
                                         reader.onload = async (event) => {
+                                            setIsRestoring(true);
                                             try {
-                                                const json = JSON.parse(event.target?.result as string);
+                                                let json: unknown;
+                                                try {
+                                                    json = JSON.parse(event.target?.result as string);
+                                                } catch {
+                                                    throw new Error('This file is not valid JSON — pick a backup file made by the Backup Database button.');
+                                                }
                                                 await restoreData(json);
                                             } catch (err) {
                                                 console.error(err);
-                                                showToast('Failed to parse backup file', 'error');
+                                                showToast(err instanceof Error ? err.message : 'Restore failed', 'error');
+                                            } finally {
+                                                setIsRestoring(false);
                                             }
                                         };
                                         reader.readAsText(file);
@@ -112,12 +135,13 @@ const DatabaseSettings: React.FC = () => {
                                     }}
                                 />
                                 <button
-                                    onClick={() => document.getElementById('restore-file')?.click()}
+                                    onClick={() => { if (!busy) document.getElementById('restore-file')?.click(); }}
+                                    disabled={busy}
                                     className="primary-button"
-                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', opacity: busy ? 0.6 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}
                                 >
                                     <Database size={18} />
-                                    {t('settings.restoreDatabase')}
+                                    {isRestoring ? 'Restoring…' : t('settings.restoreDatabase')}
                                 </button>
                             </div>
                             <button
