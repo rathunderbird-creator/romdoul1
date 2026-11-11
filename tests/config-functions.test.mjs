@@ -55,9 +55,12 @@ check('migration runs twice', true);
 
 const update = async (ops) => (await q(`SELECT update_app_config($1::jsonb) AS cfg`, [JSON.stringify(ops)])).rows[0].cfg;
 const stored = async () => (await q(`SELECT data FROM app_config WHERE id = 1`)).rows[0]?.data;
-const ready = async () => (await q(`SELECT app_config_functions_ready() AS ok`)).rows[0].ok;
 
-check('probe function returns true', await ready() === true);
+// There is no separate probe function (the app detects a missing
+// update_app_config from the call's own error); an earlier draft's leftover
+// must be dropped by the migration.
+check('leftover app_config_functions_ready is dropped',
+    (await q(`SELECT COUNT(*)::int AS n FROM pg_proc WHERE proname = 'app_config_functions_ready'`)).rows[0].n === 0);
 
 // ---- Fresh store: no row yet ----
 let cfg = await update({ categories: { op: 'set', value: ['Speakers'] } });
@@ -129,8 +132,13 @@ const fails = async (ops) => { try { await update(ops); return false; } catch { 
 check('unknown op rejected', await fails({ categories: { op: 'teleport' } }));
 check('non-object op rejected', await fails({ categories: 42 }));
 check('non-object p_ops rejected', await (async () => { try { await q(`SELECT update_app_config('[]'::jsonb)`); return false; } catch { return true; } })());
+// A 'set' with no "value" key (what JSON.stringify makes of value: undefined)
+// must RAISE — jsonb_set is STRICT, so letting it through would store
+// data = NULL and destroy the entire config in one call.
+check('set without value rejected', await fails({ storeAddress: { op: 'set' } }));
 const after = await stored();
 check('failed call changed nothing', after.taxRate === 10);
+check('set-without-value did not null the config', after !== null && typeof after === 'object' && after.categories !== undefined);
 
 // ---- wrong-shaped current values never crash ----
 await q(`UPDATE app_config SET data = jsonb_set(data, '{categories}', '"oops"'::jsonb) WHERE id = 1`);

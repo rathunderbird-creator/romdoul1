@@ -7,7 +7,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import type { TelegramConfig } from '../../types';
 
 const TelegramSettings: React.FC = () => {
-    const { telegramBotToken, telegramChatId, telegramConfigs, updateStoreProfile } = useStore();
+    const { telegramBotToken, telegramChatId, telegramConfigs, commitTelegramGroup, removeTelegramGroup } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
@@ -21,10 +21,16 @@ const TelegramSettings: React.FC = () => {
     const [templateDropdownOpen, setTemplateDropdownOpen] = useState<Record<number, boolean>>({});
 
     const originalStateRef = useRef<{ telegramConfigs: TelegramConfig[] }>({ telegramConfigs: [] });
+    // The legacy single-token draft is synthesized once, on first mount only.
+    // Re-synthesizing whenever the list is empty made removing the LAST group
+    // look broken: the deleted row's bot token reappeared as a fresh "Main
+    // Group" draft (HR-1 all over again, visually).
+    const seededLegacyDraftRef = useRef(false);
 
     useEffect(() => {
         let initialConfigs = telegramConfigs || [];
-        if (initialConfigs.length === 0) {
+        if (initialConfigs.length === 0 && !seededLegacyDraftRef.current) {
+            seededLegacyDraftRef.current = true;
             initialConfigs = [{
                 id: crypto.randomUUID(),
                 name: 'Main Group',
@@ -34,7 +40,7 @@ const TelegramSettings: React.FC = () => {
                 note: ''
             }];
         }
-        
+
         const originalState = { telegramConfigs: initialConfigs };
         originalStateRef.current = originalState;
         setLocalState(originalState);
@@ -44,58 +50,58 @@ const TelegramSettings: React.FC = () => {
     // delete/upsert against itself.
     const [isCommitting, setIsCommitting] = useState(false);
 
-    const commitTelegramConfigs = useCallback(async (mergedConfigs: TelegramConfig[], successMessage: string) => {
-        if (isCommitting) return;
+    // Commit saves ONE group's row; it never re-upserts the other groups from
+    // this screen's possibly stale copy (another terminal's edits to them
+    // would be silently reverted).
+    const handleCommitTelegramConfigs = useCallback(async (configId: string) => {
+        const localConfig = localState.telegramConfigs.find(c => c.id === configId);
+        if (!localConfig) return;
+        if (isCommitting) {
+            showToast('Another save is still running — try again in a moment', 'error');
+            return;
+        }
         setIsCommitting(true);
         try {
-            await updateStoreProfile({
-                telegramConfigs: mergedConfigs
-            });
-            showToast(successMessage, 'success');
-        } catch (error: any) {
+            await commitTelegramGroup(localConfig);
+            showToast('Telegram Configuration committed!', 'success');
+        } catch (error) {
             console.error(error);
-            showToast('Failed to commit Telegram configuration: ' + (error.message || 'Unknown error'), 'error');
+            showToast('Failed to commit Telegram configuration: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
         } finally {
             setIsCommitting(false);
         }
-    }, [isCommitting, updateStoreProfile, showToast]);
+    }, [localState, isCommitting, commitTelegramGroup, showToast]);
 
-    const handleCommitTelegramConfigs = useCallback(async (configId: string) => {
-        const originalConfigs: TelegramConfig[] = originalStateRef.current.telegramConfigs || [];
-        const localConfig = localState.telegramConfigs.find(c => c.id === configId);
-
-        let mergedConfigs = [...originalConfigs];
-        if (!localConfig) {
-            mergedConfigs = originalConfigs.filter((c: TelegramConfig) => c.id !== configId);
-        } else {
-            const existingIndex = mergedConfigs.findIndex(c => c.id === configId);
-            if (existingIndex >= 0) {
-                mergedConfigs[existingIndex] = localConfig;
-            } else {
-                mergedConfigs.push(localConfig);
-            }
-        }
-
-        await commitTelegramConfigs(mergedConfigs, 'Telegram Configuration committed!');
-    }, [localState, commitTelegramConfigs]);
-
-    // HR-1: Remove must pass the shrunken list DIRECTLY. The old handler set
-    // state and then called handleCommitTelegramConfigs, whose useCallback
-    // closure still held the OLD localState — it found the row, took the
-    // replace branch and saved the group right back (and saved never-committed
-    // "New Group" rows along the way).
+    // HR-1: Remove deletes exactly this one group's row. On failure the row is
+    // put back on screen (it still exists in the database).
     const handleRemoveTelegramConfig = useCallback(async (configId: string) => {
-        setLocalState(prev => ({ ...prev, telegramConfigs: prev.telegramConfigs.filter(c => c.id !== configId) }));
         const originalConfigs: TelegramConfig[] = originalStateRef.current.telegramConfigs || [];
         if (!originalConfigs.some(c => c.id === configId)) {
             // A never-committed "+ Add Group" draft: discard locally, nothing
             // to delete or re-save in the database.
+            setLocalState(prev => ({ ...prev, telegramConfigs: prev.telegramConfigs.filter(c => c.id !== configId) }));
             showToast('Group removed', 'success');
             return;
         }
-        const remaining = originalConfigs.filter(c => c.id !== configId);
-        await commitTelegramConfigs(remaining, 'Telegram group removed');
-    }, [commitTelegramConfigs, showToast]);
+        if (isCommitting) {
+            showToast('Another save is still running — try again in a moment', 'error');
+            return;
+        }
+        setIsCommitting(true);
+        const before = localState.telegramConfigs;
+        setLocalState(prev => ({ ...prev, telegramConfigs: prev.telegramConfigs.filter(c => c.id !== configId) }));
+        try {
+            await removeTelegramGroup(configId);
+            showToast('Telegram group removed', 'success');
+        } catch (error) {
+            console.error(error);
+            // The delete failed: the group still exists — show it again.
+            setLocalState(prev => ({ ...prev, telegramConfigs: before }));
+            showToast('Failed to remove Telegram group: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+        } finally {
+            setIsCommitting(false);
+        }
+    }, [localState, isCommitting, removeTelegramGroup, showToast]);
 
     useEffect(() => {
         setHeaderContent({
