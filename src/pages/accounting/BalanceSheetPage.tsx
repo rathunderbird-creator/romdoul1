@@ -16,6 +16,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
 import { supabase } from '../../lib/supabase';
 import type { ChartOfAccount } from '../../types';
+import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
 
 type AccountType = ChartOfAccount['account_type'];
 type Granularity = 'monthly' | 'quarterly' | 'annual';
@@ -129,33 +130,9 @@ const BalanceSheetPage: React.FC = () => {
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
                 if (accErr) throw accErr;
 
-                const loadPage = (from: number, withStatus: boolean) => supabase
-                    .from('journal_entry_lines')
-                    .select(`account_id, debit, credit, entry:journal_entries!inner(date${withStatus ? ', status' : ''})`)
-                    .order('id', { ascending: true })
-                    .range(from, from + 999);
-
-                const all: LedgerLine[] = [];
-                let withStatus = true;
-                for (let from = 0; from < 100000; from += 1000) {
-                    let { data, error } = await loadPage(from, withStatus);
-                    if (error && withStatus && /status/i.test(error.message || '')) {
-                        withStatus = false;
-                        ({ data, error } = await loadPage(from, withStatus));
-                    }
-                    if (error) throw error;
-                    type LineRow = { account_id: unknown; debit: unknown; credit: unknown; entry: { date?: unknown; status?: unknown } | null };
-                    for (const l of (data || []) as LineRow[]) {
-                        if (String(l.entry?.status || 'Posted') === 'Draft') continue;
-                        all.push({
-                            accountId: String(l.account_id),
-                            debit: Number(l.debit) || 0,
-                            credit: Number(l.credit) || 0,
-                            date: String(l.entry?.date || '').slice(0, 10),
-                        });
-                    }
-                    if (!data || data.length < 1000) break;
-                }
+                // Posted lines only, paged and merged by the unique id so
+                // entries posted while the pages load can't be double-counted.
+                const all: LedgerLine[] = await fetchPostedLedgerLines('BalanceSheetPage');
                 if (!alive) return;
                 setAccounts(accs || []);
                 setLines(all);

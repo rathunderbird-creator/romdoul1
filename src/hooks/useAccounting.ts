@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
 import type { ChartOfAccount, JournalEntry, JournalEntryLine } from '../types';
 import { useToast } from '../context/ToastContext';
 
@@ -75,13 +76,16 @@ export const useAccounting = () => {
     const fetchJournalEntries = useCallback(async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            // Paged (fetchAll): the ledger holds thousands of entries, far past
+            // PostgREST's ~1000-row cap. date ties constantly (it's a plain
+            // DATE), so the unique id breaks the tie for a stable page order.
+            const data = await fetchAll<JournalEntry>((from, to) => supabase
                 .from('journal_entries')
                 .select('*, lines:journal_entry_lines(*, account:chart_of_accounts(*))')
-                .order('date', { ascending: false });
-                
-            if (error) throw error;
-            setJournalEntries(data || []);
+                .order('date', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries' });
+            setJournalEntries(data);
         } catch (error: any) {
             console.error('Failed to fetch journal entries:', error);
             showToast('Failed to fetch journal entries: ' + error.message, 'error');

@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber, entryDescription, type JournalEntryTypeCode } from '../../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../../utils/cashBankAccounts';
 import { insertJournalLines } from '../../utils/journalEntryLines';
+import { fetchAll } from '../../utils/fetchAll';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 // Brings the .pip-resize-handle grip styling the shared hook's handles rely on.
 import '../pageIncomePrediction/pageIncomePrediction.css';
@@ -200,21 +201,25 @@ const JournalEntriesPage = () => {
         setImporting(true);
         try {
             type Raw = Record<string, unknown>;
-            const txs: Raw[] = [];
-            for (let from = 0; from < 100000; from += 1000) {
-                const { data, error } = await supabase
-                    .from('transactions')
-                    .select('id, date, type, category, amount, description, pay_by')
-                    .order('date', { ascending: true })
-                    .range(from, from + 999);
-                if (error) throw error;
-                txs.push(...((data || []) as Raw[]));
-                if (!data || data.length < 1000) break;
-            }
-            const { data: existing, error: exErr } = await supabase
-                .from('journal_entries').select('reference_id').like('reference_id', 'TX-%');
-            if (exErr) throw exErr;
-            const alreadyImported = new Set((existing || []).map(r => String((r as Raw).reference_id)));
+            // Paged with the unique id breaking date ties (payments share one
+            // UTC-midnight date), and merged by id, so rows can't repeat or be
+            // skipped between pages.
+            const txs = await fetchAll<Raw>((from, to) => supabase
+                .from('transactions')
+                .select('id, date, type, category, amount, description, pay_by')
+                .order('date', { ascending: true })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'JournalEntriesPage.prepareImport transactions' });
+            // The already-booked check must see EVERY TX-% reference — retail
+            // receipts use TX- too, so there are thousands of matches and an
+            // unpaged read tops out at ~1000, re-offering imported entries.
+            const existing = await fetchAll<{ id: string; reference_id: string | null }>((from, to) => supabase
+                .from('journal_entries')
+                .select('id, reference_id')
+                .like('reference_id', 'TX-%')
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'JournalEntriesPage.prepareImport existing' });
+            const alreadyImported = new Set(existing.map(r => String(r.reference_id)));
 
             const pool = accounts.filter(a => a.is_active);
             const byCode = (code: string) => pool.find(a => a.account_code === code);

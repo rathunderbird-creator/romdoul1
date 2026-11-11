@@ -9,6 +9,7 @@ import { createInFlightGuard } from '../utils/inFlightGuard';
 import { createRetryKeys } from '../utils/retryKey';
 import { outstandingReceipt, poReceiveMarker } from '../utils/receivePurchaseOrder';
 import { callDbFunction } from '../utils/dbFunctions';
+import { fetchAll } from '../utils/fetchAll';
 
 const supplierPaymentGuard = createInFlightGuard();
 const supplierPaymentKeys = createRetryKeys();
@@ -340,16 +341,19 @@ export const useProcurement = () => {
     const fetchPurchaseOrders = useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            // Paged (fetchAll): A/P, A/R and the Financial Dashboard sum these
+            // lists, so the oldest open POs must not fall off the ~1000-row cap.
+            const data = await fetchAll<PurchaseOrder>((from, to) => supabase
                 .from('purchase_orders')
                 .select('*, supplier:suppliers(*), items:purchase_order_items(*, product:products(*)), payments:supplier_payments(payment_date)')
                 // order_date is a plain date, so same-day POs tie — break the tie
-                // with created_at so the newest transaction is always on top.
+                // with created_at so the newest transaction is always on top,
+                // then with the unique id for a stable page order.
                 .order('order_date', { ascending: false })
-                .order('created_at', { ascending: false });
-                
-            if (error) throw error;
-            setPurchaseOrders(data || []);
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'useProcurement.fetchPurchaseOrders' });
+            setPurchaseOrders(data);
         } catch (error: any) {
             console.error('Failed to fetch purchase orders:', error);
             showToast('Failed to fetch purchase orders: ' + error.message, 'error');

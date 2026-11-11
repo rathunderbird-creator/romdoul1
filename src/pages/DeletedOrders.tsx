@@ -12,6 +12,7 @@ import { getPaymentLogo, getPaymentColor } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { mapSaleEntity } from '../utils/mapper';
+import { fetchAll } from '../utils/fetchAll';
 import type { Sale } from '../types';
 
 const getStatusBorderColor = (s: string) => {
@@ -70,22 +71,31 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
     const fetchDeletedOrders = async () => {
         setIsLoading(true);
         try {
-            // Fetch deleted orders with their items
-            const { data: orders, error: ordersErr } = await supabase
+            // Fetch deleted orders with their items. Paged (fetchAll): the
+            // archive grows past PostgREST's ~1000-row cap; the unique id
+            // breaks deleted_at ties for a stable page order.
+            const orders = await fetchAll((from, to) => supabase
                 .from('deleted_orders')
                 .select('*')
-                .order('deleted_at', { ascending: false });
-            if (ordersErr) throw ordersErr;
+                .order('deleted_at', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, to), 1000, { label: 'DeletedOrders.fetchDeletedOrders orders' });
 
-            const orderIds = (orders || []).map(o => o.id);
-            let items: any[] = [];
-            if (orderIds.length > 0) {
-                const { data: itemsData, error: itemsErr } = await supabase
+            // Items are looked up in chunks of 200 ids — every id in one
+            // GET URL blows request-URL length limits past a few hundred
+            // UUIDs — and each chunk is paged too (orders can hold many lines).
+            const orderIds = orders.map(o => o.id);
+            const items: any[] = [];
+            const CHUNK = 200;
+            for (let i = 0; i < orderIds.length; i += CHUNK) {
+                const idChunk = orderIds.slice(i, i + CHUNK);
+                const chunkItems = await fetchAll((from, to) => supabase
                     .from('deleted_sale_items')
                     .select('*')
-                    .in('sale_id', orderIds);
-                if (itemsErr) throw itemsErr;
-                items = itemsData || [];
+                    .in('sale_id', idChunk)
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'DeletedOrders.fetchDeletedOrders items' });
+                items.push(...chunkItems);
             }
 
             // Attach items to each order and map through mapSaleEntity

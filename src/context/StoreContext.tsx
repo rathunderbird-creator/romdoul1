@@ -7,6 +7,7 @@ import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 import { createRetryKeys } from '../utils/retryKey';
+import { fetchAll } from '../utils/fetchAll';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -804,9 +805,38 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return { data: data || [], error };
             };
 
+            // Products and warehouse_stock are summed and looked up everywhere
+            // (stock totals, per-warehouse availability), so both are paged past
+            // PostgREST's ~1000-row cap — soft-deleted products are still in the
+            // query and eat into any single page, and warehouse_stock grows as
+            // products x warehouses. Wrapped to the { data, error } result shape
+            // the blocks below expect.
+            const fetchAllProductsRows = async () => {
+                try {
+                    const data = await fetchAll((from, to) => supabase
+                        .from('products')
+                        .select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at, is_active')
+                        // created_at ties are possible — the unique id breaks them.
+                        .order('created_at', { ascending: false })
+                        .order('id', { ascending: true })
+                        .range(from, to), 1000, { label: 'StoreContext.refreshData products' });
+                    return { data, error: null };
+                } catch (error) { return { data: null, error }; }
+            };
+            const fetchAllWarehouseStock = async () => {
+                try {
+                    const data = await fetchAll((from, to) => supabase
+                        .from('warehouse_stock')
+                        .select('*')
+                        .order('id', { ascending: true })
+                        .range(from, to), 1000, { label: 'StoreContext.refreshData warehouse_stock' });
+                    return { data, error: null };
+                } catch (error) { return { data: null, error }; }
+            };
+
             // Fetch core data.
             const [productsResult, customersResult, salesResult, configResult, usersResult, restocksResult, transactionsResult, telegramConfigsResult, warehousesResult, warehouseStockResult] = await Promise.all([
-                supabase.from('products').select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at, is_active').order('created_at', { ascending: false }),
+                fetchAllProductsRows(),
                 // Select all customer detail fields, not just id/name/phone: the checkout
                 // form saves email/address/city/platform/page, and a narrower select would
                 // silently drop them from the in-memory store on every reload.
@@ -820,7 +850,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
                 supabase.from('telegram_notifications').select('*'),
                 supabase.from('warehouses').select('*').order('created_at', { ascending: true }),
-                supabase.from('warehouse_stock').select('*')
+                fetchAllWarehouseStock()
             ]);
 
             // Surface fetch failures. PostgREST reports these on `.error` instead of
@@ -2979,14 +3009,26 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const restoreOrders = async (ids: string[]): Promise<void> => {
         try {
-            const { data: dbOrders, error: ordersErr } = await supabase.from('deleted_orders').select('*').in('id', ids);
-            if (ordersErr) throw ordersErr;
-
-            const { data: dbItems, error: itemsErr } = await supabase.from('deleted_sale_items').select('*').in('sale_id', ids);
-            if (itemsErr) throw itemsErr;
-
-            const ordersToRestore = dbOrders || [];
-            const allItemsToRestore = dbItems || [];
+            // Read in chunks of 200 ids (a bigger .in() list blows request-URL
+            // length limits) and page each chunk (fetchAll) so a large restore
+            // can't silently lose orders or items past the ~1000-row cap —
+            // these rows drive both the re-insert and the stock adjustments.
+            const CHUNK = 200;
+            const orderChunks = [];
+            const itemChunks = [];
+            for (let i = 0; i < ids.length; i += CHUNK) {
+                const idChunk = ids.slice(i, i + CHUNK);
+                orderChunks.push(await fetchAll((from, to) => supabase
+                    .from('deleted_orders').select('*').in('id', idChunk)
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'StoreContext.restoreOrders orders' }));
+                itemChunks.push(await fetchAll((from, to) => supabase
+                    .from('deleted_sale_items').select('*').in('sale_id', idChunk)
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'StoreContext.restoreOrders items' }));
+            }
+            const ordersToRestore = orderChunks.flat();
+            const allItemsToRestore = itemChunks.flat();
 
             // Remove deleted_at before inserting back to sales
             const salesToInsert = ordersToRestore.map(({ deleted_at, ...rest }) => rest);
