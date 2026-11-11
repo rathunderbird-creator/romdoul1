@@ -94,7 +94,7 @@ const CountBadge: React.FC<{ count: number; urgent?: boolean }> = ({ count, urge
 
 const TodoPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const { currentUser, telegramConfigs, updateStoreProfile } = useStore();
+    const { currentUser, telegramConfigs, commitTelegramGroup } = useStore();
     const { showToast } = useToast();
     const isMobile = useMobile();
 
@@ -219,12 +219,11 @@ const TodoPage: React.FC = () => {
     const handleSaveTelegram = async () => {
         setIsSavingTelegram(true);
         try {
-            const existing = telegramConfigs || [];
-            const updated = todoTelegramConfig
-                ? existing.map(c => c.id === todoTelegramConfig.id
-                    ? { ...c, botToken: telegramForm.botToken.trim(), chatId: telegramForm.chatId.trim() }
-                    : c)
-                : [...existing, {
+            // Save only THIS group's row — never the whole list from a
+            // possibly stale screen (other groups' edits elsewhere survive).
+            const group = todoTelegramConfig
+                ? { ...todoTelegramConfig, botToken: telegramForm.botToken.trim(), chatId: telegramForm.chatId.trim() }
+                : {
                     id: crypto.randomUUID(),
                     // The name must contain "todo" — that's how the reminder engine
                     // finds this config instead of the order channels.
@@ -235,9 +234,9 @@ const TodoPage: React.FC = () => {
                     // by order-status changes.
                     triggerStatuses: [],
                     note: 'Used for Todo task reminders',
-                }];
+                };
 
-            await updateStoreProfile({ telegramConfigs: updated });
+            await commitTelegramGroup(group);
             showToast('Telegram reminder settings saved', 'success');
         } catch (error) {
             console.error('Failed to save Telegram reminder settings:', error);

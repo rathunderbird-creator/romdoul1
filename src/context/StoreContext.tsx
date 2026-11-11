@@ -8,7 +8,8 @@ import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
-import { applyConfigOpsLocally, type ConfigOps } from '../utils/configOps';
+import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
+import { buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
 import type {
     Product,
@@ -1234,10 +1235,26 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         telegramConfigs: []
                     };
                     setConfig(defaultConfig);
-                    await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
-                    // The database CONFIRMED there is no config row, so these
-                    // defaults really are the store's config now.
-                    configLoadedRef.current = true;
+                    const { error: seedErr } = await supabase.from('app_config').insert({ id: 1, data: defaultConfig });
+                    if (!seedErr) {
+                        // The database CONFIRMED there is no config row and our
+                        // seed landed, so these defaults really are the store's
+                        // config now.
+                        configLoadedRef.current = true;
+                    } else if (seedErr.code === '23505') {
+                        // Another terminal inserted the row between our select
+                        // and this insert — ITS config is the real one.
+                        const { data: raced } = await supabase.from('app_config').select('data').eq('id', 1).single();
+                        if (raced?.data && typeof raced.data === 'object') {
+                            setConfig(prev => ({ ...prev, ...(raced.data as Record<string, unknown>) } as ConfigState));
+                            configLoadedRef.current = true;
+                        }
+                    } else {
+                        // Seed failed (connection/RLS): the defaults on screen
+                        // are NOT confirmed — leave configLoadedRef false so any
+                        // edit re-reads first (APP-2).
+                        console.error('Failed to seed app_config:', seedErr);
+                    }
                 }
                 // If it's another error (e.g. network), do nothing to DB, retain
                 // current state fallback — and leave configLoadedRef false, so a
@@ -1350,11 +1367,46 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         roles: updatedRoles
                     };
                     setConfig(updatedConfig);
-                    await supabase.from('app_config').upsert({ id: 1, data: updatedConfig });
+                    configLoadedRef.current = true;
+                    // Per-key ops, NOT a whole-blob upsert: this branch used to
+                    // write the entire blob on boot (re-opening the APP-1 race
+                    // for any edit saved between our select and this write) and
+                    // it wrote the injected telegramConfigs — bot tokens — back
+                    // into app_config. Each repair is now its own scoped op,
+                    // and telegramConfigs is never part of any op.
+                    try {
+                        const repairs: ConfigOps = {};
+                        if (!(loadedConfig.cities || []).includes('រាជធានីភ្នំពេញ')) {
+                            repairs.cities = { op: 'set', value: updatedConfig.cities };
+                        }
+                        for (const k of ['pinnedProducts', 'pinnedOrderColumns', 'salesOrder', 'productOrder'] as const) {
+                            if (!Array.isArray(loadedConfig[k])) repairs[k] = { op: 'set', value: [] };
+                        }
+                        if (!loadedConfig.shippingCompanies?.includes('D2D')) {
+                            repairs.shippingCompanies = { op: 'append', items: ['D2D'] };
+                        }
+                        if (Object.keys(repairs).length > 0) await updateConfigOps(repairs);
+                        // roles may need both an append (missing base roles) and
+                        // an updateItems (admin permission top-up): two calls,
+                        // each additive/scoped, so neither clobbers custom roles.
+                        const missingBaseRoles = baseRoles.filter(br => !(loadedConfig.roles || []).find((r: Role) => r.id === br.id));
+                        if (missingBaseRoles.length > 0) {
+                            await updateConfigOps({ roles: { op: 'append', items: missingBaseRoles, idKey: 'id' } });
+                        }
+                        const adminBefore = (loadedConfig.roles || []).find((r: Role) => r.id === 'admin');
+                        const adminAfter = updatedRoles.find((r: Role) => r.id === 'admin');
+                        if (adminBefore && adminAfter && adminAfter.permissions.length !== adminBefore.permissions.length) {
+                            await updateConfigOps({ roles: { op: 'updateItems', items: [adminAfter], idKey: 'id' } });
+                        }
+                    } catch (e) {
+                        // Boot must not fail over a repair write; the next boot
+                        // will try again.
+                        console.error('Boot config repair write failed:', e);
+                    }
                 } else {
                     setConfig(loadedConfig);
+                    configLoadedRef.current = true;
                 }
-                configLoadedRef.current = true;
             }
         } catch (error) {
             console.error("Error fetching data:", error);
@@ -1433,14 +1485,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     //
     // Optimistic: the UI updates at once; if the save fails the change is
     // rolled back and the error rethrown so callers can show it.
-    const updateConfigOps = async (ops: ConfigOps) => {
+    //
+    // Callers whose operation is BUILT FROM the current config (updateRole's
+    // {...current,...updates}, toggleProductPin's pin-or-unpin decision, ...)
+    // pass a BUILDER instead of plain ops: when the config had never loaded,
+    // the builder runs against the freshly re-read config, never the factory
+    // defaults (APP-2). Plain 'set'/'updateItems' ops arriving while the
+    // config was unloaded are refused even after a successful re-read — their
+    // payload was already built from defaults by then.
+    const configWriteSeqRef = useRef(0);
+    const updateConfigOps = async (
+        opsOrBuilder: ConfigOps | ((cfg: ConfigState) => ConfigOps | null)
+    ) => {
         // APP-2: never write from a config that never loaded — the in-memory
         // state would be factory defaults, and even a scoped op (say roles
         // updateItems) built from them can be wrong. Re-read first; refuse
         // the edit if that also fails.
-        if (!configLoadedRef.current) {
+        const wasUnloaded = !configLoadedRef.current;
+        let freshBase: ConfigState = config;
+        if (wasUnloaded) {
             const { data: row, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
             if (!error && row?.data && typeof row.data === 'object') {
+                const { telegramConfigs: _staleBlobCopy, ...rest } = row.data as Record<string, unknown>;
+                void _staleBlobCopy;
+                freshBase = { ...config, ...rest } as ConfigState;
                 absorbServerConfig(row.data as Record<string, unknown>);
             } else if (error?.code === 'PGRST116') {
                 // The database CONFIRMED there is no config row: this really
@@ -1450,11 +1518,69 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 throw new Error('Settings have not loaded from the database yet and could not be re-read, so this change was NOT saved — otherwise it could overwrite the store\'s real settings with defaults. Check the connection and try again.');
             }
         }
-        let snapshot: ConfigState | null = null;
+        let ops: ConfigOps;
+        if (typeof opsOrBuilder === 'function') {
+            const built = opsOrBuilder(freshBase);
+            if (!built || Object.keys(built).length === 0) return;
+            ops = built;
+        } else {
+            ops = opsOrBuilder;
+            if (wasUnloaded && Object.values(ops).some(o => o.op === 'set' || o.op === 'updateItems')) {
+                // The payload was computed from a screen showing factory
+                // defaults; the real settings are on screen NOW, so retrying
+                // is safe.
+                throw new Error('Settings had not loaded from the database when this change was made, so it was NOT saved. They are loaded now — please redo the change.');
+            }
+        }
+        assertValidConfigOps(ops);
+        const opKeys = Object.keys(ops);
+        const seq = ++configWriteSeqRef.current;
+        // Snapshot ONLY the keys this write touches, so a failure rolls back
+        // this change without discarding whatever other writes or refreshes
+        // landed on OTHER keys in the meantime.
+        let snapshotVals: Record<string, { present: boolean; value: unknown }> | null = null;
         setConfig(prev => {
-            snapshot = prev;
+            snapshotVals = Object.fromEntries(opKeys.map(k => {
+                const rec = prev as unknown as Record<string, unknown>;
+                return [k, { present: k in rec, value: rec[k] }];
+            }));
             return applyConfigOpsLocally(prev, ops);
         });
+        const rollback = () => {
+            // Fall back to the closure config when the optimistic updater
+            // never flushed (it is still queued, so the keys must be reset).
+            const vals = snapshotVals ?? Object.fromEntries(opKeys.map(k => {
+                const rec = freshBase as unknown as Record<string, unknown>;
+                return [k, { present: k in rec, value: rec[k] }];
+            }));
+            setConfig(prev => {
+                const next = { ...(prev as unknown as Record<string, unknown>) };
+                for (const k of opKeys) {
+                    const s = vals[k];
+                    if (!s) continue;
+                    if (s.present) next[k] = s.value; else delete next[k];
+                }
+                return next as unknown as ConfigState;
+            });
+        };
+        // A slow response overtaken by a later write must not re-impose its
+        // older snapshot over the newer edit's keys: absorb the whole merged
+        // config only when this is still the LATEST write; otherwise absorb
+        // just this write's own keys.
+        const absorbMerged = (server: Record<string, unknown>) => {
+            if (seq === configWriteSeqRef.current) {
+                absorbServerConfig(server);
+                return;
+            }
+            setConfig(prev => {
+                const next = { ...(prev as unknown as Record<string, unknown>) };
+                for (const k of opKeys) {
+                    if (k in server) next[k] = server[k]; else delete next[k];
+                }
+                return next as unknown as ConfigState;
+            });
+            configLoadedRef.current = true;
+        };
         try {
             // Preferred path: merge inside the database.
             if (configRpcReadyRef.current !== false) {
@@ -1464,7 +1590,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (data && typeof data === 'object' && !Array.isArray(data)) {
                         // Refresh the cache from the merged result, picking up
                         // other terminals' edits along the way.
-                        absorbServerConfig(data as Record<string, unknown>);
+                        absorbMerged(data as Record<string, unknown>);
                     }
                     return;
                 }
@@ -1491,15 +1617,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // Read failed, but the config on screen IS a real loaded one
                 // (guarded above) — keep the edit working from it, exactly
                 // like the pre-migration behaviour.
-                base = { ...(snapshot ?? config) } as unknown as Record<string, unknown>;
+                base = { ...freshBase } as unknown as Record<string, unknown>;
             }
             const merged = applyConfigOpsLocally(base, ops);
             const { error: writeErr } = await supabase.from('app_config').upsert({ id: 1, data: merged });
             if (writeErr) throw new Error('Failed to update configuration: ' + writeErr.message);
-            absorbServerConfig(merged);
+            absorbMerged(merged);
         } catch (e) {
             console.error('Failed to update config in Supabase:', e);
-            if (snapshot) setConfig(snapshot); // roll back the optimistic update
+            rollback(); // roll back the optimistic update (this write's keys only)
             throw e instanceof Error ? e : new Error(String(e));
         }
     };
@@ -1670,30 +1796,38 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const removeBlockedCustomer = (phone: string) => {
-        updateConfigOps({ blockedCustomers: { op: 'removeItems', values: [phone], idKey: 'phone', norm: 'phone' } });
+        updateConfigOps({ blockedCustomers: { op: 'removeItems', values: [phone], idKey: 'phone', norm: 'phone' } })
+            .catch((error: Error) => alert('Failed to unblock customer: ' + error.message));
     };
 
     // Batched unblock in ONE config write.
     const removeBlockedCustomers = (phones: string[]) => {
-        updateConfigOps({ blockedCustomers: { op: 'removeItems', values: phones, idKey: 'phone', norm: 'phone' } });
+        updateConfigOps({ blockedCustomers: { op: 'removeItems', values: phones, idKey: 'phone', norm: 'phone' } })
+            .catch((error: Error) => alert('Failed to unblock customers: ' + error.message));
     };
 
     // The phone is the entry's identity: updates may change name/reason/etc.,
-    // never the phone itself (block the new number instead).
+    // never the phone itself (block the new number instead). Built via a
+    // BUILDER so the entry is resolved from the re-read config, never from
+    // factory defaults (APP-2).
     const updateBlockedCustomer = (phone: string, updates: Partial<BlockedCustomer>) => {
         const key = normalizePhone(phone);
-        const entry = (config.blockedCustomers || []).find(c => normalizePhone(c.phone) === key);
-        if (!entry) return;
-        updateConfigOps({ blockedCustomers: { op: 'updateItems', items: [{ ...entry, ...updates, phone: entry.phone }], idKey: 'phone', norm: 'phone' } });
+        updateConfigOps(cfg => {
+            const entry = (cfg.blockedCustomers || []).find(c => normalizePhone(c.phone) === key);
+            if (!entry) return null;
+            return { blockedCustomers: { op: 'updateItems', items: [{ ...entry, ...updates, phone: entry.phone }], idKey: 'phone', norm: 'phone' } };
+        }).catch((error: Error) => alert('Failed to update blocked customer: ' + error.message));
     };
 
+    // Builder: whether this click pins or UNpins is decided against the
+    // re-read config when the boot load had failed, not the defaults.
     const toggleProductPin = (productId: string) => {
-        const pinned = config.pinnedProducts || [];
-        if (pinned.includes(productId)) {
-            updateConfigOps({ pinnedProducts: { op: 'removeItems', values: [productId] } });
-        } else {
-            updateConfigOps({ pinnedProducts: { op: 'append', items: [productId] } });
-        }
+        updateConfigOps(cfg => {
+            const pinned = cfg.pinnedProducts || [];
+            return pinned.includes(productId)
+                ? { pinnedProducts: { op: 'removeItems', values: [productId] } }
+                : { pinnedProducts: { op: 'append', items: [productId] } };
+        }).catch((error: Error) => alert('Failed to save pin: ' + error.message));
     };
 
     // Load pinned columns from localStorage on user change
@@ -1725,7 +1859,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // no longer touches any OTHER key, so an Inventory drag can't wipe the
     // blocklist or roles any more.
     const updateProductOrder = (order: string[]) => {
-        updateConfigOps({ productOrder: { op: 'set', value: order } });
+        updateConfigOps({ productOrder: { op: 'set', value: order } })
+            .catch((error: Error) => alert('Failed to save product order: ' + error.message));
     };
 
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -3766,11 +3901,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // warehouse_stock, journal_entries before their lines) so restore can
     // insert in this same order without FK failures.
     const BACKUP_FORMAT = 'romdoul-backup';
-    const BACKUP_FORMAT_VERSION = 2;
+    // v3: chart_of_accounts included — journal_entry_lines.account_id points
+    // at it, and every database seeds it with different random UUIDs, so
+    // restore must remap by account_code (see src/utils/backupRestore.ts).
+    const BACKUP_FORMAT_VERSION = 3;
     const BACKUP_TABLES = [
         'products', 'customers', 'users', 'warehouses', 'warehouse_stock',
         'sales', 'sale_items', 'restocks', 'transactions',
-        'journal_entries', 'journal_entry_lines', 'telegram_notifications'
+        'chart_of_accounts', 'journal_entries', 'journal_entry_lines',
+        'telegram_notifications'
     ] as const;
     // users: explicit columns — pin and session_tokens are revoked from the
     // anon role (secure_pin_check.sql), so `*` would fail, and credentials
@@ -3779,9 +3918,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         users: 'id, name, email, role_id, created_at, base_salary, daily_target, weekly_target, monthly_target'
     };
     // Tables that may already hold rows on a working store without making a
-    // restore dishonest: skipped (with a notice) instead of refusing. users is
-    // never empty — the admin doing the restore is logged in with one.
-    const RESTORE_SKIP_IF_OCCUPIED = new Set(['users', 'telegram_notifications']);
+    // restore dishonest: skipped (with a notice) instead of refusing.
+    const RESTORE_SKIP_IF_OCCUPIED = new Set(['telegram_notifications']);
+    // Exported for reference but NEVER restored: users rows carry no pin
+    // (users.pin is NOT NULL, and a restored user could not log in anyway) —
+    // the target store keeps its own accounts.
+    const RESTORE_EXPORT_ONLY = new Set(['users']);
+    // Pre-seeded on every fresh store (full_schema.sql), so the emptiness
+    // check does not apply; handled by the account_code remap instead.
+    const RESTORE_REMAPPED = new Set(['chart_of_accounts']);
 
     const backupData = async () => {
         const tables: Record<string, unknown[]> = {};
@@ -3830,21 +3975,33 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (!jsonData || jsonData.format !== BACKUP_FORMAT || !jsonData.tables || typeof jsonData.tables !== 'object') {
             throw new Error('This file is not a backup made by the current Backup Database button (old backup files held only a fraction of the data and cannot be restored). Make a fresh backup to use here.');
         }
+        // A v2 file has no chart_of_accounts, but its journal_entry_lines carry
+        // the SOURCE store's account UUIDs, which cannot exist here — the
+        // restore would fail half-way. Refuse up front, honestly.
+        const backupLines = jsonData.tables['journal_entry_lines'];
+        const backupAccounts = jsonData.tables['chart_of_accounts'];
+        if (Array.isArray(backupLines) && backupLines.length > 0 && (!Array.isArray(backupAccounts) || backupAccounts.length === 0)) {
+            throw new Error('This backup file was made by an older build and is missing the chart of accounts its journal entries depend on. Make a fresh backup with the current Backup Database button.');
+        }
         setIsLoading(true);
         try {
-            // Refuse unless the data tables this backup would write are empty.
+            // Refuse unless the restorable tables are empty — ALL of them, not
+            // just the ones this backup happens to hold rows for: a young
+            // store's backup must not land in a store that already has live
+            // sales or journals in tables the file left empty.
             const occupied: string[] = [];
             const skipped: string[] = [];
-            const toRestore: Array<{ table: string; rows: unknown[] }> = [];
+            const toRestore: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
             for (const table of BACKUP_TABLES) {
+                if (RESTORE_EXPORT_ONLY.has(table) || RESTORE_REMAPPED.has(table)) continue;
                 const rows = jsonData.tables[table];
-                if (!Array.isArray(rows) || rows.length === 0) continue;
+                const hasRows = Array.isArray(rows) && rows.length > 0;
                 const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
                 if (error) throw new Error(`Restore aborted: could not check the "${table}" table (${error.message}). Nothing was changed.`);
                 if ((count || 0) > 0) {
-                    if (RESTORE_SKIP_IF_OCCUPIED.has(table)) skipped.push(table);
+                    if (RESTORE_SKIP_IF_OCCUPIED.has(table)) { if (hasRows) skipped.push(table); }
                     else occupied.push(`${table}: ${count} rows`);
-                } else {
+                } else if (hasRows) {
                     toRestore.push({ table, rows });
                 }
             }
@@ -3856,12 +4013,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 );
             }
 
+            // chart_of_accounts: the target is pre-seeded with its OWN random
+            // UUIDs, so remap the backup's account ids by account_code and
+            // insert only the accounts (custom ones) the target lacks.
+            let accountIdMap: Record<string, string> = {};
+            if (Array.isArray(backupAccounts) && backupAccounts.length > 0) {
+                const targetAccounts = await fetchAll<{ id: string; account_code: string }>((from, to) => supabase
+                    .from('chart_of_accounts')
+                    .select('id, account_code')
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'restore chart_of_accounts' });
+                const { idMap, toInsert } = buildAccountIdMap(backupAccounts as BackupAccountRow[], targetAccounts);
+                accountIdMap = idMap;
+                if (toInsert.length > 0) {
+                    const { error } = await supabase.from('chart_of_accounts').insert(toInsert);
+                    if (error) throw new Error(`Restore aborted: could not add the backup's custom accounts to the chart of accounts (${error.message}). Nothing else was changed.`);
+                }
+            }
+
             // Insert, parents before children (BACKUP_TABLES order), in chunks.
+            // A backup from a store that ran a later column migration can carry
+            // columns this database does not have: strip exactly the column the
+            // error names and retry (same pattern as insertJournalLines).
             const CHUNK = 500;
             for (const { table, rows } of toRestore) {
-                for (let i = 0; i < rows.length; i += CHUNK) {
-                    const { error } = await supabase.from(table).insert(rows.slice(i, i + CHUNK));
-                    if (error) {
+                let tableRows = table === 'journal_entry_lines' ? remapAccountIds(rows, accountIdMap) : rows;
+                for (let i = 0; i < tableRows.length; i += CHUNK) {
+                    let attempts = 0;
+                    for (;;) {
+                        const { error } = await supabase.from(table).insert(tableRows.slice(i, i + CHUNK));
+                        if (!error) break;
+                        const missing = missingColumnFromError(error.message);
+                        if (missing && attempts++ < 8) {
+                            console.warn(`Restore: "${table}" has no "${missing}" column here — restoring without it.`);
+                            tableRows = stripColumn(tableRows, missing);
+                            continue;
+                        }
                         throw new Error(`Restore failed while writing "${table}": ${error.message}. ` +
                             'The store may be PARTIALLY restored — contact support before retrying.');
                     }
@@ -3869,15 +4056,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
 
             // Settings blob last, over the fresh store's default row.
+            // telegramConfigs is stripped: telegram groups live in their own
+            // table (restored or kept above), and a legacy blob copy would
+            // carry stale bot tokens.
             if (jsonData.appConfig && typeof jsonData.appConfig === 'object') {
-                const { error } = await supabase.from('app_config').upsert({ id: 1, data: jsonData.appConfig });
+                const { telegramConfigs: _staleBlobCopy, ...restoredConfig } = jsonData.appConfig as Record<string, unknown>;
+                void _staleBlobCopy;
+                const { error } = await supabase.from('app_config').upsert({ id: 1, data: restoredConfig });
                 if (error) throw new Error('Restore failed while writing the settings (app_config): ' + error.message);
             }
 
             const skippedNote = skipped.length > 0
                 ? ` (${skipped.join(' and ')} kept — this store already has its own)`
                 : '';
-            alert(`Restore completed${skippedNote}. Page will reload.`);
+            alert(`Restore completed${skippedNote}. User accounts are never restored from a backup (the file holds them for reference only, without PINs) — this store keeps its own. Page will reload.`);
             window.location.reload();
         } finally {
             setIsLoading(false);
@@ -4040,28 +4232,34 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         ) {
             throw new Error('You cannot remove "Manage Users" from your own role — you would lock yourself out of this page.');
         }
-        // SEC-3: a non-admin may not escalate through the role editor —
-        // neither by widening their OWN role, nor by granting any role a
-        // permission their own role does not hold (grant it to a spare role,
-        // switch to it, and the lack of a self-role-change guard elsewhere
-        // would not even be needed). Removing permissions stays allowed.
-        if (updates.permissions && currentUser && currentUser.roleId !== 'admin') {
-            const targetRole = (config.roles || []).find(r => r.id === id);
-            const added = updates.permissions.filter(p => !(targetRole?.permissions || []).includes(p));
-            if (added.length > 0) {
-                if (id === currentUser.roleId) {
-                    throw new Error('You cannot add permissions to your own role. Ask an administrator.');
-                }
-                const ownPerms = (config.roles || []).find(r => r.id === currentUser.roleId)?.permissions || [];
-                const beyondOwn = added.filter(p => !ownPerms.includes(p));
-                if (beyondOwn.length > 0) {
-                    throw new Error(`You cannot grant permissions your own role does not have: ${beyondOwn.join(', ')}. Ask an administrator.`);
+        // Builder (APP-2): `current` — the base the update is spread onto —
+        // and the SEC-3 guards below resolve against the re-read config when
+        // the boot load had failed, never against the factory-default roles,
+        // so a default-derived item can no longer replace a customized role.
+        await updateConfigOps(cfg => {
+            // SEC-3: a non-admin may not escalate through the role editor —
+            // neither by widening their OWN role, nor by granting any role a
+            // permission their own role does not hold (grant it to a spare role,
+            // switch to it, and the lack of a self-role-change guard elsewhere
+            // would not even be needed). Removing permissions stays allowed.
+            if (updates.permissions && currentUser && currentUser.roleId !== 'admin') {
+                const targetRole = (cfg.roles || []).find(r => r.id === id);
+                const added = updates.permissions.filter(p => !(targetRole?.permissions || []).includes(p));
+                if (added.length > 0) {
+                    if (id === currentUser.roleId) {
+                        throw new Error('You cannot add permissions to your own role. Ask an administrator.');
+                    }
+                    const ownPerms = (cfg.roles || []).find(r => r.id === currentUser.roleId)?.permissions || [];
+                    const beyondOwn = added.filter(p => !ownPerms.includes(p));
+                    if (beyondOwn.length > 0) {
+                        throw new Error(`You cannot grant permissions your own role does not have: ${beyondOwn.join(', ')}. Ask an administrator.`);
+                    }
                 }
             }
-        }
-        const current = (config.roles || []).find(r => r.id === id);
-        if (!current) throw new Error('This role no longer exists — refresh and try again.');
-        await updateConfigOps({ roles: { op: 'updateItems', items: [{ ...current, ...updates }], idKey: 'id' } });
+            const current = (cfg.roles || []).find(r => r.id === id);
+            if (!current) throw new Error('This role no longer exists — refresh and try again.');
+            return { roles: { op: 'updateItems', items: [{ ...current, ...updates }], idKey: 'id' } };
+        });
     };
 
     const deleteRole = async (id: string) => {
@@ -4085,53 +4283,49 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await updateConfigOps({ khrExchangeRate: { op: 'set', value: rate } });
     };
 
-    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => {
-        const { telegramConfigs, ...restData } = data;
-
-        if (telegramConfigs !== undefined) {
-            // First, find what's deleted
-            const currentIds = config.telegramConfigs?.map(c => c.id) || [];
-            const newIds = telegramConfigs.map(c => c.id);
-            const deletedIds = currentIds.filter(id => !newIds.includes(id));
-
-            if (deletedIds.length > 0) {
-                const { error } = await supabase.from('telegram_notifications').delete().in('id', deletedIds);
-                if (error) {
-                    console.error("Error deleting telegram configs:", error);
-                    throw new Error("Database error removing telegram group: " + error.message);
-                }
-            }
-
-            // Upsert remaining
-            if (telegramConfigs.length > 0) {
-                const upsertData = telegramConfigs.map(tc => ({
-                    id: tc.id,
-                    name: tc.name,
-                    bot_token: tc.botToken,
-                    chat_id: tc.chatId,
-                    trigger_statuses: tc.triggerStatuses,
-                    message_template: tc.messageTemplate,
-                    note: tc.note
-                }));
-                const { error } = await supabase.from('telegram_notifications').upsert(upsertData);
-                if (error) {
-                    console.error("Error upserting telegram configs:", error);
-                    throw new Error("Database error saving telegram config: " + error.message);
-                }
-            }
-
-            // telegram_notifications is their real home — they are NOT written
-            // into the config blob any more (a legacy blob copy went stale the
-            // moment another terminal edited it). Local state only:
-            setConfig(prev => ({ ...prev, telegramConfigs }));
-        }
-
+    const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => {
         // Only the fields the caller actually passed, each as its own 'set'.
         const ops: ConfigOps = {};
-        for (const [key, value] of Object.entries(restData)) {
+        for (const [key, value] of Object.entries(data)) {
             if (value !== undefined) ops[key] = { op: 'set', value };
         }
         if (Object.keys(ops).length > 0) await updateConfigOps(ops);
+    };
+
+    // Telegram groups live in their own table (telegram_notifications), one
+    // row per group — never in the config blob (a legacy blob copy went stale
+    // the moment another terminal edited it). Commit writes ONE row and Remove
+    // deletes ONE id: passing the whole list around meant a screen loaded 20
+    // minutes ago re-upserted its stale copy of every OTHER group, silently
+    // reverting edits made elsewhere — the APP-1 disease relocated.
+    const commitTelegramGroup = async (tc: TelegramConfig) => {
+        const { error } = await supabase.from('telegram_notifications').upsert({
+            id: tc.id,
+            name: tc.name,
+            bot_token: tc.botToken,
+            chat_id: tc.chatId,
+            trigger_statuses: tc.triggerStatuses,
+            message_template: tc.messageTemplate,
+            note: tc.note
+        });
+        if (error) {
+            console.error("Error upserting telegram config:", error);
+            throw new Error("Database error saving telegram config: " + error.message);
+        }
+        setConfig(prev => {
+            const list = prev.telegramConfigs || [];
+            const exists = list.some(c => c.id === tc.id);
+            return { ...prev, telegramConfigs: exists ? list.map(c => (c.id === tc.id ? tc : c)) : [...list, tc] };
+        });
+    };
+
+    const removeTelegramGroup = async (id: string) => {
+        const { error } = await supabase.from('telegram_notifications').delete().eq('id', id);
+        if (error) {
+            console.error("Error deleting telegram config:", error);
+            throw new Error("Database error removing telegram group: " + error.message);
+        }
+        setConfig(prev => ({ ...prev, telegramConfigs: (prev.telegramConfigs || []).filter(c => c.id !== id) }));
     };
 
     // Timezone
@@ -4288,6 +4482,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             telegramConfigs: config.telegramConfigs || [],
             updateStoreAddress,
             updateStoreProfile,
+            commitTelegramGroup,
+            removeTelegramGroup,
             timezone: config.timezone || 'Asia/Phnom_Penh',
             updateTimezone,
             taxRate: config.taxRate || 0,

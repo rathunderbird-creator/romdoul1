@@ -40,6 +40,21 @@ const itemKey = (item: unknown, idKey?: string, norm?: string): string | null =>
     return norm === 'phone' ? text.replace(/\D/g, '') : text;
 };
 
+// Mirror of the SQL guards: a 'set' whose value is undefined would be sent as
+// {op:'set'} (JSON.stringify drops undefined), and on the server jsonb_set is
+// STRICT — the whole stored config would become NULL. Refuse before anything
+// is written or optimistically applied.
+export function assertValidConfigOps(ops: ConfigOps): void {
+    for (const [key, op] of Object.entries(ops)) {
+        if (!op || typeof op !== 'object' || typeof (op as { op?: unknown }).op !== 'string') {
+            throw new Error(`Config write refused: the operation for "${key}" is not a valid operation object.`);
+        }
+        if (op.op === 'set' && op.value === undefined) {
+            throw new Error(`Config write refused: "set" for "${key}" carries no value — it would wipe the stored settings. Use "remove" to delete a key.`);
+        }
+    }
+}
+
 const asArray = (cur: unknown): unknown[] => (Array.isArray(cur) ? cur : []);
 const asObject = (cur: unknown): Record<string, unknown> =>
     cur && typeof cur === 'object' && !Array.isArray(cur) ? (cur as Record<string, unknown>) : {};

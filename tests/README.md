@@ -34,6 +34,20 @@ setup as auth-guards:
     npm i --no-save @electric-sql/pglite
     node tests/config-functions.test.mjs
 
+## backup-restore.test.mjs
+
+PGlite round-trip of the restore helpers (`src/utils/backupRestore.ts`):
+chart_of_accounts is seeded with different random UUIDs in every database, so
+journal_entry_lines from a backup must have `account_id` remapped by
+`account_code` (custom accounts inserted), and columns the target lacks
+(schema drift, e.g. `journal_entry_lines.description`) stripped and retried.
+Builds two independent PGlite databases and proves the raw insert fails the FK
+while the remapped restore lands every line on the right account. Same PGlite
+setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/backup-restore.test.mjs
+
 ## order-status-rules.test.mjs
 
 Unit test of `src/utils/orderStatusRules.ts` — the shared refusal rules the

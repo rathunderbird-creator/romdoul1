@@ -304,7 +304,11 @@ export interface StoreContextType {
     khrExchangeRate: number;
     updateKhrExchangeRate: (rate: number) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
-    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string; telegramConfigs?: TelegramConfig[] }) => void;
+    updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => Promise<void>;
+    // One row per telegram group: commit writes/updates ONE group, remove
+    // deletes ONE id — never the whole list from a possibly stale screen.
+    commitTelegramGroup: (config: TelegramConfig) => Promise<void>;
+    removeTelegramGroup: (id: string) => Promise<void>;
 
     // Blocked Customers (Scammer Blacklist)
     blockedCustomers: BlockedCustomer[];

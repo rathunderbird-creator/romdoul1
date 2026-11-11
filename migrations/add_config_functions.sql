@@ -39,16 +39,11 @@
 -- normalizePhone. removeItems' "values" are compared against that same key
 -- (so the app can pass plain phone strings to unblock customers).
 --
--- Until this file is run, the app probes app_config_functions_ready(),
--- notices the function is missing and quietly falls back to the old
--- whole-blob write — config edits keep working, they just keep the old risk.
-
--- The probe the app uses to ask whether this file has been run.
-CREATE OR REPLACE FUNCTION app_config_functions_ready()
-RETURNS BOOLEAN
-LANGUAGE sql
-IMMUTABLE
-AS $$ SELECT true $$;
+-- Until this file is run, there is no separate probe: the app simply calls
+-- update_app_config, recognises the "function does not exist" error
+-- (isRpcMissingError in src/utils/dbFunctions.ts) and quietly falls back to a
+-- read-merge-write of the changed keys — config edits keep working, they just
+-- keep the old same-moment race until the migration is run.
 
 CREATE SCHEMA IF NOT EXISTS cfg_internal;
 GRANT USAGE ON SCHEMA cfg_internal TO anon, authenticated;
@@ -100,6 +95,13 @@ DECLARE
     v_found BOOLEAN;
 BEGIN
     IF v_kind = 'set' THEN
+        -- A 'set' without a "value" key would return SQL NULL here, and
+        -- jsonb_set (STRICT) would then null the ENTIRE stored config.
+        -- JSON.stringify drops `value: undefined`, so this is exactly what a
+        -- buggy caller would send — refuse it instead of destroying the blob.
+        IF NOT (p_op ? 'value') THEN
+            RAISE EXCEPTION 'update_app_config: a "set" operation must carry a "value" (use "remove" to delete the key)';
+        END IF;
         RETURN p_op -> 'value';
     ELSIF v_kind = 'merge' THEN
         RETURN (CASE WHEN p_cur IS NOT NULL AND jsonb_typeof(p_cur) = 'object' THEN p_cur ELSE '{}'::jsonb END)
@@ -168,6 +170,7 @@ DECLARE
     v_data JSONB;
     v_key TEXT;
     v_op JSONB;
+    v_new JSONB;
 BEGIN
     IF p_ops IS NULL OR jsonb_typeof(p_ops) <> 'object' THEN
         RAISE EXCEPTION 'update_app_config: p_ops must be a JSON object of per-key operations';
@@ -195,7 +198,13 @@ BEGIN
         IF v_op ->> 'op' = 'remove' THEN
             v_data := v_data - v_key;
         ELSE
-            v_data := jsonb_set(v_data, ARRAY[v_key], cfg_internal.cfg_apply_op(v_data -> v_key, v_op), true);
+            v_new := cfg_internal.cfg_apply_op(v_data -> v_key, v_op);
+            -- Belt and braces: jsonb_set is STRICT, so an SQL NULL here would
+            -- null the whole config. No op may produce it.
+            IF v_new IS NULL THEN
+                RAISE EXCEPTION 'update_app_config: the operation for "%" produced NULL — refusing to wipe the config', v_key;
+            END IF;
+            v_data := jsonb_set(v_data, ARRAY[v_key], v_new, true);
         END IF;
     END LOOP;
 
@@ -204,7 +213,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION app_config_functions_ready() TO anon, authenticated;
+-- An earlier draft of this file created app_config_functions_ready(); the app
+-- never calls it (the fallback probe is the update_app_config error itself),
+-- so drop it if a previous run left it behind.
+DROP FUNCTION IF EXISTS app_config_functions_ready();
+
 GRANT EXECUTE ON FUNCTION cfg_internal.cfg_item_key(JSONB, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cfg_internal.cfg_apply_op(JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION update_app_config(JSONB) TO anon, authenticated;
