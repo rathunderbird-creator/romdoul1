@@ -55,3 +55,19 @@ Orders/OM2/Payment Tracking bulk edits, the OM2 drawer and Delivery
 Tracking's badge enforce. Transpiled on the fly with the repo's own esbuild:
 
     node tests/order-status-rules.test.mjs
+
+## sec1-session-guards.test.mjs
+
+Runs `migrations/add_session_guards.sql` (SEC-1 phase 1) on top of the real
+stack — `full_schema.sql`, `add_auth_guards.sql` and the five function packs
+— and checks the session guard itself (null / invalid / wrong-permission /
+valid sessions, with enforcement off and on), the per-function permission
+map, the users-table rules (`save_user` / `delete_user` / `set_user_pin` /
+`update_user_work_fields`), the app_config per-key permission map (the
+roles rules included), that the old unguarded public signatures are gone,
+that the `anon` role can no longer write `users` / `app_config` /
+`security_settings` directly, and that the packs still work end to end with
+sessions supplied. Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/sec1-session-guards.test.mjs

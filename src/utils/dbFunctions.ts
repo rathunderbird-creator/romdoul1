@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getSessionArg, isSessionExpiredError, notifySessionExpired } from './session';
 
 // Wholesale orders, customer and supplier payments, Add Stock and receiving a
 // purchase order each run as ONE database function, in one transaction
@@ -24,8 +25,54 @@ export function dbFunctionMessage(error: unknown, area: string): string {
     return message || 'Unknown error';
 }
 
+// SEC-1 session guards (migrations/add_session_guards.sql): every guarded
+// function takes an extra p_session argument, verified server-side. A store
+// that has run the pack but NOT the guards migration only knows the old
+// signature, and PostgREST then reports the p_session call as a missing
+// function — so on that exact error the call is retried once without
+// p_session, and the answer is remembered per function so each call pays
+// the probe at most once per app load (same idea as configRpcReadyRef).
+// Session args are stable across a retryKey replay: the token only changes
+// on a fresh login, which replaces the whole screen anyway.
+const guardedSignatureKnown = new Map<string, boolean>();
+
+const isMissingFunctionError = (error: unknown): boolean => {
+    const code = String((error as { code?: unknown })?.code || '');
+    const msg = String((error as { message?: unknown })?.message || '');
+    return code === 'PGRST202' || code === '42883' || /could not find the function/i.test(msg);
+};
+
+// supabase.rpc with p_session attached (and the un-guarded retry above).
+// Returns the same {data, error} shape so existing error handling at each
+// call site keeps working. A 'session has expired' refusal also notifies
+// the registered handler (StoreContext forces a logout).
+export async function rpcWithSession(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { code?: string; message: string } | null }> {
+    if (guardedSignatureKnown.get(name) !== false) {
+        const res = await supabase.rpc(name, { ...args, p_session: getSessionArg() });
+        if (!res.error) {
+            guardedSignatureKnown.set(name, true);
+            return res;
+        }
+        if (!isMissingFunctionError(res.error)) {
+            if (isSessionExpiredError(res.error.message)) notifySessionExpired(res.error.message);
+            return res;
+        }
+        // Old signature only (guards migration not run) — or the pack itself
+        // is missing; the plain call below tells those two apart.
+        guardedSignatureKnown.set(name, false);
+    }
+    const res = await supabase.rpc(name, args);
+    if (!res.error) return res;
+    if (isMissingFunctionError(res.error)) {
+        // The pack itself is missing: forget the cached "unguarded" verdict
+        // so a store migrated later (guards included) is probed afresh.
+        guardedSignatureKnown.delete(name);
+    }
+    return res;
+}
+
 export async function callDbFunction<T>(name: string, args: Record<string, unknown>, area: string): Promise<T> {
-    const { data, error } = await supabase.rpc(name, args);
+    const { data, error } = await rpcWithSession(name, args);
     if (error) throw new Error(dbFunctionMessage(error, area));
     return data as T;
 }

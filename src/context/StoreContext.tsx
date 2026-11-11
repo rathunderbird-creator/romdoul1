@@ -5,7 +5,8 @@ import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { insertJournalLines } from '../utils/journalEntryLines';
-import { callDbFunction, noticesOf } from '../utils/dbFunctions';
+import { callDbFunction, noticesOf, rpcWithSession } from '../utils/dbFunctions';
+import { setSessionAuth, registerSessionExpiredHandler } from '../utils/session';
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
@@ -786,6 +787,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setCurrentUser(user);
         localStorage.setItem('currentUser', JSON.stringify(user));
         inMemorySessionToken = sessionToken;
+        setSessionAuth(user.id, sessionToken); // SEC-1: guarded RPCs attach this session
         try {
             if (sessionToken) localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
             else localStorage.removeItem(SESSION_TOKEN_KEY); // legacy path: no stale token from a previous user
@@ -809,6 +811,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 .then(() => undefined, () => undefined);
         }
         inMemorySessionToken = null;
+        setSessionAuth(null, null);
         setCurrentUser(null);
         localStorage.removeItem('currentUser');
         try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
@@ -838,6 +841,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // may have spanned a logout or user switch).
             if (valid === false && currentUserRef.current?.id === userId) {
                 inMemorySessionToken = null;
+                setSessionAuth(null, null);
                 setCurrentUser(null);
                 localStorage.removeItem('currentUser');
                 try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
@@ -846,6 +850,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             console.error('verify_session failed:', e);
         }
     };
+
+    // SEC-1: a guarded RPC refused with 'Your session has expired' means this
+    // terminal's token is gone from users.session_tokens (revoked, or rotated
+    // out by newer logins) — force the same logout verify_session's "no"
+    // causes, with the server's own message, so the next PIN entry mints a
+    // fresh token. Mount-once; the handler reads live state through refs.
+    useEffect(() => {
+        registerSessionExpiredHandler((message) => {
+            if (!currentUserRef.current) return; // already logged out
+            inMemorySessionToken = null;
+            setSessionAuth(null, null);
+            setCurrentUser(null);
+            localStorage.removeItem('currentUser');
+            try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
+            alert(message);
+        });
+        return () => registerSessionExpiredHandler(null);
+    }, []);
 
     const hasPermission = (permission: Permission): boolean => {
         if (!currentUser) {
@@ -1584,7 +1606,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             // Preferred path: merge inside the database.
             if (configRpcReadyRef.current !== false) {
-                const { data, error } = await supabase.rpc('update_app_config', { p_ops: ops });
+                const { data, error } = await rpcWithSession('update_app_config', { p_ops: ops });
                 if (!error) {
                     configRpcReadyRef.current = true;
                     if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -2369,7 +2391,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         pendingOrderIds.set(signature, { id: newSale.id, at: nowMs });
         const [txId, depTxId] = paymentTxKeys.take('create:' + newSale.id, 2);
 
-        const { data, error } = await supabase.rpc('create_retail_order', {
+        const { data, error } = await rpcWithSession('create_retail_order', {
             p_order: {
                 id: newSale.id,
                 total: newSale.total,
@@ -2509,7 +2531,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Posted one stays, with a notice), Received and settle date are
         // reset, and the payment goes to Cancel (a PdFee order keeps PdFee —
         // the delivery fee was collected and stays booked).
-        const { data, error } = await supabase.rpc('apply_restock_payment_side', { p_ids: orderIds, p_fields: {} });
+        const { data, error } = await rpcWithSession('apply_restock_payment_side', { p_ids: orderIds, p_fields: {} });
         if (error) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + orderPaymentRpcMessage(error));
         const res = (data || {}) as { cancelled?: string[]; paid_reset?: string[]; transactions_removed?: string[]; notices?: string[] };
 
@@ -2679,7 +2701,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } else {
             // Status, stock, inventory items, stock-out records (and for a restock the
             // return records) in one database transaction: all of it or none of it.
-            const { data: result, error: rpcError } = await supabase.rpc('set_order_shipping_status', {
+            const { data: result, error: rpcError } = await rpcWithSession('set_order_shipping_status', {
                 p_order_id: id,
                 p_expected_status: expectedStatus,
                 p_new_status: status,
@@ -2765,7 +2787,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // its items replaced the way it always was (delete, then insert): no stock
     // moves for it, so it needs no database function.
     const replaceOrderItems = async (orderId: string, items: Sale['items'], statusNow: string) => {
-        const { data, error } = await supabase.rpc('edit_order_items', {
+        const { data, error } = await rpcWithSession('edit_order_items', {
             p_order_id: orderId,
             p_items: items.map(item => ({ id: item.id || null, name: item.name, price: item.price, quantity: item.quantity, image: item.image ?? null })),
             p_fields: { created_by: currentUser?.id || 'unknown' },
@@ -3059,7 +3081,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const paySignature = 'pay:' + id + ':' + JSON.stringify(pUpdates);
             const [payTxId] = paymentTxKeys.take(paySignature);
             pUpdates.tx_id = payTxId;
-            const { data: payData, error: payErr } = await supabase.rpc('set_order_payment', {
+            const { data: payData, error: payErr } = await rpcWithSession('set_order_payment', {
                 p_order_id: id,
                 // The status this save decided from (the fresh read above): the
                 // database refuses if the order has moved on since — the same
@@ -3337,7 +3359,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const notices: string[] = [];
             for (let i = 0; i < ids.length; i += BATCH_SIZE) {
                 const batch = ids.slice(i, i + BATCH_SIZE);
-                const { data, error } = await supabase.rpc('delete_retail_orders', { p_ids: batch, p_fields: {} });
+                const { data, error } = await rpcWithSession('delete_retail_orders', { p_ids: batch, p_fields: {} });
                 if (error) throw new Error(orderPaymentRpcMessage(error));
                 const res = (data || {}) as { deleted?: string[]; stock?: Record<string, number>; transactions_removed?: string[]; notices?: string[] };
                 applyStockMap(res.stock);
@@ -3869,7 +3891,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (!(await paymentFunctionsReady())) {
                 throw new Error(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
             }
-            const { data, error } = await supabase.rpc('restock_returned_orders', {
+            const { data, error } = await rpcWithSession('restock_returned_orders', {
                 p_ids: requestedIds,
                 p_fields: orderStockFields(now),
             });
@@ -4135,14 +4157,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     };
 
+    // SEC-1: users writes go through the guarded functions of
+    // migrations/add_session_guards.sql (which re-enforce every SEC-3 rule
+    // below IN the database, against the verified session), because direct
+    // INSERT/UPDATE/DELETE on users is revoked once that migration runs.
+    // The direct writes remain ONLY as the fallback for a store that has
+    // not run it yet (the established probe: the RPC reports itself
+    // missing). The client-side assertCanTouchUser checks stay as
+    // defence-in-depth and for instant plain-language feedback.
+    const isUsersRpcMissing = (error: { code?: string; message: string } | null): boolean =>
+        !!error && isRpcMissingError(error);
+
     const addUser = async (userData: Omit<User, 'id'>) => {
         assertCanTouchUser(null, userData);
         const newUser: User = { ...userData, id: Date.now().toString() + Math.random().toString(36).substring(2) };
-
-        // No .select() on the insert: it would request RETURNING * — and once
-        // secure_pin_check.sql revokes read access on the pin column, the whole
-        // INSERT would be rejected. Nothing needs the returned row anyway.
-        const { error } = await supabase.from('users').insert({
+        const row = {
             id: newUser.id,
             name: newUser.name,
             email: newUser.email,
@@ -4152,11 +4181,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             daily_target: newUser.dailyTarget || 0,
             weekly_target: newUser.weeklyTarget || 0,
             monthly_target: newUser.monthlyTarget || 0
-        });
+        };
 
-        if (error) {
-            console.error('Failed to add user to database:', error);
-            throw new Error('Failed to add user: ' + error.message);
+        const { error: rpcError } = await rpcWithSession('save_user', { p_user: row });
+        if (rpcError) {
+            if (!isUsersRpcMissing(rpcError)) {
+                console.error('Failed to add user to database:', rpcError);
+                throw new Error('Failed to add user: ' + rpcError.message);
+            }
+            // Store not migrated yet (add_session_guards.sql): legacy direct
+            // insert. No .select(): it would request RETURNING * — and once
+            // secure_pin_check.sql revokes read access on the pin column, the
+            // whole INSERT would be rejected. Nothing needs the returned row.
+            const { error } = await supabase.from('users').insert(row);
+            if (error) {
+                console.error('Failed to add user to database:', error);
+                throw new Error('Failed to add user: ' + error.message);
+            }
         }
 
         setUsers(prev => [...prev, { ...newUser, pin: undefined }]);
@@ -4181,10 +4222,31 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.weeklyTarget !== undefined) dbUpdates.weekly_target = updates.weeklyTarget;
         if (updates.monthlyTarget !== undefined) dbUpdates.monthly_target = updates.monthlyTarget;
 
-        const { error } = await supabase.from('users').update(dbUpdates).eq('id', id);
-        if (error) {
-            console.error('Failed to update user:', error);
-            throw new Error('Failed to update user: ' + error.message);
+        // Route to the narrowest guarded function that covers the change:
+        // payroll/target-only edits (Payroll, Staff Performance) go through
+        // update_user_work_fields (manage_payroll), a PIN-only change through
+        // set_user_pin, everything else through save_user (manage_users).
+        const keys = Object.keys(dbUpdates);
+        const workFieldKeys = ['base_salary', 'daily_target', 'weekly_target', 'monthly_target'];
+        let rpcError: { code?: string; message: string } | null;
+        if (keys.length > 0 && keys.every(k => workFieldKeys.includes(k))) {
+            ({ error: rpcError } = await rpcWithSession('update_user_work_fields', { p_id: id, p_fields: dbUpdates }));
+        } else if (keys.length === 1 && keys[0] === 'pin') {
+            ({ error: rpcError } = await rpcWithSession('set_user_pin', { p_id: id, p_pin: dbUpdates.pin }));
+        } else {
+            ({ error: rpcError } = await rpcWithSession('save_user', { p_user: { id, ...dbUpdates } }));
+        }
+        if (rpcError) {
+            if (!isUsersRpcMissing(rpcError)) {
+                console.error('Failed to update user:', rpcError);
+                throw new Error('Failed to update user: ' + rpcError.message);
+            }
+            // Store not migrated yet: legacy direct update.
+            const { error } = await supabase.from('users').update(dbUpdates).eq('id', id);
+            if (error) {
+                console.error('Failed to update user:', error);
+                throw new Error('Failed to update user: ' + error.message);
+            }
         }
 
         setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
@@ -4192,10 +4254,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const deleteUser = async (id: string) => {
         assertCanTouchUser(id, {}, 'delete');
-        const { error } = await supabase.from('users').delete().eq('id', id);
-        if (error) {
-            console.error('Failed to delete user:', error);
-            throw new Error('Failed to delete user: ' + error.message);
+        const { error: rpcError } = await rpcWithSession('delete_user', { p_id: id });
+        if (rpcError) {
+            if (!isUsersRpcMissing(rpcError)) {
+                console.error('Failed to delete user:', rpcError);
+                throw new Error('Failed to delete user: ' + rpcError.message);
+            }
+            // Store not migrated yet: legacy direct delete.
+            const { error } = await supabase.from('users').delete().eq('id', id);
+            if (error) {
+                console.error('Failed to delete user:', error);
+                throw new Error('Failed to delete user: ' + error.message);
+            }
         }
 
         setUsers(prev => prev.filter(u => u.id !== id));
