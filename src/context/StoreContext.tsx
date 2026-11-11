@@ -557,6 +557,12 @@ const BOOT_SNAPSHOT_KEY = 'pos_boot_snapshot_v1';
 // not a field on the currentUser blob — so the refresh revalidation's
 // localStorage rewrites of currentUser can never drop it.
 const SESSION_TOKEN_KEY = 'pos_session_token_v1';
+// In-memory copy of the minted session token. On a kiosk browser with full or
+// blocked storage, localStorage.setItem throws: without this fallback such a
+// terminal would log in fine and then be logged out on its next refresh
+// (verify_session with an empty token is a definitive "no"), a login loop.
+// It is a fallback only — a reload still needs the localStorage copy.
+let inMemorySessionToken: string | null = null;
 
 interface BootSnapshot {
     url: string;               // Supabase instance the data came from
@@ -767,15 +773,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const finishLogin = (user: User, sessionToken: string | null): true => {
         setCurrentUser(user);
         localStorage.setItem('currentUser', JSON.stringify(user));
+        inMemorySessionToken = sessionToken;
         try {
             if (sessionToken) localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
             else localStorage.removeItem(SESSION_TOKEN_KEY); // legacy path: no stale token from a previous user
-        } catch { /* storage full/blocked — login still works, next refresh re-verifies */ }
+        } catch { /* storage full/blocked — the in-memory copy above keeps this session verifiable until reload */ }
         dispatchActivity({ action: 'user_login', description: `${user.name} logged in`, userId: user.id, userName: user.name });
         return true;
     };
 
     const logout = () => {
+        // Best-effort server-side revocation: without it the token's hash
+        // stays valid in users.session_tokens until 8 further logins rotate it
+        // out, so a copied token could revive the session after a visible
+        // logout. Fire-and-forget — a missing RPC (store not migrated) or a
+        // network blip must never block logging out locally.
+        const userId = currentUser?.id;
+        let token: string | null = null;
+        try { token = localStorage.getItem(SESSION_TOKEN_KEY); } catch { /* fall through */ }
+        if (!token) token = inMemorySessionToken;
+        if (userId && token) {
+            void supabase.rpc('revoke_session', { p_user_id: userId, p_token: token })
+                .then(() => undefined, () => undefined);
+        }
+        inMemorySessionToken = null;
         setCurrentUser(null);
         localStorage.removeItem('currentUser');
         try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
@@ -790,6 +811,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const verifyStoredSession = async (userId: string) => {
         let token = '';
         try { token = localStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { /* treated as missing */ }
+        if (!token) token = inMemorySessionToken || ''; // storage full/blocked at login time
         try {
             const { data, error } = await supabase.rpc('verify_session', {
                 p_user_id: userId,
@@ -803,6 +825,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Only act when THIS user is still the live session (the refresh
             // may have spanned a logout or user switch).
             if (valid === false && currentUserRef.current?.id === userId) {
+                inMemorySessionToken = null;
                 setCurrentUser(null);
                 localStorage.removeItem('currentUser');
                 try { localStorage.removeItem(SESSION_TOKEN_KEY); } catch { /* ignore */ }
@@ -3803,14 +3826,43 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Auth + RLS (the separate SEC-1 project): the app writes the users table
     // directly with the shared anon key, so a SQL guard function could not
     // know who is asking.
-    const assertCanTouchUser = (targetId: string | null, updates: Partial<User>) => {
+    const assertCanTouchUser = (targetId: string | null, updates: Partial<User>, action: 'save' | 'delete' = 'save') => {
         if (currentUser?.roleId === 'admin') return;
+        const permsOf = (roleId?: string): Permission[] =>
+            roleId === 'admin' ? ALL_PERMISSIONS : (config.roles || []).find(r => r.id === roleId)?.permissions || [];
+        const ownPerms = permsOf(currentUser?.roleId);
         const target = targetId ? users.find(u => u.id === targetId) : null;
         if (target?.roleId === 'admin') {
-            throw new Error('Only an administrator can edit or delete an admin account.');
+            if (action === 'delete') {
+                throw new Error('Only an administrator can delete an admin account.');
+            }
+            // Identity and credentials of an admin account are admin-only.
+            // Payroll/target-only updates stay allowed: setting the owner's
+            // base salary or sales targets (Payroll, Staff Performance) is a
+            // manage_payroll flow, not an escalation.
+            if (['name', 'email', 'pin', 'roleId'].some(k => (updates as Record<string, unknown>)[k] !== undefined)) {
+                throw new Error('Only an administrator can edit an admin account.');
+            }
         }
-        if (updates.roleId === 'admin') {
+        if (updates.roleId === 'admin' && target?.roleId !== 'admin') {
             throw new Error('Only an administrator can assign the Administrator role.');
+        }
+        // SEC-3 (review): "cannot grant permissions your own role lacks" must
+        // also hold for role ASSIGNMENT, not just the role editor — otherwise
+        // a manage_users non-admin assigns an existing richer role (one an
+        // admin built) to a puppet account whose PIN they set, and logs in as
+        // it. Same cap for changing the PIN of an already-richer account.
+        if (updates.roleId !== undefined && updates.roleId !== target?.roleId) {
+            const beyond = permsOf(updates.roleId).filter(p => !ownPerms.includes(p));
+            if (beyond.length > 0) {
+                throw new Error(`You cannot assign a role that has permissions your own role does not have: ${beyond.join(', ')}. Ask an administrator.`);
+            }
+        }
+        if (updates.pin !== undefined && target && target.id !== currentUser?.id) {
+            const beyond = permsOf(target.roleId).filter(p => !ownPerms.includes(p));
+            if (beyond.length > 0) {
+                throw new Error('You cannot change the password of an account whose role has permissions your own role does not have. Ask an administrator.');
+            }
         }
     };
 
@@ -3870,7 +3922,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const deleteUser = async (id: string) => {
-        assertCanTouchUser(id, {});
+        assertCanTouchUser(id, {}, 'delete');
         const { error } = await supabase.from('users').delete().eq('id', id);
         if (error) {
             console.error('Failed to delete user:', error);

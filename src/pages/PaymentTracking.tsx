@@ -8,7 +8,7 @@ import type { Sale } from '../types';
 import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
-import { statusChangeRefusal, paymentChangeRefusal } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../utils/orderStatusRules';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -214,8 +214,21 @@ const PaymentTracking: React.FC = () => {
                 updates.date = new Date(value).toISOString();
                 await updateOrders(ids, updates);
             } else if (field === 'settleDate') {
-                updates.settleDate = new Date(value).toISOString();
-                await updateOrders(ids, updates);
+                // ORD-9: a posted Paid/PdFee/Cancel order's settle date is its
+                // booked receipt's day — same lock as the payment badge.
+                const allowedIds = ids.filter(id => {
+                    const order = serverOrders.find(s => s.id === id);
+                    const refusal = settleDateChangeRefusal(
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        { isAdmin, canRestock }
+                    );
+                    if (refusal) { lastReason = refusal; notSaved++; return false; }
+                    return true;
+                });
+                if (allowedIds.length > 0) {
+                    updates.settleDate = new Date(value).toISOString();
+                    await updateOrders(allowedIds, updates);
+                }
             } else if (field === 'status') {
                 // Route through updateOrderStatus (not updateOrders) so bulk status
                 // changes run the same stock handling as single-row changes.

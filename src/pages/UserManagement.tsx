@@ -154,7 +154,25 @@ const UserManagement: React.FC = () => {
     // is UI honesty, not the actual guard.
     const isAdminActor = currentUser?.roleId === 'admin';
     const canTouchUser = (user: User) => isAdminActor || user.roleId !== 'admin';
-    const assignableRoles = isAdminActor ? roles : roles.filter(r => r.id !== 'admin');
+    // SEC-3 (review): a non-admin may only hand out roles whose permissions
+    // their OWN role already holds — otherwise assigning an existing richer
+    // role (one an admin built) to an account whose password they set is a
+    // ready-made escalation. Admin is excluded for everyone below admin.
+    const actorPermissions = currentUser?.roleId === 'admin'
+        ? ALL_PERMISSIONS
+        : roles.find(r => r.id === currentUser?.roleId)?.permissions || [];
+    const roleWithinActor = (role: Role) =>
+        role.id !== 'admin' && role.permissions.every(p => actorPermissions.includes(p));
+    const assignableRoles = isAdminActor ? roles : roles.filter(roleWithinActor);
+    // Same cap for passwords: a non-admin may not reset the password of an
+    // account whose role is richer than their own (the store refuses too).
+    const canSetPinFor = (user: User | null) => {
+        if (isAdminActor || !user) return true;
+        if (user.id === currentUser?.id) return true;
+        if (user.roleId === 'admin') return false;
+        const targetRole = roles.find(r => r.id === user.roleId);
+        return !targetRole || targetRole.permissions.every(p => actorPermissions.includes(p));
+    };
 
     const closeUserModal = () => {
         setIsUserModalOpen(false);
@@ -207,7 +225,7 @@ const UserManagement: React.FC = () => {
             });
         } else {
             setEditingUser(null);
-            setUserFormData({ name: '', email: '', roleId: roles[0]?.id || '', pin: '', dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 });
+            setUserFormData({ name: '', email: '', roleId: assignableRoles[0]?.id || '', pin: '', dailyTarget: 0, weeklyTarget: 0, monthlyTarget: 0 });
         }
         setShowUserPassword(false);
         setIsUserModalOpen(true);
@@ -852,8 +870,9 @@ const UserManagement: React.FC = () => {
                             </div>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Role <span style={{ color: 'var(--color-red)' }}>*</span></label>
-                                {/* SEC-3: non-admins never see the Administrator option, and
-                                    nobody can change their OWN role (the store refuses both too). */}
+                                {/* SEC-3: non-admins only see roles their own role's permissions
+                                    cover (never Administrator, never a richer custom role), and
+                                    nobody can change their OWN role (the store refuses all of it too). */}
                                 <select
                                     value={userFormData.roleId}
                                     onChange={e => setUserFormData({ ...userFormData, roleId: e.target.value })}
@@ -891,8 +910,10 @@ const UserManagement: React.FC = () => {
                                         type={showUserPassword ? 'text' : 'password'}
                                         value={userFormData.pin || ''}
                                         onChange={e => setUserFormData({ ...userFormData, pin: e.target.value })}
-                                        placeholder={editingUser ? 'Leave blank to keep current' : 'Set a login password'}
-                                        style={{ width: '100%', padding: '10px 40px 10px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
+                                        disabled={!canSetPinFor(editingUser)}
+                                        placeholder={editingUser ? (canSetPinFor(editingUser) ? 'Leave blank to keep current' : 'Only an administrator can change this password') : 'Set a login password'}
+                                        title={canSetPinFor(editingUser) ? undefined : 'This account’s role has permissions your role does not — ask an administrator'}
+                                        style={{ width: '100%', padding: '10px 40px 10px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box', cursor: canSetPinFor(editingUser) ? undefined : 'not-allowed' }}
                                     />
                                     <button
                                         type="button"

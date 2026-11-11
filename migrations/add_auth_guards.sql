@@ -14,17 +14,28 @@
 -- Terminals: each login adds a token; a user keeps the newest 8, so up to 8
 -- terminals stay signed in at once per account. Logging in on a 9th rotates
 -- the oldest out (that terminal is signed out on its next refresh). Logout in
--- the app clears the local copy only — the server-side token ages out.
+-- the app also calls revoke_session() to delete its token server-side
+-- (best-effort: a network blip or an unmigrated store never blocks logging
+-- out locally — then the token simply ages out through rotation).
 --
--- Ordering / compatibility (same ritual as secure_pin_check.sql):
+-- Ordering / compatibility (same ritual as applied/secure_pin_check.sql):
 --   * Run AFTER deploying the matching app build. The new app probes for
 --     login_with_pin and falls back to check_pin (and from there to the legacy
 --     client-side compare) when it does not exist yet, so nothing breaks on
 --     stores that have not run this.
---   * Requires secure_pin_check.sql to have run first (its explicit SELECT
---     column list on users is what keeps session_tokens unreadable).
+--   * Requires the check_pin pack to have run first: it is
+--     migrations/applied/secure_pin_check.sql on older live stores, and the
+--     same statements live in migrations/full_schema.sql section 13 for
+--     stores built from the full schema. Its explicit SELECT column list on
+--     users is what keeps session_tokens unreadable.
 --   * Old app builds keep working: they never call these functions, and the
 --     UPDATE column list below covers every column the app writes.
+--   * ONE-TIME LOGOUT, plan for it: every session that logged in BEFORE this
+--     migration runs (including logins made through the check_pin fallback in
+--     the deploy-to-migration window) holds no token, so its next refresh gets
+--     verify_session = false and that terminal lands back on the login screen
+--     mid-whatever-it-was-doing. Every signed-in terminal in the store re-
+--     enters its PIN once. Run this off-hours, not mid-shift.
 --
 -- SCOPE — honest limits (RLS is still disabled; see the roadmap item):
 --   * This stops the localStorage-forgery login bypass via the app and the
@@ -52,7 +63,6 @@ AS $$
 DECLARE
     v_user users%ROWTYPE;
     v_token TEXT;
-    v_tokens TEXT[];
 BEGIN
     SELECT * INTO v_user
     FROM users u
@@ -70,12 +80,20 @@ BEGIN
     v_token := md5(gen_random_uuid()::text || clock_timestamp()::text)
             || md5(gen_random_uuid()::text || random()::text);
 
-    -- Append the new token's hash, keep only the newest 8.
-    v_tokens := coalesce(v_user.session_tokens, '{}') || md5(v_token);
-    IF array_length(v_tokens, 1) > 8 THEN
-        v_tokens := v_tokens[array_length(v_tokens, 1) - 7 : array_length(v_tokens, 1)];
-    END IF;
-    UPDATE users u SET session_tokens = v_tokens WHERE u.id = v_user.id;
+    -- Append the new token's hash, keep only the newest 8 — in ONE statement,
+    -- reading the array inside the UPDATE itself. Append-then-write from the
+    -- v_user copy was a read-modify-write race: two terminals logging in to
+    -- the same shared account at once could overwrite each other's append,
+    -- silently logging the first terminal out on its next refresh. The UPDATE
+    -- row lock serializes concurrent appends (READ COMMITTED re-reads the
+    -- row's latest version after waiting on the lock).
+    UPDATE users u
+    SET session_tokens = (
+        SELECT array_agg(t ORDER BY ord)
+        FROM unnest(coalesce(u.session_tokens, '{}') || md5(v_token)) WITH ORDINALITY AS x(t, ord)
+        WHERE ord > coalesce(array_length(u.session_tokens, 1), 0) + 1 - 8
+    )
+    WHERE u.id = v_user.id;
 
     RETURN QUERY SELECT v_user.id, v_user.name, v_user.email, v_user.role_id, v_token;
 END;
@@ -105,6 +123,26 @@ $$;
 REVOKE ALL ON FUNCTION verify_session(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION verify_session(TEXT, TEXT) TO anon, authenticated;
 
+-- 3b) Logout: delete this terminal's token server-side, so a copied token
+--     (e.g. read out of a terminal's localStorage before the machine changed
+--     hands) cannot revive the session after a visible logout. Holding the
+--     token is the proof of ownership — only a real login ever had it. Never
+--     raises; revoking an unknown token is a quiet no-op.
+CREATE OR REPLACE FUNCTION revoke_session(p_user_id TEXT, p_token TEXT)
+RETURNS VOID
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    UPDATE users u
+    SET session_tokens = array_remove(u.session_tokens, md5(btrim(p_token)))
+    WHERE u.id = p_user_id
+      AND btrim(coalesce(p_token, '')) <> '';
+$$;
+
+REVOKE ALL ON FUNCTION revoke_session(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION revoke_session(TEXT, TEXT) TO anon, authenticated;
+
 -- 4) Column privileges, both directions (safe to re-run):
 --    * SELECT: same explicit list as secure_pin_check.sql — neither pin nor
 --      session_tokens is readable through the API.
@@ -119,6 +157,14 @@ GRANT SELECT (id, name, email, role_id, created_at, base_salary, daily_target, w
 REVOKE UPDATE ON users FROM anon;
 REVOKE UPDATE ON users FROM authenticated;
 GRANT UPDATE (name, email, role_id, pin, base_salary, daily_target, weekly_target, monthly_target)
+    ON users TO anon, authenticated;
+--    * INSERT: same idea — without a column list, an API caller could INSERT
+--      a fresh users row with a pre-chosen session_tokens hash and "log in"
+--      as it. The list matches exactly what addUser (StoreContext) sends;
+--      created_at keeps its default.
+REVOKE INSERT ON users FROM anon;
+REVOKE INSERT ON users FROM authenticated;
+GRANT INSERT (id, name, email, role_id, pin, base_salary, daily_target, weekly_target, monthly_target)
     ON users TO anon, authenticated;
 
 -- 5) Make PostgREST pick the new functions and privileges up immediately.

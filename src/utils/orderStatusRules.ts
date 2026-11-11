@@ -108,15 +108,39 @@ export const paymentChangeRefusal = (
     if (actor.isAdmin) return null;
     const shipping = order.shippingStatus || 'Pending';
     const payment = order.paymentStatus || 'Unpaid';
-    if (payment === target) return null; // no-op rows are quietly fine
+    // The locked-payment check runs BEFORE the same-status early return: the
+    // bulk/drawer callers are NOT no-ops for a same-status save — picking
+    // "Paid" on an already-Paid row rewrites its received amount, settle date
+    // and pay-by and books another receipt, exactly the rewrite the single-row
+    // badge's readOnly prevents (ORD-9 review).
     if (['Paid', 'PdFee', 'Cancel'].includes(payment)) {
         return `${payment} orders cannot have their payment changed. Ask an administrator.`;
     }
+    if (payment === target) return null; // no-op rows are quietly fine
     if (['ReStock', 'Drafted', 'Returned', 'Cancelled'].includes(shipping)) {
         return `The payment of ${shipping} orders can only be changed by an administrator.`;
     }
     if (target === 'Cancel') {
         return 'Only an administrator can cancel a payment.';
+    }
+    return null;
+};
+
+/**
+ * Why this actor may NOT change this order's settle date — or null when
+ * allowed. The Bulk Edit "Settled/Paid Date" field writes settleDate directly
+ * (no payment-status change), but for a posted Paid/PdFee/Cancel order that
+ * date IS the booked receipt's day: rewriting it is the same class of change
+ * as un-paying, so it follows the same lock (ORD-9 review).
+ */
+export const settleDateChangeRefusal = (
+    order: OrderStatusView,
+    actor: StatusActor
+): string | null => {
+    if (actor.isAdmin) return null;
+    const payment = order.paymentStatus || 'Unpaid';
+    if (['Paid', 'PdFee', 'Cancel'].includes(payment)) {
+        return `The settle date of ${payment} orders can only be changed by an administrator.`;
     }
     return null;
 };

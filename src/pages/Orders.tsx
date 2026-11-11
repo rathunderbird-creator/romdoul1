@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { statusChangeRefusal, paymentChangeRefusal } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../utils/orderStatusRules';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
@@ -2298,8 +2298,21 @@ const Orders: React.FC = () => {
                     if (!moved) notSaved++;
                 }
             } else if (field === 'settleDate') {
-                updates.settleDate = value ? new Date(value).toISOString() : null as any;
-                await updateOrders(ids, updates);
+                // ORD-9: a posted Paid/PdFee/Cancel order's settle date is its
+                // booked receipt's day — same lock as the payment badge.
+                const allowedIds = ids.filter(id => {
+                    const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
+                    const refusal = settleDateChangeRefusal(
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        { isAdmin, canRestock }
+                    );
+                    if (refusal) { lastReason = refusal; notSaved++; return false; }
+                    return true;
+                });
+                if (allowedIds.length > 0) {
+                    updates.settleDate = value ? new Date(value).toISOString() : null as any;
+                    await updateOrders(allowedIds, updates);
+                }
             } else if (field === 'paymentStatus') {
                 const now = new Date().toISOString();
                 const saveOne = (id: string) => {
