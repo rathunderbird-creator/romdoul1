@@ -28,6 +28,7 @@ import { getPaymentIcon, getPaymentColor } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem } from '../types';
@@ -36,6 +37,25 @@ type SortConfig = {
     key: string;
     direction: 'asc' | 'desc';
 } | null;
+
+// The minimal money columns the desktop footer's all-matches totals read
+// (ORD-11); see the aggregate fetch in fetchOrders.
+interface FooterAggRow {
+    id: string | number;
+    total: number | string | null;
+    amount_received: number | string | null;
+    deposit_amount: number | string | null;
+    payment_status: string | null;
+    shipping_status: string | null;
+    items: { quantity: number | string | null; name: string | null }[] | null;
+}
+// The slice of a PostgREST builder the aggregate fetch uses (the builders
+// applyOrderFilters hands back are intentionally untyped).
+interface FooterAggQuery {
+    order: (col: string, opts: { ascending: boolean }) => {
+        range: (from: number, to: number) => PromiseLike<{ data: FooterAggRow[] | null; error: unknown }>;
+    };
+}
 
 // Local start/end of a 'YYYY-MM-DD' day (new Date('YYYY-MM-DD') would parse as UTC).
 const localDayBound = (dateStr: string, edge: 'start' | 'end'): Date => {
@@ -1405,6 +1425,14 @@ const Orders: React.FC = () => {
     // Revenue across ALL orders matching the filters (Confirmed/Shipped/Delivered
     // only). null = query failed; the footer then falls back to the loaded rows.
     const [revenueTotal, setRevenueTotal] = useState<number | null>(null);
+    // Rule (ORD-11): the desktop footer's money totals (and the status /
+    // pay-status chip counts) must cover EVERY order matching the current
+    // filter, like the phone view — not just the visible page. These are the
+    // minimal money columns of all matching orders, fetched separately when
+    // the matches span more than one page; null = the single page already
+    // covers every match (or the aggregate fetch failed), and the footer then
+    // sums the loaded rows as before.
+    const [aggOrders, setAggOrders] = useState<Sale[] | null>(null);
 
     // (serverOrders is declared near the top of the component.)
     const [isLoadingOrders, setIsLoadingOrders] = useState(false);
@@ -1955,6 +1983,40 @@ const Orders: React.FC = () => {
                     console.error('Failed to compute revenue total:', sumErr);
                     if (!isStale()) setRevenueTotal(null);
                 }
+            } else {
+                // Desktop footer totals across ALL matches (ORD-11). Only
+                // needed when the matches don't fit on the loaded page;
+                // fetched with the same filters and minimal columns via
+                // fetchAll (chunked + merged by id, so rows can't be double-
+                // counted while pages shift). On failure the footer falls
+                // back to the page sums, exactly as before this fix.
+                try {
+                    if ((count || 0) <= (data?.length || 0)) {
+                        if (!isStale()) setAggOrders(null);
+                    } else {
+                        const aggRows = await fetchAll<FooterAggRow>(async (from, to) => {
+                            const built = await applyOrderFilters(extra =>
+                                supabase.from('sales').select(`id, total, amount_received, deposit_amount, payment_status, shipping_status, items:sale_items(quantity, name)${extra}`)
+                            );
+                            return (built.query as unknown as FooterAggQuery).order('id', { ascending: true }).range(from, to);
+                        }, 1000, { label: 'Orders desktop footer totals', maxRows: 20000 });
+                        // Minimal Sale shape — exactly the fields the shared
+                        // orderMoney rules and the chip counts read.
+                        const mappedAgg = aggRows.map(r => ({
+                            id: String(r.id),
+                            total: Number(r.total) || 0,
+                            amountReceived: Number(r.amount_received) || 0,
+                            depositAmount: Number(r.deposit_amount) || 0,
+                            paymentStatus: r.payment_status,
+                            shipping: { status: r.shipping_status },
+                            items: (r.items || []).map(i => ({ name: i.name, quantity: Number(i.quantity) || 0 })),
+                        })) as unknown as Sale[];
+                        if (!isStale()) setAggOrders(mappedAgg);
+                    }
+                } catch (aggErr) {
+                    console.error('Failed to compute footer totals across all matches:', aggErr);
+                    if (!isStale()) setAggOrders(null);
+                }
             }
         } catch (err) {
             console.error("Fetch orders failed", err);
@@ -2084,26 +2146,31 @@ const Orders: React.FC = () => {
 
     const stats = useMemo(() => {
         const totalOrders = totalCount;
+        // Rule (ORD-11): the footer's money totals cover every order matching
+        // the current filter, like "Total: N" already did and like the phone
+        // view — aggOrders holds all matches when they span more than one
+        // page; otherwise the loaded page IS every match.
+        const statsOrders = aggOrders ?? filteredOrders;
         // Booked / collected / pieces: gated by isRevenueOrder (Confirmed,
         // Shipped or Delivered, not Cancel-paid) — the same rule the mobile
         // footer and Dashboard 2 use, so all three always agree.
-        const totalRevenue = filteredOrders.reduce((sum, order) => sum + orderRevenue(order), 0);
-        const totalReceived = filteredOrders.reduce((sum, order) => sum + orderCollected(order), 0);
+        const totalRevenue = statsOrders.reduce((sum, order) => sum + orderRevenue(order), 0);
+        const totalReceived = statsOrders.reduce((sum, order) => sum + orderCollected(order), 0);
         // Sum of the per-row Balance column (same rule as the cells, so the
         // footer always matches what's shown).
-        const totalOutstanding = filteredOrders.reduce((sum, order) => sum + orderBalance(order), 0);
-        const totalProducts = filteredOrders.reduce((sum, order) => sum + orderRevenuePieces(order), 0);
-        const statusCounts = filteredOrders.reduce((acc, order) => {
+        const totalOutstanding = statsOrders.reduce((sum, order) => sum + orderBalance(order), 0);
+        const totalProducts = statsOrders.reduce((sum, order) => sum + orderRevenuePieces(order), 0);
+        const statusCounts = statsOrders.reduce((acc, order) => {
             const status = order.shipping?.status || 'Pending';
             acc[status] = (acc[status] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
-        const payStatusCounts = filteredOrders.reduce((acc, order) => {
+        const payStatusCounts = statsOrders.reduce((acc, order) => {
             const status = order.paymentStatus || 'Unpaid';
             acc[status] = (acc[status] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
-        const productCounts = filteredOrders.reduce((acc, order) => {
+        const productCounts = statsOrders.reduce((acc, order) => {
             if (isRevenueOrder(order)) {
                 order.items.forEach(item => {
                     const name = item.name || 'Unknown Product';
@@ -2113,7 +2180,7 @@ const Orders: React.FC = () => {
             return acc;
         }, {} as Record<string, number>);
         return { totalOrders, totalRevenue, totalReceived, totalOutstanding, totalProducts, statusCounts, payStatusCounts, productCounts };
-    }, [filteredOrders, totalCount]);
+    }, [filteredOrders, aggOrders, totalCount]);
 
     const handleOpenAdd = () => {
         setEditingOrder(null);

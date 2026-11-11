@@ -38,17 +38,26 @@ export const orderCollected = (order: Sale): number =>
 export const orderRevenuePieces = (order: Sale): number =>
     isRevenueOrder(order) ? order.items.reduce((s, item) => s + item.quantity, 0) : 0;
 
-// Balance still owed. Unchanged from the original Orders.tsx formula: a
-// Deposit order always shows total-minus-deposit regardless of status;
-// otherwise nothing is owed before dispatch (Drafted/Pending) or after a
-// void (Cancelled/Cancel-pay/ReStock).
+// Balance still owed — "money actually still expected" (DSH-3).
+//
+// Rule: a voided order owes nothing, whatever its payment status. The void
+// list is Cancelled, Returned and ReStock — a Returned order (customer
+// refused the goods) and a Cancelled order that had taken a deposit were
+// previously still counted as owing, which inflated the Dashboard's
+// Outstanding KPI, the daily collected-vs-outstanding chart and each
+// salesman's/page's Outstanding with money that will never be collected.
+// A Deposit order that is still live keeps its original behaviour: it owes
+// total-minus-deposit even while Drafted/Pending, because taking a deposit
+// makes it a firm commitment.
 export const orderBalance = (order: Sale): number => {
+    const s = order.shipping?.status;
+    const voided = s === 'Cancelled' || s === 'Returned' || s === 'ReStock';
     if (order.paymentStatus === 'Deposit') {
+        if (voided) return 0;
         return Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0));
     }
-    const s = order.shipping?.status;
     // PdFee: the customer refused the goods and paid only the delivery fee, so
     // nothing more is owed — same as Cancel.
-    if (order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee' || s === 'ReStock' || s === 'Drafted' || s === 'Pending' || s === 'Cancelled') return 0;
+    if (order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee' || voided || s === 'Drafted' || s === 'Pending') return 0;
     return order.total - (order.amountReceived || (order.paymentStatus === 'Paid' ? order.total : 0));
 };

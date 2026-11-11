@@ -12,7 +12,7 @@ const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Drafted
 
 const ShippingReport: React.FC = () => {
     const { reportSales } = useOutletContext<any>();
-    const { shippingCompanies, shippingRates, updateShippingRate } = useStore();
+    const { shippingCompanies, shippingRates, updateShippingRate, updateShippingRates } = useStore();
     const { showToast } = useToast();
 
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -35,22 +35,37 @@ const ShippingReport: React.FC = () => {
         setShowRatesPanel(true);
     };
 
-    const saveAllRates = () => {
+    // Rule (DSH-2): Save All writes EVERY company's rate in one awaited
+    // config write scoped to the shippingRates key. The old per-company
+    // fire-and-forget loop rebuilt the whole config from the same stale
+    // closure on each call, so only the last upsert's rate survived (and
+    // other settings edited elsewhere were replayed over), while the success
+    // toast showed regardless.
+    const saveAllRates = async () => {
+        const rates: Record<string, number> = {};
         Object.entries(rateInputs).forEach(([company, value]) => {
             const val = parseFloat(value);
-            if (!isNaN(val) && val >= 0) {
-                updateShippingRate(company, val);
-            }
+            if (!isNaN(val) && val >= 0) rates[company] = val;
         });
-        showToast('All shipping rates saved successfully!', 'success');
-        setShowRatesPanel(false);
+        try {
+            if (Object.keys(rates).length > 0) await updateShippingRates(rates);
+            showToast('All shipping rates saved successfully!', 'success');
+            setShowRatesPanel(false);
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : 'Failed to save shipping rates', 'error');
+        }
     };
 
-    const saveSingleRate = (company: string) => {
+    const saveSingleRate = async (company: string) => {
         const val = parseFloat(rateInputs[company] || '0');
         if (!isNaN(val) && val >= 0) {
-            updateShippingRate(company, val);
-            showToast(`Rate for ${company} set to $${val.toFixed(2)}`, 'success');
+            try {
+                // Same scoped write as Save All — never replays a stale config blob.
+                await updateShippingRate(company, val);
+                showToast(`Rate for ${company} set to $${val.toFixed(2)}`, 'success');
+            } catch (e) {
+                showToast(e instanceof Error ? e.message : `Failed to save the rate for ${company}`, 'error');
+            }
         }
     };
 

@@ -303,7 +303,9 @@ const PurchaseSetupPage: React.FC = () => {
                     console.error('Failed to load an opening balance:', error);
                     continue;
                 }
-                await postOpeningBalanceEntry(po.id, amount, offsetAccountId, supplier?.name || 'Supplier', showToast, r.their_invoice.trim());
+                // Rule (PRO-4): the ledger entry is dated at the chosen as-at
+                // date, not today, so balances struck at earlier dates include it.
+                await postOpeningBalanceEntry(po.id, amount, offsetAccountId, supplier?.name || 'Supplier', showToast, r.their_invoice.trim(), asAtDate);
                 newEntries.push({
                     supplier_id: r.supplier_id,
                     purchase_order_id: po.id,

@@ -85,10 +85,20 @@ const AccountsPayablePage: React.FC = () => {
         fetchSuppliers();
     }, [fetchPurchaseOrders, fetchSuppliers]);
 
-    // A PO is "on credit" while it still has an outstanding balance and isn't cancelled.
+    // Rule (FIN-1 + FIN-2): a payable exists only once the goods are RECEIVED —
+    // that is when the books credit Accounts Payable (Dr Inventory / Cr A/P,
+    // see postPurchaseReceiptEntry). A Draft or Sent PO is not owed yet, so it
+    // must not raise Total Payable (which made this page disagree with the
+    // Financial Dashboard's Payables), and it must not offer Record Payment:
+    // paying an unreceived PO books the cost as purchase expense (the DB
+    // function record_supplier_payments debits A/P only when the PO's receive
+    // entry exists) and the later receive books Dr Inventory for the full
+    // total again — double-counting the cost. This app has no prepayment
+    // account convention to book such a deposit against, so it is refused
+    // here; record the payment after the PO is received.
     const openPOs = useMemo(() => {
         return purchaseOrders
-            .filter(po => po.status !== 'Cancelled')
+            .filter(po => po.status === 'Received')
             .map(po => ({ ...po, outstanding: (po.total_amount || 0) - (po.amount_paid || 0) }))
             .filter(po => po.outstanding > 0.005);
     }, [purchaseOrders]);
@@ -162,6 +172,14 @@ const AccountsPayablePage: React.FC = () => {
 
     const submitPayment = async () => {
         if (!payPO) return;
+        // Guard (FIN-1): the list above only offers Received POs, but a stale
+        // modal (PO edited elsewhere meanwhile) must not book a payment that
+        // would expense an unreceived purchase — the receive would then book
+        // the full cost again.
+        if (payPO.status !== 'Received') {
+            showToast('This purchase order has not been received yet — receive the goods first, then record the payment.', 'error');
+            return;
+        }
         const amount = Number(payAmount);
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
         if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }

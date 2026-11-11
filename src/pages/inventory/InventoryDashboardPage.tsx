@@ -378,6 +378,20 @@ const InventoryDashboardPage: React.FC = () => {
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                 As of {new Date().toLocaleDateString()} · amounts in USD at average cost
             </div>
+            {/* Rule (INV-1): per-warehouse stock is tracked only by the flows
+                that record a warehouse (posted stock adjustments, wholesale,
+                stock movements) — retail orders and PO receipts update company
+                stock without one. On-hand figures for a single warehouse are
+                therefore partial, and this says so instead of presenting them
+                as the whole truth; "All warehouses" uses the authoritative
+                company stock. */}
+            {warehouseId && (
+                <div style={{ fontSize: '12px', color: '#B45309', maxWidth: '680px' }}>
+                    Single-warehouse figures cover only movements that recorded this warehouse (stock adjustments, wholesale, stock movements).
+                    Retail orders and purchase receipts update company stock without a warehouse, so these on-hand and value figures are partial —
+                    select “All warehouses” for the full company stock.
+                </div>
+            )}
 
             {/* KPIs */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '16px' }}>

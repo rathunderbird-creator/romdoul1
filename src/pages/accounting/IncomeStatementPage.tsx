@@ -55,8 +55,11 @@ const selectStyle: React.CSSProperties = {
 
 // Buckets accounts of `type` matching `include` by their sub_type label
 // (falling back to `defaultLabel` when unset), preserving first-seen order.
-function buildGroupsBySubType(accounts: ChartOfAccount[], type: AccountType, include: (a: ChartOfAccount) => boolean, defaultLabel: string): AccountGroup[] {
-    const sameType = accounts.filter(a => a.account_type === type && a.is_active !== false && include(a));
+// Rule (FIN-3): a DEACTIVATED account that still has posted activity stays on
+// the statement — dropping it changed net income with no warning; inactive
+// accounts with no activity stay hidden as before.
+function buildGroupsBySubType(accounts: ChartOfAccount[], type: AccountType, include: (a: ChartOfAccount) => boolean, defaultLabel: string, hasActivity: (accountId: string) => boolean): AccountGroup[] {
+    const sameType = accounts.filter(a => a.account_type === type && (a.is_active !== false || hasActivity(a.id)) && include(a));
     const byLabel = new Map<string, ChartOfAccount[]>();
     const order: string[] = [];
     for (const a of sameType) {
@@ -166,14 +169,24 @@ const IncomeStatementPage: React.FC = () => {
         return columns.map(col => signedBalancesInRange(src, accounts, col.startYmd, col.endYmd));
     }, [columns, lines, accounts]);
 
-    const revenueGroups = useMemo(() => buildGroupsBySubType(accounts, 'Revenue', a => a.sub_type !== 'Other Revenue', 'Operating Revenue'), [accounts]);
-    const cogsGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && a.is_active !== false && isCogsAccount(a)) }], [accounts]);
-    const opexGroups = useMemo(() => buildGroupsBySubType(accounts, 'Expense', a => !isCogsAccount(a) && a.sub_type !== 'Other Expense', 'Operating Expense'), [accounts]);
+    // Accounts with any posted line at all — feeds the FIN-3 inclusion rule
+    // (a deactivated account with activity must stay on the statement).
+    const activeLedgerAccountIds = useMemo(() => {
+        const s = new Set<string>();
+        for (const l of lines || []) s.add(l.accountId);
+        return s;
+    }, [lines]);
+    const hasActivity = useCallback((accountId: string) => activeLedgerAccountIds.has(accountId), [activeLedgerAccountIds]);
+    const keepAccount = useCallback((a: ChartOfAccount) => a.is_active !== false || hasActivity(a.id), [hasActivity]);
+
+    const revenueGroups = useMemo(() => buildGroupsBySubType(accounts, 'Revenue', a => a.sub_type !== 'Other Revenue', 'Operating Revenue', hasActivity), [accounts, hasActivity]);
+    const cogsGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && keepAccount(a) && isCogsAccount(a)) }], [accounts, keepAccount]);
+    const opexGroups = useMemo(() => buildGroupsBySubType(accounts, 'Expense', a => !isCogsAccount(a) && a.sub_type !== 'Other Expense', 'Operating Expense', hasActivity), [accounts, hasActivity]);
     // Below Operating Profit, like a classic statement: one-off income and
     // expenses outside the core business. Sections render only when the chart
     // has such accounts.
-    const otherRevenueGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Revenue' && a.is_active !== false && a.sub_type === 'Other Revenue') }], [accounts]);
-    const otherExpenseGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && a.is_active !== false && a.sub_type === 'Other Expense') }], [accounts]);
+    const otherRevenueGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Revenue' && keepAccount(a) && a.sub_type === 'Other Revenue') }], [accounts, keepAccount]);
+    const otherExpenseGroups = useMemo((): AccountGroup[] => [{ label: null, accounts: accounts.filter(a => a.account_type === 'Expense' && keepAccount(a) && a.sub_type === 'Other Expense') }], [accounts, keepAccount]);
 
     const valueOf = useCallback((accountId: string, colIndex: number) => balancesByColumn[colIndex]?.get(accountId) || 0, [balancesByColumn]);
     const groupTotal = useCallback((group: AccountGroup, colIndex: number) => group.accounts.reduce((s, a) => s + valueOf(a.id, colIndex), 0), [valueOf]);

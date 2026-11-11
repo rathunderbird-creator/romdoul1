@@ -4,6 +4,7 @@ import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
+import { fetchAllProducts } from '../utils/fetchAllProducts';
 import { fetchInMonthWindows } from '../utils/fetchInMonthWindows';
 import { defaultRange, dayKeysOfRange, parseDay, rangeMonths, wholeMonthOf, MAX_RANGE_DAYS, type DateRange } from '../utils/dateRange';
 import { roundCents } from '../utils/money';
@@ -97,7 +98,7 @@ const MULTI_MONTH_DATE_COL_WIDTH = 170;
 const IncomePrediction: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
-    const { products, currentUser, shippingRates } = useStore();
+    const { currentUser, shippingRates } = useStore();
 
     // Any inclusive span of local days (default: the current calendar month).
     const [range, setRange] = useState<DateRange>(() => defaultRange(new Date()));
@@ -188,12 +189,6 @@ const IncomePrediction: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent]);
 
-    const productCostMap = useMemo(() => {
-        const map = new Map<string, number>();
-        products.forEach(p => map.set(p.id, p.purchaseCost || 0));
-        return map;
-    }, [products]);
-
     // fetchData depends on the range's two ends (primitives), not the object, so an
     // equal range re-created by the picker doesn't trigger a reload.
     const { from: rangeFrom, to: rangeTo } = range;
@@ -223,7 +218,7 @@ const IncomePrediction: React.FC = () => {
 
             // Every read is chunk-fetched (fetchAll / fetchInMonthWindows) so a long
             // range is never silently truncated at the API's max-rows cap.
-            const [salesRows, predictionRows, pageBoostRows, staffRes] = await Promise.all([
+            const [salesRows, predictionRows, pageBoostRows, staffRes, allProducts] = await Promise.all([
                 fetchInMonthWindows(fetchRange, (startStr, endStr) => (from, to) =>
                     supabase.from('sales')
                         .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
@@ -261,11 +256,22 @@ const IncomePrediction: React.FC = () => {
                 ).then(
                     rows => ({ rows, error: null as unknown }),
                     (error: unknown) => ({ rows: [] as { date: string; staff: number | string | null }[], error })
-                )
+                ),
+                // Rule (DSH-1): COGS must cost every sold item at its stored
+                // purchase cost, including products DEACTIVATED since the sale
+                // — useStore().products is active-only (and capped), so it
+                // silently zeroed those items' cost and overstated profit.
+                // fetchAllProducts() is the same uncapped, inactive-inclusive
+                // read Prediction by Page / by Product / by Staff already use.
+                fetchAllProducts()
             ]);
 
             // A newer load has started meanwhile (range switched / refreshed): drop this one.
             if (seq !== fetchSeq.current) return;
+
+            // Cost per product id over the FULL catalogue (see DSH-1 note above).
+            const productCostMap = new Map<string, number>();
+            allProducts.forEach(p => productCostMap.set(p.id, p.purchaseCost || 0));
 
             if (staffRes.error) {
                 const missing = isMissingTableError(staffRes.error);
@@ -392,7 +398,7 @@ const IncomePrediction: React.FC = () => {
         } finally {
             if (seq === fetchSeq.current) setIsLoading(false);
         }
-    }, [rangeFrom, rangeTo, productCostMap]);
+    }, [rangeFrom, rangeTo]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 

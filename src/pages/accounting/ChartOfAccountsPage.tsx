@@ -7,7 +7,7 @@ import { Modal } from '../../components';
 import { useAccounting } from '../../hooks/useAccounting';
 import type { ChartOfAccount } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { fetchAll } from '../../utils/fetchAll';
+import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
 
 const SAMPLE_ACCOUNTS = [
     { account_code: '100', account_name: 'Current Assets', account_type: 'Asset', is_active: true },
@@ -134,18 +134,17 @@ const ChartOfAccountsPage = () => {
         (async () => {
             try {
                 const sums: Record<string, { debit: number; credit: number }> = {};
-                // Paged through fetchAll so a line posted while the pages load
-                // can't be returned twice across a shifted page boundary and be
-                // summed twice — fetchAll merges rows by the selected unique id.
-                const lines = await fetchAll<{ id: string; account_id: string; debit: number | null; credit: number | null }>((from, to) => supabase
-                    .from('journal_entry_lines')
-                    .select('id, account_id, debit, credit')
-                    .order('id', { ascending: true })
-                    .range(from, to), 1000, { label: 'ChartOfAccountsPage balances' });
+                // Rule (LED-4): balances count POSTED entries only — a Draft
+                // isn't in the books yet. The old raw journal_entry_lines read
+                // summed Drafts in too, so these balances disagreed with the
+                // General Ledger, Balance Sheet and the other statements, which
+                // all read posted lines. fetchPostedLedgerLines is the same
+                // loader those reports use (paged and merged by the unique id).
+                const lines = await fetchPostedLedgerLines('ChartOfAccountsPage balances');
                 for (const l of lines) {
-                    const s = sums[l.account_id] || (sums[l.account_id] = { debit: 0, credit: 0 });
-                    s.debit += Number(l.debit) || 0;
-                    s.credit += Number(l.credit) || 0;
+                    const s = sums[l.accountId] || (sums[l.accountId] = { debit: 0, credit: 0 });
+                    s.debit += l.debit;
+                    s.credit += l.credit;
                 }
                 if (alive) setLineSums(sums);
             } catch (e) {
