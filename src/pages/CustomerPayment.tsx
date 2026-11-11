@@ -22,6 +22,7 @@ import { getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
+import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../utils/ledgerStart';
 import type { Transaction, Customer } from '../types';
 
 // The cash/bank accounts offered by the bulk Post Now popup, with enough of
@@ -431,6 +432,13 @@ const CustomerPaymentPage: React.FC = () => {
     const [bulkPostForm, setBulkPostForm] = useState<{ date: string; accountId: string; notes: string } | null>(null);
     const [bulkAccounts, setBulkAccounts] = useState<BulkAccount[]>([]);
 
+    // The ledger starts at this store's opening stock count; payments dated
+    // before it stay in Income & Expense and can't be posted from here
+    // (see utils/ledgerStart.ts). null = no opening entry, no restriction.
+    const [ledgerStart, setLedgerStart] = useState<string | null>(null);
+    useEffect(() => { fetchLedgerStartDate().then(setLedgerStart).catch(() => { /* no restriction */ }); }, []);
+    const beforeLedgerStart = useCallback((dateStr?: string) => isBeforeLedgerStart(localYMD(dateStr), ledgerStart), [ledgerStart]);
+
     // No matching entry at all is treated the same as an unposted (Draft) one.
     const statusOf = useCallback(
         (txId: string): LedgerStatus => postedIds.has(txId) ? 'Posted' : (ledger.byTx.get(txId) || 'Draft'),
@@ -588,6 +596,11 @@ const CustomerPaymentPage: React.FC = () => {
     }) => {
         if (!postTarget) return;
         const tx = postTarget;
+        if (beforeLedgerStart(tx.date) || (settleDate && beforeLedgerStart(settleDate))) {
+            showToast(`Payments before ${ledgerStart ? formatLedgerStart(ledgerStart) : 'the ledger start'} stay out of the ledger — the ledger starts at the opening stock count.`, 'info');
+            setPostTarget(null);
+            return;
+        }
         if (postingIds.has(tx.id)) return;
         setPostingIds(s => new Set(s).add(tx.id));
         postOrFinalizeTransactionReceipt({
@@ -774,8 +787,8 @@ const CustomerPaymentPage: React.FC = () => {
     );
     const selectedTotal = useMemo(() => selectedAllRows.reduce((s, r) => s + Number(r.amount || 0), 0), [selectedAllRows]);
     const selectedPostableRows = useMemo(
-        () => selectedAllRows.filter(r => canPostRow(r.id)),
-        [selectedAllRows, canPostRow]
+        () => selectedAllRows.filter(r => canPostRow(r.id) && !beforeLedgerStart(r.date)),
+        [selectedAllRows, canPostRow, beforeLedgerStart]
     );
     // Posted rows in the selection — what the admin-only bulk Unpost acts on.
     const selectedPostedRows = useMemo(
@@ -856,6 +869,10 @@ const CustomerPaymentPage: React.FC = () => {
             return;
         }
         const chosenDay = /^\d{4}-\d{2}-\d{2}$/.test(form.date) ? form.date : '';
+        if (chosenDay && beforeLedgerStart(chosenDay)) {
+            showToast(`Can't post onto a day before ${ledgerStart ? formatLedgerStart(ledgerStart) : 'the ledger start'} — the ledger starts at the opening stock count.`, 'error');
+            return;
+        }
         const chosenIso = chosenDay ? new Date(chosenDay).toISOString() : '';
         const notes = form.notes.trim() || undefined;
         setBulkPostForm(null);
@@ -1420,7 +1437,8 @@ const CustomerPaymentPage: React.FC = () => {
                                     const known = ledgerReady || postedIds.has(r.id);
                                     const status = statusOf(r.id);
                                     const posting = postingIds.has(r.id);
-                                    const canPost = known && status === 'Draft' && !posting;
+                                    const preStart = beforeLedgerStart(r.date);
+                                    const canPost = known && status === 'Draft' && !posting && !preStart;
                                     const orderId = orderIdByTxId.get(r.id);
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
                                     const PaymentIcon = getPaymentIcon(r.pay_by);
@@ -1457,6 +1475,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                     <button
                                                         onClick={() => setPostTarget(r)}
                                                         disabled={!canPost}
+                                                        title={preStart && ledgerStart && status === 'Draft' ? `Before ${formatLedgerStart(ledgerStart)} — the ledger starts at the opening stock count, so this payment stays in Income & Expense` : undefined}
                                                         style={{
                                                             padding: '6px 12px', borderRadius: '8px', border: 'none',
                                                             background: canPost ? 'var(--color-primary)' : 'var(--color-border)',

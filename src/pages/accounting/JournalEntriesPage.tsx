@@ -15,6 +15,7 @@ import { nextJournalEntryNumber, entryDescription, type JournalEntryTypeCode } f
 import { pickCashBankAccount } from '../../utils/cashBankAccounts';
 import { insertJournalLines } from '../../utils/journalEntryLines';
 import { fetchAll } from '../../utils/fetchAll';
+import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../../utils/ledgerStart';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 // Brings the .pip-resize-handle grip styling the shared hook's handles rely on.
 import '../pageIncomePrediction/pageIncomePrediction.css';
@@ -195,7 +196,7 @@ const JournalEntriesPage = () => {
     // imports twice. Income & Expense's own rows (manual entries, retail
     // sales, deposits) deliberately stay out of the ledger. ──
     const [importing, setImporting] = useState(false);
-    const [importPreview, setImportPreview] = useState<{ candidates: ImportCandidate[]; skipped: number } | null>(null);
+    const [importPreview, setImportPreview] = useState<{ candidates: ImportCandidate[]; skipped: number; beforeStart: number; start: string | null } | null>(null);
 
     const prepareImport = async () => {
         setImporting(true);
@@ -238,8 +239,12 @@ const JournalEntriesPage = () => {
             // account; outflows (supplier payments, payroll) stay method-aware.
             const cashFor = (payBy: string, isRevenue: boolean) => pickCashBankAccount(pool, payBy, { preferBank: isRevenue });
 
+            // The ledger starts at this store's opening stock count; older
+            // operations stay in Income & Expense (see utils/ledgerStart.ts).
+            const start = await fetchLedgerStartDate();
             const candidates: ImportCandidate[] = [];
             let skipped = 0;
+            let beforeStart = 0;
             for (const t of txs) {
                 const desc = String(t.description || '');
                 if (alreadyImported.has('TX-' + String(t.id))) continue;
@@ -250,6 +255,7 @@ const JournalEntriesPage = () => {
                 else if (desc.includes('#WSP-')) { source = 'Wholesale receipt'; main = salesRevenue; }
                 else if (desc.includes('#PAY-')) { source = 'Payroll'; main = payrollExp; isExpense = true; }
                 else continue; // an Income & Expense row — stays out of the ledger
+                if (isBeforeLedgerStart(String(t.date).slice(0, 10), start)) { beforeStart++; continue; }
                 const cash = cashFor(String(t.pay_by || ''), source === 'Wholesale receipt');
                 const amount = Math.round((Number(t.amount) || 0) * 100) / 100;
                 if (!main || !cash || amount <= 0) { skipped++; continue; }
@@ -265,7 +271,7 @@ const JournalEntriesPage = () => {
                     creditLabel: isExpense ? cash.account_name : main.account_name,
                 });
             }
-            setImportPreview({ candidates, skipped });
+            setImportPreview({ candidates, skipped, beforeStart, start });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             showToast('Failed to scan transactions: ' + msg, 'error');
@@ -1244,6 +1250,7 @@ const JournalEntriesPage = () => {
                             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                                 Everything is already in the ledger — nothing new to import.
                                 {importPreview.skipped > 0 && <div style={{ marginTop: '6px', fontSize: '12px' }}>({importPreview.skipped} skipped: no matching account)</div>}
+                                {importPreview.beforeStart > 0 && importPreview.start && <div style={{ marginTop: '6px', fontSize: '12px' }}>({importPreview.beforeStart} from before {formatLedgerStart(importPreview.start)} left out: the ledger starts at the opening stock count)</div>}
                             </div>
                         ) : (
                             <>
@@ -1251,6 +1258,7 @@ const JournalEntriesPage = () => {
                                     {importPreview.candidates.length} {importPreview.candidates.length === 1 ? 'transaction' : 'transactions'} ·{' '}
                                     {formatCurrency(importPreview.candidates.reduce((s, c) => s + c.amount, 0))}
                                     {importPreview.skipped > 0 && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {importPreview.skipped} skipped (no matching account)</span>}
+                                    {importPreview.beforeStart > 0 && importPreview.start && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {importPreview.beforeStart} before {formatLedgerStart(importPreview.start)} left out</span>}
                                 </div>
                                 <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                                     {importPreview.candidates.map(c => (
