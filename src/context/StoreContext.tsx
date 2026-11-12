@@ -113,11 +113,47 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
     return { revenueAcc, cashAccId, pool };
 }
 
+const roundCents = (n: number) => Math.round(n * 100) / 100;
+
+// An order's retail COGS at FIFO: the cost frozen on each line when it
+// shipped (sale_items.cogs_cost), or a peek of the next inventory layers for
+// a line that has not shipped — the order_cogs RPC
+// (migrations/add_fifo_costing.sql), the same figure the server books at
+// settlement. A store without it falls back to the lines' cogs_cost where
+// they have one and each product's purchase_cost otherwise. null when the
+// order can't be read.
+async function retailCogsAmount(orderId: string): Promise<number | null> {
+    const { data, error } = await rpcWithSession('order_cogs', { p_order_id: orderId });
+    if (!error && data !== null && data !== undefined && Number.isFinite(Number(data))) return roundCents(Number(data));
+    type Line = { product_id: string | null; quantity: number | null; cogs_cost?: number | null };
+    let items: Line[] | null = null;
+    const withCost = await supabase.from('sale_items').select('product_id, quantity, cogs_cost').eq('sale_id', orderId);
+    if (!withCost.error) {
+        items = withCost.data as Line[];
+    } else {
+        // A store without the FIFO columns.
+        const plain = await supabase.from('sale_items').select('product_id, quantity').eq('sale_id', orderId);
+        if (plain.error) return null;
+        items = plain.data as Line[];
+    }
+    if (!items || items.length === 0) return null;
+    const productIds = Array.from(new Set(items.map(i => i.product_id).filter((id): id is string => !!id)));
+    if (productIds.length === 0) return null;
+    const { data: products, error: prodErr } = await supabase
+        .from('products').select('id, purchase_cost').in('id', productIds);
+    if (prodErr) return null;
+    const costOf = new Map((products || []).map(p => [p.id, Number(p.purchase_cost) || 0]));
+    return roundCents(items.reduce((s, i) => {
+        if (!i.product_id) return s;
+        if (i.cogs_cost !== null && i.cogs_cost !== undefined) return s + (Number(i.cogs_cost) || 0);
+        return s + (costOf.get(i.product_id) || 0) * (Number(i.quantity) || 0);
+    }, 0));
+}
+
 // Standard-accounting COGS lines for a retail settlement: Dr Cost of Goods
-// Sold, Cr Inventory at the items' purchase cost (each product's current
-// "Cost of Purchase", same basis as the Purchase Cost report — sale_items
-// carry no cost snapshot). Returns null when the cost is zero or the chart
-// is missing either account, so the caller just posts the revenue side alone.
+// Sold, Cr Inventory at the items' FIFO cost (retailCogsAmount). Returns null
+// when the cost is zero or the chart is missing either account, so the
+// caller just posts the revenue side alone.
 async function retailCogsLines(
     orderId: string,
     pool: { id: string; account_code: string; account_name: string; account_type: string }[]
@@ -128,17 +164,8 @@ async function retailCogsLines(
         const inventoryAcc = pool.find(a => a.account_code === '1300')
             || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
         if (!cogsAcc || !inventoryAcc) return null;
-        const { data: items, error: itemsErr } = await supabase
-            .from('sale_items').select('product_id, quantity').eq('sale_id', orderId);
-        if (itemsErr || !items || items.length === 0) return null;
-        const productIds = Array.from(new Set(items.map(i => i.product_id).filter((id): id is string => !!id)));
-        if (productIds.length === 0) return null;
-        const { data: products, error: prodErr } = await supabase
-            .from('products').select('id, purchase_cost').in('id', productIds);
-        if (prodErr) return null;
-        const costOf = new Map((products || []).map(p => [p.id, Number(p.purchase_cost) || 0]));
-        const cost = Math.round(items.reduce((s, i) => s + (costOf.get(i.product_id) || 0) * (Number(i.quantity) || 0), 0) * 100) / 100;
-        if (cost <= 0) return null;
+        const cost = await retailCogsAmount(orderId);
+        if (cost === null || cost <= 0) return null;
         return [
             { account_id: cogsAcc.id, debit: cost, credit: 0, description: 'Cost of goods sold' },
             { account_id: inventoryAcc.id, debit: 0, credit: cost, description: 'Inventory at cost' },
@@ -146,6 +173,53 @@ async function retailCogsLines(
     } catch (e) {
         console.error('Failed to compute COGS lines for order', orderId, e);
         return null;
+    }
+}
+
+// The server records on each sale_items row the COGS the ledger holds for it
+// (cogs_booked) whenever it books retail COGS; an entry the app books itself
+// records it the same way, or the FIFO check (fifo_inventory_check) reports
+// it as a variance. A line holding units takes its own frozen cost; the rest
+// of the amount is split over the other product lines by quantity. Skipped
+// on a store without the FIFO columns; best effort, never fails a posting.
+async function recordRetailCogsBooked(orderId: string, amount: number): Promise<void> {
+    try {
+        type Line = { id: string; product_id: string | null; quantity: number | null; cogs_cost: number | null; cogs_booked: number | null };
+        const { data, error } = await supabase.from('sale_items')
+            .select('id, product_id, quantity, cogs_cost, cogs_booked').eq('sale_id', orderId);
+        if (error || !data) return;
+        const lines = (data as Line[]).filter(l => !!l.product_id);
+        if (lines.length === 0 || !amount) return;
+        const share = new Map<string, number>();
+        let left = amount;
+        const frozen = lines.filter(l => l.cogs_cost !== null && l.cogs_cost !== undefined);
+        const open = lines.filter(l => l.cogs_cost === null || l.cogs_cost === undefined);
+        for (const l of frozen) {
+            const v = roundCents(Number(l.cogs_cost) || 0);
+            share.set(l.id, v);
+            left -= v;
+        }
+        const openQty = open.reduce((s, l) => s + Math.max(Number(l.quantity) || 0, 0), 0);
+        const base = left;
+        open.forEach((l, i) => {
+            const v = i === open.length - 1 ? roundCents(left)
+                : openQty > 0 ? roundCents(base * Math.max(Number(l.quantity) || 0, 0) / openQty) : 0;
+            share.set(l.id, v);
+            left -= v;
+        });
+        if (open.length === 0 && Math.abs(left) >= 0.005) {
+            const last = frozen[frozen.length - 1];
+            share.set(last.id, roundCents((share.get(last.id) || 0) + left));
+        }
+        for (const l of lines) {
+            const v = share.get(l.id) || 0;
+            if (!v) continue;
+            const { error: upErr } = await supabase.from('sale_items')
+                .update({ cogs_booked: roundCents((Number(l.cogs_booked) || 0) + v) }).eq('id', l.id);
+            if (upErr) { console.warn('Could not record the booked COGS on order', orderId, upErr); return; }
+        }
+    } catch (e) {
+        console.warn('Could not record the booked COGS on order', orderId, e);
     }
 }
 
@@ -216,6 +290,8 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
         if (lErr) {
             console.error('Failed to create the COGS entry lines for order', orderId, lErr);
             await supabase.from('journal_entries').delete().eq('id', entry.id);
+        } else {
+            await recordRetailCogsBooked(orderId, cogs[0].debit);
         }
     } catch (e) {
         console.error('Failed to post the COGS entry for order', orderId, e);
@@ -320,6 +396,7 @@ export async function postRetailSaleToLedger({
                     await supabase.from('journal_entries').delete().eq('id', entry.id);
                     return false;
                 }
+                if (cogs && orderId) await recordRetailCogsBooked(orderId, cogs[0].debit);
                 return true;
             }
         }
@@ -399,19 +476,22 @@ export async function postOrFinalizeTransactionReceipt({
         const { data: oldLines, error: oldErr } = await supabase.from('journal_entry_lines')
             .select('*').eq('journal_entry_id', existing.id);
         if (oldErr) throw oldErr;
-        const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
-        // When COGS can't be recomputed (the page couldn't resolve the order),
-        // the rebuild must not silently drop the COGS pair the auto-posted
-        // draft already carried: keep every old line that isn't the cash debit
-        // or the revenue credit being replaced.
+        // Every old line that isn't the cash debit or the revenue credit being
+        // replaced: the COGS pair the auto-posted draft carries. COGS is
+        // frozen once booked, so a draft that has its pair keeps it exactly
+        // (re-pricing it would double-count a ship-time ORD-…-COGS-ADJ and
+        // break what the order's lines record as booked); only a draft
+        // without one gets it now, at FIFO.
         const accById = new Map(pool.map(a => [a.id, a]));
-        const preserved = cogs ? [] : (oldLines || []).filter(l => {
+        const oldCogsSide = (oldLines || []).filter(l => {
             const a = accById.get(l.account_id);
             if (!a) return false;
             if (a.account_type === 'Revenue') return false;
             if (a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)) return false;
             return true;
         });
+        const cogs = oldCogsSide.length === 0 && type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
+        const preserved = cogs ? [] : oldCogsSide;
 
         const { error: delErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
         if (delErr) throw delErr;
@@ -422,6 +502,7 @@ export async function postOrFinalizeTransactionReceipt({
             ...(cogs || preserved).map(l => ({ journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit, description: (l as { description?: string }).description || undefined })),
         ]);
         if (lErr) throw lErr;
+        if (cogs && orderId) await recordRetailCogsBooked(orderId, cogs[0].debit);
 
         // reference/notes and status each need their own migration and may be
         // missing independently — strip only the column(s) the error actually

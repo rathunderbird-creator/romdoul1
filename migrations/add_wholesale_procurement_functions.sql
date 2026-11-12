@@ -25,6 +25,19 @@
 -- it) is retried by the app with the same id: Add Stock passes the restock
 -- id, a payment its payment id(s), and the function then reports the earlier
 -- save instead of adding the stock or the payment a second time.
+--
+-- FIFO costing. Stock received (Add Stock, PO receipts) becomes inventory
+-- layers at the receipt's unit cost, which also becomes the product's
+-- purchase_cost (the last receipt cost). A wholesale order's lines take the
+-- oldest layers when it is created or edited and give them back when it is
+-- edited, cancelled or deleted; each line keeps their cost
+-- (wholesale_order_items.cogs_cost) and the order's COGS entry is their sum.
+-- Once that entry is POSTED, an edit books the difference as a Draft
+-- WSO-<id>-COGS-ADJ-<n>, and a cancel or delete reverses what was posted
+-- with a Draft WSO-<id>-COGS-REV.
+-- RUN ORDER: add_fifo_costing.sql, fifo_rebuild_pool.sql, the four packs
+-- (this one first), add_session_guards.sql; this file refuses to load
+-- before the first two.
 
 -- ---------------------------------------------------------------------------
 -- Shared helpers
@@ -36,6 +49,20 @@
 -- functions.
 CREATE SCHEMA IF NOT EXISTS wp_internal;
 GRANT USAGE ON SCHEMA wp_internal TO anon, authenticated;
+
+-- FIFO costing must be in place (see add_order_status_function.sql for the
+-- same check and its SET fifo.pool_ready override).
+DO $$
+BEGIN
+    IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
+        RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
+    END IF;
+    IF EXISTS (SELECT 1 FROM inventory_items)
+       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+       AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
+        RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
+    END IF;
+END $$;
 
 -- An earlier draft of this file put the helpers in public and had fewer
 -- parameters on some functions; remove those so only this version remains.
@@ -192,10 +219,13 @@ $$;
 -- Stock
 -- ---------------------------------------------------------------------------
 
--- Adds p_quantity units of a product: inventory_items (one row per unit, at
--- p_cost or else the product's purchase cost), products.stock, the restocks
--- row and the 'in' stock movement. Returns the new stock. The caller has
--- normally locked the product already; this locks it again (a no-op then).
+-- Adds p_quantity units of a product: FIFO layers (one inventory_items row
+-- per unit, received now, at p_cost or else the last receipt cost — see
+-- fifo_add_layers — with receipt_ref 'RST-<restock id>'), products.stock,
+-- products.purchase_cost (set to this receipt's unit cost), the restocks
+-- row and the 'in' stock movement at that cost. Returns the new stock. The
+-- caller has normally locked the product already; this locks it again (a
+-- no-op then).
 CREATE OR REPLACE FUNCTION wp_internal.wp_add_stock(
     p_product_id TEXT, p_quantity INTEGER, p_cost NUMERIC, p_note TEXT, p_supplier TEXT,
     p_added_by TEXT, p_created_by TEXT, p_today DATE, p_restock_id UUID DEFAULT NULL)
@@ -204,31 +234,31 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_name TEXT;
-    v_purchase_cost NUMERIC;
     v_unit_cost NUMERIC;
     v_stock NUMERIC;
+    v_rid UUID := COALESCE(p_restock_id, gen_random_uuid());
 BEGIN
     IF p_quantity IS NULL OR p_quantity <= 0 THEN
         RAISE EXCEPTION 'Enter an amount greater than zero';
     END IF;
-    SELECT name, purchase_cost INTO v_name, v_purchase_cost FROM products WHERE id = p_product_id FOR UPDATE;
+    SELECT name INTO v_name FROM products WHERE id = p_product_id FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Product not found';
     END IF;
-    v_unit_cost := COALESCE(NULLIF(p_cost, 0), NULLIF(v_purchase_cost, 0), 0);
 
-    INSERT INTO inventory_items (product_id, cost_of_purchase, status)
-    SELECT p_product_id, v_unit_cost, 'in_stock' FROM generate_series(1, p_quantity);
+    v_unit_cost := wp_internal.fifo_add_layers(p_product_id, p_quantity, p_cost, now(), 'RST-' || v_rid);
 
-    UPDATE products SET stock = COALESCE(stock, 0) + p_quantity WHERE id = p_product_id
+    UPDATE products SET stock = COALESCE(stock, 0) + p_quantity,
+                        purchase_cost = CASE WHEN v_unit_cost > 0 THEN v_unit_cost ELSE purchase_cost END
+     WHERE id = p_product_id
     RETURNING stock INTO v_stock;
 
     INSERT INTO restocks (id, product_id, quantity, cost, date, added_by, note)
-    VALUES (COALESCE(p_restock_id, gen_random_uuid()), p_product_id, p_quantity, COALESCE(p_cost, 0), now(),
+    VALUES (v_rid, p_product_id, p_quantity, COALESCE(p_cost, 0), now(),
             COALESCE(NULLIF(p_added_by, ''), 'Unknown'), COALESCE(p_note, ''));
 
-    INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, source, supplier, note, movement_date, created_by)
-    VALUES (p_product_id, COALESCE(v_name, 'Unknown'), 'in', p_quantity, v_unit_cost,
+    INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, unit_cost, source, supplier, note, movement_date, created_by)
+    VALUES (p_product_id, COALESCE(v_name, 'Unknown'), 'in', p_quantity, v_unit_cost, v_unit_cost,
             CASE WHEN COALESCE(p_note, '') LIKE 'Received from PO%' THEN 'Purchase Order' ELSE 'Inventory Adjustment' END,
             COALESCE(p_supplier, ''), COALESCE(p_note, ''), p_today, COALESCE(p_created_by, 'unknown'));
 
@@ -298,6 +328,7 @@ DECLARE
     v_ap UUID;
     v_inventory_desc TEXT;
     v_ap_desc TEXT;
+    v_rid UUID;
 BEGIN
     SELECT * INTO po FROM purchase_orders WHERE id = p_po_id FOR UPDATE;
     IF NOT FOUND THEN
@@ -332,8 +363,12 @@ BEGIN
          ORDER BY o.product_id
     LOOP
         IF r.missing > 0 THEN
+            v_rid := gen_random_uuid();
             v_new := wp_internal.wp_add_stock(r.product_id, ceil(r.missing)::INTEGER, r.unit_cost, v_marker, COALESCE(v_supplier, ''),
-                                  p_added_by, p_created_by, p_today);
+                                  p_added_by, p_created_by, p_today, v_rid);
+            -- The layers name the purchase order they came from.
+            UPDATE inventory_items SET receipt_ref = 'PO-' || p_po_id
+             WHERE product_id = r.product_id AND receipt_ref = 'RST-' || v_rid;
             v_stock := v_stock || jsonb_build_object(r.product_id, v_new);
         END IF;
     END LOOP;
@@ -400,6 +435,11 @@ $$;
 -- Moves the stock an order's lines hold: p_sign -1 takes it out, +1 puts it
 -- back. Never below zero. A warehouse row is only touched when it exists
 -- (a missing row means the product isn't tracked in that warehouse).
+-- FIFO: taking out, each line takes the oldest layers and keeps their cost
+-- (cogs_cost / cogs_short_qty, fifo_take_line); putting back, each line's
+-- layers return to the pool (fifo_give_back_line, which also gives a layer
+-- to each unit it held without one). Put back BEFORE the lines are deleted
+-- or replaced: layers point at their line, which has no foreign key.
 CREATE OR REPLACE FUNCTION wp_internal.wp_move_order_stock(p_order_id UUID, p_warehouse TEXT, p_sign INTEGER)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -408,14 +448,20 @@ DECLARE
     r RECORD;
 BEGIN
     FOR r IN
-        SELECT product_id, quantity FROM wholesale_order_items
+        SELECT id, product_id, quantity FROM wholesale_order_items
          WHERE wholesale_order_id = p_order_id AND product_id IS NOT NULL AND COALESCE(quantity, 0) <> 0
          ORDER BY created_at, id
     LOOP
+        PERFORM 1 FROM products WHERE id = r.product_id FOR NO KEY UPDATE;
         UPDATE products SET stock = GREATEST(0, COALESCE(stock, 0) + p_sign * r.quantity) WHERE id = r.product_id;
         IF NULLIF(p_warehouse, '') IS NOT NULL THEN
             UPDATE warehouse_stock SET quantity = GREATEST(0, COALESCE(quantity, 0) + p_sign * r.quantity)
              WHERE warehouse_id::TEXT = p_warehouse AND product_id = r.product_id;
+        END IF;
+        IF p_sign < 0 THEN
+            PERFORM wp_internal.fifo_take_line('wholesale', p_order_id::TEXT, r.id::TEXT);
+        ELSE
+            PERFORM wp_internal.fifo_give_back_line('wholesale', p_order_id::TEXT, r.id::TEXT);
         END IF;
     END LOOP;
 END;
@@ -427,9 +473,10 @@ RETURNS VOID
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, source, reason, reference_id,
+    INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, unit_cost, source, reason, reference_id,
                                  customer_name, customer_phone, note, movement_date, created_by, warehouse_id)
     SELECT i.product_id, COALESCE(i.product_name, ''), 'out', i.quantity, COALESCE(i.unit_price, 0),
+           round(i.cogs_cost / NULLIF(i.quantity, 0), 4),
            'Wholesale Order', 'Wholesale Sale', o.id::TEXT,
            COALESCE(o.customer_name, ''), COALESCE(o.customer_phone, ''),
            'Wholesale ' || COALESCE(NULLIF(o.invoice_number, ''), 'WO-' || left(o.id::TEXT, 8)),
@@ -451,9 +498,9 @@ AS $$
       FROM wholesale_orders WHERE id = p_order_id;
 $$;
 
--- Dr Cost of Goods Sold / Cr Inventory at the lines' purchase cost,
--- reference 'WSO-<id>-COGS'. Nothing when one already exists, the cost is
--- zero or the accounts are missing.
+-- Dr Cost of Goods Sold / Cr Inventory at the FIFO cost the lines took
+-- (the sum of their cogs_cost), reference 'WSO-<id>-COGS'. Nothing when one
+-- already exists, the cost is zero or the accounts are missing.
 CREATE OR REPLACE FUNCTION wp_internal.wp_post_order_cogs(p_order_id UUID, p_today DATE)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -464,12 +511,92 @@ DECLARE
     v_inventory UUID := wp_internal.wp_account('1300', 'Asset', 'inventor|stock');
 BEGIN
     IF EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'WSO-' || p_order_id || '-COGS') THEN RETURN; END IF;
-    SELECT round(COALESCE(sum(COALESCE(p.purchase_cost, 0) * COALESCE(i.quantity, 0)), 0), 2) INTO v_cost
-      FROM wholesale_order_items i JOIN products p ON p.id = i.product_id
-     WHERE i.wholesale_order_id = p_order_id;
+    SELECT round(COALESCE(sum(COALESCE(i.cogs_cost, 0)), 0), 2) INTO v_cost
+      FROM wholesale_order_items i
+     WHERE i.wholesale_order_id = p_order_id AND i.product_id IS NOT NULL;
     IF v_cost <= 0 OR v_cogs IS NULL OR v_inventory IS NULL THEN RETURN; END IF;
     PERFORM wp_internal.wp_post_entry('WSP', p_today, wp_internal.wp_order_label(p_order_id) || ' · COGS', 'WSO-' || p_order_id || '-COGS', v_cost,
                           v_cogs, 'Cost of goods sold', v_inventory, 'Inventory at cost');
+END;
+$$;
+
+-- Brings an order's COGS in the books to what its lines hold now (the sum
+-- of cogs_cost, or nothing with p_reverse — a cancel or delete). Its Draft
+-- COGS entries (WSO-<id>-COGS and any -COGS-ADJ-<n> / -COGS-REV) are
+-- deleted; with none POSTED left, the COGS entry is simply booked again
+-- (wp_post_order_cogs). A Posted one is final, so the difference between
+-- what the Posted ones moved out of Inventory and the target is booked as a
+-- Draft WSO-<id>-COGS-ADJ-<n> (an edit) or WSO-<id>-COGS-REV (a reversal),
+-- and the notice says so. Call it while the order row still exists (the
+-- entry is labelled from it).
+CREATE OR REPLACE FUNCTION wp_internal.wp_rebook_order_cogs(p_order_id UUID, p_today DATE, p_reverse BOOLEAN)
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_cogs UUID := wp_internal.wp_account('5000', 'Expense', 'cost of goods|cogs');
+    v_inventory UUID := wp_internal.wp_account('1300', 'Asset', 'inventor|stock');
+    v_base TEXT := 'WSO-' || p_order_id || '-COGS';
+    v_posted BOOLEAN := false;
+    v_booked NUMERIC;
+    v_target NUMERIC;
+    v_diff NUMERIC;
+    v_ref TEXT;
+    v_n INTEGER;
+    r RECORD;
+BEGIN
+    FOR r IN SELECT id, COALESCE(status, 'Posted') AS status FROM journal_entries
+              WHERE reference_id = v_base OR reference_id LIKE v_base || '-%' FOR UPDATE
+    LOOP
+        IF r.status <> 'Draft' THEN
+            v_posted := true;
+        ELSE
+            DELETE FROM journal_entry_lines WHERE journal_entry_id = r.id;
+            DELETE FROM journal_entries WHERE id = r.id;
+        END IF;
+    END LOOP;
+
+    IF NOT v_posted THEN
+        IF NOT COALESCE(p_reverse, false) THEN
+            PERFORM wp_internal.wp_post_order_cogs(p_order_id, p_today);
+        END IF;
+        RETURN NULL;
+    END IF;
+
+    SELECT COALESCE(sum(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)), 0) INTO v_booked
+      FROM journal_entry_lines l JOIN journal_entries e ON e.id = l.journal_entry_id
+     WHERE (e.reference_id = v_base OR e.reference_id LIKE v_base || '-%') AND l.account_id = v_inventory;
+    IF COALESCE(p_reverse, false) THEN
+        v_target := 0;
+    ELSE
+        SELECT round(COALESCE(sum(COALESCE(cogs_cost, 0)), 0), 2) INTO v_target
+          FROM wholesale_order_items WHERE wholesale_order_id = p_order_id AND product_id IS NOT NULL;
+    END IF;
+    v_diff := round(v_target - v_booked, 2);
+    IF v_diff = 0 THEN
+        RETURN NULL;
+    END IF;
+    IF v_cogs IS NULL OR v_inventory IS NULL THEN
+        RETURN 'This order has a POSTED cost-of-goods entry — record a reversing entry manually.';
+    END IF;
+
+    IF COALESCE(p_reverse, false) THEN
+        v_ref := v_base || '-REV';
+    ELSE
+        SELECT count(*) + 1 INTO v_n FROM journal_entries WHERE reference_id LIKE v_base || '-ADJ-%';
+        v_ref := v_base || '-ADJ-' || v_n;
+    END IF;
+    IF v_diff > 0 THEN
+        PERFORM wp_internal.wp_post_entry('WSP', p_today, wp_internal.wp_order_label(p_order_id) || ' · COGS adjustment', v_ref, v_diff,
+                              v_cogs, 'Cost of goods sold', v_inventory, 'Inventory at cost');
+    ELSE
+        PERFORM wp_internal.wp_post_entry('WSP', p_today, wp_internal.wp_order_label(p_order_id)
+                                  || CASE WHEN p_reverse THEN ' · COGS reversal' ELSE ' · COGS adjustment' END, v_ref, -v_diff,
+                              v_inventory, 'Inventory at cost', v_cogs, 'Cost of goods returned');
+    END IF;
+    RETURN format('This order''s cost-of-goods entry is POSTED, so a Draft %s of $%s was booked (%s).',
+                  CASE WHEN p_reverse THEN 'reversal' ELSE 'adjustment' END,
+                  to_char(abs(v_diff), 'FM999999999990.00'), v_ref);
 END;
 $$;
 
@@ -617,8 +744,9 @@ $$;
 
 -- Edits an order (header and lines) from what the database holds now, not
 -- the screen's copy: puts the current lines' stock back, takes the edited
--- lines out, re-logs the movements and re-books the COGS entry, and the
--- invoice entry as before (a Draft one re-booked at the new total — in place
+-- lines out, re-logs the movements and re-books the COGS entry at the FIFO
+-- cost they took (a Posted one gets a Draft adjustment for the difference,
+-- see wp_rebook_order_cogs), and the invoice entry as before (a Draft one re-booked at the new total — in place
 -- once payments exist; a Posted one only while the total is unchanged).
 -- Refused for a cancelled order. Returns {"notices": […]}.
 CREATE OR REPLACE FUNCTION update_wholesale_order(p_id UUID, p_updates JSONB, p_items JSONB, p_edited_by TEXT DEFAULT NULL, p_today DATE DEFAULT CURRENT_DATE)
@@ -678,11 +806,9 @@ BEGIN
 
     PERFORM wp_internal.wp_check_order_stock(p_items, v_wh, p_id, NULLIF(o.warehouse_id::TEXT, ''));
 
-    -- Put back what the order holds now.
+    -- Put back what the order holds now (its layers return to the pool).
     PERFORM wp_internal.wp_move_order_stock(p_id, NULLIF(o.warehouse_id::TEXT, ''), 1);
     DELETE FROM stock_movements WHERE reference_id = p_id::TEXT AND type = 'out';
-    v_notice := wp_internal.wp_remove_order_entry(p_id, 'COGS');
-    IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
     IF v_rebook THEN
         v_notice := wp_internal.wp_remove_order_entry(p_id, 'INV');
         IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
@@ -706,10 +832,12 @@ BEGIN
     SELECT p_id, product_id, product_name, quantity, unit_price FROM wp_internal.wp_items(p_items)
      WHERE product_id IS NOT NULL AND quantity <> 0 ORDER BY ord;
 
-    -- Take the edited lines out.
+    -- Take the edited lines out, and bring the COGS in the books to their
+    -- cost (a Posted COGS entry gets a Draft adjustment for the difference).
     PERFORM wp_internal.wp_move_order_stock(p_id, v_wh, -1);
     PERFORM wp_internal.wp_log_order_movements(p_id, p_edited_by, p_today);
-    PERFORM wp_internal.wp_post_order_cogs(p_id, p_today);
+    v_notice := wp_internal.wp_rebook_order_cogs(p_id, p_today, false);
+    IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
 
     IF v_rebook THEN
         PERFORM wp_internal.wp_post_order_invoice(p_id, v_date);
@@ -744,7 +872,8 @@ END;
 $$;
 
 -- Changes an order's status. Cancelling puts its stock back, removes its
--- 'out' movements and takes its COGS and invoice entries off the books; an
+-- 'out' movements and takes its COGS and invoice entries off the books (a
+-- Posted COGS entry is reversed by a Draft WSO-<id>-COGS-REV); an
 -- order whose payments settle its invoice must have them deleted first. A
 -- cancelled order stays cancelled. Returns {"notices": […]}.
 CREATE OR REPLACE FUNCTION set_wholesale_order_status(p_id UUID, p_status TEXT)
@@ -779,7 +908,8 @@ BEGIN
          ORDER BY id FOR UPDATE;
         PERFORM wp_internal.wp_move_order_stock(p_id, NULLIF(o.warehouse_id::TEXT, ''), 1);
         DELETE FROM stock_movements WHERE reference_id = p_id::TEXT AND type = 'out';
-        v_notice := wp_internal.wp_remove_order_entry(p_id, 'COGS');
+        -- A Draft COGS entry goes; a Posted one is reversed by a Draft entry.
+        v_notice := wp_internal.wp_rebook_order_cogs(p_id, CURRENT_DATE, true);
         IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
         v_notice := wp_internal.wp_remove_order_entry(p_id, 'INV');
         IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
@@ -791,7 +921,8 @@ $$;
 
 -- Deletes an order: puts its stock back (unless it was cancelled, which
 -- already did), removes its movements, its payments with their Income rows
--- and ledger entries, and its COGS and invoice entries. Deleting an order
+-- and ledger entries, and its COGS (a Posted one reversed by a Draft
+-- WSO-<id>-COGS-REV) and invoice entries. Deleting an order
 -- that is already gone is not an error. Returns
 -- {"deleted": true|false, "notices": […]}.
 CREATE OR REPLACE FUNCTION delete_wholesale_order(p_id UUID)
@@ -818,11 +949,13 @@ BEGIN
     FOR r IN SELECT id FROM customer_payments WHERE wholesale_order_id = p_id LOOP
         PERFORM wp_internal.wp_remove_tagged_transactions('#WSP-' || left(r.id::TEXT, 8));
     END LOOP;
+    -- A Draft COGS entry goes; a Posted one is reversed by a Draft entry
+    -- (booked while the order row still exists, to label it).
+    v_notice := wp_internal.wp_rebook_order_cogs(p_id, CURRENT_DATE, true);
+    IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
     DELETE FROM customer_payments WHERE wholesale_order_id = p_id;
     DELETE FROM wholesale_order_items WHERE wholesale_order_id = p_id;
     DELETE FROM wholesale_orders WHERE id = p_id;
-    v_notice := wp_internal.wp_remove_order_entry(p_id, 'COGS');
-    IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
     v_notice := wp_internal.wp_remove_order_entry(p_id, 'INV');
     IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
     RETURN jsonb_build_object('deleted', true, 'notices', to_jsonb(v_notices));
@@ -1097,6 +1230,7 @@ GRANT EXECUTE ON FUNCTION wp_internal.wp_order_label(UUID) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION wp_internal.wp_post_order_cogs(UUID, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.wp_post_order_invoice(UUID, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.wp_remove_order_entry(UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.wp_rebook_order_cogs(UUID, DATE, BOOLEAN) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.wp_check_order_stock(JSONB, TEXT, UUID, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION create_wholesale_order(JSONB, JSONB, TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION update_wholesale_order(UUID, JSONB, JSONB, TEXT, DATE) TO anon, authenticated;

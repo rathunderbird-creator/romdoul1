@@ -51,6 +51,7 @@ await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`
 await db.exec(strip(mig('add_auth_guards.sql')));
 for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_notes.sql',
                  'add_purchase_order_bill_date.sql',
+                 'add_fifo_costing.sql', // the packs call its FIFO helpers
                  'add_wholesale_procurement_functions.sql',
                  'add_order_status_function.sql', 'add_order_payment_functions.sql',
                  'add_stock_adjustment_posting.sql',
@@ -408,20 +409,22 @@ check('without add_fifo_costing.sql the RPC names the file to run',
 await q(`ALTER FUNCTION wp_internal.fifo_peek_hidden(TEXT, NUMERIC) RENAME TO fifo_peek`);
 
 // ---------------------------------------------------------------------------
-// Inert: the existing ship path still runs and fills no FIFO column
+// Wired (phase 3): Add Stock lays layers, the ship path takes them and
+// freezes the cost on the line and the movement
 // ---------------------------------------------------------------------------
 await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('p9', 'Lamp', 12, 0, 2)`);
-const addErr = await errOf(`SELECT add_product_stock(p_product_id => 'p9', p_quantity => 2, p_cost => 2)`);
-check('add_product_stock still works (layers get received_at by default)', addErr === '', addErr);
+const addErr = await errOf(`SELECT add_product_stock(p_product_id => 'p9', p_quantity => 2, p_cost => 2.5)`);
+check('add_product_stock works (layers get received_at by default)', addErr === '', addErr);
 await q(`INSERT INTO sales (id, total, shipping_status, payment_status) VALUES ('S9', 12, 'Pending', 'Unpaid')`);
 await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('S9-a', 'S9', 'p9', 'Lamp', 12, 1)`);
 const shipErr = await errOf(`SELECT set_order_shipping_status(p_order_id => 'S9', p_expected_status => 'Pending', p_new_status => 'Shipped')`);
-check('existing ship path still works', shipErr === '', shipErr);
+check('ship path works', shipErr === '', shipErr);
 const s9 = await one(`SELECT (SELECT cogs_cost FROM sale_items WHERE id = 'S9-a') AS cogs,
-    (SELECT count(*) FROM inventory_items WHERE sale_id = 'S9' AND consumer_kind IS NULL) AS legacy_sold,
-    (SELECT count(*) FROM stock_movements WHERE order_id = 'S9' AND unit_cost IS NOT NULL) AS costed`);
-check('inert: ship marks rows the old way, no cogs_cost, no movement unit_cost',
-    s9.cogs === null && num(s9.legacy_sold) === 1 && num(s9.costed) === 0, s9);
+    (SELECT count(*) FROM inventory_items WHERE sale_id = 'S9' AND consumer_kind = 'retail' AND consumer_line_id = 'S9-a') AS fifo_sold,
+    (SELECT max(unit_cost) FROM stock_movements WHERE reference_id = 'S9' AND type = 'out') AS mv_cost,
+    (SELECT purchase_cost FROM products WHERE id = 'p9') AS pc`);
+check('wired: ship takes a layer for the line, freezes 2.50 on it and on the movement; Add Stock set purchase_cost',
+    num(s9.cogs) === 2.5 && num(s9.fifo_sold) === 1 && num(s9.mv_cost) === 2.5 && num(s9.pc) === 2.5, s9);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

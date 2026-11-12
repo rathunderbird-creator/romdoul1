@@ -51,6 +51,7 @@ await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`
 await db.exec(strip(mig('add_auth_guards.sql'))); // restores the users lockdown
 for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_notes.sql',
                  'add_purchase_order_bill_date.sql',
+                 'add_fifo_costing.sql', // the packs call its FIFO helpers
                  'add_wholesale_procurement_functions.sql', // creates wp_internal, which the two order packs use
                  'add_order_status_function.sql', 'add_order_payment_functions.sql',
                  'add_stock_adjustment_posting.sql',

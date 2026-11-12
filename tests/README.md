@@ -95,7 +95,10 @@ written_off rows never return. Then `fifo_peek_cost` / `fifo_peek`,
 settled-before-ship term, a booked-vs-actual gap and a pool/stock mismatch
 showing up), the guarded public read RPCs (permissions, enforcement, the
 "run add_fifo_costing.sql" answer when the implementation is missing), and
-that the existing ship path still runs without filling any FIFO column.
+that the wired ship path (phase 3) takes a layer and freezes its cost on the
+line and the movement, and Add Stock sets purchase_cost. Since phase 3 the
+packs refuse to load without `add_fifo_costing.sql`, so every DB test here
+(sec1-session-guards included) runs it before the packs.
 Same PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
@@ -142,3 +145,47 @@ setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/fifo-rebuild.test.mjs
+
+## fifo-orders.test.mjs, fifo-wholesale.test.mjs, fifo-adjustment.test.mjs
+
+FIFO phase 3: every stock path and COGS wired to the FIFO layers. Each
+builds the real stack in deploy order with `tests/fifo-test-db.mjs` (a
+shared helper, not a test: `full_schema.sql`, auth guards,
+`add_fifo_costing.sql`, the four packs, `add_session_guards.sql`), calls the
+guarded public functions, and after every step asserts
+`fifo_inventory_check`: variance 0 (1300 = pool + shipped-unbooked -
+booked-unshipped + shipped-minus-booked) and pool count = products.stock.
+The two cases that leave a known variance (an oversold shortfall line, a
+pre-FIFO order restocked with no rows) assert that exact amount.
+
+- fifo-orders: ship takes the oldest layers per line and freezes the cost
+  (line and movement); ship then settle books the layer cost, not
+  purchase_cost, and records cogs_booked; unship returns the exact rows and a
+  re-ship takes the same ones with no adjustment; settle before ship books a
+  peek and the later ship posts the Draft ORD-<id>-COGS-ADJ difference;
+  leaving Paid drops the Draft receipt with its ADJ; a deposit-covered
+  ORD-<id>-COGS is at FIFO; restock with a Draft receipt reverses nothing,
+  with a Posted one posts a Draft ORD-<id>-COGS-REV; edit_order_items on a
+  shipped settled order (ADJ for the difference) and on an unshipped one
+  (booked COGS carried); delete_retail_orders gives rows back and reverses
+  COGS left in a Posted entry; shortfall units and a pre-FIFO line come
+  back as RET- layers; a pre-FIFO settled order leaving Paid is adopted at
+  its row cost; the packs refuse to load without add_fifo_costing.sql or
+  before the rebuild.
+- fifo-wholesale: create / edit / cancel / delete with Draft vs Posted COGS
+  (re-booked in place, WSO-<id>-COGS-ADJ-<n>, WSO-<id>-COGS-REV), the same
+  rows taken again on an edit, an order backfilled by the rebuild (short
+  units come back as layers at the booked cost), Add Stock and PO receipts
+  (layers at the receipt cost, RST- / PO- refs, purchase_cost updated).
+- fifo-adjustment: a removal writes off the oldest layers and the ADJ entry
+  equals their cost (line unit_cost = their average); an addition creates
+  layers at its cost on the adjustment date (the last receipt cost when it
+  has none); a mixed adjustment books the net; an over-removal is refused
+  with nothing moved.
+
+Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/fifo-orders.test.mjs
+    node tests/fifo-wholesale.test.mjs
+    node tests/fifo-adjustment.test.mjs
