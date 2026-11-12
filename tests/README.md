@@ -170,8 +170,14 @@ pre-FIFO order restocked with no rows) assert that exact amount.
   (booked COGS carried); delete_retail_orders gives rows back and reverses
   COGS left in a Posted entry; shortfall units and a pre-FIFO line come
   back as RET- layers; a pre-FIFO settled order leaving Paid is adopted at
-  its row cost; the packs refuse to load without add_fifo_costing.sql or
-  before the rebuild.
+  its row cost (the check moves by purchase cost minus row cost); deleting
+  a restocked order keeps the Posted receipt's COGS reversed (the Draft REV
+  is re-booked) while a deposit-covered one (Draft ORD-COGS + Draft REV)
+  nets to nothing; a no-product line added by an edit gets no booked COGS
+  and no ADJ; editing a pre-FIFO settled shipped order keeps the check
+  (price-only: no ADJ; quantity: an ADJ for the extra unit); an un-shipped
+  oversold line keeps its shortfall variance; the packs refuse to load
+  without add_fifo_costing.sql or before the rebuild.
 - fifo-wholesale: create / edit / cancel / delete with Draft vs Posted COGS
   (re-booked in place, WSO-<id>-COGS-ADJ-<n>, WSO-<id>-COGS-REV), the same
   rows taken again on an edit, an order backfilled by the rebuild (short

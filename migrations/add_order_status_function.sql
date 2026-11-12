@@ -129,9 +129,12 @@ END;
 $$;
 
 -- Puts p_total — the COGS already booked for an order whose lines were just
--- replaced — on its new lines, by quantity, in cents (product lines first;
--- the first of them, the largest, takes the remainder), so the order keeps
--- what it has booked.
+-- replaced — on its new product lines, by quantity, in cents (the first of
+-- them, the largest, takes the remainder), so the order keeps what it has
+-- booked. Lines with no product get NULL, as settlement books only product
+-- lines (order_cogs_lines) and the true-up and the FIFO check only look at
+-- lines with a cost. An order left with no product line keeps the whole
+-- amount on its first line.
 CREATE OR REPLACE FUNCTION wp_internal.os_spread_booked(p_order_id TEXT, p_total NUMERIC)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -142,20 +145,39 @@ DECLARE
     v_amt NUMERIC;
     r RECORD;
 BEGIN
-    SELECT COALESCE(sum(GREATEST(COALESCE(quantity, 0), 0)), 0) INTO v_tq FROM sale_items WHERE sale_id = p_order_id;
+    SELECT COALESCE(sum(GREATEST(COALESCE(quantity, 0), 0)), 0) INTO v_tq
+      FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL;
     FOR r IN
-        SELECT id, GREATEST(COALESCE(quantity, 0), 0) AS q,
+        SELECT id, GREATEST(COALESCE(quantity, 0), 0) AS q, product_id IS NOT NULL AS is_product,
                row_number() OVER (ORDER BY (product_id IS NULL), quantity DESC NULLS LAST, created_at, id) AS rn
           FROM sale_items WHERE sale_id = p_order_id
          ORDER BY rn DESC
     LOOP
         v_amt := CASE WHEN r.rn = 1 THEN v_left
+                      WHEN NOT r.is_product THEN NULL
                       WHEN v_tq > 0 THEN round(COALESCE(p_total, 0) * r.q / v_tq, 2)
                       ELSE 0 END;
         UPDATE sale_items SET cogs_booked = v_amt WHERE id = r.id;
-        v_left := v_left - v_amt;
+        v_left := v_left - COALESCE(v_amt, 0);
     END LOOP;
 END;
+$$;
+
+-- Whether the ledger holds COGS for a retail order: one of its receipt
+-- entries (TX-<income row of the order>) or its ORD-<id>-COGS moves
+-- something out of Inventory (1300), whatever the entry's status.
+CREATE OR REPLACE FUNCTION wp_internal.os_order_cogs_in_ledger(p_order_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM journal_entries e
+          JOIN journal_entry_lines l ON l.journal_entry_id = e.id
+         WHERE l.account_id = wp_internal.wp_account('1300', 'Asset', 'inventor|stock')
+           AND COALESCE(l.credit, 0) > 0
+           AND (e.reference_id = 'ORD-' || p_order_id || '-COGS'
+                OR e.reference_id IN (SELECT 'TX-' || t.id FROM transactions t WHERE t.order_id = p_order_id)));
 $$;
 
 -- Statuses where the order's goods are counted out of stock: shipped,
@@ -457,7 +479,9 @@ $$;
 -- right now (Shipped, Delivered, Returned), stock moves by the difference per
 -- product (never below 0), the old lines give their layers back and the new
 -- lines take theirs (a settled order gets a Draft COGS-ADJ for any cost
--- difference; COGS already booked moves to the new lines), and the newest stock-out
+-- difference; COGS already booked moves to the new product lines, and an
+-- order settled before the FIFO wiring counts as booked at the layer value
+-- its old lines gave back), and the newest stock-out
 -- generation (the shipment being edited) is changed to match, so a later
 -- un-ship, delete or restock reverses exactly what left. A failure keeps the
 -- old items: nothing is half-saved.
@@ -486,6 +510,7 @@ DECLARE
     v_holds BOOLEAN;
     v_had_booked BOOLEAN;
     v_booked NUMERIC;
+    v_given NUMERIC := 0;
     r RECORD;
     m RECORD;
 BEGIN
@@ -516,8 +541,17 @@ BEGIN
         -- below, so the units come back to the same layers where they can.
         FOR r IN SELECT id FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL ORDER BY created_at, id
         LOOP
-            PERFORM wp_internal.fifo_give_back_line('retail', p_order_id, r.id);
+            v_given := v_given + wp_internal.fifo_give_back_line('retail', p_order_id, r.id);
         END LOOP;
+        -- An order settled before the FIFO wiring (COGS in the ledger, no
+        -- line with cogs_booked) is taken as booked at the layer value its
+        -- lines just gave back, so an edit that ships the same goods books
+        -- no difference and the FIFO check does not count it as shipped
+        -- and unbooked; a changed quantity books its difference as an ADJ.
+        IF NOT COALESCE(v_had_booked, false) AND wp_internal.os_order_cogs_in_ledger(p_order_id) THEN
+            v_had_booked := true;
+            v_booked := v_given;
+        END IF;
     END IF;
 
     DELETE FROM sale_items WHERE sale_id = p_order_id;
@@ -633,6 +667,7 @@ $$;
 GRANT EXECUTE ON FUNCTION wp_internal.os_post_cogs_move(TEXT, TEXT, NUMERIC, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_true_up_booked_cogs(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_spread_booked(TEXT, NUMERIC) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.os_order_cogs_in_ledger(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_holds_stock(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_stock_consumed(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION restock_returned_orders(TEXT[], JSONB) TO anon, authenticated;

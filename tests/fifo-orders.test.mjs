@@ -260,7 +260,9 @@ await checkBalanced('pre-FIFO order restocked', -3 - 14);
 // A pre-FIFO settled order (history: its row stamped by the rebuild, COGS
 // booked at purchase_cost 4 in a Draft receipt, cogs_booked NULL) leaves
 // Paid: the receipt goes, and the line is adopted at the cost of the row it
-// holds (5), as a shipped unsettled order — the 1.00 basis gap closes.
+// holds (5), as a shipped unsettled order. On a store the rebuild trued
+// this order counts 0; adoption moves the check by X - C (4 - 5 = -1.00)
+// and settling again at C keeps it — the test's +1 start stands for that 0.
 await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('E', 'Lamp', 12, 0, 4)`);
 await seedLayers('E', 1, 5, '2026-01-05T00:00:00Z');
 await order('O13', [['o13-a', 'E', 1]], 'Shipped', 12);
@@ -284,6 +286,102 @@ await checkBalanced('pre-FIFO order unsettled', -17);
 await settle('O13', 12);
 check('settled again: books the row cost (5)', near(await txCogs('O13'), 5));
 await checkBalanced('pre-FIFO order settled at FIFO', -17);
+
+// ---------------------------------------------------------------------------
+// 8. Deleting a restocked order, lines with no product, pre-FIFO edits
+// ---------------------------------------------------------------------------
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('F', 'Tripod', 20, 0, 3)`);
+await seedLayers('F', 8, 5, '2026-01-07T00:00:00Z');
+const V = -17;
+
+// Posted receipt, restocked (Draft REV), then deleted: the REV is booked
+// again, the COGS the Posted receipt keeps stays reversed.
+await order('R1', [['r1-a', 'F', 1]]);
+await ship('R1', 'Pending', 'Shipped');
+await settle('R1');
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'R1')`);
+await ship('R1', 'Shipped', 'Returned');
+await ship('R1', 'Returned', 'ReStock');
+await q(`SELECT public.apply_restock_payment_side(p_ids => ARRAY['R1'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
+check('restocked with a Posted receipt: one Draft REV of 5', (await entries('ORD-R1-COGS-REV')).length === 1);
+await checkBalanced('restocked R1 (Posted receipt + Draft REV)', V);
+const delR1 = (await one(`SELECT public.delete_retail_orders(p_ids => ARRAY['R1'], p_fields => '{"today": "${DAY}"}'::jsonb) AS r`)).r;
+const revR1 = await entries('ORD-R1-COGS-REV');
+check('delete restocked R1: the Posted receipt\'s COGS is still reversed by one Draft REV of 5, notice says so',
+    revR1.length === 1 && revR1[0].status === 'Draft' && near(revR1[0].cogs, -5) && JSON.stringify(delR1.notices).includes('ORD-R1-COGS-REV'),
+    { revR1, delR1 });
+await checkBalanced('deleted restocked R1', V);
+
+// Deposit-covered (Draft ORD-COGS), shipped, restocked (Draft REV), deleted:
+// both entries go and nothing is reversed again.
+await order('R2', [['r2-a', 'F', 1]], 'Pending', 20);
+await pay('R2', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 20, post_to_ledger: true });
+await pay('R2', 'Deposit', { payment_status: 'Paid', settle_date: DAY, post_to_ledger: true });
+await ship('R2', 'Pending', 'Shipped');
+await ship('R2', 'Shipped', 'Returned');
+await ship('R2', 'Returned', 'ReStock');
+await q(`SELECT public.apply_restock_payment_side(p_ids => ARRAY['R2'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
+check('deposit-covered restocked: Draft ORD-COGS and Draft REV', (await entries('ORD-R2-COGS')).length === 1
+    && (await entries('ORD-R2-COGS-REV')).length === 1);
+await checkBalanced('restocked R2 (deposit-covered)', V);
+await q(`SELECT public.delete_retail_orders(p_ids => ARRAY['R2'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
+check('delete deposit-covered restocked R2: no COGS entry left', (await entries('ORD-R2-COGS%')).length === 0);
+await checkBalanced('deleted restocked R2', V);
+
+// A line with no product (gift wrap) added to a shipped settled order: the
+// booked COGS stays on the product line, no ADJ.
+await order('E1', [['e1-a', 'F', 1]]);
+await ship('E1', 'Pending', 'Shipped');
+await settle('E1');
+await q(`SELECT public.edit_order_items(p_order_id => 'E1', p_items => '[{"id": "F", "name": "Tripod", "price": 10, "quantity": 1},
+    {"id": "", "name": "Gift wrap", "price": 1, "quantity": 3}]'::jsonb, p_fields => '{}'::jsonb)`);
+const e1l = (await q(`SELECT product_id, cogs_cost, cogs_booked FROM sale_items WHERE sale_id = 'E1' ORDER BY product_id NULLS LAST`)).rows;
+check('edit adds a no-product line: product line keeps booked 5, the other gets none, no ADJ',
+    e1l.length === 2 && near(e1l[0].cogs_booked, 5) && near(e1l[0].cogs_cost, 5) && e1l[1].cogs_booked === null
+    && (await entries('ORD-E1-COGS-ADJ')).length === 0, e1l);
+await checkBalanced('edited E1 with a no-product line', V);
+
+// A pre-FIFO settled shipped order (its row held, COGS booked at
+// purchase_cost 3 in a Posted receipt, cogs_booked NULL). On a trued store
+// it counts 0: the hand-made history below starts at V + 2 (5 opened, 3
+// booked) and must stay there through edits.
+await order('P1', [['p1-a', 'F', 1]], 'Shipped', 20);
+await q(`UPDATE inventory_items SET status = 'sold', sale_id = 'P1', consumer_kind = 'retail', consumer_id = 'P1', consumer_line_id = 'p1-a'
+          WHERE id = (SELECT id FROM inventory_items WHERE product_id = 'F' AND status = 'in_stock' ORDER BY received_at, id LIMIT 1)`);
+await q(`UPDATE products SET stock = stock - 1 WHERE id = 'F'`);
+await q(`UPDATE sales SET payment_status = 'Paid', amount_received = 20 WHERE id = 'P1'`);
+const txP1 = (await one(`INSERT INTO transactions (date, type, category, amount, description, order_id)
+    VALUES (now(), 'Income', 'លក់រាយ', 20, 'Cust P1', 'P1') RETURNING id`)).id;
+const jeP1 = (await one(`INSERT INTO journal_entries (description, reference_id, status) VALUES ('old receipt', $1, 'Posted') RETURNING id`, ['TX-' + txP1])).id;
+await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+         SELECT $1, id, CASE account_code WHEN '1000' THEN 20 WHEN '5000' THEN 3 ELSE 0 END,
+                        CASE account_code WHEN '4000' THEN 20 WHEN '1300' THEN 3 ELSE 0 END
+           FROM chart_of_accounts WHERE account_code IN ('1000', '4000', '5000', '1300')`, [jeP1]);
+await checkBalanced('pre-FIFO settled P1', V + 2);
+await q(`SELECT public.edit_order_items(p_order_id => 'P1', p_items => '[{"id": "F", "name": "Tripod", "price": 25, "quantity": 1}]'::jsonb,
+    p_fields => '{}'::jsonb)`);
+const p1 = await one(`SELECT cogs_cost, cogs_booked FROM sale_items WHERE sale_id = 'P1'`);
+check('price-only edit of a pre-FIFO settled order: booked = the row cost (5), no ADJ',
+    near(p1.cogs_cost, 5) && near(p1.cogs_booked, 5) && (await entries('ORD-P1-COGS-ADJ')).length === 0, p1);
+await checkBalanced('pre-FIFO P1 price edit', V + 2);
+await q(`SELECT public.edit_order_items(p_order_id => 'P1', p_items => '[{"id": "F", "name": "Tripod", "price": 25, "quantity": 2}]'::jsonb,
+    p_fields => '{}'::jsonb)`);
+const p1adj = await entries('ORD-P1-COGS-ADJ');
+check('quantity edit of it: the extra unit is booked as an ADJ (5)', p1adj.length === 1 && near(p1adj[0].cogs, 5), p1adj);
+await checkBalanced('pre-FIFO P1 quantity edit', V + 2);
+
+// Un-shipping an oversold line: the short units come back as RET- layers
+// (pool = stock), and the variance stays — 1300 never held them.
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('G', 'Bag', 9, 0, 10)`);
+await seedLayers('G', 2, 10, '2026-01-08T00:00:00Z');
+await order('S1', [['s1-a', 'G', 4]]);
+await ship('S1', 'Pending', 'Shipped');
+check('oversold: 40 with 2 short', near((await line('s1-a')).cogs_cost, 40) && near((await line('s1-a')).cogs_short_qty, 2));
+await checkBalanced('oversold S1', V + 2 - 20);
+await ship('S1', 'Shipped', 'Pending');
+check('un-shipped: pool 4 = stock 4', await poolCount('G') === 4
+    && num((await one(`SELECT stock FROM products WHERE id = 'G'`)).stock) === 4);
+await checkBalanced('un-shipped S1: the shortfall variance stays', V + 2 - 20);
 
 // The packs refuse to load before add_fifo_costing.sql and the rebuild.
 check('nothing left without a consumer link while sold',
