@@ -175,10 +175,13 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     cost_of_purchase NUMERIC DEFAULT 0,
-    status TEXT DEFAULT 'in_stock' CHECK (status IN ('in_stock', 'sold', 'returned')),
+    status TEXT DEFAULT 'in_stock'
+        CONSTRAINT inventory_items_status_check CHECK (status IN ('in_stock', 'sold', 'returned', 'written_off')),
     sale_id TEXT REFERENCES sales(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+-- FIFO columns, indexes and the widened status CHECK for instances whose
+-- table predates them: section "FIFO costing" near the end of this file.
 
 -- ============================================================
 -- 2. STOCK MOVEMENTS (the app's stock ledger)
@@ -1056,6 +1059,51 @@ ALTER TABLE stock_adjustment_lines DISABLE ROW LEVEL SECURITY;
 -- Sales: an optional manual override for the receipt's TOTAL/REMAINING
 -- KH(₭) figure (see add_sales_custom_khr.sql).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS custom_khr_amount NUMERIC;
+
+-- FIFO costing: layer keys and consumers on inventory_items, frozen line
+-- costs, movement unit cost (see add_fifo_costing.sql, which also holds the
+-- FIFO functions). received_at is backfilled only where NULL.
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ;
+UPDATE inventory_items SET received_at = COALESCE(created_at, now()) WHERE received_at IS NULL;
+ALTER TABLE inventory_items ALTER COLUMN received_at SET DEFAULT now();
+ALTER TABLE inventory_items ALTER COLUMN received_at SET NOT NULL;
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS receipt_ref TEXT;
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS consumer_kind TEXT
+    CHECK (consumer_kind IN ('retail', 'wholesale', 'adjustment', 'reconcile'));
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS consumer_id TEXT;
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS consumer_line_id TEXT;
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;
+DO $$
+DECLARE
+    c RECORD;
+BEGIN
+    FOR c IN
+        SELECT conname FROM pg_constraint
+         WHERE conrelid = 'public.inventory_items'::regclass AND contype = 'c'
+           AND pg_get_constraintdef(oid) ILIKE '%status%'
+           AND pg_get_constraintdef(oid) NOT ILIKE '%written_off%'
+    LOOP
+        EXECUTE format('ALTER TABLE inventory_items DROP CONSTRAINT %I', c.conname);
+    END LOOP;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'public.inventory_items'::regclass
+                      AND conname = 'inventory_items_status_check') THEN
+        ALTER TABLE inventory_items ADD CONSTRAINT inventory_items_status_check
+            CHECK (status IN ('in_stock', 'sold', 'returned', 'written_off'));
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS inventory_items_fifo_idx
+    ON inventory_items (product_id, received_at, id) WHERE status = 'in_stock';
+CREATE INDEX IF NOT EXISTS inventory_items_consumer_idx
+    ON inventory_items (consumer_kind, consumer_id, consumer_line_id);
+CREATE INDEX IF NOT EXISTS inventory_items_sale_idx
+    ON inventory_items (sale_id) WHERE sale_id IS NOT NULL;
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_cost NUMERIC;
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERIC DEFAULT 0;
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_booked NUMERIC;
+ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_cost NUMERIC;
+ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERIC DEFAULT 0;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS unit_cost NUMERIC;
 
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
