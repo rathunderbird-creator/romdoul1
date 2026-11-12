@@ -13,6 +13,7 @@ import { useMobile } from '../../hooks/useMobile';
 import type { ChartOfAccount } from '../../types';
 import { dayKeyFromDate, addDays, daysBetween } from '../../utils/dateRange';
 import { fetchAll } from '../../utils/fetchAll';
+import { fetchJournalLinesByEntry } from '../../utils/journalLines';
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const BLUE = '#3B82F6', RED = '#EF4444', GREEN = '#10B981';
@@ -70,12 +71,18 @@ const CashInOutPage: React.FC = () => {
                 // Paged with the unique id breaking date ties (date is a plain
                 // DATE, so dozens of entries share each value) and merged by
                 // id, so entries are neither double-counted nor skipped.
-                const all = await fetchAll<RawEntry>((from, to) => supabase
-                    .from('journal_entries')
-                    .select('*, lines:journal_entry_lines(*)')
-                    .order('date', { ascending: true })
-                    .order('id', { ascending: true })
-                    .range(from, to), 1000, { label: 'CashInOutPage ledger' });
+                // Lines read flat and joined here (an embedded read timed out
+                // on a large ledger — see utils/journalLines.ts).
+                const [rawEntries, linesByEntry] = await Promise.all([
+                    fetchAll<RawEntry>((from, to) => supabase
+                        .from('journal_entries')
+                        .select('*')
+                        .order('date', { ascending: true })
+                        .order('id', { ascending: true })
+                        .range(from, to), 1000, { label: 'CashInOutPage ledger' }),
+                    fetchJournalLinesByEntry<RawLine & { journal_entry_id?: string }>('*', 'CashInOutPage ledger lines'),
+                ]);
+                const all = rawEntries.map(e => ({ ...e, lines: linesByEntry.get(String(e.id)) || [] }));
                 if (!alive) return;
                 setAccounts(accs || []);
                 setEntries(all);
