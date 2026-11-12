@@ -114,3 +114,31 @@ shortfall), the D1 guard failing on a basis mismatch and passing with a
 `--basis` override, and pool count = stock afterwards. Needs nothing extra:
 
     node tests/fifo-rebuild-dryrun.test.mjs
+
+## fifo-rebuild.test.mjs
+
+Runs `migrations/fifo_rebuild_pool.sql` (FIFO phase 2, the one-time pool
+rebuild) on top of the same real stack as fifo-primitives, plus
+`add_fifo_costing.sql`. One seeded store carries every drift case: pool
+larger / smaller than stock, no rows (fillers at the newest priced restock,
+which beats a received PO line, else purchase_cost), cost-0 / NULL rows
+re-costed, sold rows on Pending / ReStock orders, null sale_id and
+`returned` rows written off with sale_id cleared, settled and COGS-booked
+(ORD-…-COGS or TX- with a 5000 line) history kept and stamped to its line,
+unsettled shipped lines taking the next-newest layers oldest-shipped first
+(a fractional part as cogs_short_qty), Returned and pre-cutoff orders, an
+inactive product, a fractional stock, and open / cancelled wholesale
+orders backfilled at their booked COGS. Each case is asserted, and the SQL
+result is compared with the dry run (`buildInput` + `planStore` from
+`src/scripts/fifo-rebuild-dryrun.cjs`) on the same rows: totals, V / B /
+D1, every row, every filler and every line, with the default options and
+with the Romdoul1 true-up options. Then pool count = stock, the Draft
+FIFO-REVAL entry (app numbering, direction by sign), `fifo_inventory_check`
+after the rebuild, the phase 1 primitives on the rebuilt pool, the D1 guard
+(raises with the numbers, $1.00 passes, $1.01 does not, nothing changed),
+the refusals (run once, phase 1 missing, bad basis / status, lines already
+costed) and the file run as shipped (BEGIN … COMMIT, defaults). Same PGlite
+setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/fifo-rebuild.test.mjs

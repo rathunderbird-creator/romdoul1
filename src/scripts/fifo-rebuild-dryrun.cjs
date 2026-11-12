@@ -68,17 +68,23 @@ function tsKey(ts) {
     return ms * 1000 + micro;
 }
 
+// The FIFO key of a row: received_at (phase 1), else created_at (a store
+// without phase 1, where received_at would be backfilled from it).
+const recvOf = (r) => r.received_at || r.created_at;
+
 // Newest first: received DESC, id DESC (the order the SQL rebuild uses).
 function newestFirst(a, b) {
-    const d = tsKey(b.created_at) - tsKey(a.created_at);
+    const d = tsKey(recvOf(b)) - tsKey(recvOf(a));
     if (d !== 0) return d;
     return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
 
 /**
- * Pure planner, no I/O. Input:
+ * Pure planner, no I/O. migrations/fifo_rebuild_pool.sql implements the same
+ * plan in SQL; tests/fifo-rebuild.test.mjs runs both on one database and
+ * compares them, so a change here needs the same change there. Input:
  *   products   [{id, name, stock, purchase_cost}]
- *   items      [{id, product_id, cost_of_purchase, status, sale_id, created_at}]
+ *   items      [{id, product_id, cost_of_purchase, status, sale_id, received_at?, created_at}]
  *   sales      Map id -> {shipping_status, payment_status, date}
  *   saleItems  [{id, sale_id, product_id, quantity}]
  *   cogsOrders Set of order ids that have a COGS entry
@@ -342,7 +348,7 @@ function rowRecord(p, u, newStatus, consumer, line, action) {
         row_id: u.row ? u.row.id : `FILLER-${p.id}-${u.filler}`,
         product_id: p.id, product_name: p.name,
         old_status: u.row ? u.row.status : '', old_sale_id: u.row ? (u.row.sale_id || '') : '',
-        old_cost: u.row ? num(u.row.cost_of_purchase) : '', received_at: u.row ? u.row.created_at : '',
+        old_cost: u.row ? num(u.row.cost_of_purchase) : '', received_at: u.row ? recvOf(u.row) : '',
         new_status: newStatus, new_cost: u.cost, consumer_id: consumer, consumer_line_id: line, action,
     };
 }
@@ -380,37 +386,27 @@ async function fetchIn(sb, table, cols, column, values, extra) {
 // Store-local midnight (Cambodia, UTC+7) of a YYYY-MM-DD day.
 const localMidnight = (ymd) => (ymd ? `${String(ymd).slice(0, 10)}T00:00:00+07:00` : null);
 
-async function loadStore(sb, basisArgs, opts) {
-    const [products, items, salesRows, saleItems, accounts] = await Promise.all([
-        fetchAll(sb, 'products', 'id,name,stock,purchase_cost,is_active'),
-        fetchAll(sb, 'inventory_items', 'id,product_id,cost_of_purchase,status,sale_id,created_at'),
-        fetchAll(sb, 'sales', 'id,shipping_status,payment_status,date'),
-        fetchAll(sb, 'sale_items', 'id,sale_id,product_id,quantity'),
-        fetchAll(sb, 'chart_of_accounts', 'id,account_code,account_name'),
-    ]);
-    const sales = new Map(salesRows.map((s) => [s.id, s]));
-    const invAcc = accounts.filter((a) => a.account_code === '1300').map((a) => a.id);
-    const cogsAcc = accounts.filter((a) => a.account_code === '5000').map((a) => a.id);
+// What the ledger says about the store: the 1300 / 5000 accounts, the 1300
+// balance B (every entry status) and the orders with a COGS entry (an entry
+// with a 5000 line referenced ORD-<order>-COGS, or TX-<tx> of a transaction
+// linked to the order).
+function ledgerFacts(raw) {
+    const invAcc = raw.accounts.filter((a) => a.account_code === '1300').map((a) => a.id);
+    const cogsAcc = raw.accounts.filter((a) => a.account_code === '5000').map((a) => a.id);
     if (invAcc.length !== 1 || cogsAcc.length !== 1) throw new Error(`expected one 1300 and one 5000 account, found ${invAcc.length} / ${cogsAcc.length}`);
-
-    const [entries, lines, txs] = await Promise.all([
-        fetchAll(sb, 'journal_entries', 'id,reference_id,status,date'),
-        fetchAll(sb, 'journal_entry_lines', 'id,journal_entry_id,account_id,debit,credit', { filter: (q) => q.in('account_id', [invAcc[0], cogsAcc[0]]) }),
-        fetchAll(sb, 'transactions', 'id,order_id', { filter: (q) => q.not('order_id', 'is', null) }),
-    ]);
-    const entryById = new Map(entries.map((e) => [e.id, e]));
-    const txOrder = new Map(txs.map((t) => [t.id, t.order_id]));
-    const opening = entries.filter((e) => e.reference_id === 'OPENING-INV').map((e) => e.date).sort()[0] || null;
+    const entryById = new Map(raw.entries.map((e) => [e.id, e]));
+    const txOrder = new Map(raw.txs.filter((t) => t.order_id !== null && t.order_id !== undefined).map((t) => [t.id, t.order_id]));
+    const opening = raw.entries.filter((e) => e.reference_id === 'OPENING-INV').map((e) => e.date).sort()[0] || null;
 
     let B = 0, Bposted = 0, Bdraft = 0;
     const cogsOrders = new Set();
-    for (const l of lines) {
+    for (const l of raw.lines) {
         const e = entryById.get(l.journal_entry_id);
         if (l.account_id === invAcc[0]) {
             const amt = num(l.debit) - num(l.credit);
             B += amt;
             if (e && (e.status || 'Posted') === 'Draft') Bdraft += amt; else Bposted += amt;
-        } else if (e && e.reference_id) {
+        } else if (l.account_id === cogsAcc[0] && e && e.reference_id) {
             const ref = e.reference_id;
             let m = ref.match(/^ORD-(.+)-COGS$/);
             if (m) cogsOrders.add(m[1]);
@@ -418,25 +414,44 @@ async function loadStore(sb, basisArgs, opts) {
             if (m && txOrder.has(m[1])) cogsOrders.add(txOrder.get(m[1]));
         }
     }
+    return { invAcc: invAcc[0], cogsAcc: cogsAcc[0], B, Bposted, Bdraft, cogsOrders, opening };
+}
 
-    // Ship time of every unsettled holding order: its newest 'out' movement.
-    const uOrders = [...new Set(saleItems
+// Orders that hold stock, are not settled and have no COGS entry: the ones
+// whose ship time the plan needs.
+function unsettledHoldingOrders(raw, cogsOrders) {
+    const sales = new Map(raw.sales.map((s) => [s.id, s]));
+    return [...new Set(raw.saleItems
         .filter((li) => li.product_id && HOLDS_STOCK.has((sales.get(li.sale_id) || {}).shipping_status || '')
             && !SETTLED.has((sales.get(li.sale_id) || {}).payment_status || '') && !cogsOrders.has(li.sale_id))
         .map((li) => li.sale_id))];
-    const moves = await fetchIn(sb, 'stock_movements', 'id,reference_id,created_at', 'reference_id', uOrders, (q) => q.eq('type', 'out'));
+}
+
+/**
+ * Pure: turns the raw table rows into planStore's input. raw =
+ *   { products, items, sales, saleItems, accounts, entries, lines (1300 and
+ *     5000 lines at least), txs ({id, order_id}), moves ({reference_id, type,
+ *     created_at}), restocks, purchaseOrders, poItems }
+ * opts = { uStatuses (Set), uFrom ('YYYY-MM-DD') }.
+ */
+function buildInput(raw, basisArgs, opts = {}) {
+    const { products, items, saleItems } = raw;
+    const sales = new Map(raw.sales.map((s) => [s.id, s]));
+    const facts = ledgerFacts(raw);
+    const { cogsOrders } = facts;
+
+    // Ship time of every unsettled holding order: its newest 'out' movement.
+    const uOrders = new Set(unsettledHoldingOrders(raw, cogsOrders));
     const shipAt = new Map();
-    for (const m of moves) {
+    for (const m of raw.moves) {
+        if (m.type !== 'out' || !uOrders.has(m.reference_id)) continue;
         if (!shipAt.has(m.reference_id) || tsKey(m.created_at) > tsKey(shipAt.get(m.reference_id))) shipAt.set(m.reference_id, m.created_at);
     }
 
     // Last receipt cost > 0 per product: restocks, then received PO lines.
-    const [restocks, pos] = await Promise.all([
-        fetchAll(sb, 'restocks', 'id,product_id,cost,date'),
-        fetchAll(sb, 'purchase_orders', 'id,status,order_date'),
-    ]);
-    const receivedPo = new Map(pos.filter((p) => p.status === 'Received').map((p) => [p.id, p]));
-    const poItems = receivedPo.size ? await fetchAll(sb, 'purchase_order_items', 'id,purchase_order_id,product_id,unit_price,created_at') : [];
+    // On equal times the first row in id order wins.
+    const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const receivedPo = new Set(raw.purchaseOrders.filter((p) => p.status === 'Received').map((p) => p.id));
     const newest = (list, source) => {
         const best = new Map();
         for (const x of list) {
@@ -446,14 +461,14 @@ async function loadStore(sb, basisArgs, opts) {
         }
         return best;
     };
-    const fromRestocks = newest(restocks.map((r) => ({ pid: r.product_id, cost: num(r.cost), ts: r.date })), 'restock (last receipt)');
-    const fromPo = newest(poItems.filter((it) => receivedPo.has(it.purchase_order_id))
+    const fromRestocks = newest(raw.restocks.slice().sort(byId).map((r) => ({ pid: r.product_id, cost: num(r.cost), ts: r.date })), 'restock (last receipt)');
+    const fromPo = newest(raw.poItems.filter((it) => receivedPo.has(it.purchase_order_id)).sort(byId)
         .map((it) => ({ pid: it.product_id, cost: num(it.unit_price), ts: it.created_at })), 'PO line (last received)');
     const receiptCost = new Map([...fromPo, ...fromRestocks]);
 
     const basis = new Map();
     const basisNotes = [];
-    for (const spec of basisArgs) {
+    for (const spec of basisArgs || []) {
         const m = spec.match(/^(.+)=([0-9.]+)$/);
         if (!m) throw new Error(`bad --basis entry "${spec}"`);
         const hits = products.filter((p) => p.id === m[1] || p.name === m[1]);
@@ -464,11 +479,42 @@ async function loadStore(sb, basisArgs, opts) {
 
     return {
         input: {
-            products, items, sales, saleItems, cogsOrders, shipAt, receiptCost, B: r2(B), basis,
-            uStatuses: opts.uStatuses, uFrom: localMidnight(opts.uFrom), ledgerStart: localMidnight(opening),
+            products, items, sales, saleItems, cogsOrders, shipAt, receiptCost, B: r2(facts.B), basis,
+            uStatuses: opts.uStatuses, uFrom: localMidnight(opts.uFrom), ledgerStart: localMidnight(facts.opening),
         },
-        meta: { B_posted: r2(Bposted), B_draft: r2(Bdraft), cogs_booked_orders: cogsOrders.size, basis_overrides: basisNotes, ledger_start: opening },
+        meta: { B_posted: r2(facts.Bposted), B_draft: r2(facts.Bdraft), cogs_booked_orders: cogsOrders.size, basis_overrides: basisNotes, ledger_start: facts.opening },
     };
+}
+
+async function loadStore(sb, basisArgs, opts) {
+    // received_at exists once add_fifo_costing.sql has run.
+    const itemCols = 'id,product_id,cost_of_purchase,status,sale_id,created_at';
+    const items = await fetchAll(sb, 'inventory_items', itemCols + ',received_at')
+        .catch(() => fetchAll(sb, 'inventory_items', itemCols));
+    const [products, sales, saleItems, accounts] = await Promise.all([
+        fetchAll(sb, 'products', 'id,name,stock,purchase_cost,is_active'),
+        fetchAll(sb, 'sales', 'id,shipping_status,payment_status,date'),
+        fetchAll(sb, 'sale_items', 'id,sale_id,product_id,quantity'),
+        fetchAll(sb, 'chart_of_accounts', 'id,account_code,account_name'),
+    ]);
+    const invAcc = accounts.filter((a) => a.account_code === '1300').map((a) => a.id);
+    const cogsAcc = accounts.filter((a) => a.account_code === '5000').map((a) => a.id);
+    if (invAcc.length !== 1 || cogsAcc.length !== 1) throw new Error(`expected one 1300 and one 5000 account, found ${invAcc.length} / ${cogsAcc.length}`);
+
+    const [entries, lines, txs, restocks, purchaseOrders] = await Promise.all([
+        fetchAll(sb, 'journal_entries', 'id,reference_id,status,date'),
+        fetchAll(sb, 'journal_entry_lines', 'id,journal_entry_id,account_id,debit,credit', { filter: (q) => q.in('account_id', [invAcc[0], cogsAcc[0]]) }),
+        fetchAll(sb, 'transactions', 'id,order_id', { filter: (q) => q.not('order_id', 'is', null) }),
+        fetchAll(sb, 'restocks', 'id,product_id,cost,date'),
+        fetchAll(sb, 'purchase_orders', 'id,status,order_date'),
+    ]);
+    const raw = { products, items, sales, saleItems, accounts, entries, lines, txs, restocks, purchaseOrders, moves: [], poItems: [] };
+    if (purchaseOrders.some((p) => p.status === 'Received')) {
+        raw.poItems = await fetchAll(sb, 'purchase_order_items', 'id,purchase_order_id,product_id,unit_price,created_at');
+    }
+    const uOrders = unsettledHoldingOrders(raw, ledgerFacts(raw).cogsOrders);
+    raw.moves = await fetchIn(sb, 'stock_movements', 'id,reference_id,type,created_at', 'reference_id', uOrders, (q) => q.eq('type', 'out'));
+    return buildInput(raw, basisArgs, opts);
 }
 
 function toCsv(rows) {
@@ -541,4 +587,4 @@ if (require.main === module) {
     main().catch((e) => { console.error(e.message || e); process.exit(1); });
 }
 
-module.exports = { planStore, tsKey };
+module.exports = { planStore, buildInput, ledgerFacts, unsettledHoldingOrders, tsKey };
