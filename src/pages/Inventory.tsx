@@ -30,7 +30,7 @@ import ProductDetailsModal from '../components/ProductDetailsModal';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
 import { dayKeyFromDate } from '../utils/dateRange';
-import type { Product } from '../types';
+import type { Product, StockCountReason } from '../types';
 import LazyAvatar from '../components/LazyAvatar';
 
 type SortConfig = {
@@ -218,6 +218,7 @@ const Inventory: React.FC = () => {
     const [adjustStockProduct, setAdjustStockProduct] = useState<Product | null>(null);
     const [adjustStockAmount, setAdjustStockAmount] = useState<number | string>('');
     const [adjustStockReason, setAdjustStockReason] = useState<string>('');
+    const [adjustStockKind, setAdjustStockKind] = useState<StockCountReason>('Count correction');
     // One in-flight flag for both stock modals. Without it, pressing Enter and then
     // clicking Confirm (or hitting Enter twice) applies the same change repeatedly.
     const [isStockSubmitting, setIsStockSubmitting] = useState(false);
@@ -286,7 +287,7 @@ const Inventory: React.FC = () => {
         const name = adjustStockProduct.name;
         setIsStockSubmitting(true);
         try {
-            await adjustStock(pid, qty, adjustStockReason);
+            await adjustStock(pid, qty, adjustStockReason, adjustStockKind);
             showToast(`Adjusted stock for ${name}`, 'success');
             setAdjustStockProduct(null);
             setRecentlyUpdatedId(pid);
@@ -435,13 +436,30 @@ const Inventory: React.FC = () => {
         }
     };
 
+    // A stock change made outside a modal: posted as a Count correction
+    // stock adjustment; a refusal is shown instead of failing silently.
+    const setStockQuietly = (id: string, newStock: number, note: string) => {
+        adjustStock(id, newStock, note).catch(err =>
+            showToast('Failed to adjust stock: ' + (err instanceof Error ? err.message : 'unknown error'), 'error'));
+    };
+
     const handleBulkStockUpdate = async (newStock: number) => {
-        // adjustStock (not updateProduct) so every stock change lands in the
-        // stock_movements ledger — silent edits corrupt the historical summary.
+        // adjustStock (not updateProduct): each change is a posted stock
+        // adjustment, with its movement, FIFO layers and ledger entry.
+        const failed: string[] = [];
         for (const id of Array.from(selectedIds)) {
-            await adjustStock(id, newStock, 'Bulk stock update');
+            try {
+                await adjustStock(id, newStock, 'Bulk stock update');
+            } catch (err) {
+                const name = products.find(p => p.id === id)?.name || id;
+                failed.push(`${name}: ${err instanceof Error ? err.message : 'unknown error'}`);
+            }
         }
-        showToast(`Stock updated to ${newStock} for selected items`, 'success');
+        if (failed.length > 0) {
+            showToast(`Stock not updated for ${failed.length} item(s): ${failed.join('; ')}`, 'error');
+        } else {
+            showToast(`Stock updated to ${newStock} for selected items`, 'success');
+        }
         setSelectedIds(new Set());
     };
 
@@ -691,7 +709,7 @@ const Inventory: React.FC = () => {
             const { stock: newStock, ...restData } = productData;
             updateProduct(editingProduct.id, restData);
             if (newStock !== editingProduct.stock) {
-                adjustStock(editingProduct.id, newStock, 'Edited in product form');
+                setStockQuietly(editingProduct.id, newStock, 'Edited in product form');
             }
             showToast('Product updated successfully', 'success');
         } else {
@@ -997,7 +1015,7 @@ const Inventory: React.FC = () => {
                                         <InlineEditCell
                                             value={product.stock}
                                             type="stock"
-                                            onSave={(val) => adjustStock(product.id, val, 'Inline stock edit')}
+                                            onSave={(val) => setStockQuietly(product.id, val, 'Inline stock edit')}
                                             isLowStock={isLowStock}
                                             canEdit={canManageInventory}
                                         /> pcs
@@ -1028,10 +1046,10 @@ const Inventory: React.FC = () => {
                                             </button>
                                             {canManageInventory && (
                                                 <>
-                                                    <button onClick={() => adjustStock(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
+                                                    <button onClick={() => setStockQuietly(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
                                                         <AlertTriangle size={14} />
                                                     </button>
-                                                    <button onClick={() => setAdjustStockProduct(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">
+                                                    <button onClick={() => { setAdjustStockProduct(product); setAdjustStockKind('Count correction'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">
                                                         <Layers size={14} />
                                                     </button>
                                                     <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title="Wholesale Order">
@@ -1412,7 +1430,19 @@ const Inventory: React.FC = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Reason for Adjustment</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Reason</label>
+                                        <select
+                                            className="search-input"
+                                            style={{ width: '100%', fontSize: '14px', padding: '12px' }}
+                                            value={adjustStockKind}
+                                            onChange={e => setAdjustStockKind(e.target.value as StockCountReason)}
+                                        >
+                                            <option value="Count correction">Count correction</option>
+                                            <option value="Loss/Damage">Loss/Damage (lowers stock only)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Note</label>
                                         <input
                                             className="search-input"
                                             type="text"

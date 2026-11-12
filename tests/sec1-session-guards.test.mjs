@@ -124,6 +124,7 @@ const oldSigs = [
     'public.add_product_stock(text,integer,numeric,text,text,text,text,date,uuid)',
     'public.save_stock_adjustment(uuid,jsonb,jsonb)',
     'public.post_stock_adjustment(uuid,text)',
+    'public.set_product_stock(text,numeric,text,text,text,date)',
     'public.update_app_config(jsonb)',
 ];
 for (const s of oldSigs) {
@@ -165,6 +166,7 @@ const probes = [
     ['receive_purchase_order', `SELECT receive_purchase_order(p_po_id=>gen_random_uuid(), p_session=>$1::jsonb)`, S.mgr, S.boss],
     ['save_stock_adjustment', `SELECT save_stock_adjustment(p_id=>gen_random_uuid(), p_header=>'{}'::jsonb, p_lines=>'[]'::jsonb, p_session=>$1::jsonb)`, S.sal, S.stk],
     ['post_stock_adjustment', `SELECT post_stock_adjustment(p_id=>gen_random_uuid(), p_session=>$1::jsonb)`, S.sal, S.stk],
+    ['set_product_stock', `SELECT set_product_stock(p_product=>'nope', p_new_stock=>1, p_session=>$1::jsonb)`, S.sal, S.stk],
 ];
 for (const [name, sql, wrong, right] of probes) {
     const w = await errOf(sql, [wrong]);
@@ -196,6 +198,9 @@ const saveAdj = await errOf(
 check('save_stock_adjustment works for stocker', saveAdj === '', saveAdj);
 const postAdj = await errOf(`SELECT post_stock_adjustment(p_id=>'11111111-1111-1111-1111-111111111111', p_session=>$1::jsonb)`, [S.stk]);
 check('post_stock_adjustment works for stocker', postAdj === '', postAdj);
+const setStk = await errOf(`SELECT set_product_stock(p_product=>'prod1', p_new_stock=>3, p_by=>'stk', p_session=>$1::jsonb)`, [S.stk]);
+const { rows: [{ stock: stkAfter }] } = await q(`SELECT stock FROM products WHERE id='prod1'`);
+check('set_product_stock works for stocker (stock set to 3)', setStk === '' && Number(stkAfter) === 3, { setStk, stkAfter });
 
 // ---------------------------------------------------------------------------
 // app_config permission map (enforcement still OFF — a supplied session is

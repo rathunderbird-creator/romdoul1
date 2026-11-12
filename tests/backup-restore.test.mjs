@@ -24,7 +24,7 @@ const out = await build({
 });
 const bundlePath = path.join(repo, 'tests', '.backuprestore.bundle.mjs');
 writeFileSync(bundlePath, out.outputFiles[0].text);
-const { buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn } = await import('file:///' + bundlePath.replace(/\\/g, '/'));
+const { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn } = await import('file:///' + bundlePath.replace(/\\/g, '/'));
 rmSync(bundlePath);
 
 // The accounting tables exactly as migrations/full_schema.sql creates and
@@ -165,6 +165,14 @@ check('parses PostgREST missing-column message',
 check('parses PostgreSQL missing-column message',
     missingColumnFromError('column "description" of relation "journal_entry_lines" does not exist') === 'description');
 check('unrelated error yields null', missingColumnFromError('duplicate key value violates unique constraint') === null);
+
+// The table list: the FIFO layers travel with the stock they cost, after the
+// rows they reference (products, sales), so restore inserts them in order.
+const at = t => BACKUP_TABLES.indexOf(t);
+check('backup includes inventory_items (the FIFO layers)', at('inventory_items') >= 0);
+check('inventory_items is restored after products and sales', at('inventory_items') > at('products') && at('inventory_items') > at('sales'));
+check('sale_items after sales, journal lines after their entries and the accounts',
+    at('sale_items') > at('sales') && at('journal_entry_lines') > at('journal_entries') && at('journal_entry_lines') > at('chart_of_accounts'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

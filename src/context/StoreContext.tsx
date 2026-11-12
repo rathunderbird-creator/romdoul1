@@ -10,7 +10,7 @@ import { setSessionAuth, registerSessionExpiredHandler } from '../utils/session'
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
-import { buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
+import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
 import { orderStatusLabel } from '../utils/orderStatusRules';
 import type {
@@ -31,7 +31,8 @@ import type {
     PurchaseSettings,
     WholesaleSettings,
     CustomDistrict,
-    CustomCommune
+    CustomCommune,
+    StockCountReason
 } from '../types';
 
 interface ConfigState {
@@ -592,6 +593,8 @@ const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(st
 const holdsOrderStock = (status: string) => isStockConsumed(status) || status === 'Returned';
 
 const ORDER_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order\'s shipping status can change, a returned order can be restocked, or the items of a shipped order can be edited: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor. Nothing was saved.';
+
+const SET_STOCK_MISSING_MESSAGE = 'Changing stock here needs a one-time database update: run migrations/add_stock_adjustment_posting.sql, then migrations/add_session_guards.sql, in this store\'s Supabase SQL editor. Nothing was changed.';
 
 const ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order can be created, its payment saved, orders deleted or a restock\'s payment cancelled: run migrations/add_order_payment_functions.sql in this store\'s Supabase SQL editor. Nothing was saved.';
 
@@ -2251,8 +2254,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Returns the created product (or null on failure), so callers like the
     // PO form's inline "create product" can select it right away.
     const addProduct = async (productData: Omit<Product, 'id'>): Promise<Product | null> => {
+        const openingStock = Number(productData.stock) || 0;
+        // The product row starts at stock 0; opening stock goes in through
+        // add_product_stock below, which writes the layers, the restock row
+        // and the movement with it.
         const newProduct: Product = {
             ...productData,
+            stock: 0,
             id: Date.now().toString(),
             createdAt: new Date().toISOString()
         };
@@ -2265,7 +2273,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             name: newProduct.name,
             price: newProduct.price,
             purchase_cost: newProduct.purchaseCost || 0,
-            stock: newProduct.stock,
+            stock: 0,
             low_stock_threshold: newProduct.lowStockThreshold,
             image: newProduct.image,
             category: newProduct.category,
@@ -2283,22 +2291,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setProducts(prev => prev.filter(p => p.id !== newProduct.id));
             return null;
         }
-        if (newProduct.stock > 0) {
-            const inventoryItems = Array.from({ length: newProduct.stock }).map(() => ({
-                product_id: newProduct.id,
-                cost_of_purchase: newProduct.purchaseCost || 0,
-                status: 'in_stock'
-            }));
-            await supabase.from('inventory_items').insert(inventoryItems);
+        if (openingStock > 0) {
+            try {
+                await addStock(newProduct.id, openingStock, newProduct.purchaseCost || 0, 'Opening stock');
+                newProduct.stock = openingStock;
+            } catch (e) {
+                alert(`Product "${newProduct.name}" was added with stock 0: its opening stock of ${openingStock} was not added (${e instanceof Error ? e.message : String(e)}). Add it with Add Stock.`);
+            }
         }
         setProductsUpdatedAt(Date.now());
         dispatchActivity({ action: 'product_added', description: `Product "${newProduct.name}" added`, userId: currentUser?.id, userName: currentUser?.name, metadata: { productId: newProduct.id } });
         return newProduct;
     };
 
-    const updateProduct = async (id: string, updates: Partial<Product>) => {
-        if (updates.stock !== undefined) {
-            updates.stock = Math.max(0, updates.stock);
+    // Never writes stock: a stock change goes through adjustStock (a posted
+    // stock adjustment), which keeps the FIFO layers and the ledger with it.
+    const updateProduct = async (id: string, productUpdates: Partial<Product>) => {
+        const { stock: ignoredStock, ...updates } = productUpdates;
+        if (ignoredStock !== undefined) {
+            console.warn('updateProduct ignores stock; use adjustStock.');
         }
         setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
 
@@ -2307,7 +2318,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.name !== undefined) dbUpdates.name = updates.name;
         if (updates.price !== undefined) dbUpdates.price = updates.price;
         if (updates.purchaseCost !== undefined) dbUpdates.purchase_cost = updates.purchaseCost;
-        if (updates.stock !== undefined) dbUpdates.stock = Math.max(0, updates.stock);
         if (updates.lowStockThreshold !== undefined) dbUpdates.low_stock_threshold = updates.lowStockThreshold;
         if (updates.image !== undefined) dbUpdates.image = updates.image;
         if (updates.category !== undefined) dbUpdates.category = updates.category;
@@ -2421,53 +2431,34 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // NOTE: deliberately does NOT toggle the global isLoading — App renders a
     // full-screen loader on that flag, and this runs from inline cell edits and
     // bulk loops where blanking the app (and losing page state) is wrong.
-    const adjustStock = async (productId: string, newStock: number, reason: string) => {
-        try {
-            const product = products.find(p => p.id === productId);
-            if (!product) throw new Error("Product not found");
-
-            // Read the current stock from the DB, not the render closure — in a
-            // bulk loop or right after another edit the closure value is stale
-            // and would produce a wrong ledger delta.
-            const { data: dbProduct, error: readError } = await supabase.from('products').select('stock').eq('id', productId).single();
-            if (readError) throw readError;
-            const currentStock = dbProduct ? Number(dbProduct.stock) : product.stock;
-            const difference = newStock - currentStock;
-
-            if (difference === 0) return; // No change
-
-            // 1. Update product stock in DB
-            const { error: productError } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
-            if (productError) throw productError;
-
-            // 2. Log to stock_movements
-            const type = difference > 0 ? 'in' : 'out';
-            const { error: movementError } = await supabase.from('stock_movements').insert({
-                product_id: productId,
-                product_name: product.name,
-                type: type,
-                quantity: Math.abs(difference),
-                unit_price: product.purchaseCost || 0,
-                source: 'Manual Adjustment',
-                reason: 'Stock Count / Adjustment',
-                note: reason || `Adjusted from ${currentStock} to ${newStock}`,
-                movement_date: getLocalYYYYMMDD(),
-                created_by: currentUser?.id
-            });
-            
-            if (movementError) console.error('Failed to log stock adjustment movement:', movementError);
-
-            // 3. (Optional) If positive adjustment, we could add to inventory_items, 
-            // but for a generic adjustment, we'll just adjust the total stock for now.
-
-            // 4. Update local state — functional form, so concurrent/looped
-            // adjustments and a preceding updateProduct compose instead of the
-            // last call clobbering the others with a stale array.
-            setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock } : p));
-            setProductsUpdatedAt(Date.now());
-        } catch (error: any) {
-            console.error("Error adjusting stock:", error);
-            alert(`Failed to adjust stock: ${error.message}`);
+    // One database function (set_product_stock) locks the product and posts a
+    // one-line stock adjustment, so stock, FIFO layers, the movement and the
+    // ADJ ledger entry change together. A store without it is refused: a raw
+    // stock write would leave the layers behind. Throws; callers report it.
+    const adjustStock = async (productId: string, newStock: number, note: string, reason: StockCountReason = 'Count correction') => {
+        const { data, error } = await rpcWithSession('set_product_stock', {
+            p_product: productId,
+            p_new_stock: newStock,
+            p_reason: reason,
+            p_by: currentUser?.id || null,
+            p_note: note || null,
+            p_today: getLocalYYYYMMDD(),
+        });
+        if (error) {
+            console.error('Error adjusting stock:', error);
+            if (isRpcMissingError(error) || (/set_product_stock|sa_post_adjustment/i.test(error.message || '') && /schema cache|does not exist/i.test(error.message || ''))) {
+                throw new Error(SET_STOCK_MISSING_MESSAGE);
+            }
+            throw new Error(error.message || 'Unknown error');
+        }
+        const res = (data || {}) as { stock?: number; ledger?: string };
+        const stock = Number(res.stock);
+        if (Number.isFinite(stock)) {
+            setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock } : p));
+        }
+        setProductsUpdatedAt(Date.now());
+        if (res.ledger === 'no_accounts') {
+            console.warn('Stock adjusted, but no Inventory or Cost of Goods Sold account exists — no ledger entry was posted.');
         }
     };
 
@@ -3511,8 +3502,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const ordersToRestore = orderChunks.flat();
             const allItemsToRestore = itemChunks.flat();
 
+            // Orders whose goods were out of stock when deleted come back as
+            // Pending and are then moved to their status by
+            // set_order_shipping_status, which takes the stock and the FIFO
+            // layers and logs the stock-out in the database. Refused up front
+            // on a store without it.
+            const heldStatus = new Map<string, string>();
+            for (const o of ordersToRestore) {
+                const st = o.shipping_status || 'Pending';
+                if (holdsOrderStock(st)) heldStatus.set(o.id, st);
+            }
+            if (heldStatus.size > 0 && !(await orderFunctionsReady())) {
+                throw new Error(ORDER_FUNCTIONS_MISSING_MESSAGE);
+            }
+
             // Remove deleted_at before inserting back to sales
-            const salesToInsert = ordersToRestore.map(({ deleted_at, ...rest }) => rest);
+            const salesToInsert = ordersToRestore.map(({ deleted_at, ...rest }) =>
+                heldStatus.has(rest.id) ? { ...rest, shipping_status: 'Pending' } : rest);
 
             if (salesToInsert.length > 0) {
                 const { error: insOrdErr } = await supabase.from('sales').insert(salesToInsert);
@@ -3524,61 +3530,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (insItemErr) throw insItemErr;
             }
 
-            // Deduct stock if it was previously restocked upon deletion — and
-            // rebuild what the deletion removed from the ledger/FIFO pool, so
-            // stock, stock_movements, and inventory_items stay in step.
-            for (const order of ordersToRestore) {
-                const status = order.shipping_status || 'Pending';
-                if (['Shipped', 'Delivered', 'Returned'].includes(status)) {
-                    const orderItems = allItemsToRestore.filter(item => item.sale_id === order.id);
-                    for (const item of orderItems) {
-                        const { data: originProduct } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
-                        if (originProduct) {
-                            await supabase.from('products').update({ stock: Math.max(0, originProduct.stock - item.quantity) }).eq('id', item.product_id);
-                        }
-
-                        // Re-mark FIFO items as sold for this order (deletion
-                        // returned them to the pool).
-                        const { data: invItems } = await supabase.from('inventory_items')
-                            .select('id')
-                            .eq('product_id', item.product_id)
-                            .eq('status', 'in_stock')
-                            .order('created_at', { ascending: true })
-                            .limit(item.quantity);
-                        if (invItems && invItems.length > 0) {
-                            await supabase.from('inventory_items')
-                                .update({ status: 'sold', sale_id: order.id })
-                                .in('id', invItems.map((i: any) => i.id));
-                        }
-                    }
-
-                    // Re-log the out movements the deletion removed (dated today
-                    // — the original ship date left with the deleted rows).
-                    const customerName = order.customer_snapshot?.name || '';
-                    const customerPhone = order.customer_snapshot?.phone || '';
-                    const restoredMovements = orderItems
-                        .filter(item => item.product_id)
-                        .map(item => ({
-                            product_id: item.product_id,
-                            product_name: item.name || 'Unknown',
-                            type: 'out',
-                            quantity: item.quantity,
-                            unit_price: item.price || 0,
-                            reason: 'Shipped',
-                            reference_id: order.id,
-                            source: 'Order Shipped',
-                            shipping_co: order.shipping_company || '',
-                            note: `Order #${String(order.id).slice(0, 8)} — restored from deleted`,
-                            movement_date: getLocalYYYYMMDD(),
-                            created_by: currentUser?.id || 'unknown',
-                            customer_name: customerName,
-                            customer_phone: customerPhone
-                        }));
-                    if (restoredMovements.length > 0) {
-                        const { error: moveErr } = await supabase.from('stock_movements').insert(restoredMovements);
-                        if (moveErr) console.error('Failed to re-log movements for restored order:', moveErr);
-                    }
+            const notShipped: string[] = [];
+            for (const [orderId, status] of heldStatus) {
+                const { data, error } = await rpcWithSession('set_order_shipping_status', {
+                    p_order_id: orderId,
+                    p_expected_status: 'Pending',
+                    p_new_status: status,
+                    p_fields: {
+                        movement_date: getLocalYYYYMMDD(),
+                        created_by: currentUser?.id || 'unknown',
+                        added_by: currentUser?.name || 'System',
+                    },
+                });
+                if (error) {
+                    console.error('Restored order could not be moved back to its status:', orderId, error);
+                    notShipped.push(`#${orderId.slice(0, 8)} (${status}): ${orderRpcMessage(error)}`);
+                    continue;
                 }
+                applyStockMap((data as { stock?: Record<string, number> } | null)?.stock);
             }
 
             // Delete from deleted tables
@@ -3592,6 +3561,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setProductsUpdatedAt(Date.now());
             setSalesUpdatedAt(Date.now());
             dispatchActivity({ action: 'order_restored', description: `${ids.length} order(s) restored`, userId: currentUser?.id, userName: currentUser?.name, metadata: { count: ids.length } });
+            if (notShipped.length > 0) {
+                throw new Error(`Orders restored, but these are still Pending (their stock was not taken): ${notShipped.join('; ')}. Set their status from the Orders page.`);
+            }
         } catch (error) {
             console.error('Error restoring orders:', error);
             throw error;
@@ -3644,9 +3616,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     };
 
+    // Products come in with stock 0: stock only enters through Add Stock
+    // (add_product_stock), which writes the FIFO layers with it.
     const importProducts = async (newProducts: Omit<Product, 'id'>[]) => {
         // 1. Insert into Supabase
-        const { data, error } = await supabase.from('products').insert(newProducts).select();
+        const rows = newProducts.map(p => ({ ...p, stock: 0 }));
+        const { data, error } = await supabase.from('products').insert(rows).select();
 
         if (error) {
             console.error('Error importing products:', error);
@@ -3847,139 +3822,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setSalesUpdatedAt(Date.now());
         }
     };
-    const restockOrder = async (orderId: string): Promise<void> => {
-        try {
-            const localOrder = sales.find(s => s.id === orderId);
-            // Items from the database: the cached copy can predate an item edit
-            // made elsewhere, and restocking must return what actually left.
-            let orderItems: Sale['items'] | undefined;
-            let customerName = localOrder?.customer?.name || '';
-            let customerPhone = localOrder?.customer?.phone || '';
-
-            {
-                const { data, error: itemsErr } = await supabase.from('sale_items').select('*').eq('sale_id', orderId);
-                if (itemsErr) throw itemsErr;
-                if (data) {
-                    orderItems = data.map(dbItem => ({
-                        id: dbItem.product_id,
-                        name: dbItem.name,
-                        price: dbItem.price,
-                        quantity: dbItem.quantity
-                    })) as any;
-                }
-            }
-
-            // Fetch customer info from DB if not available locally
-            if (!customerName) {
-                const { data: orderData } = await supabase.from('sales').select('customer_snapshot').eq('id', orderId).single();
-                if (orderData?.customer_snapshot) {
-                    customerName = orderData.customer_snapshot.name || '';
-                    customerPhone = orderData.customer_snapshot.phone || '';
-                }
-            }
-
-            if (!orderItems || orderItems.length === 0) {
-                console.error("No items found for order", orderId);
-                return;
-            }
-
-            const now = new Date().toISOString();
-            const restockRecords = [];
-
-            for (const item of orderItems) {
-                if (!item.id) {
-                    console.warn(`Skipping stock update for item '${item.name}' because product ID is missing (likely imported).`);
-                    continue;
-                }
-
-                const qty = Number(item.quantity);
-                if (isNaN(qty) || qty <= 0) continue;
-
-                // DB Update (Increment Stock)
-                const { data: originProduct, error: productErr } = await supabase.from('products').select('stock').eq('id', item.id).single();
-
-                if (productErr) {
-                    console.error(`Failed to find product ${item.id} for restock:`, productErr);
-                    continue;
-                }
-
-                if (originProduct) {
-                    const newStock = Number(originProduct.stock) + qty;
-                    await supabase.from('products').update({ stock: newStock }).eq('id', item.id);
-                    // Local State Update
-                    setProducts(prev => prev.map(p => p.id === item.id ? { ...p, stock: newStock } : p));
-                }
-
-                // Prepare restock record
-                const restockId = generateUUID();
-                // Build note with customer info
-                const customerInfo = [customerName, customerPhone].filter(Boolean).join(' | ');
-                const noteText = `Restocked from order #${orderId.slice(0, 8)}${customerInfo ? ' — ' + customerInfo : ''}`;
-
-                restockRecords.push({
-                    id: restockId,
-                    product_id: item.id,
-                    quantity: qty,
-                    cost: 0,
-                    date: now,
-                    added_by: currentUser?.name || 'System',
-                    note: noteText
-                });
-
-                // Local restock history update
-                setRestocks(prev => [{
-                    id: restockId,
-                    productId: item.id,
-                    quantity: qty,
-                    cost: 0,
-                    date: now,
-                    addedBy: currentUser?.name || 'System',
-                    note: noteText
-                }, ...prev]);
-            }
-
-            // Return the shipment's FIFO items to the pool — shipping marked them
-            // status 'sold' with this sale_id, and without this flip every
-            // return/restock cycle permanently drains in_stock rows while
-            // products.stock recovers. The status guard keeps re-runs idempotent.
-            await supabase.from('inventory_items')
-                .update({ status: 'in_stock', sale_id: null })
-                .eq('sale_id', orderId)
-                .eq('status', 'sold');
-
-            if (restockRecords.length > 0) {
-                const { error: insertErr } = await supabase.from('restocks').insert(restockRecords);
-                if (insertErr) {
-                    console.error("Failed to insert restock records:", insertErr);
-                    throw insertErr;
-                }
-
-                // Also log to stock_movements for Stock-In tracking
-                const stockMovements = restockRecords.map(r => ({
-                    product_id: r.product_id,
-                    product_name: orderItems?.find(i => i.id === r.product_id)?.name || 'Unknown',
-                    type: 'in',
-                    quantity: r.quantity,
-                    unit_price: 0,
-                    source: 'Customer Return',
-                    shipping_co: localOrder?.shipping?.company || '',
-                    note: r.note,
-                    movement_date: getLocalYYYYMMDD(),
-                    created_by: currentUser?.id || 'unknown',
-                    customer_name: customerName,
-                    customer_phone: customerPhone
-                }));
-                await supabase.from('stock_movements').insert(stockMovements).then(({ error }) => {
-                    if (error) console.error('Failed to log stock movements for restock:', error);
-                });
-            }
-
-            setProductsUpdatedAt(Date.now());
-        } catch (error) {
-            console.error('Error restocking order:', error);
-            throw error;
-        }
-    };
 
     const bulkRestockOrders = async (requestedIds: string[]): Promise<number> => {
         try {
@@ -4033,20 +3875,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // ONLY into an empty store. Restoring over live data is refused outright:
     // mixing two stores' records half-way is far worse than asking for help.
     //
-    // Parents before children (sales before sale_items, warehouses before
-    // warehouse_stock, journal_entries before their lines) so restore can
-    // insert in this same order without FK failures.
+    // The table list and its order: BACKUP_TABLES in src/utils/backupRestore.ts.
     const BACKUP_FORMAT = 'romdoul-backup';
     // v3: chart_of_accounts included — journal_entry_lines.account_id points
     // at it, and every database seeds it with different random UUIDs, so
     // restore must remap by account_code (see src/utils/backupRestore.ts).
     const BACKUP_FORMAT_VERSION = 3;
-    const BACKUP_TABLES = [
-        'products', 'customers', 'users', 'warehouses', 'warehouse_stock',
-        'sales', 'sale_items', 'restocks', 'transactions',
-        'chart_of_accounts', 'journal_entries', 'journal_entry_lines',
-        'telegram_notifications'
-    ] as const;
     // users: explicit columns — pin and session_tokens are revoked from the
     // anon role (secure_pin_check.sql), so `*` would fail, and credentials
     // do not belong in a backup file anyway.
@@ -4220,7 +4054,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const skippedNote = skipped.length > 0
                 ? ` (${skipped.join(' and ')} kept — this store already has its own)`
                 : '';
-            alert(`Restore completed${skippedNote}. User accounts are never restored from a backup (the file holds them for reference only, without PINs) — this store keeps its own. Page will reload.`);
+            const backupProducts = jsonData.tables['products'];
+            const noLayersNote = !Array.isArray(jsonData.tables['inventory_items'])
+                && Array.isArray(backupProducts) && backupProducts.some((p: { stock?: unknown }) => Number(p?.stock) > 0)
+                ? ' This backup was made before inventory layers were backed up, so the restored stock has no FIFO cost layers: run migrations/fifo_rebuild_pool.sql on this store before using it.'
+                : '';
+            alert(`Restore completed${skippedNote}.${noLayersNote} User accounts are never restored from a backup (the file holds them for reference only, without PINs) — this store keeps its own. Page will reload.`);
             window.location.reload();
         } finally {
             setIsLoading(false);
@@ -4676,7 +4515,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateCart,
             importProducts,
             importOrders,
-            restockOrder,
             bulkRestockOrders,
             backupData,
             restoreData,

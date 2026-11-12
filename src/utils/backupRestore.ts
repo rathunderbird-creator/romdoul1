@@ -8,6 +8,19 @@
 // restored after remapping each account_id to the TARGET's row with the same
 // account_code (and inserting any custom accounts the target does not have).
 
+// The tables Backup exports and Restore writes back, parents before
+// children (sales before sale_items, warehouses before warehouse_stock,
+// journal_entries before their lines) so restore inserts in this order
+// without FK failures. inventory_items (the FIFO layers, after products and
+// sales, which it references) comes with the stock it costs: stock without
+// its layers would leave the pool short of products.stock.
+export const BACKUP_TABLES = [
+    'products', 'customers', 'users', 'warehouses', 'warehouse_stock',
+    'sales', 'sale_items', 'inventory_items', 'restocks', 'transactions',
+    'chart_of_accounts', 'journal_entries', 'journal_entry_lines',
+    'telegram_notifications'
+] as const;
+
 export interface BackupAccountRow {
     id: string;
     account_code: string;

@@ -17,6 +17,10 @@
 -- addition line becomes new layers at its unit cost (the last receipt cost
 -- when it has none), received on the adjustment date. The ledger entry is
 -- the value those layers moved, so Inventory follows the pool.
+--
+-- set_product_stock (end of file) is the only way the Inventory page changes
+-- stock: until this file and add_session_guards.sql are run, those edits
+-- are refused with a message saying to run them.
 -- RUN ORDER: add_fifo_costing.sql, fifo_rebuild_pool.sql, the four packs,
 -- add_session_guards.sql; this file refuses to load before the first two.
 
@@ -127,7 +131,21 @@ $$;
 -- pair. With no such accounts, the stock still posts and the result says so.
 --
 -- Returns {"ledger": "booked" | "zero" | "no_accounts"}.
+--
+-- The work is in wp_internal.sa_post_adjustment, which set_product_stock
+-- below calls too: a pack function must not call another public pack
+-- function, because add_session_guards.sql puts a guarded wrapper with the
+-- same leading arguments in public.
 CREATE OR REPLACE FUNCTION post_stock_adjustment(p_id UUID, p_created_by TEXT DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN wp_internal.sa_post_adjustment(p_id, p_created_by);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION wp_internal.sa_post_adjustment(p_id UUID, p_created_by TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
@@ -287,6 +305,79 @@ BEGIN
 END;
 $$;
 
+-- Inventory page stock edits (inline cell, bulk update, product form, Mark
+-- out of stock, Adjust Stock modal, Stock Movements revert): sets a
+-- product's stock to a counted figure by creating and posting a one-line
+-- stock adjustment, so products.stock, the FIFO layers, the movement and the
+-- ADJ ledger entry change together. A raise inside rolls all of it back.
+--
+-- p_reason: 'Count correction' (default) or 'Loss/Damage'; Loss/Damage only
+-- lowers stock. Both book against Cost of Goods Sold (5000), since neither
+-- is in post_stock_adjustment's corrective list: a count difference is
+-- shrinkage or overage of goods held for sale. An increase is layered at
+-- the last receipt cost (fifo_fallback_cost); a decrease writes off the
+-- oldest layers at their cost.
+-- p_by: the user id (stock_adjustments.created_by, stock_movements.created_by).
+-- p_note: free text kept on the adjustment and the movement.
+-- p_today: the user's local date (the adjustment date); NULL = CURRENT_DATE.
+--
+-- Returns {"changed": false, "stock"} when the stock already equals
+-- p_new_stock, else {"changed": true, "stock", "delta", "adjustment_id",
+-- "ledger"}.
+CREATE OR REPLACE FUNCTION set_product_stock(
+    p_product TEXT, p_new_stock NUMERIC, p_reason TEXT DEFAULT 'Count correction',
+    p_by TEXT DEFAULT NULL, p_note TEXT DEFAULT NULL, p_today DATE DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_reason TEXT := COALESCE(NULLIF(btrim(p_reason), ''), 'Count correction');
+    v_stock NUMERIC;
+    v_delta NUMERIC;
+    v_adj UUID;
+    v_res JSONB;
+BEGIN
+    IF v_reason NOT IN ('Count correction', 'Loss/Damage') THEN
+        RAISE EXCEPTION 'The reason must be Count correction or Loss/Damage.';
+    END IF;
+    IF p_new_stock IS NULL OR p_new_stock < 0 OR p_new_stock <> trunc(p_new_stock) THEN
+        RAISE EXCEPTION 'Stock must be a whole number, 0 or more.';
+    END IF;
+
+    SELECT stock INTO v_stock FROM products WHERE id = p_product FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Product not found';
+    END IF;
+    v_stock := COALESCE(v_stock, 0);
+    v_delta := p_new_stock - v_stock;
+    IF v_delta = 0 THEN
+        RETURN jsonb_build_object('changed', false, 'stock', v_stock);
+    END IF;
+    IF v_delta <> trunc(v_delta) THEN
+        RAISE EXCEPTION 'This product''s stock is % (not a whole number). Correct it on the Adjust Stock page.', v_stock;
+    END IF;
+    IF v_reason = 'Loss/Damage' AND v_delta > 0 THEN
+        RAISE EXCEPTION 'Loss/Damage can only lower stock. Use Count correction to raise it.';
+    END IF;
+
+    INSERT INTO stock_adjustments (warehouse_id, adjustment_date, reason, notes, status, created_by)
+    VALUES (NULL, COALESCE(p_today, CURRENT_DATE), v_reason,
+            COALESCE(NULLIF(btrim(p_note), ''), format('Stock set from %s to %s', v_stock, p_new_stock)),
+            'Draft', NULLIF(p_by, ''))
+    RETURNING id INTO v_adj;
+    INSERT INTO stock_adjustment_lines (adjustment_id, product_id, quantity, unit_cost)
+    VALUES (v_adj, p_product, v_delta, 0);
+
+    v_res := wp_internal.sa_post_adjustment(v_adj, NULLIF(p_by, ''));
+
+    SELECT stock INTO v_stock FROM products WHERE id = p_product;
+    RETURN jsonb_build_object('changed', true, 'stock', v_stock, 'delta', v_delta,
+                              'adjustment_id', v_adj, 'ledger', v_res->>'ledger');
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION wp_internal.sa_post_adjustment(UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION set_product_stock(TEXT, NUMERIC, TEXT, TEXT, TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION stock_adjustment_line_problem(UUID) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION save_stock_adjustment(UUID, JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION post_stock_adjustment(UUID, TEXT) TO anon, authenticated;

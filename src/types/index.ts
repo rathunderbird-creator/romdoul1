@@ -199,7 +199,9 @@ export interface StoreContextType {
     // Receives a purchase order (stock, Received status and its purchase
     // entry, in one transaction); resolves to notices worth showing.
     receivePurchaseOrder: (poId: string, opts?: { reopenCancelled?: boolean }) => Promise<string[]>;
-    adjustStock: (productId: string, newStock: number, reason: string) => Promise<void>;
+    // Sets stock to a counted figure through set_product_stock (a posted
+    // stock adjustment: layers, movement and ADJ entry). Throws on failure.
+    adjustStock: (productId: string, newStock: number, note: string, reason?: StockCountReason) => Promise<void>;
 
     // Customer Management
     addCustomer: (customer: Omit<Customer, 'id'>) => void;
@@ -274,7 +276,6 @@ export interface StoreContextType {
 
     importProducts: (products: any[]) => Promise<void>;
     importOrders: (orders: any[]) => Promise<void>;
-    restockOrder: (orderId: string) => Promise<void>;
     bulkRestockOrders: (orderIds: string[]) => Promise<number>; // resolves to how many orders were restocked (only Returned ones are)
     backupData: () => Promise<void>;
     restoreData: (jsonData: any) => Promise<void>;
@@ -365,7 +366,10 @@ export interface WarehouseStock {
     updatedAt?: string;
 }
 
-export type StockAdjustmentReason = 'Opening balance' | 'Stock correction' | 'Damaged goods' | 'Expired goods' | 'Theft / loss' | 'Sample / giveaway' | 'Other';
+// The reasons a stock edit on the Inventory page books (set_product_stock).
+export type StockCountReason = 'Count correction' | 'Loss/Damage';
+
+export type StockAdjustmentReason = 'Opening balance' | 'Stock correction' | 'Damaged goods' | 'Expired goods' | 'Theft / loss' | 'Sample / giveaway' | 'Other' | StockCountReason;
 
 export interface StockAdjustmentLine {
     id: string;
