@@ -90,6 +90,8 @@
 --   receive_purchase_order      manage_procurement
 --   add_product_stock           manage_inventory (Inventory Add Stock)
 --   save/post_stock_adjustment  manage_inventory [route /inventory/adjust-stock]
+--   set_product_stock           manage_inventory (Inventory stock edits and
+--                               the Stock Movements revert)
 --   fifo_peek (read)            manage_inventory / view_inventory_stock
 --                               [routes /inventory/*]
 --   fifo_inventory_valuation,   manage_inventory / view_inventory_stock /
@@ -429,6 +431,7 @@ DECLARE
         -- add_stock_adjustment_posting.sql
         'save_stock_adjustment(uuid,jsonb,jsonb)',
         'post_stock_adjustment(uuid,text)',
+        'set_product_stock(text,numeric,text,text,text,date)',
         -- add_config_functions.sql
         'update_app_config(jsonb)'
     ];
@@ -695,6 +698,20 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.set_product_stock(
+    p_product TEXT, p_new_stock NUMERIC, p_reason TEXT DEFAULT 'Count correction',
+    p_by TEXT DEFAULT NULL, p_note TEXT DEFAULT NULL, p_today DATE DEFAULT NULL,
+    p_session JSONB DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = public, sg_internal, pg_temp
+AS $$
+BEGIN
+    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory'], 'change stock');
+    RETURN sg_internal.set_product_stock(p_product, p_new_stock, p_reason, p_by, p_note, p_today);
+END;
+$$;
+
 GRANT EXECUTE ON FUNCTION public.set_order_shipping_status(TEXT, TEXT, TEXT, JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.edit_order_items(TEXT, JSONB, JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.restock_returned_orders(TEXT[], JSONB, JSONB) TO anon, authenticated;
@@ -713,6 +730,7 @@ GRANT EXECUTE ON FUNCTION public.receive_purchase_order(UUID, TEXT, TEXT, DATE, 
 GRANT EXECUTE ON FUNCTION public.add_product_stock(TEXT, INTEGER, NUMERIC, TEXT, TEXT, TEXT, TEXT, DATE, UUID, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.save_stock_adjustment(UUID, JSONB, JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.post_stock_adjustment(UUID, TEXT, JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_product_stock(TEXT, NUMERIC, TEXT, TEXT, TEXT, DATE, JSONB) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3b) FIFO read RPCs (implementations in add_fifo_costing.sql)

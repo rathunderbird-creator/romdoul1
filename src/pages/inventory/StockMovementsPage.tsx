@@ -38,8 +38,18 @@ interface StockMovement {
     supplier: string;
 }
 
+// Sources the database functions write (orders, returns, purchase orders,
+// Add Stock, stock adjustments, wholesale). A movement with a reference is
+// tied to its document too.
+const SYSTEM_SOURCES = new Set([
+    'Order Shipped', 'Order Delivered', 'Customer Return', 'Purchase Order',
+    'Inventory Adjustment', 'Stock Adjustment', 'Wholesale Order', 'Wholesale Sale',
+]);
+const isSystemMovement = (m: StockMovement): boolean =>
+    SYSTEM_SOURCES.has(m.source) || !!(m.reference_id && String(m.reference_id).trim());
+
 const StockMovementsPage: React.FC = () => {
-    const { warehouses, updateProduct, currentUser } = useStore();
+    const { warehouses, adjustStock, currentUser } = useStore();
     const isAdmin = currentUser?.roleId === 'admin';
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
@@ -339,19 +349,21 @@ const StockMovementsPage: React.FC = () => {
         // Reverting inventory is not idempotent, so a second click while the first pass
         // is still running would revert the same movements twice.
         if (isLoading) return;
-        if (!confirm(`Are you sure you want to delete ${selectedRecordIds.size} stock movement records? This will revert the inventory for these items.`)) return;
+        const recordsToDelete = movements.filter(r => selectedRecordIds.has(r.id));
+        // Movements written by orders, purchase orders, Add Stock, stock
+        // adjustments and wholesale belong to their document (and its FIFO
+        // layers and ledger entry): reverse them there, not here.
+        const systemRecords = recordsToDelete.filter(isSystemMovement);
+        if (systemRecords.length > 0) {
+            showToast(`${systemRecords.length} of the selected records come from orders, purchases, Add Stock or stock adjustments and can't be deleted here. Reverse them from their own page (or post a stock adjustment). Nothing was deleted.`, 'error');
+            return;
+        }
+        if (!confirm(`Are you sure you want to delete ${selectedRecordIds.size} stock movement records? This will revert the inventory for these items (each product's stock is set back with a Count correction stock adjustment).`)) return;
 
         setIsLoading(true);
         try {
-            const recordsToDelete = movements.filter(r => selectedRecordIds.has(r.id));
-
-            // Total the reversals per product before writing anything.
-            //
-            // The previous version updated inside the loop using `product.stock` from
-            // React state, which doesn't change between iterations. Deleting two
-            // movements for the same product therefore computed both new totals from
-            // the same starting figure, and the second write overwrote the first —
-            // so only one of the two was ever reverted.
+            // Total the reversals per product before writing anything, so two
+            // movements of one product revert from one starting figure.
             const productDeltas = new Map<string, number>();
             const warehouseDeltas = new Map<string, number>();
 
@@ -365,19 +377,19 @@ const StockMovementsPage: React.FC = () => {
             }
 
             for (const [productId, delta] of productDeltas) {
+                if (delta === 0) continue;
                 // Read the live figure rather than trusting cached state, which may be
                 // stale if another device changed stock while this page was open.
                 const { data: fresh, error: freshError } = await supabase
                     .from('products').select('stock').eq('id', productId).single();
                 if (freshError || !fresh) {
-                    console.error('Could not read current stock for', productId, freshError?.message);
-                    continue;
+                    throw new Error(`could not read the current stock of product ${productId} (${freshError?.message || 'not found'})`);
                 }
-                const next = fresh.stock + delta;
+                const next = Number(fresh.stock) + delta;
                 if (next < 0) {
                     console.warn(`Reverting movements for ${productId} would give ${next}; clamped to 0.`);
                 }
-                await updateProduct(productId, { stock: Math.max(0, next) });
+                await adjustStock(productId, Math.max(0, next), `Reverted deleted stock movement(s): ${delta > 0 ? '+' : ''}${delta}`);
             }
 
             for (const [key, delta] of warehouseDeltas) {

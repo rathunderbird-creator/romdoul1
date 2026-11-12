@@ -40,7 +40,8 @@ export const migrateData = async () => {
                     name: p.name,
                     model: p.model,
                     price: p.price,
-                    stock: p.stock,
+                    // No stock: an upsert would overwrite a live product's stock
+                    // without its FIFO layers. Stock enters through Add Stock.
                     image: p.image,
                     category: p.category
                 }))

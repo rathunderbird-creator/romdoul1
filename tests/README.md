@@ -46,8 +46,9 @@ journal_entry_lines from a backup must have `account_id` remapped by
 `account_code` (custom accounts inserted), and columns the target lacks
 (schema drift, e.g. `journal_entry_lines.description`) stripped and retried.
 Builds two independent PGlite databases and proves the raw insert fails the FK
-while the remapped restore lands every line on the right account. Same PGlite
-setup as auth-guards:
+while the remapped restore lands every line on the right account. Also checks
+the backup table list (`BACKUP_TABLES`): inventory_items (the FIFO layers) is
+included, after products and sales. Same PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/backup-restore.test.mjs
@@ -203,7 +204,11 @@ pre-FIFO order restocked with no rows) assert that exact amount.
   equals their cost (line unit_cost = their average); an addition creates
   layers at its cost on the adjustment date (the last receipt cost when it
   has none); a mixed adjustment books the net; an over-removal is refused
-  with nothing moved.
+  with nothing moved. set_product_stock (the Inventory page's stock edits):
+  up, down (Loss/Damage) and to zero each post a one-line adjustment whose
+  ADJ entry equals the layers moved, with the movement, note, user and local
+  date; the same figure creates nothing; bad input is refused with nothing
+  changed. Every step keeps the FIFO check at variance 0.
 
 Same PGlite setup as auth-guards:
 
