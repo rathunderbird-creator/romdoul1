@@ -75,3 +75,17 @@ sessions supplied. Same PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/sec1-session-guards.test.mjs
+
+## fifo-rebuild-dryrun.test.mjs
+
+Unit test of `planStore` in `src/scripts/fifo-rebuild-dryrun.cjs`, the
+read-only plan of the one-time FIFO pool rebuild. Synthetic data, no
+database: pool larger / smaller than stock, no rows (filler layers at the
+last receipt cost, else purchase_cost), cost-0 rows re-costed to the newest
+priced row, sold rows on Pending/ReStock orders and null sale_id written off,
+settled / COGS-booked rows kept as history, unsettled shipped lines taking
+the next-newest layers (oldest-shipped line first, fractional qty costed as
+shortfall), the D1 guard failing on a basis mismatch and passing with a
+`--basis` override, and pool count = stock afterwards. Needs nothing extra:
+
+    node tests/fifo-rebuild-dryrun.test.mjs
