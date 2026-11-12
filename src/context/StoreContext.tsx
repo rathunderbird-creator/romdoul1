@@ -9,6 +9,7 @@ import { callDbFunction, noticesOf, rpcWithSession, resetGuardedSignatureCache }
 import { setSessionAuth, registerSessionExpiredHandler } from '../utils/session';
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
+import { isFifoReadMissingError } from '../utils/supabaseErrors';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
@@ -124,13 +125,15 @@ class CogsReadError extends Error {}
 // shipped (sale_items.cogs_cost), or a peek of the next inventory layers for
 // a line that has not shipped — the order_cogs RPC
 // (migrations/add_fifo_costing.sql), the same figure the server books at
-// settlement. Only a store without that function falls back to the lines'
-// cogs_cost where they have one and each product's purchase_cost otherwise;
-// any other failure throws, so no estimate is booked in place of the FIFO
-// cost. null when the order can't be read.
+// settlement. Only a store without that function, or whose guarded wrapper
+// answers "FIFO costing is not set up" (add_session_guards.sql run without
+// the FIFO packs), falls back to the lines' cogs_cost where they have one and
+// each product's purchase_cost otherwise; any other failure throws, so no
+// estimate is booked in place of the FIFO cost. null when the order can't be
+// read.
 async function retailCogsAmount(orderId: string): Promise<number | null> {
     const { data, error } = await rpcWithSession('order_cogs', { p_order_id: orderId });
-    if (error && !isRpcMissingError(error)) {
+    if (error && !isFifoReadMissingError(error)) {
         throw new CogsReadError(`Could not read this order's cost of goods (order_cogs): ${error.message || error}`);
     }
     if (!error) {
@@ -245,28 +248,46 @@ function enqueueLedgerPost<T>(run: () => Promise<T>): Promise<T> {
 // COGS entry for an order with NO receipt entry to carry it: when the deposit
 // covered the whole total, the Paid transition books no RCP row (nothing left
 // to collect), so the cost side gets its own 2-line entry — Dr Cost of Goods
-// Sold / Cr Inventory. Reference 'ORD-<id>-COGS' so a revert/re-pay (or a
-// later Post Now on the deposit row) can never book it twice. Non-fatal.
+// Sold / Cr Inventory. Reference 'ORD-<id>-COGS'. Skipped while the order's
+// ORD-<id>-COGS / -COGS-ADJ / -COGS-REV entries net above 0 in Inventory, so
+// a revert/re-pay (or a later Post Now on the deposit row) can never book it
+// twice; once a COGS-REV has reversed it, settling again books it again (as
+// op_post_cogs_only does). Non-fatal.
 async function postRetailCogsOnlyEntry(orderId: string, date: string, description: string, status: 'Draft' | 'Posted' = 'Draft'): Promise<void> {
     return enqueueLedgerPost(async () => {
     try {
         const reference = `ORD-${orderId}-COGS`;
         // select('*') so status is read where that column exists without failing where it doesn't.
-        const { data: existing, error: exErr } = await supabase.from('journal_entries')
-            .select('*').eq('reference_id', reference).limit(1).maybeSingle();
+        const { data: found, error: exErr } = await supabase.from('journal_entries')
+            .select('*').in('reference_id', [reference, `${reference}-ADJ`, `${reference}-REV`]);
         if (exErr) return;
-        if (existing) {
-            // A companion an admin unposted (Draft) must follow a 'Posted'
-            // request back to Posted — Post Now after Unpost — and moves to the
-            // corrected date with it. An already-Posted companion stays untouched.
-            if (status === 'Posted' && (existing as { status?: string }).status === 'Draft') {
-                const { error: upErr } = await supabase.from('journal_entries')
-                    .update({ status: 'Posted', date }).eq('id', (existing as { id: string }).id);
-                if (upErr) console.error('Failed to re-post the COGS entry for order', orderId, upErr);
-            }
-            return;
-        }
+        type EntryRow = { id: string; reference_id: string; status?: string; created_at?: string };
+        const rows = (found || []) as EntryRow[];
         const { pool } = await resolveRetailLedgerAccounts();
+        if (rows.length > 0) {
+            const inventoryAcc = pool.find(a => a.account_code === '1300')
+                || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
+            let net = 0;
+            if (inventoryAcc) {
+                const { data: lines, error: lnErr } = await supabase.from('journal_entry_lines')
+                    .select('debit, credit').in('journal_entry_id', rows.map(r => r.id)).eq('account_id', inventoryAcc.id);
+                if (lnErr) return;
+                net = (lines || []).reduce((s, l) => s + (Number(l.credit) || 0) - (Number(l.debit) || 0), 0);
+            }
+            if (!inventoryAcc || roundCents(net) > 0) {
+                // A companion an admin unposted (Draft) must follow a 'Posted'
+                // request back to Posted — Post Now after Unpost — and moves to the
+                // corrected date with it. An already-Posted companion stays untouched.
+                const existing = rows.filter(r => r.reference_id === reference)
+                    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+                if (existing && status === 'Posted' && existing.status === 'Draft') {
+                    const { error: upErr } = await supabase.from('journal_entries')
+                        .update({ status: 'Posted', date }).eq('id', existing.id);
+                    if (upErr) console.error('Failed to re-post the COGS entry for order', orderId, upErr);
+                }
+                return;
+            }
+        }
         const cogs = await retailCogsLines(orderId, pool);
         if (!cogs) return;
         const entryNumber = await nextJournalEntryNumber('RCP', date);
@@ -594,7 +615,10 @@ const holdsOrderStock = (status: string) => isStockConsumed(status) || status ==
 
 const ORDER_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order\'s shipping status can change, a returned order can be restocked, or the items of a shipped order can be edited: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor. Nothing was saved.';
 
-const SET_STOCK_MISSING_MESSAGE = 'Changing stock here needs a one-time database update: run migrations/add_stock_adjustment_posting.sql, then migrations/add_session_guards.sql, in this store\'s Supabase SQL editor. Nothing was changed.';
+// On a store without set_product_stock (FIFO costing not set up yet: its
+// count, true-up and pool rebuild come first) the Adjust Stock page still
+// saves and posts adjustments, so the message sends the user there.
+const SET_STOCK_MISSING_MESSAGE = 'Stock can\'t be changed here on this store yet: until FIFO costing is set up (a stock count, true-up and pool rebuild), change stock on the Stock Adjustments page instead (menu Inventory › Adjust Stock: create an adjustment and post it). Nothing was changed.';
 
 const ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order can be created, its payment saved, orders deleted or a restock\'s payment cancelled: run migrations/add_order_payment_functions.sql in this store\'s Supabase SQL editor. Nothing was saved.';
 

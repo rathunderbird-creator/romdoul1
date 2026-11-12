@@ -4,6 +4,17 @@
 -- Romdoul3 only after their count and true-up). The whole file is one
 -- transaction: any failed check raises and nothing is kept.
 --
+-- BEFORE YOU RUN IT: ROMDOUL1 ZEROES TEST PRODUCT
+--   The inactive 'Test Product' holds stock 10 at 1.00, which the
+--   2026-11-12 true-up never put in Inventory (1300), so the guard below
+--   fails by 10.00 until its stock is 0. Zero it WITHOUT a ledger entry,
+--   in the SQL editor:
+--     UPDATE products SET stock = 0 WHERE name = 'Test Product' AND is_active = false;
+--   (check it reports 1 row). Do NOT zero it through Adjust Stock or the
+--   Inventory page: those post Dr 5000 / Cr 1300 of 10.00, which leaves
+--   the guard 10.00 off the other way. The dry run lists it under
+--   residual.inactive_products and on its 'inactive stock' line.
+--
 -- BEFORE YOU RUN IT: PICK THE PRESET
 --   The line marked ">>> PRESET" just below BEGIN names the option set. It
 --   ships as 'CHOOSE_A_PRESET', which stops the run with nothing changed.
@@ -18,6 +29,9 @@
 --     node src/scripts/fifo-rebuild-dryrun.cjs --store=<store> --preset=<preset> --out=<folder>
 --
 -- RUN ORDER (per store)
+--   0. the FIFO build of the app is live and every open tab / installed
+--      app is force-reloaded (see add_fifo_costing.sql, RUN ORDER step 0);
+--      on Romdoul1, Test Product is zeroed (above);
 --   1. add_fifo_costing.sql, then add_session_guards.sql again (phase 1);
 --   2. the dry run above. Its summary is what this file will do (same S, U,
 --      V, B, SU and D1) — read it first;
@@ -73,7 +87,9 @@
 --      WSO-<order>-COGS amount (5000 debit - credit, every status, 0 when
 --      none) allocated by purchase_cost x quantity (by quantity when that is
 --      all 0), and cogs_short_qty = quantity: they hold no rows, so a later
---      cancel gives back exactly the cost that was booked.
+--      cancel gives back exactly the cost that was booked. They are marked
+--      cogs_backfill, so the FIFO check lists them as pre-FIFO wholesale
+--      (booked cost) and not as shortfall.
 --   Rows are never deleted. inventory_items is copied first to
 --   inventory_items_bak_<yyyymmdd>.
 --
@@ -118,9 +134,15 @@
 --   DELETE FROM inventory_items WHERE receipt_ref = 'FIFO-REBUILD';
 --   UPDATE sale_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE cogs_cost IS NOT NULL;
 --   UPDATE sale_items SET cogs_booked = NULL WHERE cogs_booked IS NOT NULL;
---   UPDATE wholesale_order_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE cogs_cost IS NOT NULL;
+--   UPDATE wholesale_order_items SET cogs_cost = NULL, cogs_short_qty = 0, cogs_backfill = false
+--    WHERE cogs_cost IS NOT NULL OR cogs_backfill;
 --   DELETE FROM journal_entries WHERE reference_id = 'FIFO-REVAL-<yyyymmdd>' AND status = 'Draft';
+--   DELETE FROM public.fifo_rebuild_log WHERE run_date = '<yyyy-mm-dd>';
 --   (and DROP the backup table to allow another run).
+--
+-- AFTER A SUCCESSFUL RUN keep public.fifo_rebuild_log: the four packs load
+-- only on a store that has a row in it. The backup table may be dropped
+-- once phase 3 is live (UNDO is then no longer possible).
 --
 -- The functions live in pg_temp: they exist only for this session and leave
 -- nothing behind.
@@ -199,7 +221,9 @@ BEGIN
        OR NOT EXISTS (SELECT 1 FROM information_schema.columns
                        WHERE table_schema = 'public' AND table_name = 'inventory_items' AND column_name = 'consumer_kind')
        OR NOT EXISTS (SELECT 1 FROM information_schema.columns
-                       WHERE table_schema = 'public' AND table_name = 'wholesale_order_items' AND column_name = 'cogs_short_qty') THEN
+                       WHERE table_schema = 'public' AND table_name = 'wholesale_order_items' AND column_name = 'cogs_short_qty')
+       OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = 'public' AND table_name = 'wholesale_order_items' AND column_name = 'cogs_backfill') THEN
         RAISE EXCEPTION 'FIFO rebuild: run migrations/add_fifo_costing.sql on this store first.';
     END IF;
     IF to_regclass('public.' || v_bak) IS NOT NULL THEN
@@ -434,8 +458,15 @@ BEGIN
     v_guard := round(v_D1 - (v_V - v_SU - v_B), 2);
 
     IF abs(v_guard) > 1 THEN
-        RAISE EXCEPTION 'FIFO rebuild stopped, nothing was changed: D1 = % but V - SU - B = % (V %, SU %, B %, basis value of S+U %); |D1 - (V - SU - B)| = % is over $1, so the ledger does not hold the counted stock at the basis cost. Run src/scripts/fifo-rebuild-dryrun.cjs with the same preset for the breakdown.',
-            v_D1, round(v_V - v_SU - v_B, 2), v_V, v_SU, v_B, v_basis_total, abs(v_guard);
+        SELECT string_agg(format('%s (stock %s, %s at basis cost)', p.name, p.raw_stock,
+                                 to_char(round(p.s * p.basis_cost, 2), 'FM999999999990.00')), '; ' ORDER BY p.name, p.id)
+          INTO v_txt
+          FROM _fr_p p JOIN products pr ON pr.id = p.id
+         WHERE pr.is_active = false AND p.s > 0;
+        RAISE EXCEPTION 'FIFO rebuild stopped, nothing was changed: D1 = % but V - SU - B = % (V %, SU %, B %, basis value of S+U %); |D1 - (V - SU - B)| = % is over $1, so the ledger does not hold the counted stock at the basis cost.% Run src/scripts/fifo-rebuild-dryrun.cjs with the same preset for the breakdown.',
+            v_D1, round(v_V - v_SU - v_B, 2), v_V, v_SU, v_B, v_basis_total, abs(v_guard),
+            CASE WHEN v_txt IS NULL THEN '' ELSE ' Inactive products still holding stock: ' || v_txt
+                 || '. If one is not real stock (Romdoul1: Test Product), set its stock to 0 with no ledger entry (see BEFORE YOU RUN IT at the top of this file) and run again.' END;
     END IF;
 
     -- Plan counts (before the writes change the rows they read).
@@ -482,6 +513,9 @@ BEGIN
     -- Write
     -- -----------------------------------------------------------------------
     EXECUTE format('CREATE TABLE public.%I AS SELECT * FROM public.inventory_items', v_bak);
+    -- Unit costs, and what UNDO restores from: never through the API.
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_bak);
+    EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', v_bak);
 
     -- 2) the newest S rows: in stock, nothing linked.
     UPDATE inventory_items i
@@ -601,7 +635,7 @@ BEGIN
           FROM share s
     )
     UPDATE wholesale_order_items wi
-       SET cogs_cost = f.cost, cogs_short_qty = f.qty
+       SET cogs_cost = f.cost, cogs_short_qty = f.qty, cogs_backfill = true
       FROM fixed f
      WHERE wi.id = f.id;
     SELECT jsonb_build_object('lines', count(*), 'orders', count(DISTINCT wholesale_order_id),

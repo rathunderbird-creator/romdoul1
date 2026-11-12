@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { isRpcMissingError } from '../context/StoreContext';
 import { rpcWithSession } from '../utils/dbFunctions';
 
-export const FIFO_MISSING_MESSAGE = 'FIFO costing is not set up on this store yet: run migrations/add_fifo_costing.sql, then migrations/add_session_guards.sql, in this store\'s Supabase SQL editor.';
+export const FIFO_MISSING_MESSAGE = 'FIFO costing is not set up on this store yet: it needs migrations/add_fifo_costing.sql, the pool rebuild (migrations/fifo_rebuild_pool.sql), the four stock packs and migrations/add_session_guards.sql, run in this store\'s Supabase SQL editor.';
 
 const errorMessage = (e: unknown): string => {
     if (e && typeof e === 'object' && 'message' in e) return String((e as { message?: unknown }).message || '');
@@ -126,7 +126,12 @@ export interface FifoCheck {
     variance: number;
     product_mismatches: number;
     products: { product_id: string; name: string; stock: number; pool_qty: number }[];
-    shortfall: { retail_lines: number; retail_qty: number; wholesale_lines: number; wholesale_qty: number };
+    // wholesale_backfill_*: open wholesale lines from before the rebuild, held
+    // at their booked WSO COGS (not a shortfall).
+    shortfall: {
+        retail_lines: number; retail_qty: number; wholesale_lines: number; wholesale_qty: number;
+        wholesale_backfill_lines: number; wholesale_backfill_qty: number; wholesale_backfill_cost: number;
+    };
 }
 
 export async function fetchFifoCheck(): Promise<{ status: Exclude<FifoStatus, 'loading'>; data: FifoCheck | null; message: string | null }> {
@@ -163,6 +168,9 @@ export async function fetchFifoCheck(): Promise<{ status: Exclude<FifoStatus, 'l
                 retail_qty: num(s.retail_qty),
                 wholesale_lines: num(s.wholesale_lines),
                 wholesale_qty: num(s.wholesale_qty),
+                wholesale_backfill_lines: num(s.wholesale_backfill_lines),
+                wholesale_backfill_qty: num(s.wholesale_backfill_qty),
+                wholesale_backfill_cost: num(s.wholesale_backfill_cost),
             },
         },
     };

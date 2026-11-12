@@ -44,10 +44,10 @@
 -- has not shipped at a peek of the next layers (wp_internal.order_cogs_lines),
 -- and records on each line what it booked (cogs_booked). A Draft entry that
 -- carried COGS and is deleted (leaving Paid, deleting the order) takes its
--- amount off cogs_booked again. When booked COGS outlives its goods — a
--- restocked order (apply_restock_payment_side) or a deleted one whose COGS
--- sits in a POSTED entry — a Draft ORD-<id>-COGS-REV puts it back into
--- Inventory. Deleting an order gives its lines' layers back to the pool.
+-- amount off cogs_booked again. When booked COGS outlives its sale — an
+-- order leaving Paid, a restocked order (apply_restock_payment_side) or a
+-- deleted one whose COGS sits in a POSTED entry — a Draft
+-- ORD-<id>-COGS-REV puts it back into Inventory. Deleting an order gives its lines' layers back to the pool.
 -- RUN ORDER: add_fifo_costing.sql, fifo_rebuild_pool.sql, the four packs
 -- (add_order_status_function.sql before this one), add_session_guards.sql;
 -- this file refuses to load before the first two.
@@ -61,14 +61,19 @@
 -- income is not booked again.
 
 -- FIFO costing must be in place (see add_order_status_function.sql for the
--- same check and its SET fifo.pool_ready override).
+-- same check and its SET fifo.pool_ready override, which must NEVER be used
+-- on Romdoul2 or Romdoul3).
 DO $$
+DECLARE
+    v_rebuilt BOOLEAN := false;
 BEGIN
     IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
         RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
     END IF;
-    IF EXISTS (SELECT 1 FROM inventory_items)
-       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+    IF to_regclass('public.fifo_rebuild_log') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.fifo_rebuild_log)' INTO v_rebuilt;
+    END IF;
+    IF NOT v_rebuilt AND EXISTS (SELECT 1 FROM inventory_items)
        AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
         RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
     END IF;
@@ -368,7 +373,9 @@ $$;
 -- The COGS-only entry for an order whose deposit covered the whole total
 -- (port of postRetailCogsOnlyEntry): Dr Cost of Goods Sold / Cr Inventory at
 -- the items' FIFO cost (as op_post_receipt_entry), reference
--- 'ORD-<id>-COGS' so it can never be booked twice.
+-- 'ORD-<id>-COGS'. Skipped while the order's COGS entries net above 0
+-- (os_order_cogs_net), so it is never booked twice; once a COGS-REV has
+-- reversed it, settling again books it again.
 CREATE OR REPLACE FUNCTION wp_internal.op_post_cogs_only(p_order_id TEXT, p_date DATE, p_name TEXT)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -381,7 +388,7 @@ DECLARE
     v_number TEXT;
     v_entry UUID;
 BEGIN
-    IF EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'ORD-' || p_order_id || '-COGS') THEN RETURN; END IF;
+    IF round(wp_internal.os_order_cogs_net(p_order_id), 2) > 0 THEN RETURN; END IF;
     IF v_cogs IS NULL OR v_inventory IS NULL THEN RETURN; END IF;
     SELECT COALESCE(jsonb_object_agg(c.line_id, c.amount), '{}'::jsonb), COALESCE(sum(c.amount), 0)
       INTO v_lines, v_cost
@@ -433,22 +440,45 @@ $$;
 
 -- The leaving-Paid cleanup: this order's booked sales income (matched by
 -- order_id ONLY — never by customer name and amount, which could hit a
--- same-name same-amount sibling order) and its ledger entry.
+-- same-name same-amount sibling order) and its ledger entry, and the
+-- order's COGS with it: once it is no longer Paid, its lines have nothing
+-- booked and its COGS entries net to 0.
+--   * With a receipt row: its Draft entry is deleted (with the COGS it
+--     carried), and so are the Draft ship-time ORD-<id>-COGS-ADJ when no
+--     ORD-<id>-COGS exists.
+--   * Without one (a deposit covered the total): the order's Draft
+--     ORD-<id>-COGS-REV, -COGS and -COGS-ADJ are deleted, reversals first.
+--   * COGS still booked after that sits in POSTED entries: a Draft
+--     ORD-<id>-COGS-REV reverses it, and the notice says to reverse only
+--     the cash and revenue by hand.
+--   * A POSTED COGS-REV left without the COGS it reversed is offset by a
+--     Draft ORD-<id>-COGS-ADJ.
+-- p_date dates the entries booked here (NULL: today).
 -- Returns {"removed": [tx ids], "notices": […]}.
-CREATE OR REPLACE FUNCTION wp_internal.op_remove_paid_income(p_order_id TEXT)
+DROP FUNCTION IF EXISTS wp_internal.op_remove_paid_income(TEXT);
+CREATE OR REPLACE FUNCTION wp_internal.op_remove_paid_income(p_order_id TEXT, p_date DATE DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    v_date DATE := COALESCE(p_date, CURRENT_DATE);
     v_tx UUID;
     v_removed JSONB := '[]'::jsonb;
     v_notices TEXT[] := '{}';
     v_notice TEXT;
+    v_posted BOOLEAN := false;
+    v_rem NUMERIC;
+    v_base NUMERIC;
     v_gap NUMERIC;
 BEGIN
     SELECT id INTO v_tx FROM transactions
      WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id
      ORDER BY created_at DESC LIMIT 1;
+    -- What the lines have booked less the COGS of the entries in view: the
+    -- share held by a POSTED receipt whose income row an earlier un-pay
+    -- removed. Taken before anything is removed, as delete_retail_orders does.
+    v_base := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = p_order_id), 0)
+              - wp_internal.os_order_cogs_net(p_order_id);
     IF v_tx IS NOT NULL THEN
         -- An order edited down to no product line carries a Draft COGS-REV
         -- of what this receipt booked (edit_order_items): when the receipt
@@ -458,25 +488,39 @@ BEGIN
             PERFORM wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-REV']);
         END IF;
         v_notice := wp_internal.op_remove_tx_entry(v_tx);
-        IF v_notice IS NOT NULL THEN
-            v_notices := v_notices || v_notice;
-        ELSIF NOT EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'ORD-' || p_order_id || '-COGS') THEN
-            -- The receipt's COGS went with its Draft entry: so do the Draft
-            -- ship-time adjustments to it (settling again books the shipped
-            -- cost in full).
-            PERFORM wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-ADJ']);
+        IF NOT EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'ORD-' || p_order_id || '-COGS') THEN
+            -- The ship-time adjustments to the receipt's COGS.
+            v_posted := wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-ADJ']);
         END IF;
-        -- A COGS-REV that stays (Posted) once the receipt's COGS is gone
-        -- would leave the order's COGS below what its lines have booked:
-        -- the gap is booked back as a Draft COGS-ADJ.
-        IF EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'ORD-' || p_order_id || '-COGS-REV') THEN
-            v_gap := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = p_order_id), 0)
-                     - wp_internal.os_order_cogs_net(p_order_id);
-            IF round(v_gap, 2) > 0 AND wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_gap, CURRENT_DATE) THEN
-                v_notices := v_notices || format('This order''s cost-of-goods reversal (ORD-%s-COGS-REV) is POSTED, so a Draft entry (ORD-%s-COGS-ADJ, $%s) was booked to offset it.',
-                                                 p_order_id, p_order_id, to_char(round(v_gap, 2), 'FM999999999990.00'));
-            END IF;
+    ELSE
+        v_posted := wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY[
+            'ORD-' || p_order_id || '-COGS-REV', 'ORD-' || p_order_id || '-COGS', 'ORD-' || p_order_id || '-COGS-ADJ']);
+    END IF;
+    v_rem := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = p_order_id), 0);
+    IF round(v_rem, 2) <> 0 AND wp_internal.os_post_cogs_move(p_order_id, 'REV', -v_rem, v_date) THEN
+        UPDATE sale_items SET cogs_booked = NULL WHERE sale_id = p_order_id AND cogs_booked IS NOT NULL;
+        v_notices := v_notices || CASE WHEN v_notice IS NOT NULL
+            THEN format('This payment has a POSTED ledger entry: its cost of goods ($%s) was reversed by a Draft entry (ORD-%s-COGS-REV); reverse only its cash and revenue manually.',
+                        to_char(round(v_rem, 2), 'FM999999999990.00'), p_order_id)
+            ELSE format('This order''s cost of goods ($%s) was in a POSTED entry, so a Draft reversal (ORD-%s-COGS-REV) was booked.',
+                        to_char(round(v_rem, 2), 'FM999999999990.00'), p_order_id) END;
+    ELSIF v_notice IS NOT NULL THEN
+        v_notices := v_notices || v_notice;
+    ELSIF v_posted THEN
+        v_notices := v_notices || 'This order has a POSTED cost-of-goods ledger entry — record a reversing entry manually.'::TEXT;
+    END IF;
+    -- A POSTED COGS-REV left without the COGS it reversed takes the order's
+    -- COGS below what its lines have booked: the gap is booked back.
+    IF EXISTS (SELECT 1 FROM journal_entries
+                WHERE reference_id = 'ORD-' || p_order_id || '-COGS-REV' AND COALESCE(status, 'Posted') <> 'Draft') THEN
+        v_gap := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = p_order_id), 0)
+                 - (wp_internal.os_order_cogs_net(p_order_id) + v_base);
+        IF round(v_gap, 2) > 0 AND wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_gap, v_date) THEN
+            v_notices := v_notices || format('This order''s cost-of-goods reversal (ORD-%s-COGS-REV) is POSTED, so a Draft entry (ORD-%s-COGS-ADJ, $%s) was booked to offset it.',
+                                             p_order_id, p_order_id, to_char(round(v_gap, 2), 'FM999999999990.00'));
         END IF;
+    END IF;
+    IF v_tx IS NOT NULL THEN
         DELETE FROM transactions WHERE id = v_tx;
         v_removed := v_removed || to_jsonb(v_tx);
     END IF;
@@ -818,7 +862,7 @@ BEGIN
         IF NOT u ? 'settle_date' THEN
             u := u || jsonb_build_object('settle_date', '');
         END IF;
-        v_res := wp_internal.op_remove_paid_income(p_order_id);
+        v_res := wp_internal.op_remove_paid_income(p_order_id, v_today);
         v_removed := v_removed || (v_res->'removed');
         SELECT array_agg(x) INTO v_notices FROM (
             SELECT unnest(v_notices) x UNION ALL SELECT jsonb_array_elements_text(v_res->'notices')) t;
@@ -1192,7 +1236,7 @@ BEGIN
     LOOP
         IF COALESCE(r.payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled') THEN
             v_paid := v_paid || r.id;
-            v_res := wp_internal.op_remove_paid_income(r.id);
+            v_res := wp_internal.op_remove_paid_income(r.id, v_today);
             v_removed := v_removed || (v_res->'removed');
             SELECT COALESCE(array_agg(x), '{}') INTO v_notices FROM (
                 SELECT unnest(v_notices) x UNION ALL SELECT jsonb_array_elements_text(v_res->'notices')) t;
@@ -1240,7 +1284,7 @@ GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UU
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_fee_entry(UUID, DATE, TEXT, NUMERIC, UUID, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_remove_tx_entry(UUID) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION wp_internal.op_remove_paid_income(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_remove_paid_income(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_payment_of(sales) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION create_retail_order(JSONB, JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION set_order_payment(TEXT, TEXT, JSONB, JSONB) TO anon, authenticated;

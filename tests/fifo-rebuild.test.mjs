@@ -329,6 +329,8 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const plan = await jsPlan(db, {});
     check('defaults: the dry run passes the guard on the seeded store', plan.ledger.guard_pass && near(plan.ledger.guard_diff, 0.4, 1e-6), plan.ledger);
     const rowsBefore = num((await db.query(`SELECT count(*) AS n FROM inventory_items`)).rows[0].n);
+    // Supabase's default privileges: new public tables are open to the API roles.
+    await db.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated`);
     const res = await runSql(db, {});
     await compare(db, 'defaults', plan, res);
     const q = async (s, p) => (await db.query(s, p)).rows;
@@ -407,6 +409,24 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     check('wholesale W3 (no COGS entry): cogs_cost 0, qty short', num(wl.get(L(9204)).cogs_cost) === 0 && num(wl.get(L(9204)).cogs_short_qty) === 1);
     check('wholesale W4 (purchase_cost 0): allocated by qty, 8 -> 2 / 6', num(wl.get(L(9205)).cogs_cost) === 2 && num(wl.get(L(9206)).cogs_cost) === 6);
     check('wholesale summary', num(res.wholesale_backfill.lines) === 5 && num(res.wholesale_backfill.cogs_cost) === 17, res.wholesale_backfill);
+    check('wholesale backfill lines are marked cogs_backfill (and only they)',
+        num((await one(`SELECT count(*) FILTER (WHERE cogs_backfill) AS b, count(*) FILTER (WHERE cogs_backfill AND cogs_cost IS NULL) AS x FROM wholesale_order_items`)).b) === 5
+        && num((await one(`SELECT count(*) FILTER (WHERE cogs_backfill AND cogs_cost IS NULL) AS x FROM wholesale_order_items`)).x) === 0);
+    const chkW = (await one(`SELECT wp_internal.fifo_inventory_check() AS j`)).j;
+    check('fifo_inventory_check: the backfill is pre-FIFO wholesale, not shortfall (5 lines, 17.00)',
+        num(chkW.shortfall.wholesale_lines) === 0 && num(chkW.shortfall.wholesale_qty) === 0
+        && num(chkW.shortfall.wholesale_backfill_lines) === 5 && near(chkW.shortfall.wholesale_backfill_cost, 17, 1e-6), chkW.shortfall);
+    const w1 = await one(`SELECT wholesale_order_id::text AS oid FROM wholesale_order_items WHERE id = $1`, [L(9201)]);
+    await db.query(`SELECT wp_internal.fifo_give_back_line('wholesale', $1, $2)`, [w1.oid, L(9201)]);
+    check('a backfill line that gives its units back is no longer marked',
+        (await one(`SELECT cogs_backfill FROM wholesale_order_items WHERE id = $1`, [L(9201)])).cogs_backfill === false);
+    await db.query(`UPDATE inventory_items SET status = 'sold', consumer_kind = 'wholesale', consumer_id = $1, consumer_line_id = $2
+                     WHERE receipt_ref = 'RET-' || $1`, [w1.oid, L(9201)]);
+    await db.query(`UPDATE wholesale_order_items SET cogs_cost = 3.375, cogs_short_qty = 0 WHERE id = $1`, [L(9201)]);
+    const bak = await one(`SELECT c.relrowsecurity AS rls, has_table_privilege('anon', c.oid, 'SELECT') AS anon_sel,
+                                  has_table_privilege('authenticated', c.oid, 'UPDATE') AS auth_upd
+                             FROM pg_class c WHERE c.relname = 'inventory_items_bak_20261113'`);
+    check('backup table: row level security on, no API access (anon / authenticated)', bak.rls === true && bak.anon_sel === false && bak.auth_upd === false, bak);
     // Backup, entry, ledger identity.
     check('backup table inventory_items_bak_20261113 holds every row from before',
         num((await one(`SELECT count(*) AS n FROM inventory_items_bak_20261113`)).n) === rowsBefore && res.backup_table === 'inventory_items_bak_20261113');
@@ -489,6 +509,8 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const e = await errOf(() => runSql(db, {}));
     check('guard: the SQL raises with D1, V - SU - B, V, SU and B', /FIFO rebuild stopped, nothing was changed: D1 = -?[\d.]+ but V - SU - B = -?[\d.]+ \(V [\d.]+, SU [\d.]+, B -?[\d.]+/.test(e)
         && e.includes(`D1 = ${plan.ledger.D1.toFixed(2)}`) && e.includes(`V ${plan.ledger.V.toFixed(2)}`) && e.includes('SU 9.50'), e);
+    check('guard: the message names the inactive product that still holds stock, and how to zero it',
+        e.includes('Inactive products still holding stock: Test Product (stock 1, 1.00 at basis cost)') && /no ledger entry/.test(e), e);
     check('guard: nothing changed (rows, no backup, no entry, no line cost)', await snap() === s0
         && (await db.query(`SELECT to_regclass('inventory_items_bak_20261113') AS t`)).rows[0].t === null
         && (await db.query(`SELECT count(*) AS n FROM journal_entries WHERE reference_id LIKE 'FIFO-REVAL-%'`)).rows[0].n == 0

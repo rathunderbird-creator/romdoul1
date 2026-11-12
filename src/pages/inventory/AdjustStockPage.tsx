@@ -19,7 +19,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStockAdjustments } from '../../hooks/useStockAdjustments';
 import DataImportModal from '../../components/DataImportModal';
 import { dayKeyFromDate } from '../../utils/dateRange';
-import { fetchFifoPeek, type FifoPeekResult } from '../../hooks/useFifo';
+import { fetchFifoPeek, FIFO_MISSING_MESSAGE, type FifoPeekResult } from '../../hooks/useFifo';
 import type { StockAdjustment, StockAdjustmentReason } from '../../types';
 
 const REASONS: StockAdjustmentReason[] = ['Opening balance', 'Stock correction', 'Damaged goods', 'Expired goods', 'Theft / loss', 'Sample / giveaway', 'Other'];
@@ -539,7 +539,7 @@ const AdjustStockPage: React.FC = () => {
                             </p>
                             {fifoMissing && (
                                 <p style={{ fontSize: '12px', color: '#B45309', margin: '-12px 0 20px' }}>
-                                    FIFO costing is not set up on this store yet: run migrations/add_fifo_costing.sql, then migrations/add_session_guards.sql, in this store's Supabase SQL editor.
+                                    {FIFO_MISSING_MESSAGE}
                                 </p>
                             )}
 

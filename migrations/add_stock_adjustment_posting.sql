@@ -25,14 +25,19 @@
 -- add_session_guards.sql; this file refuses to load before the first two.
 
 -- FIFO costing must be in place (see add_order_status_function.sql for the
--- same check and its SET fifo.pool_ready override).
+-- same check and its SET fifo.pool_ready override, which must NEVER be used
+-- on Romdoul2 or Romdoul3).
 DO $$
+DECLARE
+    v_rebuilt BOOLEAN := false;
 BEGIN
     IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
         RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
     END IF;
-    IF EXISTS (SELECT 1 FROM inventory_items)
-       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+    IF to_regclass('public.fifo_rebuild_log') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.fifo_rebuild_log)' INTO v_rebuilt;
+    END IF;
+    IF NOT v_rebuilt AND EXISTS (SELECT 1 FROM inventory_items)
        AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
         RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
     END IF;

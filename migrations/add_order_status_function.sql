@@ -47,18 +47,30 @@
 
 -- FIFO costing must be in place: this file calls the line helpers of
 -- add_fifo_costing.sql, and taking layers only makes sense once the pool has
--- been rebuilt (fifo_rebuild_pool.sql leaves its inventory_items_bak_<date>
--- backup behind). A store with no layers at all needs no rebuild. For a
--- store whose pool is known to match its stock, run
+-- been rebuilt (fifo_rebuild_pool.sql records each successful run in
+-- public.fifo_rebuild_log; keep that table, dropping the backup table is
+-- fine). A store with no layers at all needs no rebuild.
 --     SET fifo.pool_ready = 'on';
--- in the same SQL-editor run, before this file.
+-- in the same SQL-editor run, before this file, loads it on a store with
+-- layers and no rebuild record. It is ONLY for a store whose pool is known
+-- to match its stock. NEVER use it on Romdoul2 or Romdoul3: their pools do
+-- not match their stock (the rebuild guard fails there by 5,942.10 and
+-- 2,610.50), and this file would take FIFO costs from them. Until their
+-- count, true-up and rebuild, Romdoul2 and Romdoul3 get no new version of
+-- the four packs (this file, add_order_payment_functions.sql,
+-- add_wholesale_procurement_functions.sql, add_stock_adjustment_posting.sql):
+-- the versions they run now stay as they are.
 DO $$
+DECLARE
+    v_rebuilt BOOLEAN := false;
 BEGIN
     IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
         RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
     END IF;
-    IF EXISTS (SELECT 1 FROM inventory_items)
-       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+    IF to_regclass('public.fifo_rebuild_log') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.fifo_rebuild_log)' INTO v_rebuilt;
+    END IF;
+    IF NOT v_rebuilt AND EXISTS (SELECT 1 FROM inventory_items)
        AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
         RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
     END IF;
@@ -163,23 +175,6 @@ BEGIN
 END;
 $$;
 
--- Whether the ledger holds COGS for a retail order: one of its receipt
--- entries (TX-<income row of the order>) or its ORD-<id>-COGS moves
--- something out of Inventory (1300), whatever the entry's status.
-CREATE OR REPLACE FUNCTION wp_internal.os_order_cogs_in_ledger(p_order_id TEXT)
-RETURNS BOOLEAN
-LANGUAGE sql
-STABLE
-AS $$
-    SELECT EXISTS (
-        SELECT 1 FROM journal_entries e
-          JOIN journal_entry_lines l ON l.journal_entry_id = e.id
-         WHERE l.account_id = wp_internal.wp_account('1300', 'Asset', 'inventor|stock')
-           AND COALESCE(l.credit, 0) > 0
-           AND (e.reference_id = 'ORD-' || p_order_id || '-COGS'
-                OR e.reference_id IN (SELECT 'TX-' || t.id FROM transactions t WHERE t.order_id = p_order_id)));
-$$;
-
 -- The COGS a retail order has in the ledger, whatever the entries' status:
 -- what its receipt entries and its ORD-<id>-COGS, -COGS-ADJ and -COGS-REV
 -- moved out of Inventory (1300 credits minus debits).
@@ -195,6 +190,47 @@ AS $$
        AND (e.reference_id IN ('ORD-' || p_order_id || '-COGS', 'ORD-' || p_order_id || '-COGS-ADJ',
                                'ORD-' || p_order_id || '-COGS-REV')
             OR e.reference_id IN (SELECT 'TX-' || t.id FROM transactions t WHERE t.order_id = p_order_id));
+$$;
+
+-- Whether the ledger holds COGS for a retail order: the net of its COGS
+-- entries (os_order_cogs_net) is above 0. COGS that a later COGS-REV
+-- reversed in full does not count.
+CREATE OR REPLACE FUNCTION wp_internal.os_order_cogs_in_ledger(p_order_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT round(wp_internal.os_order_cogs_net(p_order_id), 2) > 0;
+$$;
+
+-- For edit_order_items on a Paid order whose lines had no product before
+-- the edit (settlement had nothing to book): the COGS of its new product
+-- lines (order_cogs_lines: the frozen cost of what is shipped, a peek for
+-- the rest) is booked as one Draft ORD-<id>-COGS-ADJ and recorded on the
+-- lines as cogs_booked. Skipped when any line has cogs_booked or the
+-- ledger already holds COGS for the order. Returns the amount booked.
+CREATE OR REPLACE FUNCTION wp_internal.os_book_paid_unbooked(p_order_id TEXT, p_date DATE)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_lines JSONB;
+    v_amt NUMERIC;
+BEGIN
+    IF EXISTS (SELECT 1 FROM sale_items WHERE sale_id = p_order_id AND cogs_booked IS NOT NULL)
+       OR wp_internal.os_order_cogs_in_ledger(p_order_id) THEN
+        RETURN 0;
+    END IF;
+    SELECT COALESCE(jsonb_object_agg(c.line_id, c.amount), '{}'::jsonb), COALESCE(sum(c.amount), 0)
+      INTO v_lines, v_amt
+      FROM wp_internal.order_cogs_lines(p_order_id) c;
+    IF round(v_amt, 2) <= 0 OR NOT wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_amt, p_date) THEN
+        RETURN 0;
+    END IF;
+    UPDATE sale_items si SET cogs_booked = (v_lines->>si.id)::NUMERIC
+     WHERE si.sale_id = p_order_id AND v_lines ? si.id;
+    RETURN round(v_amt, 2);
+END;
 $$;
 
 -- Statuses where the order's goods are counted out of stock: shipped,
@@ -504,7 +540,9 @@ $$;
 -- un-ship, delete or restock reverses exactly what left. A failure keeps the
 -- old items: nothing is half-saved. A Paid order whose goods are on hand
 -- and whose booked COGS such a reversal took off gets it booked again when
--- an edit brings product lines back.
+-- an edit brings product lines back. A Paid order that had no product line
+-- when the edit began (settlement had nothing to book) gets its new product
+-- lines' COGS booked as a Draft COGS-ADJ.
 --
 -- p_items: [{id (product id), name, price, quantity, image}], as the app
 -- sends them. p_fields: created_by.
@@ -529,6 +567,7 @@ DECLARE
     v_take NUMERIC;
     v_holds BOOLEAN;
     v_had_booked BOOLEAN;
+    v_had_products BOOLEAN;
     v_booked NUMERIC;
     v_given NUMERIC := 0;
     v_paid BOOLEAN;
@@ -551,7 +590,9 @@ BEGIN
     SELECT COALESCE(jsonb_agg(jsonb_build_object('product_id', product_id, 'quantity', quantity, 'name', name)), '[]'::jsonb)
       INTO v_before FROM sale_items WHERE sale_id = p_order_id;
     -- COGS already booked for the order (settled): carried onto the new lines.
-    SELECT bool_or(cogs_booked IS NOT NULL), COALESCE(sum(cogs_booked), 0) INTO v_had_booked, v_booked
+    SELECT bool_or(cogs_booked IS NOT NULL), COALESCE(sum(cogs_booked), 0),
+           COALESCE(bool_or(product_id IS NOT NULL AND COALESCE(quantity, 0) > 0), false)
+      INTO v_had_booked, v_booked, v_had_products
       FROM sale_items WHERE sale_id = p_order_id;
     v_holds := order_status_holds_stock(v_status);
 
@@ -598,7 +639,6 @@ BEGIN
         END IF;
     ELSIF NOT v_holds AND v_paid
           AND EXISTS (SELECT 1 FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL)
-          AND wp_internal.os_order_cogs_in_ledger(p_order_id)
           AND round(wp_internal.os_order_cogs_net(p_order_id), 2) = 0 THEN
         -- A Paid order whose booked COGS an earlier edit reversed (it was
         -- left with no product line) has product lines again: the newest
@@ -627,6 +667,10 @@ BEGIN
     END IF;
 
     IF NOT v_holds THEN
+        -- A Paid order that had no product line to book: its new ones are.
+        IF v_paid AND NOT v_had_products THEN
+            PERFORM wp_internal.os_book_paid_unbooked(p_order_id, COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE));
+        END IF;
         RETURN jsonb_build_object('held', false, 'stock', '{}'::jsonb, 'missing', '[]'::jsonb);
     END IF;
 
@@ -634,6 +678,9 @@ BEGIN
     LOOP
         PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id);
     END LOOP;
+    IF v_paid AND NOT v_had_products THEN
+        PERFORM wp_internal.os_book_paid_unbooked(p_order_id, COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE));
+    END IF;
     -- A settled order: the edit's cost difference is booked.
     PERFORM wp_internal.os_true_up_booked_cogs(p_order_id, COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE));
 
@@ -730,6 +777,7 @@ GRANT EXECUTE ON FUNCTION wp_internal.os_post_cogs_move(TEXT, TEXT, NUMERIC, DAT
 GRANT EXECUTE ON FUNCTION wp_internal.os_true_up_booked_cogs(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_spread_booked(TEXT, NUMERIC) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_order_cogs_in_ledger(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.os_book_paid_unbooked(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_order_cogs_net(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_holds_stock(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_stock_consumed(TEXT) TO anon, authenticated;

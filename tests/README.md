@@ -146,6 +146,10 @@ with the Romdoul1 true-up options. Then pool count = stock, the Draft
 FIFO-REVAL entry (app numbering, direction by sign), `fifo_inventory_check`
 after the rebuild, the phase 1 primitives on the rebuilt pool, the D1 guard
 (raises with the numbers, $1.00 passes, $1.01 does not, nothing changed),
+the guard message naming the inactive product that still holds stock,
+the backup table closed to the API roles (row level security, no grants),
+the wholesale backfill marked cogs_backfill and reported apart from
+shortfall (the mark cleared once a line gives its units back),
 the refusals (run once, phase 1 missing, bad basis / status / preset,
 lines already costed or booked) and the file as shipped: with no preset
 picked it refuses and changes nothing; with one picked it commits and its
@@ -183,7 +187,8 @@ pre-FIFO order restocked with no rows) assert that exact amount.
   its row cost (the check moves by purchase cost minus row cost); deleting
   a restocked order keeps the Posted receipt's COGS reversed (the Draft REV
   is re-booked, also after it was moved back to Shipped) while a
-  deposit-covered one (Draft ORD-COGS + Draft REV) nets to nothing; a no-product line added by an edit gets no booked COGS
+  deposit-covered one (its Draft ORD-COGS goes when the restock leaves Paid)
+  nets to nothing; a no-product line added by an edit gets no booked COGS
   and no ADJ; an edit that leaves only no-product lines on a shipped settled
   order reverses its booked COGS with a Draft REV (leaving Paid then drops
   the Draft receipt with it; a delete with a Posted receipt re-books it);
@@ -193,13 +198,27 @@ pre-FIFO order restocked with no rows) assert that exact amount.
   edited to no product line and back gets its booked COGS back (a Draft
   REV is deleted, a Posted one offset by a Draft ADJ) and ships booked;
   leaving Paid with a Posted REV books a Draft ADJ so 5000 nets 0 for the
-  order; the packs refuse to load
-  without add_fifo_costing.sql or before the rebuild.
+  order; a deposit-covered order restocked, shipped again and Paid again
+  books its COGS again (Draft or Posted ORD-COGS), and a no-change edit then
+  keeps it; leaving Paid on a deposit-covered order drops its Draft
+  ORD-COGS (a Posted one gets a Draft REV); leaving Paid with a Posted
+  receipt reverses its COGS with a Draft REV, so settling again books it
+  once; a Posted receipt, an edit round trip and a second un-pay invent no
+  ADJ; a Paid order with only a service line edited to products (receipt or
+  deposit-covered, shipped or not) gets their COGS booked as an ADJ, and an
+  Unpaid one does not; the packs refuse to load without
+  add_fifo_costing.sql or before the rebuild is recorded in
+  public.fifo_rebuild_log (a table named like the backup is not enough),
+  and load with the backup dropped.
 - fifo-wholesale: create / edit / cancel / delete with Draft vs Posted COGS
   (re-booked in place, WSO-<id>-COGS-ADJ-<n>, WSO-<id>-COGS-REV), the same
   rows taken again on an edit, an order backfilled by the rebuild (short
   units come back as layers at the booked cost), Add Stock and PO receipts
-  (layers at the receipt cost, RST- / PO- refs, purchase_cost updated).
+  (layers at the receipt cost, RST- / PO- refs, purchase_cost updated); a
+  PO whose unit prices do not divide into cents (1000 x 0.125, two prices
+  of one product) lays layers that add up to the line value and books the
+  GRN at exactly that; a line with no product leaves the GRN at the stocked
+  value with a notice naming the PO total.
 - fifo-adjustment: a removal writes off the oldest layers and the ADJ entry
   equals their cost (line unit_cost = their average); an addition creates
   layers at its cost on the adjustment date (the last receipt cost when it
@@ -216,3 +235,19 @@ Same PGlite setup as auth-guards:
     node tests/fifo-orders.test.mjs
     node tests/fifo-wholesale.test.mjs
     node tests/fifo-adjustment.test.mjs
+
+## fifo-read-readiness.test.mjs
+
+When the guarded FIFO read RPCs (order_cogs, fifo_peek,
+fifo_inventory_valuation, fifo_inventory_check) answer: on a store that
+re-ran add_session_guards.sql without add_fifo_costing.sql, and on one with
+add_fifo_costing.sql and the guards but no rebuild (the packs refuse to
+load), each answers "FIFO costing is not set up" with SQLSTATE 42883, and
+`isFifoReadMissingError` (src/utils/supabaseErrors.ts, which the app's
+retail settlement uses to keep its purchase_cost path) takes it as missing
+while a network or session failure is not; once the rebuild is recorded
+and the packs are loaded they answer. Bundles the TS helper with the
+repo's esbuild. Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/fifo-read-readiness.test.mjs

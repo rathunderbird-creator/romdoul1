@@ -290,7 +290,7 @@ const InventoryReportsPage: React.FC = () => {
                 ? supabase.from('sale_items').select('id, sale_id, product_id, name, quantity, cogs_short_qty, cogs_cost').gt('cogs_short_qty', 0).order('sale_id').limit(SHORT_LINE_LIMIT)
                 : Promise.resolve({ data: [], error: null }),
             wholesale_lines > 0
-                ? supabase.from('wholesale_order_items').select('id, wholesale_order_id, product_id, product_name, quantity, cogs_short_qty, cogs_cost').gt('cogs_short_qty', 0).order('wholesale_order_id').limit(SHORT_LINE_LIMIT)
+                ? supabase.from('wholesale_order_items').select('id, wholesale_order_id, product_id, product_name, quantity, cogs_short_qty, cogs_cost').gt('cogs_short_qty', 0).eq('cogs_backfill', false).order('wholesale_order_id').limit(SHORT_LINE_LIMIT)
                 : Promise.resolve({ data: [], error: null }),
         ]);
         const toNum = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -656,6 +656,11 @@ const InventoryReportsPage: React.FC = () => {
                                             Order lines that took more units than the layers held. The missing units are costed at the product's last receipt cost.
                                             {' '}Retail: {fmt(c.shortfall.retail_lines)} line{c.shortfall.retail_lines === 1 ? '' : 's'}, {fmt(c.shortfall.retail_qty)} units · Wholesale: {fmt(c.shortfall.wholesale_lines)} line{c.shortfall.wholesale_lines === 1 ? '' : 's'}, {fmt(c.shortfall.wholesale_qty)} units.
                                         </div>
+                                        {c.shortfall.wholesale_backfill_lines > 0 && (
+                                            <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                                Not counted as shortfall: pre-FIFO wholesale (booked cost), {fmt(c.shortfall.wholesale_backfill_lines)} line{c.shortfall.wholesale_backfill_lines === 1 ? '' : 's'}, {fmt(c.shortfall.wholesale_backfill_qty)} units, {fmt(c.shortfall.wholesale_backfill_cost)}. These open wholesale orders shipped before the FIFO rebuild; they hold the cost of goods already booked for them, so a cancel returns exactly that.
+                                            </div>
+                                        )}
                                         {shortLines.message && <div style={{ padding: '0 16px 10px', fontSize: '12px', color: '#B45309' }}>{shortLines.message}</div>}
                                         <div style={{ overflowX: 'auto' }}>
                                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
