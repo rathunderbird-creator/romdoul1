@@ -13,6 +13,9 @@
 --   * add_wholesale_procurement_functions.sql
 --   * add_stock_adjustment_posting.sql  (after create_stock_adjustments.sql)
 --   * add_config_functions.sql
+--   * add_fifo_costing.sql (optional: the FIFO read RPCs of section 3b
+--     answer "run add_fifo_costing.sql" until it is run; run it, then
+--     re-run this file)
 -- If you ever RE-RUN one of those pack files, re-run THIS file IMMEDIATELY
 -- afterwards, in the same SQL-editor session: a pack re-run recreates its
 -- public functions unguarded BESIDE the guarded wrappers, and until this
@@ -85,6 +88,15 @@
 --   receive_purchase_order      manage_procurement
 --   add_product_stock           manage_inventory (Inventory Add Stock)
 --   save/post_stock_adjustment  manage_inventory [route /inventory/adjust-stock]
+--   fifo_peek (read)            manage_inventory / view_inventory_stock
+--                               [routes /inventory/*]
+--   fifo_inventory_valuation,   manage_inventory / view_inventory_stock /
+--   (read)                      view_reports / manage_accounting
+--                               [routes /inventory/reports, reports, ledger]
+--   fifo_inventory_check (read) manage_inventory / view_inventory_stock /
+--                               manage_accounting
+--   order_cogs (read)           manage_orders / create_orders / view_orders /
+--                               manage_accounting [routes that settle orders]
 --   update_app_config           per top-level key, see sg_config_key_check:
 --     roles            admin, or manage_users under the same caps the client
 --                      enforces (no admin role edits, no own-role additions,
@@ -699,6 +711,83 @@ GRANT EXECUTE ON FUNCTION public.receive_purchase_order(UUID, TEXT, TEXT, DATE, 
 GRANT EXECUTE ON FUNCTION public.add_product_stock(TEXT, INTEGER, NUMERIC, TEXT, TEXT, TEXT, TEXT, DATE, UUID, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.save_stock_adjustment(UUID, JSONB, JSONB, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.post_stock_adjustment(UUID, TEXT, JSONB) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3b) FIFO read RPCs (implementations in add_fifo_costing.sql)
+-- ---------------------------------------------------------------------------
+-- Read-only. Guarded like the writes so the permission map stays the one
+-- place that says who may see what; a NULL session passes while enforcement
+-- is off. The implementations are looked up at call time, so this file runs
+-- on a store without add_fifo_costing.sql: there the RPCs answer with the
+-- file to run. plpgsql (not sql) so creating them never needs the
+-- implementations to exist.
+
+CREATE OR REPLACE FUNCTION public.fifo_peek(
+    p_product_id TEXT, p_qty NUMERIC, p_session JSONB DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SET search_path = public, sg_internal, pg_temp
+AS $$
+BEGIN
+    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory', 'view_inventory_stock'], 'see stock costs');
+    IF to_regprocedure('wp_internal.fifo_peek(text,numeric)') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    END IF;
+    RETURN wp_internal.fifo_peek(p_product_id, p_qty);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fifo_inventory_valuation(p_session JSONB DEFAULT NULL)
+RETURNS TABLE (product_id TEXT, product_name TEXT, is_active BOOLEAN, stock NUMERIC,
+               qty BIGINT, value NUMERIC, avg_cost NUMERIC, next_cost NUMERIC, last_cost NUMERIC)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public, sg_internal, pg_temp
+AS $$
+BEGIN
+    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory', 'view_inventory_stock', 'view_reports', 'manage_accounting'], 'see the inventory valuation');
+    IF to_regprocedure('wp_internal.fifo_inventory_valuation()') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    END IF;
+    RETURN QUERY SELECT * FROM wp_internal.fifo_inventory_valuation();
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fifo_inventory_check(p_session JSONB DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SET search_path = public, sg_internal, pg_temp
+AS $$
+BEGIN
+    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory', 'view_inventory_stock', 'manage_accounting'], 'see the FIFO check');
+    IF to_regprocedure('wp_internal.fifo_inventory_check()') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    END IF;
+    RETURN wp_internal.fifo_inventory_check();
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.order_cogs(p_order_id TEXT, p_session JSONB DEFAULT NULL)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+STABLE
+SET search_path = public, sg_internal, pg_temp
+AS $$
+BEGIN
+    PERFORM sg_internal.sg_check(p_session, ARRAY['manage_orders', 'create_orders', 'view_orders', 'manage_accounting'], 'see an order''s cost of goods');
+    IF to_regprocedure('wp_internal.order_cogs(text)') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    END IF;
+    RETURN wp_internal.order_cogs(p_order_id);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.fifo_peek(TEXT, NUMERIC, JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fifo_inventory_valuation(JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fifo_inventory_check(JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.order_cogs(TEXT, JSONB) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4) app_config lockdown: per-key permission map + guarded update_app_config

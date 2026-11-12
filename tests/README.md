@@ -76,6 +76,31 @@ sessions supplied. Same PGlite setup as auth-guards:
     npm i --no-save @electric-sql/pglite
     node tests/sec1-session-guards.test.mjs
 
+## fifo-primitives.test.mjs
+
+Runs `migrations/add_fifo_costing.sql` (FIFO phase 1) on top of the same
+real stack as sec1-session-guards — `full_schema.sql`, `add_auth_guards.sql`,
+the packs and `add_session_guards.sql` — after turning `inventory_items`
+back into the live pre-FIFO table. Checks the migration (received_at
+backfilled from created_at and kept on a re-run, the old status CHECK
+widened to `written_off`, columns, indexes, runs twice with the guards
+re-run after it), `fifo_fallback_cost` tiers, `fifo_add_layers`, and the
+FIFO rules: `fifo_consume` takes layers by received_at then id; a partial
+`fifo_return` gives back the newest first; a shortfall is costed at the last
+receipt cost with no phantom rows, and a later return gives the short units
+back first at the cost charged; return then consume picks the same rows;
+written_off rows never return. Then `fifo_peek_cost` / `fifo_peek`,
+`order_cogs` (frozen cost, else one peek per product),
+`fifo_inventory_valuation`, `fifo_inventory_check` (variance 0, the
+settled-before-ship term, a booked-vs-actual gap and a pool/stock mismatch
+showing up), the guarded public read RPCs (permissions, enforcement, the
+"run add_fifo_costing.sql" answer when the implementation is missing), and
+that the existing ship path still runs without filling any FIFO column.
+Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/fifo-primitives.test.mjs
+
 ## fifo-rebuild-dryrun.test.mjs
 
 Unit test of `planStore` in `src/scripts/fifo-rebuild-dryrun.cjs`, the
