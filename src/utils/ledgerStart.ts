@@ -37,3 +37,18 @@ export const formatLedgerStart = (start: string): string => {
     const [y, m, d] = start.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
+
+// The day a purchase order belongs to for the ledger-start rule: the local day
+// it was recorded (created_at), falling back to its order date. A PO recorded
+// before the opening stock count was received into that count, so it must not
+// get a receipt entry of its own now (see postPurchaseReceiptEntry).
+export const purchaseOrderLedgerDay = (po: { created_at?: string | null; order_date?: string | null }): string => {
+    if (po.created_at) {
+        const d = new Date(po.created_at);
+        if (!Number.isNaN(d.getTime())) {
+            const p = (n: number) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        }
+    }
+    return String(po.order_date || '').slice(0, 10);
+};

@@ -27,6 +27,7 @@ import Modal from '../../components/Modal';
 import { RecordSupplierPaymentModal } from '../../components';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import { nextBillNumber } from '../../utils/billNumber';
+import { fetchLedgerStartDate, isBeforeLedgerStart, purchaseOrderLedgerDay } from '../../utils/ledgerStart';
 import type { PurchaseOrder, SupplierPayment } from '../../types';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -133,9 +134,14 @@ const SupplierBillsPage = () => {
     // untouched Purchase Orders page) before anyone clicks Post here, so a
     // Partially Paid/Paid row can still have a Draft receipt entry underneath
     // that needs posting. Decoupled so Post never disappears in that case.
+    // A delivery recorded before the opening stock count with no entry is
+    // already inside that count, so it gets no Post (see utils/ledgerStart.ts).
+    const [ledgerStart, setLedgerStart] = useState<string | null>(null);
+    useEffect(() => { fetchLedgerStartDate().then(setLedgerStart).catch(() => { /* no restriction */ }); }, []);
     const needsPosting = (po: PurchaseOrder): boolean => {
         const je = jeByPoId.get(po.id);
-        return !je || (je.status || 'Posted') === 'Draft';
+        if (!je) return !isBeforeLedgerStart(purchaseOrderLedgerDay(po), ledgerStart);
+        return (je.status || 'Posted') === 'Draft';
     };
 
     // A "bill" = a Received delivery that's been given a reference.
