@@ -2,7 +2,10 @@
 // decide what this app actually needs before any of it is built for real.
 // Stock on Hand is wired to real data (products/warehouses/warehouse_stock)
 // since that's cheap and makes the mockup genuinely useful. Stock Card and
-// Valuation are also real, from the same data plus stock_movements. Expiring
+// Valuation are also real, from the same data plus stock_movements, and are
+// costed at FIFO (fifo_inventory_valuation, stock_movements.unit_cost); a
+// store without migrations/add_fifo_costing.sql falls back to purchase cost
+// and the page says so. FIFO check shows fifo_inventory_check. Expiring
 // and Reconciliation have NO backing data at all in this schema (no batch/lot
 // expiry tracking, no stock-count workflow) — rather than fake numbers, they
 // show what would actually need to be built to populate them.
@@ -11,13 +14,14 @@
 // app already uses in Stock Adjustments, because there is no real bin or
 // batch/lot tracking system behind them.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Layers, FileText, Tag, CalendarClock, CheckCircle2, RefreshCw, Printer, Download, Search } from 'lucide-react';
+import { Layers, FileText, Tag, CalendarClock, CheckCircle2, RefreshCw, Printer, Download, Search, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import { dayKeyFromDate, addDays } from '../../utils/dateRange';
 import { productWarehouseLines } from '../../utils/stockOnHand';
+import { useFifoValuation, fifoUnitCost, fifoMismatchCount, fetchFifoCheck, isMissingColumnError, type FifoCheck, type FifoStatus } from '../../hooks/useFifo';
 import type { Product } from '../../types';
 
 interface MovementRow {
@@ -25,22 +29,27 @@ interface MovementRow {
     type: 'in' | 'out';
     quantity: number;
     unit_price: number;
+    unit_cost?: number | null;
     movement_date: string;
     source?: string;
     reference_id?: string;
 }
 
-type TabKey = 'stock-on-hand' | 'stock-card' | 'valuation' | 'expiring' | 'reconciliation';
+interface ShortLine { id: string; order: string; product: string; quantity: number; short: number; cost: number | null }
+
+type TabKey = 'stock-on-hand' | 'stock-card' | 'valuation' | 'fifo-check' | 'expiring' | 'reconciliation';
 const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number; color?: string }> }[] = [
     { key: 'stock-on-hand', label: 'Stock on Hand', icon: Layers },
     { key: 'stock-card', label: 'Stock Card', icon: FileText },
     { key: 'valuation', label: 'Valuation', icon: Tag },
+    { key: 'fifo-check', label: 'FIFO check', icon: ShieldCheck },
     { key: 'expiring', label: 'Expiring', icon: CalendarClock },
     { key: 'reconciliation', label: 'Reconciliation', icon: CheckCircle2 },
 ];
 
 const fmt = (n: number): string => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const todayYmd = (): string => dayKeyFromDate(new Date());
+const SHORT_LINE_LIMIT = 200;
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
@@ -63,10 +72,45 @@ const EmptyConcept: React.FC<{ icon: React.ComponentType<{ size?: number; color?
     </div>
 );
 
+const kpiLabel: React.CSSProperties = { fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' };
+const thStyle: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' };
+const Kpi: React.FC<{ label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: 'ok' | 'bad' }> = ({ label, value, sub, tone }) => (
+    <div style={{ ...cardStyle, padding: '14px 18px' }}>
+        <div style={kpiLabel}>{label}</div>
+        <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '4px', fontVariantNumeric: 'tabular-nums', color: tone === 'bad' ? '#DC2626' : tone === 'ok' ? '#059669' : 'var(--color-text-main)' }}>{value}</div>
+        {sub && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{sub}</div>}
+    </div>
+);
+
+// Which cost the Stock on Hand and Valuation figures use.
+const CostBasisNote: React.FC<{ status: FifoStatus; message: string | null; mismatches: number; onCheck: () => void }> = ({ status, message, mismatches, onCheck }) => {
+    if (status === 'loading') return <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0 }}>Loading FIFO costs…</p>;
+    if (status !== 'ready') {
+        return (
+            <p style={{ fontSize: '12px', color: '#B45309', margin: 0, maxWidth: '680px' }}>
+                Valued at each product's purchase cost (last cost), not FIFO. {message}
+            </p>
+        );
+    }
+    return (
+        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '680px' }}>
+            Valued at FIFO: each product's unit cost is the average of the cost layers it holds now. A product with no layers uses its last receipt cost.
+            {mismatches > 0 && (
+                <span style={{ color: '#B45309' }}>
+                    {' '}{mismatches} product{mismatches === 1 ? '' : 's'} hold a different number of layers than their stock, so their value is an estimate —{' '}
+                    <button onClick={onCheck} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}>see FIFO check</button>.
+                </span>
+            )}
+        </p>
+    );
+};
+
 const InventoryReportsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { products, warehouses, warehouseStock, categories, isLoading, refreshData } = useStore();
+    const stockSignature = useMemo(() => products.map(p => `${p.id}:${p.stock}`).join('|'), [products]);
+    const fifo = useFifoValuation(true, stockSignature);
 
     useEffect(() => {
         setHeaderContent({
@@ -117,7 +161,9 @@ const InventoryReportsPage: React.FC = () => {
     const stockLines = useMemo<StockLine[]>(() => {
         const lines: StockLine[] = [];
         for (const p of filteredProducts) {
-            const unitCost = Number(p.purchaseCost) || 0;
+            const purchaseCost = Number(p.purchaseCost) || 0;
+            // FIFO is company-wide: a warehouse line uses the product's average layer cost.
+            const unitCost = fifo.status === 'ready' ? fifoUnitCost(fifo.rows.get(p.id), purchaseCost) : purchaseCost;
             if (warehouseId) {
                 const qty = warehouseStockByProductAndWarehouse.get(`${p.id}::${warehouseId}`) || 0;
                 if (qty !== 0) lines.push({ product: p, warehouseName: warehouses.find(w => w.id === warehouseId)?.name || 'Unknown', qty, unitCost });
@@ -133,7 +179,10 @@ const InventoryReportsPage: React.FC = () => {
             }
         }
         return lines;
-    }, [filteredProducts, warehouseId, warehouses, warehouseStockByProductAndWarehouse]);
+    }, [filteredProducts, warehouseId, warehouses, warehouseStockByProductAndWarehouse, fifo.status, fifo.rows]);
+
+    const fifoMismatches = useMemo(() => fifo.status === 'ready' ? fifoMismatchCount(fifo.rows, filteredProducts.map(p => p.id)) : 0, [fifo.status, fifo.rows, filteredProducts]);
+    const costBasisNote = <CostBasisNote status={fifo.status} message={fifo.message} mismatches={fifoMismatches} onCheck={() => setTab('fifo-check')} />;
 
     // Shown whenever a single warehouse is selected (Stock on Hand + Valuation).
     const warehouseCaveat = warehouseId ? (
@@ -190,14 +239,18 @@ const InventoryReportsPage: React.FC = () => {
         setCardLoading(true);
         try {
             const since = addDays(todayYmd(), -365);
-            const { data, error } = await supabase
+            const query = (columns: string) => supabase
                 .from('stock_movements')
-                .select('id, type, quantity, unit_price, movement_date, source, reference_id')
+                .select(columns)
                 .eq('product_id', productId)
                 .gte('movement_date', since)
                 .order('movement_date', { ascending: true });
+            let { data, error } = await query('id, type, quantity, unit_price, unit_cost, movement_date, source, reference_id');
+            if (error && isMissingColumnError(error, 'unit_cost')) {
+                ({ data, error } = await query('id, type, quantity, unit_price, movement_date, source, reference_id'));
+            }
             if (error) throw error;
-            setCardMovements((data || []) as MovementRow[]);
+            setCardMovements((data || []) as unknown as MovementRow[]);
         } catch (e) {
             console.error('Failed to fetch the stock card:', e);
             showToast('Failed to load the stock card for this product.', 'error');
@@ -212,11 +265,45 @@ const InventoryReportsPage: React.FC = () => {
         return cardMovements.map(m => {
             const delta = m.type === 'in' ? Number(m.quantity) || 0 : -(Number(m.quantity) || 0);
             running += delta;
-            return { ...m, delta, running };
+            // unit_price is the selling price on order stock-outs, so it is
+            // shown as a cost only for stock in recorded before FIFO.
+            const recorded = m.unit_cost === null || m.unit_cost === undefined ? null : Number(m.unit_cost);
+            const unitCost = recorded !== null && Number.isFinite(recorded)
+                ? recorded
+                : (m.type === 'in' && Number(m.unit_price) > 0 ? Number(m.unit_price) : null);
+            return { ...m, delta, running, unitCost, costRecorded: recorded !== null };
         });
     }, [cardMovements]);
+    const cardHasUncosted = cardRows.some(r => !r.costRecorded);
 
-    // ── Valuation: grouped by category, average/purchase cost only ──
+    // ── FIFO check ──
+    const [check, setCheck] = useState<{ status: FifoStatus; data: FifoCheck | null; message: string | null }>({ status: 'loading', data: null, message: null });
+    const [shortLines, setShortLines] = useState<{ retail: ShortLine[]; wholesale: ShortLine[]; message: string | null }>({ retail: [], wholesale: [], message: null });
+    const loadCheck = useCallback(async () => {
+        setCheck(c => ({ ...c, status: 'loading' }));
+        const res = await fetchFifoCheck().catch(e => ({ status: 'error' as const, data: null, message: `Could not run the FIFO check: ${e instanceof Error ? e.message : String(e)}` }));
+        setCheck(res);
+        if (res.status !== 'ready' || !res.data) { setShortLines({ retail: [], wholesale: [], message: null }); return; }
+        const { retail_lines, wholesale_lines } = res.data.shortfall;
+        const [r, w] = await Promise.all([
+            retail_lines > 0
+                ? supabase.from('sale_items').select('id, sale_id, product_id, name, quantity, cogs_short_qty, cogs_cost').gt('cogs_short_qty', 0).order('sale_id').limit(SHORT_LINE_LIMIT)
+                : Promise.resolve({ data: [], error: null }),
+            wholesale_lines > 0
+                ? supabase.from('wholesale_order_items').select('id, wholesale_order_id, product_id, product_name, quantity, cogs_short_qty, cogs_cost').gt('cogs_short_qty', 0).order('wholesale_order_id').limit(SHORT_LINE_LIMIT)
+                : Promise.resolve({ data: [], error: null }),
+        ]);
+        const toNum = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+        setShortLines({
+            retail: ((r.data || []) as Record<string, unknown>[]).map(x => ({ id: String(x.id), order: String(x.sale_id ?? ''), product: String(x.name || x.product_id || ''), quantity: Number(x.quantity) || 0, short: Number(x.cogs_short_qty) || 0, cost: toNum(x.cogs_cost) })),
+            wholesale: ((w.data || []) as Record<string, unknown>[]).map(x => ({ id: String(x.id), order: String(x.wholesale_order_id ?? ''), product: String(x.product_name || x.product_id || ''), quantity: Number(x.quantity) || 0, short: Number(x.cogs_short_qty) || 0, cost: toNum(x.cogs_cost) })),
+            message: r.error || w.error ? `Could not list the shortfall lines: ${(r.error || w.error)?.message || 'unknown error'}` : null,
+        });
+    }, []);
+    useEffect(() => { if (tab === 'fifo-check') loadCheck(); }, [tab, loadCheck]);
+    const productLabel = useMemo(() => new Map(products.map(p => [p.id, p.sku || p.model || ''])), [products]);
+
+    // ── Valuation: grouped by category ──
     const valuationRows = useMemo(() => {
         const byCategory = new Map<string, { qty: number; value: number }>();
         for (const l of stockLines) {
@@ -278,7 +365,7 @@ const InventoryReportsPage: React.FC = () => {
                                     <input type="text" placeholder="Product code or name…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, width: '100%', paddingLeft: '30px', boxSizing: 'border-box' }} />
                                 </div>
                             </div>
-                            <button onClick={() => refreshData()} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                            <button onClick={() => { refreshData(); fifo.reload(); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
                                 <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                             </button>
                             <button onClick={printList} style={btnStyle}><Printer size={14} /> Print list</button>
@@ -286,6 +373,7 @@ const InventoryReportsPage: React.FC = () => {
                         </div>
 
                         {warehouseCaveat}
+                        {costBasisNote}
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
                             <div style={{ ...cardStyle, padding: '14px 18px' }}>
@@ -386,7 +474,7 @@ const InventoryReportsPage: React.FC = () => {
                                                 </td>
                                                 <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>{r.source || '—'}{r.reference_id ? ` · ${r.reference_id}` : ''}</td>
                                                 <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.delta < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{r.delta > 0 ? '+' : ''}{fmt(r.delta)}</td>
-                                                <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.unit_price)}</td>
+                                                <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.costRecorded ? 'var(--color-text-main)' : 'var(--color-text-secondary)' }} title={r.costRecorded ? 'FIFO cost recorded on this movement' : 'Recorded before FIFO costing'}>{r.unitCost === null ? '—' : fmt(r.unitCost)}</td>
                                                 <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.running)}</td>
                                             </tr>
                                         ))}
@@ -394,6 +482,11 @@ const InventoryReportsPage: React.FC = () => {
                                 </table>
                             </div>
                         </div>
+                        {cardProductId && cardHasUncosted && (
+                            <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '680px' }}>
+                                Unit cost is the FIFO cost recorded on each movement. Grey figures were recorded before FIFO costing: stock in shows its receipt price, stock out shows —, because those records carry the selling price, not a cost.
+                            </p>
+                        )}
                     </>
                 )}
 
@@ -409,9 +502,7 @@ const InventoryReportsPage: React.FC = () => {
                             </div>
                         </div>
                         {warehouseCaveat}
-                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '640px' }}>
-                            Valued at each product's purchase cost — this system doesn't track FIFO/LIFO cost layers yet, so this stays the same regardless of the Default Costing Method chosen in Inventory Settings.
-                        </p>
+                        {costBasisNote}
                         <div style={{ ...cardStyle, overflow: 'hidden' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                 <thead>
@@ -446,6 +537,161 @@ const InventoryReportsPage: React.FC = () => {
                                 )}
                             </table>
                         </div>
+                    </>
+                )}
+
+                {tab === 'fifo-check' && (
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <button onClick={loadCheck} style={btnStyle} disabled={check.status === 'loading'}>
+                                <RefreshCw size={14} style={check.status === 'loading' ? { animation: 'spin 1s linear infinite' } : {}} /> Run check
+                            </button>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                Compares the FIFO cost layers with product stock and with the Inventory (1300) balance in the ledger.
+                            </span>
+                        </div>
+
+                        {check.status === 'loading' && !check.data ? (
+                            <div style={{ ...cardStyle, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Running the FIFO check…</div>
+                        ) : check.status === 'missing' || check.status === 'error' || !check.data ? (
+                            <EmptyConcept icon={ShieldCheck} title={check.status === 'missing' ? 'FIFO costing is not set up' : 'The FIFO check could not run'} body={check.message || 'Unknown error'} />
+                        ) : (() => {
+                            const c = check.data;
+                            const balanced = Math.abs(c.variance) < 0.005;
+                            const shortLinesTotal = c.shortfall.retail_lines + c.shortfall.wholesale_lines;
+                            const allClear = balanced && c.product_mismatches === 0 && shortLinesTotal === 0 && c.inventory_account_found;
+                            const recon: { label: string; help: string; amount: number; sign: '+' | '−' | '' ; strong?: boolean }[] = [
+                                { label: 'Cost layers in stock', help: `${fmt(c.pool_units)} units`, amount: c.pool_value, sign: '' },
+                                { label: 'Shipped, COGS not booked yet', help: 'Goods out on orders not settled', amount: c.retail_out_unbooked, sign: '+' },
+                                { label: 'COGS booked, not shipped yet', help: 'Orders settled before shipping', amount: c.retail_booked_not_out, sign: '−' },
+                                { label: 'Cost change after COGS was booked', help: 'Shipped cost minus the COGS booked', amount: c.retail_booked_out_diff, sign: '+' },
+                                { label: 'Expected Inventory (1300)', help: '', amount: c.expected_1300, sign: '', strong: true },
+                                { label: 'Inventory (1300) in the ledger', help: `Posted and Draft entries · Posted only ${fmt(c.ledger_1300_posted)}`, amount: c.ledger_1300, sign: '', strong: true },
+                            ];
+                            return (
+                                <>
+                                    <div style={{ ...cardStyle, padding: '12px 16px', display: 'flex', gap: '10px', alignItems: 'flex-start', borderColor: allClear ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.55)', background: allClear ? 'rgba(16,185,129,0.07)' : 'rgba(245,158,11,0.08)' }}>
+                                        {allClear ? <CheckCircle2 size={18} color="#059669" /> : <AlertTriangle size={18} color="#D97706" />}
+                                        <div style={{ fontSize: '13px', color: 'var(--color-text-main)', lineHeight: 1.5 }}>
+                                            {allClear ? 'Layers, stock and the books agree.' : (
+                                                <>
+                                                    <strong>Needs attention:</strong>{' '}
+                                                    {[
+                                                        !balanced && `the ledger is ${fmt(Math.abs(c.variance))} ${c.variance > 0 ? 'above' : 'below'} what the layers say`,
+                                                        c.product_mismatches > 0 && `${c.product_mismatches} product${c.product_mismatches === 1 ? '' : 's'} hold a different number of layers than their stock`,
+                                                        shortLinesTotal > 0 && `${shortLinesTotal} order line${shortLinesTotal === 1 ? '' : 's'} shipped more than the layers held`,
+                                                        !c.inventory_account_found && 'no Inventory (1300) account was found in the chart of accounts',
+                                                    ].filter(Boolean).join('; ')}.
+                                                    {' '}Draft entries count here; post them so the books show the same.
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
+                                        <Kpi label="Cost layers" value={fmt(c.pool_value)} sub={`${fmt(c.pool_units)} units in stock`} />
+                                        <Kpi label="Expected 1300" value={fmt(c.expected_1300)} sub="From the layers and open orders" />
+                                        <Kpi label="Ledger 1300" value={fmt(c.ledger_1300)} sub={`Posted only ${fmt(c.ledger_1300_posted)}`} />
+                                        <Kpi label="Variance" value={fmt(c.variance)} sub="Ledger minus expected" tone={balanced ? 'ok' : 'bad'} />
+                                    </div>
+
+                                    <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Inventory (1300) against the layers</div>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                            <tbody>
+                                                {recon.map(row => (
+                                                    <tr key={row.label} style={{ borderTop: row.strong ? '2px solid var(--color-border)' : '1px solid var(--color-border)' }}>
+                                                        <td style={{ padding: '10px 16px', width: '28px', color: 'var(--color-text-secondary)', fontWeight: 700 }}>{row.sign}</td>
+                                                        <td style={{ padding: '10px 16px 10px 0' }}>
+                                                            <div style={{ fontWeight: row.strong ? 700 : 600, color: 'var(--color-text-main)' }}>{row.label}</div>
+                                                            {row.help && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{row.help}</div>}
+                                                        </td>
+                                                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: row.strong ? 800 : 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(row.amount)}</td>
+                                                    </tr>
+                                                ))}
+                                                <tr style={{ borderTop: '1px solid var(--color-border)', background: balanced ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)' }}>
+                                                    <td style={{ padding: '10px 16px' }} />
+                                                    <td style={{ padding: '10px 16px 10px 0', fontWeight: 700, color: 'var(--color-text-main)' }}>Variance</td>
+                                                    <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: balanced ? '#059669' : '#DC2626' }}>{fmt(c.variance)}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Layers against stock</div>
+                                        <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Products whose count of in-stock cost layers is not their stock. A stock adjustment (Count correction) brings them back in line.</div>
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                                <thead>
+                                                    <tr style={{ borderBottom: '1px solid var(--color-border)', borderTop: '1px solid var(--color-border)' }}>
+                                                        <th style={thStyle}>Product</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Stock</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Layers</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Difference</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {c.products.length === 0 ? (
+                                                        <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Every product's layers match its stock.</td></tr>
+                                                    ) : c.products.map(p => (
+                                                        <tr key={p.product_id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                            <td style={{ padding: '10px 16px' }}>
+                                                                <div style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{p.name}</div>
+                                                                {productLabel.get(p.product_id) && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{productLabel.get(p.product_id)}</div>}
+                                                            </td>
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.stock)}</td>
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(p.pool_qty)}</td>
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#D97706' }}>{p.pool_qty - p.stock > 0 ? '+' : ''}{fmt(p.pool_qty - p.stock)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Shortfall lines</div>
+                                        <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                            Order lines that took more units than the layers held. The missing units are costed at the product's last receipt cost.
+                                            {' '}Retail: {fmt(c.shortfall.retail_lines)} line{c.shortfall.retail_lines === 1 ? '' : 's'}, {fmt(c.shortfall.retail_qty)} units · Wholesale: {fmt(c.shortfall.wholesale_lines)} line{c.shortfall.wholesale_lines === 1 ? '' : 's'}, {fmt(c.shortfall.wholesale_qty)} units.
+                                        </div>
+                                        {shortLines.message && <div style={{ padding: '0 16px 10px', fontSize: '12px', color: '#B45309' }}>{shortLines.message}</div>}
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                                <thead>
+                                                    <tr style={{ borderBottom: '1px solid var(--color-border)', borderTop: '1px solid var(--color-border)' }}>
+                                                        <th style={thStyle}>Kind</th>
+                                                        <th style={thStyle}>Order</th>
+                                                        <th style={thStyle}>Product</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Qty</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Short</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Line cost</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {shortLinesTotal === 0 ? (
+                                                        <tr><td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No order line is short.</td></tr>
+                                                    ) : [...shortLines.retail.map(l => ({ ...l, kind: 'Retail' })), ...shortLines.wholesale.map(l => ({ ...l, kind: 'Wholesale' }))].map(l => (
+                                                        <tr key={`${l.kind}-${l.id}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{l.kind}</td>
+                                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-main)', fontSize: '12px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.order}>{l.order || '—'}</td>
+                                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-main)' }}>{l.product || '—'}</td>
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(l.quantity)}</td>
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, color: '#D97706', fontVariantNumeric: 'tabular-nums' }}>{fmt(l.short)}</td>
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{l.cost === null ? '—' : fmt(l.cost)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {(shortLines.retail.length >= SHORT_LINE_LIMIT || shortLines.wholesale.length >= SHORT_LINE_LIMIT) && (
+                                            <div style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Showing the first {SHORT_LINE_LIMIT} lines of each kind.</div>
+                                        )}
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </>
                 )}
 

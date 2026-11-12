@@ -16,6 +16,10 @@ interface MobileInventoryCardProps {
     onView?: (product: Product) => void;
     /** Hides the edit/delete/wholesale actions for view-only roles. */
     canManage?: boolean;
+    /** Shows Last cost and FIFO avg, same as the table's cost column. */
+    showCosts?: boolean;
+    /** FIFO average of the layers on hand; null = no layers, undefined = FIFO not available. */
+    fifoAvgCost?: number | null;
 }
 
 const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
@@ -28,7 +32,9 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
     onDelete,
     onWholesale,
     onView,
-    canManage = true
+    canManage = true,
+    showCosts = false,
+    fifoAvgCost
 }) => {
     const isLowStock = product.stock < (product.lowStockThreshold || 5);
 
@@ -91,6 +97,18 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                             <span className="mic-stat-label">Total Value</span>
                             <span className="mic-stat-value">${(product.stock * product.price).toLocaleString()}</span>
                         </div>
+                        {showCosts && (
+                            <div className="mic-stat-item">
+                                <span className="mic-stat-label">Last Cost</span>
+                                <span className="mic-stat-value">${(product.purchaseCost || 0).toFixed(2)}</span>
+                            </div>
+                        )}
+                        {showCosts && fifoAvgCost !== undefined && (
+                            <div className="mic-stat-item">
+                                <span className="mic-stat-label">FIFO Avg</span>
+                                <span className="mic-stat-value">{fifoAvgCost === null ? '—' : `$${fifoAvgCost.toFixed(2)}`}</span>
+                            </div>
+                        )}
                         <div className="mic-stat-item">
                             <span className="mic-stat-label">Category</span>
                             <span className="mic-stat-value">{product.category}</span>

@@ -1,9 +1,11 @@
 // Inventory Settings — mockup built from reference screenshots. Nothing on
-// this page is saved anywhere: costing method, the behaviour toggles and the
-// GL account mappings are all local-only drafts. This is deliberately a
-// mockup, not a feature — the app has no costing-method field, no per-stock
-// GL account mapping config, and no stock-count workflow yet, so "Save"
-// shows a toast rather than silently pretending to persist something real.
+// this page is saved anywhere: the behaviour toggles and the GL account
+// mappings are local-only drafts. This is deliberately a mockup, not a
+// feature — the app has no per-stock GL account mapping config and no
+// stock-count workflow yet, so "Save" shows a toast rather than silently
+// pretending to persist something real. The costing method is not a setting:
+// every store costs at FIFO in the database (migrations/add_fifo_costing.sql),
+// so it is shown read-only, with whether this store has that file.
 // The GL Accounts selects ARE populated from the real chart of accounts
 // (pre-selected by matching account name, falling back to account code) so
 // the mockup is honest about what each instance's chart of accounts
@@ -13,6 +15,7 @@ import { SlidersHorizontal, Landmark } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
+import { fetchFifoPeek, FIFO_MISSING_MESSAGE } from '../../hooks/useFifo';
 import type { ChartOfAccount } from '../../types';
 
 type TabKey = 'behaviour' | 'gl-accounts';
@@ -88,8 +91,18 @@ const InventorySettingsPage: React.FC = () => {
 
     const [tab, setTab] = useState<TabKey>('behaviour');
 
+    // Probes fifo_peek on a product id that cannot exist: it answers for any
+    // id, so only "not set up" means FIFO is missing here.
+    const [fifoSetUp, setFifoSetUp] = useState<boolean | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        fetchFifoPeek('__fifo_probe__', 0)
+            .then(res => { if (!cancelled) setFifoSetUp(res.ok || !res.missing); })
+            .catch(() => { if (!cancelled) setFifoSetUp(null); });
+        return () => { cancelled = true; };
+    }, []);
+
     // ── Behaviour (local draft only — nothing persists) ──
-    const [costingMethod, setCostingMethod] = useState<'Average' | 'FIFO' | 'LIFO' | 'Manual'>('FIFO');
     const [allowNegativeStock, setAllowNegativeStock] = useState(false);
     const [allowBackdatedPosting, setAllowBackdatedPosting] = useState(false);
     const [postToGLAutomatically, setPostToGLAutomatically] = useState(true);
@@ -163,14 +176,20 @@ const InventorySettingsPage: React.FC = () => {
             {tab === 'behaviour' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     <div>
-                        <label style={labelStyle}>Default costing method</label>
-                        <select value={costingMethod} onChange={e => setCostingMethod(e.target.value as typeof costingMethod)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            <option value="Average">Average (moving weighted)</option>
-                            <option value="FIFO">FIFO</option>
-                            <option value="LIFO">LIFO</option>
-                            <option value="Manual">Manual (standard cost)</option>
-                        </select>
-                        <div style={helpStyle}>Applies to any product that does not choose its own. A product's method is locked once it holds stock.</div>
+                        <label style={labelStyle}>Costing method</label>
+                        <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'default' }}>
+                            <span style={{ fontWeight: 700 }}>FIFO</span>
+                            {fifoSetUp === false ? (
+                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: 'rgba(245,158,11,0.14)', color: '#B45309' }}>Not set up</span>
+                            ) : (
+                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: 'rgba(16,185,129,0.14)', color: '#059669' }}>Active</span>
+                            )}
+                        </div>
+                        <div style={helpStyle}>
+                            Every product is costed first in, first out: each receipt becomes a cost layer, and stock that leaves (orders, wholesale, write-offs) takes the oldest layers first and is costed at them.
+                            This is how the database works, not a choice made here.
+                            {fifoSetUp === false && <span style={{ color: '#B45309' }}> {FIFO_MISSING_MESSAGE}</span>}
+                        </div>
                     </div>
 
                     <div style={{ borderTop: '1px solid var(--color-border)' }} />
