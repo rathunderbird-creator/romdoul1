@@ -87,16 +87,21 @@ export const useAccounting = () => {
             // is_active), and only base-schema columns are selected — a
             // migration-added column (e.g. sub_type) would fail the fetch on
             // instances that haven't run that migration.
-            const [entries, linesByEntry, accountRows] = await Promise.all([
+            const accountsP = Promise.resolve(supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, is_active')
+                .then(({ data, error }) => { if (error) throw error; return (data || []) as ChartOfAccount[]; }));
+            const [entries, accountRows, linesByEntry] = await Promise.all([
                 fetchAll<JournalEntry>((from, to) => supabase
                     .from('journal_entries')
                     .select('*')
                     .order('date', { ascending: false })
                     .order('id', { ascending: true })
                     .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries' }),
-                fetchJournalLinesByEntry<JournalEntryLine>('*', 'useAccounting.fetchJournalEntries lines'),
-                Promise.resolve(supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, is_active')
-                    .then(({ data, error }) => { if (error) throw error; return (data || []) as ChartOfAccount[]; })),
+                accountsP,
+                // Lines tied on written time and side list by account code.
+                accountsP.then(accs => {
+                    const codeOf = new Map(accs.map(a => [a.id, a.account_code || '']));
+                    return fetchJournalLinesByEntry<JournalEntryLine>('*', 'useAccounting.fetchJournalEntries lines', { tieKey: l => codeOf.get(l.account_id) || '' });
+                }),
             ]);
             const accountById = new Map(accountRows.map(a => [a.id, a]));
             setJournalEntries(entries.map(e => ({

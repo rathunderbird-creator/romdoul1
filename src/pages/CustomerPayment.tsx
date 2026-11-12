@@ -382,11 +382,10 @@ const CustomerPaymentPage: React.FC = () => {
             try {
                 // Lines and accounts read flat and joined here (an embedded
                 // read timed out on a large ledger — see utils/journalLines.ts).
-                const linesP = fetchJournalLinesByEntry<JeLine & { journal_entry_id: string }>('journal_entry_id, account_id, debit', 'CustomerPayment ledger lines');
                 const accountsP = Promise.resolve(supabase.from('chart_of_accounts').select('id, account_type, account_name')
                     .then(({ data, error }) => { if (error) throw error; return (data || []) as { id: string; account_type: string | null; account_name: string | null }[]; }));
-                // Settled below; don't let a failed entries read leave these unhandled.
-                linesP.catch(() => undefined); accountsP.catch(() => undefined);
+                // Settled below; don't let a failed entries read leave it unhandled.
+                accountsP.catch(() => undefined);
                 let rows: JeRow[];
                 let statusMissing = false;
                 try {
@@ -401,7 +400,11 @@ const CustomerPaymentPage: React.FC = () => {
                     statusMissing = true;
                     rows = await load('id, reference_id');
                 }
-                const [linesByEntry, accountRows] = await Promise.all([linesP, accountsP]);
+                // Only these entries' lines, fetched by id batch (each entry's lines in one request).
+                const [linesByEntry, accountRows] = await Promise.all([
+                    fetchJournalLinesByEntry<JeLine & { journal_entry_id: string }>('journal_entry_id, account_id, debit', 'CustomerPayment ledger lines', { entryIds: rows.map(r => String(r.id || '')) }),
+                    accountsP,
+                ]);
                 const accountById = new Map(accountRows.map(a => [a.id, a]));
                 for (const je of rows) {
                     je.lines = (linesByEntry.get(String(je.id)) || []).map(l => ({ ...l, account: accountById.get(l.account_id) }));
