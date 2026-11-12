@@ -13,7 +13,9 @@
 
 CREATE INDEX IF NOT EXISTS journal_entry_lines_entry_idx   ON journal_entry_lines (journal_entry_id);
 CREATE INDEX IF NOT EXISTS journal_entry_lines_account_idx ON journal_entry_lines (account_id);
-CREATE INDEX IF NOT EXISTS journal_entries_date_id_idx     ON journal_entries (date, id);
+-- date DESC, id ASC: the Journal Entries list's own order (a mixed-direction
+-- ORDER BY can only use an index built in that same mix).
+CREATE INDEX IF NOT EXISTS journal_entries_date_id_idx     ON journal_entries (date DESC, id);
 CREATE INDEX IF NOT EXISTS journal_entries_reference_idx   ON journal_entries (reference_id);
 
 ANALYZE journal_entries;
