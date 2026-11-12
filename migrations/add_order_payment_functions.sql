@@ -444,6 +444,7 @@ DECLARE
     v_removed JSONB := '[]'::jsonb;
     v_notices TEXT[] := '{}';
     v_notice TEXT;
+    v_gap NUMERIC;
 BEGIN
     SELECT id INTO v_tx FROM transactions
      WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id
@@ -464,6 +465,17 @@ BEGIN
             -- ship-time adjustments to it (settling again books the shipped
             -- cost in full).
             PERFORM wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-ADJ']);
+        END IF;
+        -- A COGS-REV that stays (Posted) once the receipt's COGS is gone
+        -- would leave the order's COGS below what its lines have booked:
+        -- the gap is booked back as a Draft COGS-ADJ.
+        IF EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'ORD-' || p_order_id || '-COGS-REV') THEN
+            v_gap := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = p_order_id), 0)
+                     - wp_internal.os_order_cogs_net(p_order_id);
+            IF round(v_gap, 2) > 0 AND wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_gap, CURRENT_DATE) THEN
+                v_notices := v_notices || format('This order''s cost-of-goods reversal (ORD-%s-COGS-REV) is POSTED, so a Draft entry (ORD-%s-COGS-ADJ, $%s) was booked to offset it.',
+                                                 p_order_id, p_order_id, to_char(round(v_gap, 2), 'FM999999999990.00'));
+            END IF;
         END IF;
         DELETE FROM transactions WHERE id = v_tx;
         v_removed := v_removed || to_jsonb(v_tx);

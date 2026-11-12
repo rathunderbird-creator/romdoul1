@@ -180,6 +180,23 @@ AS $$
                 OR e.reference_id IN (SELECT 'TX-' || t.id FROM transactions t WHERE t.order_id = p_order_id)));
 $$;
 
+-- The COGS a retail order has in the ledger, whatever the entries' status:
+-- what its receipt entries and its ORD-<id>-COGS, -COGS-ADJ and -COGS-REV
+-- moved out of Inventory (1300 credits minus debits).
+CREATE OR REPLACE FUNCTION wp_internal.os_order_cogs_net(p_order_id TEXT)
+RETURNS NUMERIC
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT COALESCE(sum(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)), 0)
+      FROM journal_entries e
+      JOIN journal_entry_lines l ON l.journal_entry_id = e.id
+     WHERE l.account_id = wp_internal.wp_account('1300', 'Asset', 'inventor|stock')
+       AND (e.reference_id IN ('ORD-' || p_order_id || '-COGS', 'ORD-' || p_order_id || '-COGS-ADJ',
+                               'ORD-' || p_order_id || '-COGS-REV')
+            OR e.reference_id IN (SELECT 'TX-' || t.id FROM transactions t WHERE t.order_id = p_order_id));
+$$;
+
 -- Statuses where the order's goods are counted out of stock: shipped,
 -- delivered, or on their way back (Returned keeps them out until Restock).
 CREATE OR REPLACE FUNCTION order_status_holds_stock(p_status TEXT)
@@ -485,7 +502,9 @@ $$;
 -- what was booked with a Draft COGS-REV), and the newest stock-out
 -- generation (the shipment being edited) is changed to match, so a later
 -- un-ship, delete or restock reverses exactly what left. A failure keeps the
--- old items: nothing is half-saved.
+-- old items: nothing is half-saved. A Paid order whose goods are on hand
+-- and whose booked COGS such a reversal took off gets it booked again when
+-- an edit brings product lines back.
 --
 -- p_items: [{id (product id), name, price, quantity, image}], as the app
 -- sends them. p_fields: created_by.
@@ -512,6 +531,10 @@ DECLARE
     v_had_booked BOOLEAN;
     v_booked NUMERIC;
     v_given NUMERIC := 0;
+    v_paid BOOLEAN;
+    v_rev_id UUID;
+    v_rev_status TEXT;
+    v_rev_amt NUMERIC;
     r RECORD;
     m RECORD;
 BEGIN
@@ -519,7 +542,8 @@ BEGIN
         RAISE EXCEPTION 'The order needs at least one item.';
     END IF;
 
-    SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending') INTO v_status FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
+    SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending'), COALESCE(payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled')
+      INTO v_status, v_paid FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'This order no longer exists.';
     END IF;
@@ -571,6 +595,34 @@ BEGIN
                 OR wp_internal.os_post_cogs_move(p_order_id, 'REV', -v_booked,
                                                  COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE))) THEN
             UPDATE sale_items SET cogs_booked = NULL WHERE sale_id = p_order_id;
+        END IF;
+    ELSIF NOT v_holds AND v_paid
+          AND EXISTS (SELECT 1 FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL)
+          AND wp_internal.os_order_cogs_in_ledger(p_order_id)
+          AND round(wp_internal.os_order_cogs_net(p_order_id), 2) = 0 THEN
+        -- A Paid order whose booked COGS an earlier edit reversed (it was
+        -- left with no product line) has product lines again: the newest
+        -- COGS-REV is undone (a Draft one is deleted, a Posted one is offset
+        -- by a Draft COGS-ADJ) and its amount is booked on the new lines, so
+        -- shipping trues it up as for any order settled before it shipped.
+        SELECT e.id, COALESCE(e.status, 'Posted'),
+               COALESCE(sum(COALESCE(l.debit, 0) - COALESCE(l.credit, 0))
+                        FILTER (WHERE l.account_id = wp_internal.wp_account('1300', 'Asset', 'inventor|stock')), 0)
+          INTO v_rev_id, v_rev_status, v_rev_amt
+          FROM journal_entries e LEFT JOIN journal_entry_lines l ON l.journal_entry_id = e.id
+         WHERE e.reference_id = 'ORD-' || p_order_id || '-COGS-REV'
+         GROUP BY e.id, e.status, e.created_at
+         ORDER BY e.created_at DESC, e.id DESC
+         LIMIT 1;
+        IF v_rev_id IS NOT NULL AND round(v_rev_amt, 2) > 0 THEN
+            IF v_rev_status = 'Draft' THEN
+                DELETE FROM journal_entry_lines WHERE journal_entry_id = v_rev_id;
+                DELETE FROM journal_entries WHERE id = v_rev_id;
+                PERFORM wp_internal.os_spread_booked(p_order_id, v_rev_amt);
+            ELSIF wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_rev_amt,
+                                                COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE)) THEN
+                PERFORM wp_internal.os_spread_booked(p_order_id, v_rev_amt);
+            END IF;
         END IF;
     END IF;
 
@@ -678,6 +730,7 @@ GRANT EXECUTE ON FUNCTION wp_internal.os_post_cogs_move(TEXT, TEXT, NUMERIC, DAT
 GRANT EXECUTE ON FUNCTION wp_internal.os_true_up_booked_cogs(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_spread_booked(TEXT, NUMERIC) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.os_order_cogs_in_ledger(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.os_order_cogs_net(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_holds_stock(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_stock_consumed(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION restock_returned_orders(TEXT[], JSONB) TO anon, authenticated;

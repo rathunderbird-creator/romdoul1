@@ -20,6 +20,8 @@
 //     (booked COGS carried to the new lines);
 //   * delete_retail_orders gives the rows back, and reverses COGS left in
 //     a Posted entry;
+//   * an order edited to no product line and back gets its booked COGS
+//     back; leaving Paid with a Posted COGS-REV offsets it with a Draft ADJ;
 //   * a shortfall line, and a pre-FIFO line restocked with no rows, give
 //     units back as new layers so the pool keeps up with stock.
 // See tests/README.md for how to run it.
@@ -436,6 +438,79 @@ await ship('S1', 'Shipped', 'Pending');
 check('un-shipped: pool 4 = stock 4', await poolCount('G') === 4
     && num((await one(`SELECT stock FROM products WHERE id = 'G'`)).stock) === 4);
 await checkBalanced('un-shipped S1: the shortfall variance stays', V + 2 - 20);
+
+// ---------------------------------------------------------------------------
+// 9. Edits to no product line and back; leaving Paid with a Posted REV
+// ---------------------------------------------------------------------------
+const V9 = V + 2 - 20;
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('H', 'Lamp', 20, 0, 3)`);
+await seedLayers('H', 6, 5, '2026-01-06T00:00:00Z');
+const lampOne = `'[{"id": "H", "name": "Lamp", "price": 10, "quantity": 1}]'::jsonb`;
+const editTo = (o, items) => q(`SELECT public.edit_order_items(p_order_id => $1, p_items => ${items},
+    p_fields => '{"movement_date": "${DAY}"}'::jsonb)`, [o]);
+const postRev = o => q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id = 'ORD-' || $1 || '-COGS-REV'`, [o]);
+const unbooked0 = num((await checkBalanced('section 9 start', V9)).retail_out_unbooked);
+const bookedOf = async o => (await q(`SELECT cogs_cost, cogs_booked FROM sale_items WHERE sale_id = $1 AND product_id IS NOT NULL`, [o])).rows;
+
+// Settled before it ships, edited to a service line (Draft REV), then back
+// to a product: the REV goes and the 5 is booked on the new line again.
+await order('U1', [['u1-a', 'H', 1]]);
+await settle('U1');
+await editTo('U1', serviceOnly);
+check('U1 (settled, unshipped) edited to no product line: Draft REV, 5000 nets 0',
+    (await entries('ORD-U1-COGS-REV')).length === 1 && near(await cogsOf('U1'), 0));
+await editTo('U1', lampOne);
+let u1 = await bookedOf('U1');
+check('U1 edited back to a product: the Draft REV is gone, the line has 5 booked, 5000 nets 5',
+    (await entries('ORD-U1-COGS-REV')).length === 0 && u1.length === 1 && near(u1[0].cogs_booked, 5) && near(await cogsOf('U1'), 5), u1);
+await checkBalanced('U1 edited back', V9);
+await ship('U1', 'Pending', 'Shipped');
+u1 = await bookedOf('U1');
+check('U1 shipped: cost 5 booked 5, no ADJ, 5000 nets 5',
+    near(u1[0].cogs_cost, 5) && near(u1[0].cogs_booked, 5) && (await entries('ORD-U1-COGS-ADJ')).length === 0 && near(await cogsOf('U1'), 5), u1);
+let c9 = await checkBalanced('U1 shipped', V9);
+check('U1 shipped: not counted as shipped and unbooked', near(c9.retail_out_unbooked, unbooked0), c9);
+
+// The same with the REV Posted before the edit back: a Draft ADJ offsets it.
+await order('U2', [['u2-a', 'H', 1]]);
+await settle('U2');
+await editTo('U2', serviceOnly);
+await postRev('U2');
+await editTo('U2', lampOne);
+const u2adj = await entries('ORD-U2-COGS-ADJ');
+let u2 = await bookedOf('U2');
+check('U2 (Posted REV) edited back to a product: Draft ADJ of 5, line has 5 booked, 5000 nets 5',
+    u2adj.length === 1 && u2adj[0].status === 'Draft' && near(u2adj[0].cogs, 5) && near(u2[0].cogs_booked, 5) && near(await cogsOf('U2'), 5),
+    { u2adj, u2 });
+await ship('U2', 'Pending', 'Shipped');
+check('U2 shipped: 5000 nets 5, booked 5', near(await cogsOf('U2'), 5) && near((await bookedOf('U2'))[0].cogs_booked, 5));
+c9 = await checkBalanced('U2 shipped', V9);
+check('U2 shipped: not counted as shipped and unbooked', near(c9.retail_out_unbooked, unbooked0), c9);
+const u2unpaid = await pay('U2', 'Paid', { payment_status: 'Unpaid' });
+check('U2 then leaving Paid: 5000 nets 0 against the Posted REV, nothing booked, notice names the ADJ',
+    near(await cogsOf('U2'), 0) && (await bookedOf('U2'))[0].cogs_booked === null
+    && JSON.stringify(u2unpaid.notices).includes('ORD-U2-COGS-ADJ'), u2unpaid);
+await checkBalanced('U2 unpaid', V9);
+
+// Shipped, settled (Draft receipt), edited to a service line, the REV
+// Posted, then leaving Paid: the receipt's COGS goes, a Draft ADJ offsets
+// the Posted REV.
+await order('W1', [['w1-a', 'H', 1]]);
+await ship('W1', 'Pending', 'Shipped');
+await settle('W1');
+await editTo('W1', serviceOnly);
+await postRev('W1');
+await checkBalanced('W1 edited to no product line, REV Posted', V9);
+const w1unpaid = await pay('W1', 'Paid', { payment_status: 'Unpaid' });
+const w1adj = await entries('ORD-W1-COGS-ADJ');
+check('W1 leaving Paid with a Posted REV: Draft ADJ of 5, 5000 nets 0, notice names it',
+    await txCogs('W1') === 0 && w1adj.length === 1 && w1adj[0].status === 'Draft' && near(w1adj[0].cogs, 5)
+    && near(await cogsOf('W1'), 0) && JSON.stringify(w1unpaid.notices).includes('ORD-W1-COGS-ADJ'), { w1adj, w1unpaid });
+await checkBalanced('W1 unpaid', V9);
+await settle('W1');
+await pay('W1', 'Paid', { payment_status: 'Unpaid' });
+check('W1 settled and unpaid again: still one ADJ, 5000 nets 0', (await entries('ORD-W1-COGS-ADJ')).length === 1 && near(await cogsOf('W1'), 0));
+await checkBalanced('W1 unpaid again', V9);
 
 // The packs refuse to load before add_fifo_costing.sql and the rebuild.
 check('nothing left without a consumer link while sold',
