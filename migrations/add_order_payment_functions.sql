@@ -1001,6 +1001,9 @@ DECLARE
     v_newest TIMESTAMPTZ;
     v_posted BOOLEAN;
     v_rev NUMERIC;
+    v_gap NUMERIC;
+    v_base NUMERIC;
+    v_txrefs TEXT[];
     v_today DATE := COALESCE(NULLIF(p_fields->>'today', '')::DATE, CURRENT_DATE);
     r RECORD;
     t RECORD;
@@ -1087,7 +1090,13 @@ BEGIN
         -- A Draft reversal goes first: its amount is booked again
         -- (op_unbook_cogs), so the entries below take off what they carried
         -- and op_reverse_booked_cogs reverses whatever a POSTED entry keeps.
+        -- What the order's lines have booked less the COGS its entries in
+        -- view carry: the share held by entries no longer in view (a Posted
+        -- receipt whose income row an earlier un-pay removed).
+        v_base := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = r.id), 0)
+                  - wp_internal.os_order_cogs_net(r.id);
         v_posted := wp_internal.op_drop_draft_cogs_entries(r.id, ARRAY['ORD-' || r.id || '-COGS-REV']);
+        v_txrefs := '{}';
         FOR t IN SELECT id FROM transactions
                   WHERE type = 'Income'
                     AND (order_id = r.id
@@ -1100,6 +1109,7 @@ BEGIN
             IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
             DELETE FROM transactions WHERE id = t.id;
             v_removed := v_removed || to_jsonb(t.id);
+            v_txrefs := v_txrefs || ('TX-' || t.id);
         END LOOP;
         IF r.has_sibling AND EXISTS (SELECT 1 FROM transactions
                                       WHERE type = 'Income' AND category = 'កក់ប្រាក់' AND order_id IS NULL
@@ -1119,7 +1129,24 @@ BEGIN
         IF v_rev <> 0 THEN
             v_notices := v_notices || format('This order''s cost of goods ($%s) was in a POSTED entry — a Draft reversal (ORD-%s-COGS-REV) was booked; reverse only the receipt''s cash and revenue manually.',
                                              to_char(v_rev, 'FM999999999990.00'), r.id);
-        ELSIF v_posted THEN
+        END IF;
+        -- A deleted order's COGS nets to 0. A POSTED COGS-REV left without
+        -- the COGS it reversed takes it below 0: the gap is booked back as a
+        -- Draft COGS-ADJ. Its income rows are gone, so the entries of the
+        -- ones just deleted (v_txrefs) are counted here.
+        v_gap := -(v_base + wp_internal.os_order_cogs_net(r.id)
+                   + COALESCE((SELECT sum(COALESCE(l.credit, 0) - COALESCE(l.debit, 0))
+                                 FROM journal_entries e
+                                 JOIN journal_entry_lines l ON l.journal_entry_id = e.id
+                                WHERE e.reference_id = ANY(v_txrefs)
+                                  AND l.account_id = wp_internal.wp_account('1300', 'Asset', 'inventor|stock')), 0));
+        IF round(v_gap, 2) > 0
+           AND EXISTS (SELECT 1 FROM journal_entries
+                        WHERE reference_id = 'ORD-' || r.id || '-COGS-REV' AND COALESCE(status, 'Posted') <> 'Draft')
+           AND wp_internal.os_post_cogs_move(r.id, 'ADJ', v_gap, v_today) THEN
+            v_notices := v_notices || format('This order''s cost-of-goods reversal (ORD-%s-COGS-REV) is POSTED, so a Draft entry (ORD-%s-COGS-ADJ, $%s) was booked to offset it.',
+                                             r.id, r.id, to_char(round(v_gap, 2), 'FM999999999990.00'));
+        ELSIF v_rev = 0 AND v_posted THEN
             v_notices := v_notices || 'This order has a POSTED cost-of-goods ledger entry — record a reversing entry manually.'::TEXT;
         END IF;
     END LOOP;
