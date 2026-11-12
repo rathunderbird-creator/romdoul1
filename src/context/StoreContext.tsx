@@ -115,16 +115,26 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
 
 const roundCents = (n: number) => Math.round(n * 100) / 100;
 
+// The FIFO cost of an order could not be read: the entry that would carry
+// it is not written, and the error reaches the user.
+class CogsReadError extends Error {}
+
 // An order's retail COGS at FIFO: the cost frozen on each line when it
 // shipped (sale_items.cogs_cost), or a peek of the next inventory layers for
 // a line that has not shipped — the order_cogs RPC
 // (migrations/add_fifo_costing.sql), the same figure the server books at
-// settlement. A store without it falls back to the lines' cogs_cost where
-// they have one and each product's purchase_cost otherwise. null when the
-// order can't be read.
+// settlement. Only a store without that function falls back to the lines'
+// cogs_cost where they have one and each product's purchase_cost otherwise;
+// any other failure throws, so no estimate is booked in place of the FIFO
+// cost. null when the order can't be read.
 async function retailCogsAmount(orderId: string): Promise<number | null> {
     const { data, error } = await rpcWithSession('order_cogs', { p_order_id: orderId });
-    if (!error && data !== null && data !== undefined && Number.isFinite(Number(data))) return roundCents(Number(data));
+    if (error && !isRpcMissingError(error)) {
+        throw new CogsReadError(`Could not read this order's cost of goods (order_cogs): ${error.message || error}`);
+    }
+    if (!error) {
+        return data !== null && data !== undefined && Number.isFinite(Number(data)) ? roundCents(Number(data)) : null;
+    }
     type Line = { product_id: string | null; quantity: number | null; cogs_cost?: number | null };
     let items: Line[] | null = null;
     const withCost = await supabase.from('sale_items').select('product_id, quantity, cogs_cost').eq('sale_id', orderId);
@@ -153,27 +163,23 @@ async function retailCogsAmount(orderId: string): Promise<number | null> {
 // Standard-accounting COGS lines for a retail settlement: Dr Cost of Goods
 // Sold, Cr Inventory at the items' FIFO cost (retailCogsAmount). Returns null
 // when the cost is zero or the chart is missing either account, so the
-// caller just posts the revenue side alone.
+// caller just posts the revenue side alone. Throws when the cost can't be
+// read: callers must not write the entry without it.
 async function retailCogsLines(
     orderId: string,
     pool: { id: string; account_code: string; account_name: string; account_type: string }[]
 ): Promise<{ account_id: string; debit: number; credit: number; description?: string }[] | null> {
-    try {
-        const cogsAcc = pool.find(a => a.account_code === '5000')
-            || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs/i.test(a.account_name));
-        const inventoryAcc = pool.find(a => a.account_code === '1300')
-            || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
-        if (!cogsAcc || !inventoryAcc) return null;
-        const cost = await retailCogsAmount(orderId);
-        if (cost === null || cost <= 0) return null;
-        return [
-            { account_id: cogsAcc.id, debit: cost, credit: 0, description: 'Cost of goods sold' },
-            { account_id: inventoryAcc.id, debit: 0, credit: cost, description: 'Inventory at cost' },
-        ];
-    } catch (e) {
-        console.error('Failed to compute COGS lines for order', orderId, e);
-        return null;
-    }
+    const cogsAcc = pool.find(a => a.account_code === '5000')
+        || pool.find(a => a.account_type === 'Expense' && /cost of goods|cogs/i.test(a.account_name));
+    const inventoryAcc = pool.find(a => a.account_code === '1300')
+        || pool.find(a => a.account_type === 'Asset' && /inventor|stock/i.test(a.account_name));
+    if (!cogsAcc || !inventoryAcc) return null;
+    const cost = await retailCogsAmount(orderId);
+    if (cost === null || cost <= 0) return null;
+    return [
+        { account_id: cogsAcc.id, debit: cost, credit: 0, description: 'Cost of goods sold' },
+        { account_id: inventoryAcc.id, debit: 0, credit: cost, description: 'Inventory at cost' },
+    ];
 }
 
 // The server records on each sale_items row the COGS the ledger holds for it
@@ -294,6 +300,7 @@ async function postRetailCogsOnlyEntry(orderId: string, date: string, descriptio
             await recordRetailCogsBooked(orderId, cogs[0].debit);
         }
     } catch (e) {
+        if (e instanceof CogsReadError) throw e;
         console.error('Failed to post the COGS entry for order', orderId, e);
     }
     });
@@ -348,6 +355,9 @@ export async function postRetailSaleToLedger({
     try {
         const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy);
         if (revenueAcc && cashAccId) {
+            // Read before anything is written. Deposits aren't a completed
+            // sale yet — COGS books once, on the Paid-transition (RCP) entry.
+            const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
             const entryNumber = await nextJournalEntryNumber(type, date);
             const entryPayload: Record<string, unknown> = {
                 date,
@@ -383,9 +393,6 @@ export async function postRetailSaleToLedger({
                 console.error('Failed to create journal entry for payment:', jeErr);
                 return false;
             } else {
-                // Deposits aren't a completed sale yet — COGS books once, on the
-                // Paid-transition (RCP) entry.
-                const cogs = type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
                 const { error: lErr } = await insertJournalLines([
                     { journal_entry_id: entry.id, account_id: cashAccId, debit: amount, credit: 0, description: `${type === 'DEP' ? 'Deposit' : 'Receipt'} — ${description}` },
                     { journal_entry_id: entry.id, account_id: revenueAcc.id, debit: 0, credit: amount, description: `Sales — ${description}` },
@@ -402,6 +409,7 @@ export async function postRetailSaleToLedger({
         }
         return false;
     } catch (jeCatchErr) {
+        if (jeCatchErr instanceof CogsReadError) throw jeCatchErr;
         console.error('Failed to post journal entry for retail payment:', jeCatchErr);
         return false;
     }
@@ -548,6 +556,7 @@ export async function postOrFinalizeTransactionReceipt({
                 await postRetailCogsOnlyEntry(orderId, date, `${description} · cost of goods sold`, 'Posted');
             }
         } catch (e) {
+            if (e instanceof CogsReadError) throw new Error(`The deposit was posted, but its cost of goods was not booked. ${e.message}`);
             console.error('Could not check whether the deposit covered the order:', e);
         }
     }
@@ -2627,7 +2636,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Posted one stays, with a notice), Received and settle date are
         // reset, and the payment goes to Cancel (a PdFee order keeps PdFee —
         // the delivery fee was collected and stays booked).
-        const { data, error } = await rpcWithSession('apply_restock_payment_side', { p_ids: orderIds, p_fields: {} });
+        const { data, error } = await rpcWithSession('apply_restock_payment_side', { p_ids: orderIds, p_fields: { today: getLocalYYYYMMDD() } });
         if (error) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + orderPaymentRpcMessage(error));
         const res = (data || {}) as { cancelled?: string[]; paid_reset?: string[]; transactions_removed?: string[]; notices?: string[] };
 
@@ -3455,7 +3464,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const notices: string[] = [];
             for (let i = 0; i < ids.length; i += BATCH_SIZE) {
                 const batch = ids.slice(i, i + BATCH_SIZE);
-                const { data, error } = await rpcWithSession('delete_retail_orders', { p_ids: batch, p_fields: {} });
+                const { data, error } = await rpcWithSession('delete_retail_orders', { p_ids: batch, p_fields: { today: getLocalYYYYMMDD() } });
                 if (error) throw new Error(orderPaymentRpcMessage(error));
                 const res = (data || {}) as { deleted?: string[]; stock?: Record<string, number>; transactions_removed?: string[]; notices?: string[] };
                 applyStockMap(res.stock);
