@@ -188,7 +188,11 @@ pre-FIFO order restocked with no rows) assert that exact amount.
   the Draft receipt with it; a delete with a Posted receipt re-books it);
   editing a pre-FIFO settled shipped order keeps the check
   (price-only: no ADJ; quantity: an ADJ for the extra unit); an un-shipped
-  oversold line keeps its shortfall variance; the packs refuse to load
+  oversold line keeps its shortfall variance; a settled unshipped order
+  edited to no product line and back gets its booked COGS back (a Draft
+  REV is deleted, a Posted one offset by a Draft ADJ) and ships booked;
+  leaving Paid with a Posted REV books a Draft ADJ so 5000 nets 0 for the
+  order; the packs refuse to load
   without add_fifo_costing.sql or before the rebuild.
 - fifo-wholesale: create / edit / cancel / delete with Draft vs Posted COGS
   (re-booked in place, WSO-<id>-COGS-ADJ-<n>, WSO-<id>-COGS-REV), the same
