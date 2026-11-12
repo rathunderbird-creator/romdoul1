@@ -22,6 +22,9 @@ import '../pageIncomePrediction/pageIncomePrediction.css';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { JournalEntry, JournalEntryLine } from '../../types';
 
+// Height of every control in the filter bar (the Area dropdown and the Print / Export buttons are 36px).
+const FILTER_H = 36;
+
 // .in()/.delete() batch size for bulk unpost/delete — well under PostgREST's URL limit.
 const CHUNK = 150;
 const chunk = <T,>(items: T[], size: number): T[][] => {
@@ -903,14 +906,18 @@ const JournalEntriesPage = () => {
             </div>
 
             {/* Filters: From / To / Status / Origin / Area / Search — with Print list & Export CSV on the right */}
+            {/* Every control here is FILTER_H tall so the row lines up. */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                <DateRangePicker value={dateRange} onChange={setDateRange} />
+                <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Date</label>
+                    <DateRangePicker value={dateRange} onChange={setDateRange} height={FILTER_H} />
+                </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Status</label>
                     <select
                         value={statusFilter}
                         onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')}
-                        style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                        style={{ height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
                     >
                         <option value="All">All statuses</option>
                         <option value="Posted">Posted</option>
@@ -922,7 +929,7 @@ const JournalEntriesPage = () => {
                     <select
                         value={originFilter}
                         onChange={e => setOriginFilter(e.target.value as 'All' | 'Auto' | 'Manual')}
-                        style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                        style={{ height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
                     >
                         <option value="All">Auto &amp; Manual</option>
                         <option value="Auto">Auto only</option>
@@ -962,7 +969,7 @@ const JournalEntriesPage = () => {
                         <input
                             type="text"
                             placeholder="Search..."
-                            style={{ width: '100%', padding: '8px 12px 8px 33px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', boxSizing: 'border-box' }}
+                            style={{ width: '100%', height: `${FILTER_H}px`, padding: '0 12px 0 33px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', boxSizing: 'border-box' }}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -971,7 +978,7 @@ const JournalEntriesPage = () => {
                 {(dateRange.start || dateRange.end || searchQuery || statusFilter !== 'All' || originFilter !== 'All' || areaFilters.size > 0) && (
                     <button
                         onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); setAreaFilters(new Set()); }}
-                        style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
+                        style={{ height: `${FILTER_H}px`, padding: '0 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
                     >
                         Clear
                     </button>

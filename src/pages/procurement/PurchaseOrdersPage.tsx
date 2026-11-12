@@ -14,6 +14,9 @@ import { dayKeyFromDate } from '../../utils/dateRange';
 import { poReceiveMarker } from '../../utils/receivePurchaseOrder';
 import { supabase } from '../../lib/supabase';
 
+// Height of every control in the desktop filter toolbar, so the row lines up.
+const FILTER_H = 34;
+
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
@@ -754,7 +757,7 @@ const PurchaseOrdersPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     {/* Status filter tabs */}
-                    <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', height: `${FILTER_H}px`, boxSizing: 'border-box', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                         {(['All', 'Draft', 'Sent', 'Received', 'Cancelled'] as StatusFilter[]).map(tab => (
                             <button
                                 key={tab}
@@ -786,7 +789,7 @@ const PurchaseOrdersPage = () => {
                     </div>
 
                     {/* Payment filter — multi-select toggles (none selected = all) */}
-                    <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', height: `${FILTER_H}px`, boxSizing: 'border-box', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                         {PAYMENT_FILTER_OPTIONS.map(opt => {
                             const active = paymentFilter.includes(opt);
                             return (
@@ -814,7 +817,8 @@ const PurchaseOrdersPage = () => {
                             title="Filter by one or more suppliers"
                             style={{
                                 display: 'flex', alignItems: 'center', gap: '6px',
-                                padding: '8px 12px', borderRadius: '10px',
+                                height: `${FILTER_H}px`, boxSizing: 'border-box',
+                                padding: '0 12px', borderRadius: '10px',
                                 border: '1px solid var(--color-border)',
                                 background: supplierFilter.length > 0 ? 'var(--color-primary)' : 'var(--color-surface)',
                                 color: supplierFilter.length > 0 ? 'white' : 'var(--color-text-secondary)',
@@ -875,13 +879,13 @@ const PurchaseOrdersPage = () => {
                     </div>
 
                     {/* Order-date and payment-due-date ranges */}
-                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: `${FILTER_H}px`, boxSizing: 'border-box', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0 2px 0 10px' }}>
                         <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Order</span>
-                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                        <DateRangePicker value={dateRange} onChange={setDateRange} height={FILTER_H - 6} />
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: `${FILTER_H}px`, boxSizing: 'border-box', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0 2px 0 10px' }}>
                         <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Payment</span>
-                        <DateRangePicker value={dueRange} onChange={setDueRange} />
+                        <DateRangePicker value={dueRange} onChange={setDueRange} height={FILTER_H - 6} />
                     </div>
 
                     {/* Clear every filter (status, payment, supplier, search) */}
@@ -891,7 +895,8 @@ const PurchaseOrdersPage = () => {
                         title={hasActiveFilters ? 'Clear all filters' : 'No filters applied'}
                         style={{
                             display: 'flex', alignItems: 'center', gap: '6px',
-                            padding: '8px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+                            height: `${FILTER_H}px`, boxSizing: 'border-box',
+                            padding: '0 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
                             cursor: hasActiveFilters ? 'pointer' : 'default',
                             color: hasActiveFilters ? '#EF4444' : 'var(--color-text-muted)',
                             background: hasActiveFilters ? 'rgba(239, 68, 68, 0.08)' : 'var(--color-surface)',
@@ -913,7 +918,7 @@ const PurchaseOrdersPage = () => {
                             placeholder="Search PO, supplier, invoice..." 
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
+                            style={{ width: '100%', height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 10px 0 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
                         />
                     </div>
                     <button

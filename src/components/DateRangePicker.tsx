@@ -17,12 +17,14 @@ interface DateRangePickerProps {
     onChange: (range: { start: string; end: string }, preset?: RangePreset) => void;
     className?: string;
     style?: React.CSSProperties;
+    // Trigger button height (default 42px) — to line up with a filter bar's other controls.
+    height?: number;
     compact?: boolean;
 }
 
 type Preset = RangePreset | 'Custom Range';
 
-const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style, compact = false }) => {
+const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style, compact = false, height = 42 }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     // Helper to parse "YYYY-MM-DD" as local midnight date
@@ -382,8 +384,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                     background: isOpen ? 'var(--color-primary)' : (isActive ? 'var(--color-primary-light)' : 'var(--color-surface)'),
                     color: isOpen ? 'white' : (isActive ? 'var(--color-primary)' : 'var(--color-text-main)'),
                     cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: '8px', minWidth: '42px',
-                    height: '42px',
+                    display: 'flex', alignItems: 'center', gap: '8px', minWidth: `${height}px`,
+                    height: `${height}px`, boxSizing: 'border-box',
                     width: '100%',
                     justifyContent: 'center'
                 }}
