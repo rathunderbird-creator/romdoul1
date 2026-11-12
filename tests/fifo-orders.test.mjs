@@ -512,6 +512,74 @@ await pay('W1', 'Paid', { payment_status: 'Unpaid' });
 check('W1 settled and unpaid again: still one ADJ, 5000 nets 0', (await entries('ORD-W1-COGS-ADJ')).length === 1 && near(await cogsOf('W1'), 0));
 await checkBalanced('W1 unpaid again', V9);
 
+// Deleting an order left with a Posted REV: once its Draft entries go, a
+// Draft ADJ brings the order's COGS back to 0.
+const delOf = o => one(`SELECT public.delete_retail_orders(p_ids => ARRAY[$1], p_fields => '{"today": "${DAY}"}'::jsonb) AS r`, [o]).then(x => x.r);
+const cogsLeft = async o => num((await one(`SELECT COALESCE(sum(l.debit - l.credit), 0) AS c FROM journal_entries e
+    JOIN journal_entry_lines l ON l.journal_entry_id = e.id JOIN chart_of_accounts a ON a.id = l.account_id AND a.account_code = '5000'
+   WHERE e.reference_id LIKE 'ORD-' || $1 || '-COGS%'`, [o])).c);
+await order('PC', [['pc-a', 'H', 1]]);
+await settle('PC');
+await editTo('PC', serviceOnly);
+await postRev('PC');
+await editTo('PC', lampOne);
+await ship('PC', 'Pending', 'Shipped');
+await checkBalanced('PC shipped after the edit back', V9);
+const delPC = await delOf('PC');
+const pcadj = await entries('ORD-PC-COGS-ADJ');
+check('PC deleted with a Posted REV: one Draft ADJ of 5, 5000 nets 0, notice names it',
+    pcadj.length === 1 && pcadj[0].status === 'Draft' && near(pcadj[0].cogs, 5) && near(await cogsLeft('PC'), 0)
+    && JSON.stringify(delPC.notices).includes('ORD-PC-COGS-ADJ'), { pcadj, delPC });
+await checkBalanced('PC deleted', V9);
+
+// Still Paid, shipped, Draft receipt, Posted REV of the service-line edit.
+await order('PW', [['pw-a', 'H', 1]]);
+await ship('PW', 'Pending', 'Shipped');
+await settle('PW');
+await editTo('PW', serviceOnly);
+await postRev('PW');
+const delPW = await delOf('PW');
+const pwadj = await entries('ORD-PW-COGS-ADJ');
+check('PW (Paid, Posted REV) deleted: Draft ADJ of 5, 5000 nets 0',
+    pwadj.length === 1 && near(pwadj[0].cogs, 5) && near(await cogsLeft('PW'), 0)
+    && JSON.stringify(delPW.notices).includes('ORD-PW-COGS-ADJ'), { pwadj, delPW });
+await checkBalanced('PW deleted', V9);
+
+// U2 and W1, unpaid with their Draft ADJ: deleting drops it and books it again.
+for (const o of ['U2', 'W1']) {
+    const res = await delOf(o);
+    const a = await entries(`ORD-${o}-COGS-ADJ`);
+    check(`${o} deleted after leaving Paid: one Draft ADJ of 5, 5000 nets 0`,
+        a.length === 1 && a[0].status === 'Draft' && near(a[0].cogs, 5) && near(await cogsLeft(o), 0), { a, res });
+    await checkBalanced(`${o} deleted`, V9);
+}
+
+// A Posted receipt and a Posted REV already net to 0: no ADJ.
+await order('PD', [['pd-a', 'H', 1]]);
+await ship('PD', 'Pending', 'Shipped');
+await settle('PD');
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'PD')`);
+await editTo('PD', serviceOnly);
+await postRev('PD');
+await delOf('PD');
+check('PD (Posted receipt, Posted REV) deleted: no ADJ, no new REV',
+    (await entries('ORD-PD-COGS-ADJ')).length === 0 && (await entries('ORD-PD-COGS-REV')).length === 1);
+await checkBalanced('PD deleted', V9);
+
+// The same, but leaving Paid first: the Posted receipt's income row is gone
+// before the delete, and the two still net to 0.
+await order('PO', [['po-a', 'H', 1]]);
+await ship('PO', 'Pending', 'Shipped');
+await settle('PO');
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'PO')`);
+await editTo('PO', serviceOnly);
+await postRev('PO');
+await pay('PO', 'Paid', { payment_status: 'Unpaid' });
+await checkBalanced('PO unpaid', V9);
+await delOf('PO');
+check('PO (Posted receipt, Posted REV, unpaid) deleted: no ADJ', (await entries('ORD-PO-COGS-ADJ')).length === 0);
+await checkBalanced('PO deleted', V9);
+
 // The packs refuse to load before add_fifo_costing.sql and the rebuild.
 check('nothing left without a consumer link while sold',
     num((await one(`SELECT count(*) AS n FROM inventory_items WHERE status = 'sold' AND consumer_kind IS NULL`)).n) === 0);
