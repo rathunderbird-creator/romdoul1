@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import { usePortalPosition } from '../hooks/usePortalPosition';
+import { orderStatusLabel } from '../utils/orderStatusRules';
 
 interface StatusBadgeProps {
     status: string;
@@ -16,7 +18,9 @@ interface StatusBadgeProps {
 const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true, unrestricted = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+    const popupRef = useRef<HTMLDivElement>(null);
+    // In the zoomed body's coordinates, flipped above when there's no room below.
+    const position = usePortalPosition(dropdownRef, popupRef, isOpen && !readOnly);
 
     const getStatusStyle = (s: string) => {
         switch (s) {
@@ -57,44 +61,13 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
 
     const options = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'];
 
-    // Update position when opening
-    useEffect(() => {
-        if (isOpen && dropdownRef.current) {
-            const updatePosition = () => {
-                const rect = dropdownRef.current?.getBoundingClientRect();
-                if (rect) {
-                    setPosition({
-                        top: rect.bottom + window.scrollY + 4,
-                        left: rect.left + window.scrollX,
-                        width: rect.width
-                    });
-                }
-            };
-
-            updatePosition();
-            window.addEventListener('scroll', updatePosition, true);
-            window.addEventListener('resize', updatePosition);
-
-            return () => {
-                window.removeEventListener('scroll', updatePosition, true);
-                window.removeEventListener('resize', updatePosition);
-            };
-        }
-    }, [isOpen]);
-
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                // Check if click is inside the portal content?
-                // Since portal is in body, contains won't work if target is in portal.
-                // We need a ref for the portal content too.
-                const portalElement = document.getElementById(`status-dropdown-${status}-${position.top}`);
-                if (portalElement && portalElement.contains(event.target as Node)) {
-                    return;
-                }
-                setIsOpen(false);
-            }
+            const target = event.target as Node;
+            // The menu is portalled into <body>, so check it separately.
+            if (dropdownRef.current?.contains(target) || popupRef.current?.contains(target)) return;
+            setIsOpen(false);
         };
 
         if (isOpen) {
@@ -103,7 +76,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen, status, position.top]);
+    }, [isOpen]);
 
     const handleToggle = () => {
         if (!readOnly && onChange) {
@@ -121,24 +94,27 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
     return (
         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} ref={dropdownRef}>
             <div className="status-badge" style={badgeStyle} onClick={handleToggle}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{status}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{orderStatusLabel(status)}</span>
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>
 
             {isOpen && !readOnly && createPortal(
                 <div
-                    id={`status-dropdown-${status}-${position.top}`}
+                    ref={popupRef}
                     style={{
                         position: 'absolute',
                         top: position.top,
                         left: position.left,
                         width: position.width,
+                        visibility: position.ready ? 'visible' : 'hidden',
+                        maxHeight: position.maxHeight,
+                        overflowY: position.maxHeight ? 'auto' : 'hidden',
                         backgroundColor: 'var(--color-surface)',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
                         border: '1px solid #E5E7EB',
                         zIndex: 9999,
-                        overflow: 'hidden'
+                        overflowX: 'hidden'
                     }}
                 >
                     {options.filter(opt => opt !== 'ReStock' || status === 'ReStock' || status === 'Returned').map((opt) => {
@@ -174,7 +150,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                                     if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? 'var(--color-surface-hover)' : 'white';
                                 }}
                             >
-                                {opt}
+                                {orderStatusLabel(opt)}
                             </div>
                         );
                     })}

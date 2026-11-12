@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
 import { RANGE_PRESETS, resolveRangePreset, type RangePreset } from '../utils/dateRangePresets';
+import { bodyZoom } from '../utils/bodyZoom';
 
 interface DateRangePickerProps {
     value: { start: string; end: string };
@@ -214,18 +215,22 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
 
     const updatePosition = () => {
         if (pickerRef.current) {
-            const rect = pickerRef.current.getBoundingClientRect();
+            // Screen px -> the zoomed body's px (see utils/bodyZoom.ts).
+            const z = bodyZoom();
+            const raw = pickerRef.current.getBoundingClientRect();
+            const rect = { left: raw.left / z, right: raw.right / z, bottom: raw.bottom / z, width: raw.width / z };
+            const viewW = window.innerWidth / z;
             // Estimate width based on screen size (matching showTwoMonths logic)
             // Mobile (handled by CSS fixed) vs Desktop Single vs Desktop Double
             const isDouble = window.innerWidth >= 1024 && !isMobile;
             const estimatedWidth = isDouble ? 760 : 480;
 
             // Check if it would go off-screen to the right
-            const wouldOverflow = rect.left + estimatedWidth > window.innerWidth;
-            const left = wouldOverflow ? (rect.right - estimatedWidth) + window.scrollX : rect.left + window.scrollX;
+            const wouldOverflow = rect.left + estimatedWidth > viewW;
+            const left = wouldOverflow ? (rect.right - estimatedWidth) + window.scrollX / z : rect.left + window.scrollX / z;
 
             setCoords({
-                top: rect.bottom + window.scrollY + 8,
+                top: rect.bottom + window.scrollY / z + 8,
                 left: Math.max(8, left),
                 width: rect.width
             });

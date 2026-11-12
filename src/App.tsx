@@ -25,6 +25,7 @@ const PaymentTracking = lazy(() => import('./pages/PaymentTracking'));
 const CustomerPayment = lazy(() => import('./pages/CustomerPayment'));
 const SalesSetupPage = lazy(() => import('./pages/SalesSetupPage'));
 const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
+const ReturningItems = lazy(() => import('./pages/ReturningItems'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'));
 const ShippingPoint = lazy(() => import('./pages/ShippingPoint'));
@@ -179,6 +180,7 @@ const ProtectedApp = () => {
           <Route path="/orders" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><Orders /></ProtectedRoute>} />
           <Route path="/orders-management-2" element={<ProtectedRoute requiredPermissions={['manage_orders', 'create_orders', 'view_orders']}><OrdersManagement2 /></ProtectedRoute>} />
           <Route path="/orders/shipping" element={<ProtectedRoute requiredPermission="manage_orders"><DeliveryTracking /></ProtectedRoute>} />
+          <Route path="/orders/returning" element={<ProtectedRoute requiredPermission="manage_orders"><ReturningItems /></ProtectedRoute>} />
           <Route path="/orders/deleted" element={<ProtectedRoute requiredPermission="manage_orders"><DeletedOrders /></ProtectedRoute>} />
           <Route path="/orders/scammers" element={<ProtectedRoute requiredPermission="manage_orders"><Scammers /></ProtectedRoute>} />
           <Route path="/orders/setup" element={<ProtectedRoute requiredPermission="manage_orders"><SalesSetupPage /></ProtectedRoute>} />
