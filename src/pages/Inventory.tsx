@@ -30,6 +30,7 @@ import ProductDetailsModal from '../components/ProductDetailsModal';
 import { supabase } from '../lib/supabase';
 import { processImageForUpload } from '../utils/imageUtils';
 import { dayKeyFromDate } from '../utils/dateRange';
+import { useFifoValuation } from '../hooks/useFifo';
 import type { Product, StockCountReason } from '../types';
 import LazyAvatar from '../components/LazyAvatar';
 
@@ -163,6 +164,19 @@ const Inventory: React.FC = () => {
     // (hasPermission returns true for admins automatically.)
     const canManageInventory = hasPermission('manage_inventory');
     const canViewFinancials = hasPermission('manage_inventory') || hasPermission('view_reports');
+
+    // Cost column: Last cost (products.purchase_cost, refreshed by each
+    // receipt) and the FIFO average of the layers on hand.
+    const stockSignature = useMemo(() => products.map(p => `${p.id}:${p.stock}`).join('|'), [products]);
+    const fifo = useFifoValuation(canViewFinancials, stockSignature);
+    const fifoAvgOf = (productId: string): number | null => {
+        if (fifo.status !== 'ready') return null;
+        const row = fifo.rows.get(productId);
+        return row && row.qty > 0 ? row.value / row.qty : null;
+    };
+    const fifoCostTitle = fifo.status === 'ready'
+        ? 'Last cost: the latest receipt cost. FIFO avg: the average cost of the layers in stock now (— when there are none).'
+        : (fifo.message || 'Last cost: the latest receipt cost.');
 
     // Header effect moved below openAddModal
 
@@ -915,6 +929,8 @@ const Inventory: React.FC = () => {
                                 onWholesale={openWholesaleModal}
                                 onView={(p) => setViewingProductId(p.id)}
                                 canManage={canManageInventory}
+                                showCosts={canViewFinancials}
+                                fifoAvgCost={fifo.status === 'ready' ? fifoAvgOf(product.id) : undefined}
                             />
                         ))}
                         {paginatedProducts.length === 0 && (
@@ -939,8 +955,8 @@ const Inventory: React.FC = () => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Category {sortConfig?.key === 'category' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
                             {canViewFinancials && (
-                                <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('purchaseCost')}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Cost {sortConfig?.key === 'purchaseCost' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('purchaseCost')} title={fifoCostTitle}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{fifo.status === 'ready' ? 'Last cost / FIFO avg' : 'Last cost'} {sortConfig?.key === 'purchaseCost' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                                 </th>
                             )}
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('supplier')}>
@@ -996,8 +1012,12 @@ const Inventory: React.FC = () => {
                                     {canViewFinancials && (
                                         // Tabular figures keep digits the same width, so the money
                                         // columns line up and are readable at a glance.
-                                        <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280', fontVariantNumeric: 'tabular-nums' }}>
-                                            ${(product.purchaseCost || 0).toFixed(2)}
+                                        <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280', fontVariantNumeric: 'tabular-nums' }} title={fifoCostTitle}>
+                                            <div>${(product.purchaseCost || 0).toFixed(2)}</div>
+                                            {fifo.status === 'ready' && (() => {
+                                                const avg = fifoAvgOf(product.id);
+                                                return <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>FIFO {avg === null ? '—' : `$${avg.toFixed(2)}`}</div>;
+                                            })()}
                                         </td>
                                     )}
                                     <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>

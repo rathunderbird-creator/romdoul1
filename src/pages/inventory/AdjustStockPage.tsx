@@ -7,7 +7,11 @@
 // Bin and Batch are lightweight, UI-only fields: this app has no real bin-
 // location or lot/batch-tracking system, so Bin is just "Default" and Batch
 // is free text, kept for whoever wants a note to find stock by later.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+// Removal lines are costed by posting at FIFO (the oldest layers); the form
+// shows that cost from fifo_peek and saves it as the draft's estimate. Only a
+// store without migrations/add_fifo_costing.sql asks for a unit cost on a
+// removal, pre-filled from the product's purchase cost.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Search, RefreshCw, Printer, Download, Eye, X, Trash2, Upload, Pencil } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -15,6 +19,7 @@ import { useToast } from '../../context/ToastContext';
 import { useStockAdjustments } from '../../hooks/useStockAdjustments';
 import DataImportModal from '../../components/DataImportModal';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { fetchFifoPeek, type FifoPeekResult } from '../../hooks/useFifo';
 import type { StockAdjustment, StockAdjustmentReason } from '../../types';
 
 const REASONS: StockAdjustmentReason[] = ['Opening balance', 'Stock correction', 'Damaged goods', 'Expired goods', 'Theft / loss', 'Sample / giveaway', 'Other'];
@@ -133,13 +138,63 @@ const AdjustStockPage: React.FC = () => {
         setIsCreateOpen(true);
     };
 
+    // ── FIFO peek for removal lines ──
+    const peekKey = (productId: string, qty: number) => `${productId}|${qty}`;
+    const removalQty = (l: DraftLine): number => {
+        const q = parseFloat(l.quantity);
+        return l.product_id && Number.isInteger(q) && q < 0 ? -q : 0;
+    };
+    const peekRequests = useRef(new Map<string, Promise<FifoPeekResult>>());
+    const [peeks, setPeeks] = useState<Record<string, FifoPeekResult | 'loading'>>({});
+    const [fifoMissing, setFifoMissing] = useState(false);
+    const getPeek = useCallback((productId: string, qty: number): Promise<FifoPeekResult> => {
+        const key = peekKey(productId, qty);
+        let req = peekRequests.current.get(key);
+        if (!req) {
+            req = fetchFifoPeek(productId, qty).catch(e => ({ ok: false as const, missing: false, message: e instanceof Error ? e.message : String(e) }));
+            peekRequests.current.set(key, req);
+            setPeeks(prev => ({ ...prev, [key]: 'loading' }));
+            req.then(res => {
+                // A failed read is retried on the next change or save.
+                if (!res.ok && !res.missing) peekRequests.current.delete(key);
+                if (!res.ok && res.missing) setFifoMissing(true);
+                setPeeks(prev => ({ ...prev, [key]: res }));
+            });
+        }
+        return req;
+    }, []);
+    // Layers move with every sale, so each opening of the form reads afresh.
+    useEffect(() => {
+        if (!isCreateOpen) return;
+        peekRequests.current.clear();
+        setPeeks({});
+    }, [isCreateOpen]);
+    useEffect(() => {
+        if (!isCreateOpen || fifoMissing) return;
+        const timer = setTimeout(() => {
+            for (const l of lines) {
+                const q = removalQty(l);
+                if (q > 0) getPeek(l.product_id, q);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [lines, isCreateOpen, fifoMissing, getPeek]);
+    const peekOf = (l: DraftLine): FifoPeekResult | 'loading' | undefined => {
+        const q = removalQty(l);
+        return q > 0 ? peeks[peekKey(l.product_id, q)] : undefined;
+    };
+
     const estimatedValueChange = useMemo(() => lines.reduce((s, l) => {
         const q = parseFloat(l.quantity);
         if (!q) return s;
         const product = activeProducts.find(p => p.id === l.product_id);
+        if (q < 0 && !fifoMissing) {
+            const peek = l.product_id && Number.isInteger(q) ? peeks[`${l.product_id}|${-q}`] : undefined;
+            return peek && peek !== 'loading' && peek.ok ? s - peek.data.cost : s;
+        }
         const uc = l.unit_cost !== '' ? parseFloat(l.unit_cost) : (product?.purchaseCost || 0);
         return s + q * (uc || 0);
-    }, 0), [lines, activeProducts]);
+    }, 0), [lines, activeProducts, peeks, fifoMissing]);
 
     const updateLine = (key: string, patch: Partial<DraftLine>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
     const removeLine = (key: string) => setLines(prev => prev.length > 1 ? prev.filter(l => l.key !== key) : prev);
@@ -205,20 +260,43 @@ const AdjustStockPage: React.FC = () => {
                 return;
             }
             const hasCost = (l.unit_cost !== '' && parseFloat(l.unit_cost) >= 0) || (product?.purchaseCost || 0) > 0;
-            if (q < 0 && !hasCost) {
+            if (q < 0 && fifoMissing && !hasCost) {
                 showToast(`A unit cost is required to remove stock for ${product?.name || 'a product'}`, 'error');
                 return;
             }
         }
         setIsSaving(true);
         try {
+            // Removal lines carry today's FIFO cost as the draft's estimate;
+            // posting replaces it with the cost of the layers it takes.
+            const removalCost = new Map<string, number | null>();
+            let missing = fifoMissing;
+            for (const l of validLines) {
+                const q = parseFloat(l.quantity);
+                if (q >= 0 || missing) continue;
+                const res = await getPeek(l.product_id, -q);
+                if (!res.ok && res.missing) { missing = true; break; }
+                if (!res.ok) {
+                    showToast(`Could not read the FIFO cost for ${activeProducts.find(p => p.id === l.product_id)?.name || 'a product'}: ${res.message}`, 'error');
+                    return;
+                }
+                removalCost.set(l.key, res.data.unit_cost);
+            }
+            if (missing && !fifoMissing) {
+                showToast('FIFO costing is not set up on this store, so removals need a unit cost. Check the lines and save again.', 'info');
+                return;
+            }
             const payloadLines = validLines.map(l => {
                 const product = activeProducts.find(p => p.id === l.product_id);
+                const q = parseFloat(l.quantity);
+                const unitCost = q < 0 && !missing
+                    ? (removalCost.get(l.key) ?? 0)
+                    : (l.unit_cost !== '' ? parseFloat(l.unit_cost) : (product?.purchaseCost || 0));
                 return {
                     product_id: l.product_id,
                     bin: l.bin || 'Default',
-                    quantity: parseFloat(l.quantity),
-                    unit_cost: l.unit_cost !== '' ? parseFloat(l.unit_cost) : (product?.purchaseCost || 0),
+                    quantity: q,
+                    unit_cost: unitCost,
                     batch: l.batch || undefined,
                 };
             });
@@ -454,11 +532,24 @@ const AdjustStockPage: React.FC = () => {
                             </div>
                             <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '20px' }}>
                                 Fill quantity (+ add / − remove) and unit cost, then import — lines are added below for review before the draft is saved.
-                                Enter a whole positive quantity to add stock and a negative one to remove; you can't remove more than is in stock, and each product goes on one line. A unit cost is required when removing stock, costed from the product's own purchase cost.
+                                Enter a whole positive quantity to add stock and a negative one to remove; you can't remove more than is in stock, and each product goes on one line.
+                                {fifoMissing
+                                    ? ' A unit cost is required when removing stock, costed from the product\'s own purchase cost.'
+                                    : ' Stock added becomes cost layers at its unit cost. Stock removed takes the oldest layers first (FIFO): the cost shown is today\'s, and posting books the cost of the layers it actually takes.'}
                             </p>
+                            {fifoMissing && (
+                                <p style={{ fontSize: '12px', color: '#B45309', margin: '-12px 0 20px' }}>
+                                    FIFO costing is not set up on this store yet: run migrations/add_fifo_costing.sql, then migrations/add_session_guards.sql, in this store's Supabase SQL editor.
+                                </p>
+                            )}
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                {lines.map((l, i) => (
+                                {lines.map((l, i) => {
+                                    const isRemoval = parseFloat(l.quantity) < 0;
+                                    const showFifo = isRemoval && !fifoMissing;
+                                    const peek = peekOf(l);
+                                    const peekOk = peek && peek !== 'loading' && peek.ok ? peek.data : null;
+                                    return (
                                     <div key={l.key} style={{ ...cardStyle, padding: '14px 16px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                             <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>Line {i + 1}</span>
@@ -483,16 +574,30 @@ const AdjustStockPage: React.FC = () => {
                                                 <input type="number" step="1" placeholder="e.g. 10 or -3" value={l.quantity} onChange={e => updateLine(l.key, { quantity: e.target.value })} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                                             </div>
                                             <div>
-                                                <label style={labelStyle}>Unit cost</label>
-                                                <input type="number" step="any" min="0" placeholder="From cost pool" value={l.unit_cost} onChange={e => updateLine(l.key, { unit_cost: e.target.value })} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                                                <label style={labelStyle}>{showFifo ? 'FIFO unit cost' : 'Unit cost'}</label>
+                                                {showFifo ? (
+                                                    <div title="Average cost of the oldest layers this removal takes" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', background: 'var(--color-bg)', color: peekOk ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                                        {!l.product_id ? 'Pick a product' : !peek || peek === 'loading' ? '…' : peekOk ? fmt(peekOk.unit_cost ?? 0) : '—'}
+                                                    </div>
+                                                ) : (
+                                                    <input type="number" step="any" min="0" placeholder={isRemoval ? 'Purchase cost' : 'Last receipt cost'} value={l.unit_cost} onChange={e => updateLine(l.key, { unit_cost: e.target.value })} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                                                )}
                                             </div>
                                             <div>
                                                 <label style={labelStyle}>Batch</label>
                                                 <input type="text" placeholder="n/a" value={l.batch} onChange={e => updateLine(l.key, { batch: e.target.value })} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                                             </div>
                                         </div>
+                                        {showFifo && peek && peek !== 'loading' && (
+                                            <div style={{ marginTop: '8px', fontSize: '12px', color: peekOk && peekOk.short_qty === 0 ? 'var(--color-text-secondary)' : '#B45309' }}>
+                                                {peekOk
+                                                    ? <>Takes the oldest {fmt(peekOk.qty - peekOk.short_qty)} of {fmt(peekOk.available)} in the layers, cost {fmt(peekOk.cost)}.{peekOk.short_qty > 0 && ` ${fmt(peekOk.short_qty)} more than the layers hold, costed at the last receipt cost ${fmt(peekOk.fallback_cost)}.`}</>
+                                                    : !peek.ok && `Could not read the FIFO cost: ${peek.message}`}
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             <button onClick={() => setLines(prev => [...prev, emptyLine()])} style={{ width: '100%', marginTop: '14px', padding: '12px', borderRadius: '10px', border: '2px dashed var(--color-border)', background: 'transparent', color: 'var(--color-primary)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>

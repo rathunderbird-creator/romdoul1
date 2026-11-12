@@ -13,6 +13,12 @@
 // Month-end stock value (the chart, and "since last month") is reconstructed
 // by walking today's live value backward through logged stock_movements —
 // it's only as complete as that movement history.
+// Cost basis: stock on hand at FIFO (fifo_inventory_valuation); movements at
+// their recorded FIFO cost (stock_movements.unit_cost). A movement recorded
+// before FIFO has no cost (an order's unit_price is its selling price), so it
+// is valued at its receipt price (stock in) or the product's purchase cost,
+// and the page shows how many movements that covers. A store without
+// migrations/add_fifo_costing.sql uses purchase cost and says so.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, ShoppingCart, Download } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
@@ -22,6 +28,7 @@ import { useProcurement } from '../../hooks/useProcurement';
 import { useStockAdjustments } from '../../hooks/useStockAdjustments';
 import { supabase } from '../../lib/supabase';
 import { dayKeyFromDate, addDays } from '../../utils/dateRange';
+import { useFifoValuation, fifoUnitCost, isMissingColumnError } from '../../hooks/useFifo';
 import type { Product, StockAdjustmentReason } from '../../types';
 
 interface MovementRow {
@@ -29,6 +36,7 @@ interface MovementRow {
     type: 'in' | 'out';
     quantity: number;
     unit_price: number;
+    unit_cost?: number | null;
     movement_date: string;
     warehouse_id?: string | null;
 }
@@ -106,13 +114,17 @@ const InventoryDashboardPage: React.FC = () => {
         setMovementsLoading(true);
         try {
             const since = addDays(todayYmd(), -400); // 12-month chart + the 90-day trailing windows, with a buffer
-            const { data, error } = await supabase
+            const query = (columns: string) => supabase
                 .from('stock_movements')
-                .select('product_id, type, quantity, unit_price, movement_date, warehouse_id')
+                .select(columns)
                 .gte('movement_date', since)
                 .order('movement_date', { ascending: true });
+            let { data, error } = await query('product_id, type, quantity, unit_price, unit_cost, movement_date, warehouse_id');
+            if (error && isMissingColumnError(error, 'unit_cost')) {
+                ({ data, error } = await query('product_id, type, quantity, unit_price, movement_date, warehouse_id'));
+            }
             if (error) throw error;
-            setMovements((data || []) as MovementRow[]);
+            setMovements((data || []) as unknown as MovementRow[]);
         } catch (e) {
             console.error('Failed to fetch stock movements:', e);
         } finally {
@@ -120,6 +132,8 @@ const InventoryDashboardPage: React.FC = () => {
         }
     }, []);
 
+    const fifo = useFifoValuation();
+    const { reload: reloadFifo } = fifo;
     const loadAll = useCallback(() => {
         refreshData(true);
         fetchPurchaseOrders(true);
@@ -132,7 +146,7 @@ const InventoryDashboardPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const isLoading = storeLoading || poLoading || movementsLoading;
+    const isLoading = storeLoading || poLoading || movementsLoading || fifo.status === 'loading';
 
     // ── Filters ──
     const [warehouseId, setWarehouseId] = useState('');
@@ -143,6 +157,17 @@ const InventoryDashboardPage: React.FC = () => {
     const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
     const filteredProducts = useMemo(() => activeProducts.filter(p => !category || p.category === category), [activeProducts, category]);
     const productCategoryById = useMemo(() => new Map(products.map(p => [p.id, p.category])), [products]);
+    const purchaseCostById = useMemo(() => new Map(products.map(p => [p.id, Number(p.purchaseCost) || 0])), [products]);
+    // FIFO is company-wide: a single-warehouse figure uses the product's average layer cost.
+    const unitCostOf = useCallback((p: Product): number => {
+        const purchaseCost = Number(p.purchaseCost) || 0;
+        return fifo.status === 'ready' ? fifoUnitCost(fifo.rows.get(p.id), purchaseCost) : purchaseCost;
+    }, [fifo.status, fifo.rows]);
+    const movementCost = useCallback((m: MovementRow): { unit: number; estimated: boolean } => {
+        if (m.unit_cost !== null && m.unit_cost !== undefined && Number.isFinite(Number(m.unit_cost))) return { unit: Number(m.unit_cost), estimated: false };
+        if (m.type === 'in' && Number(m.unit_price) > 0) return { unit: Number(m.unit_price), estimated: false };
+        return { unit: purchaseCostById.get(m.product_id) || 0, estimated: true };
+    }, [purchaseCostById]);
 
     const whStockByProduct = useMemo(() => {
         if (!warehouseId) return null;
@@ -232,7 +257,8 @@ const InventoryDashboardPage: React.FC = () => {
     const visibleBuyRows = useMemo(() => bucketFilter === 'all' ? buyRows : buyRows.filter(r => r.bucket === bucketFilter), [buyRows, bucketFilter]);
 
     // ── Stock value now, and reconstructed month-end history ──
-    const stockValueNow = useMemo(() => filteredProducts.reduce((s, p) => s + onHandOf(p) * (Number(p.purchaseCost) || 0), 0), [filteredProducts, onHandOf]);
+    const stockValueNow = useMemo(() => filteredProducts.reduce((s, p) => s + onHandOf(p) * unitCostOf(p), 0), [filteredProducts, onHandOf, unitCostOf]);
+    const estimatedMovements = useMemo(() => relevantMovements.filter(m => movementCost(m).estimated).length, [relevantMovements, movementCost]);
 
     const monthlySeries = useMemo(() => {
         const today = todayYmd();
@@ -250,7 +276,7 @@ const InventoryDashboardPage: React.FC = () => {
             // Walk one month further back: undo everything that happened in this month.
             const deltaThisMonth = relevantMovements
                 .filter(m => m.movement_date <= cutoff && m.movement_date >= `${ym}-01`)
-                .reduce((s, m) => s + (m.type === 'in' ? 1 : -1) * (Number(m.quantity) || 0) * (Number(m.unit_price) || 0), 0);
+                .reduce((s, m) => s + (m.type === 'in' ? 1 : -1) * (Number(m.quantity) || 0) * movementCost(m).unit, 0);
             runningValue = Math.max(0, runningValue - deltaThisMonth);
         }
 
@@ -260,13 +286,13 @@ const InventoryDashboardPage: React.FC = () => {
             let boughtMade = 0, usedSold = 0;
             for (const mv of relevantMovements) {
                 if (mv.movement_date < from || mv.movement_date > to) continue;
-                const val = (Number(mv.quantity) || 0) * (Number(mv.unit_price) || 0);
+                const val = (Number(mv.quantity) || 0) * movementCost(mv).unit;
                 if (mv.type === 'in') boughtMade += val; else usedSold += val;
             }
             const label = monthLabel(ym) + (ym === thisMonth ? ' (so far)' : '');
             return { ym, month: label, stockValue: stockValueByMonth.get(ym) || 0, boughtMade, usedSold };
         });
-    }, [relevantMovements, stockValueNow]);
+    }, [relevantMovements, stockValueNow, movementCost]);
 
     const stockValueLastMonth = monthlySeries.length >= 2 ? monthlySeries[monthlySeries.length - 2].stockValue : stockValueNow;
     const stockValueDelta = stockValueNow - stockValueLastMonth;
@@ -275,9 +301,9 @@ const InventoryDashboardPage: React.FC = () => {
     const dailyCogs90 = useMemo(() => {
         const cutoff = addDays(todayYmd(), -PER_DAY_WINDOW);
         const sum = relevantMovements.filter(m => m.type === 'out' && m.movement_date >= cutoff)
-            .reduce((s, m) => s + (Number(m.quantity) || 0) * (Number(m.unit_price) || 0), 0);
+            .reduce((s, m) => s + (Number(m.quantity) || 0) * movementCost(m).unit, 0);
         return sum / PER_DAY_WINDOW;
-    }, [relevantMovements]);
+    }, [relevantMovements, movementCost]);
     const daysOnHand = dailyCogs90 > 0 ? stockValueNow / dailyCogs90 : null;
     const turnsPerYear = daysOnHand ? 365 / daysOnHand : 0;
 
@@ -290,7 +316,7 @@ const InventoryDashboardPage: React.FC = () => {
         for (const p of filteredProducts) {
             const onHand = onHandOf(p);
             if (onHand <= 0) continue;
-            const cost = Number(p.purchaseCost) || 0;
+            const cost = unitCostOf(p);
             const lastOut = lastOutDateByProduct.get(p.id);
             if (!lastOut || lastOut < deadCutoff) { dead += onHand * cost; continue; }
             const perDay = perDayByProduct.get(p.id) || 0;
@@ -298,7 +324,7 @@ const InventoryDashboardPage: React.FC = () => {
             if (onHand > healthyLevel) excess += (onHand - healthyLevel) * cost;
         }
         return { deadValue: dead, excessValue: excess };
-    }, [filteredProducts, onHandOf, lastOutDateByProduct, deadCutoff, perDayByProduct]);
+    }, [filteredProducts, onHandOf, unitCostOf, lastOutDateByProduct, deadCutoff, perDayByProduct]);
     const cashTiedUp = deadValue + excessValue;
 
     // ── Losses: posted write-off adjustments in the "dead after" window ──
@@ -371,12 +397,18 @@ const InventoryDashboardPage: React.FC = () => {
                         <option value={180}>180 days</option>
                     </select>
                 </div>
-                <button onClick={loadAll} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { loadAll(); reloadFifo(); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                 </button>
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                As of {new Date().toLocaleDateString()} · amounts in USD at average cost
+            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', maxWidth: '820px', lineHeight: 1.5 }}>
+                As of {new Date().toLocaleDateString()} · amounts in USD at cost ·{' '}
+                {fifo.status === 'ready'
+                    ? 'stock valued at FIFO (the cost layers on hand)'
+                    : fifo.status === 'loading' ? 'loading FIFO costs…' : <span style={{ color: '#B45309' }}>stock valued at purchase cost, not FIFO. {fifo.message}</span>}
+                {' '}· movements at their recorded FIFO cost
+                {estimatedMovements > 0 && <span style={{ color: '#B45309' }}>; {estimatedMovements.toLocaleString()} older movement{estimatedMovements === 1 ? '' : 's'} with no recorded cost use the product's purchase cost</span>}.
+                {' '}To Buy Now is estimated at purchase cost (last cost).
             </div>
             {/* Rule (INV-1): per-warehouse stock is tracked only by the flows
                 that record a warehouse (posted stock adjustments, wholesale,
@@ -495,7 +527,7 @@ const InventoryDashboardPage: React.FC = () => {
 
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Money in and out of stock</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Cost of what was bought or made, against what was used or sold, per month. This month is so far.</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Cost of what was bought or made, against the cost of what was used or sold (not its selling price), per month. This month is so far.</div>
                     <div style={{ height: '260px' }}>
                         {isLoading ? (
                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
