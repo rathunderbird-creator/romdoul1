@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Package, CreditCard } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { orderStatusLabel } from '../utils/orderStatusRules';
 
 interface BulkEditModalProps {
     isOpen: boolean;
@@ -244,7 +245,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             }}
                         >
                             <option value="">Select Status...</option>
-                            {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            {statusOptions.map(s => <option key={s} value={s}>{orderStatusLabel(s)}</option>)}
                         </select>
                     )}
                     {field === 'paymentStatus' && (

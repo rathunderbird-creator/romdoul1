@@ -1046,7 +1046,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     disabled={currentUser?.roleId === 'salesman' || !!orderToEdit}
                                     title={orderToEdit ? 'Change delivery status from the order list' : undefined}
                                 >
-                                    {[{id: 'Drafted', name: 'Drafted'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returned'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Drafted'}>{s.name}</option>)}
+                                    {[{id: 'Drafted', name: 'Drafted'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returning'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Drafted'}>{s.name}</option>)}
                                 </select>
                                 {orderToEdit && (
                                     <p style={{ margin: '6px 0 0', fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>

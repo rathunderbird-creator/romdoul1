@@ -7,6 +7,7 @@ import { isRevenueOrder } from '../../utils/orderMoney';
 import { fetchAllProducts } from '../../utils/fetchAllProducts';
 import type { Sale, Product } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { orderStatusLabel } from '../../utils/orderStatusRules';
 
 
 const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Drafted', 'Returned', 'Cancelled'];
@@ -264,7 +265,7 @@ const PurchaseCostReport: React.FC = () => {
                                     color: statusFilter.has(s) ? 'white' : 'var(--color-text-secondary)',
                                     transition: 'all 0.2s'
                                 }}
-                            >{s}</button>
+                            >{orderStatusLabel(s)}</button>
                         ))}
                     </div>
                 </div>

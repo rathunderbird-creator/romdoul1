@@ -40,7 +40,8 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
                 // Orders Management 2 is hidden from the menu; /orders-management-2 stays reachable by URL.
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
-                { label: t('nav.returningItems'), path: '/orders/returning', icon: Undo2 },
+                // Its route needs manage_orders (the group also shows for view/create).
+                ...(hasPermission('manage_orders') ? [{ label: t('nav.returningItems'), path: '/orders/returning', icon: Undo2 }] : []),
                 // Payment Tracking is hidden from the menu; /payment-tracking stays
                 // reachable by URL and its Record Receipt ledger-posting flow is unchanged.
                 { label: t('nav.customerPayment'), path: '/customer-payment', icon: Receipt },

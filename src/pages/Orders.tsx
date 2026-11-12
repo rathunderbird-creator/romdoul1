@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useEffect, useRef, lazy } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal, orderStatusLabel } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
@@ -609,7 +609,8 @@ const ColumnFilterPopover: React.FC<{
     const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
     const WIDTH = 240;
 
-    useEffect(() => {
+    // Layout effect: positioned before the first paint, so no flash at (0,0).
+    useLayoutEffect(() => {
         const update = () => {
             if (!anchor) return;
             // Screen px -> the zoomed body's px (see utils/bodyZoom.ts).
@@ -739,7 +740,7 @@ const pageOrFilter = (pages: string[]): string => {
 const LOCKED_ORDER_STATUSES = ['Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
-    `This order is ${order.shipping?.status} and can no longer be edited. ` +
+    `This order is ${orderStatusLabel(order.shipping?.status || '')} and can no longer be edited. ` +
     `Change its status from the order list first if you need to reopen it.`;
 
 const Orders: React.FC = () => {
@@ -1713,9 +1714,15 @@ const Orders: React.FC = () => {
                     case 'payBy':
                         query = query.ilike('payment_method', `%${esc}%`);
                         break;
-                    case 'status':
-                        query = query.ilike('shipping_status', `%${esc}%`);
+                    case 'status': {
+                        // Staff filter by what they see ("Returning"); the column
+                        // holds the stored value ('Returned') — match both.
+                        const viaLabel = orderStatusesMatchingLabel(v);
+                        query = viaLabel.length > 0 && !/[,()"]/.test(esc)
+                            ? query.or(`shipping_status.ilike.%${esc}%,shipping_status.in.(${viaLabel.join(',')})`)
+                            : query.ilike('shipping_status', `%${esc}%`);
                         break;
+                    }
                     case 'payStatus': {
                         // payment_status has no NOT NULL/DEFAULT in the DB; a null row
                         // falls back to displaying 'Unpaid' (see the render case below),
@@ -2514,7 +2521,7 @@ const Orders: React.FC = () => {
             case 'Shipped': return <span style={{ background: '#DBEAFE', color: '#2563EB', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Truck size={12} /> Shipped</span>;
             case 'Delivered': return <span style={{ background: '#D1FAE5', color: '#059669', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Delivered</span>;
             case 'Cancelled': return <span style={{ background: '#FEE2E2', color: '#DC2626', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={12} /> Cancelled</span>;
-            default: return <span>{status}</span>;
+            default: return <span>{orderStatusLabel(status)}</span>;
         }
     };
 
@@ -3979,7 +3986,7 @@ const Orders: React.FC = () => {
                                                                                 <Printer size={16} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                                                             </button>
                                                                             {hasPermission('manage_orders') && (
-                                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" disabled={isOrderLocked(order)} title={isOrderLocked(order) ? `${order.shipping?.status} orders cannot be edited` : 'Edit Order'} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: isOrderLocked(order) ? 'not-allowed' : 'pointer', opacity: isOrderLocked(order) ? 0.35 : 1 }}>
+                                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" disabled={isOrderLocked(order)} title={isOrderLocked(order) ? `${orderStatusLabel(order.shipping?.status || '')} orders cannot be edited` : 'Edit Order'} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: isOrderLocked(order) ? 'not-allowed' : 'pointer', opacity: isOrderLocked(order) ? 0.35 : 1 }}>
                                                                                     <Edit size={16} color="var(--color-text-secondary)" />
                                                                                 </button>
                                                                             )}

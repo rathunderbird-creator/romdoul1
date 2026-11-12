@@ -12,6 +12,7 @@ import { orderStatusOf, payStatusOf, orderBalance, trackingStateOf, type Order }
 import { DEFAULT_FILTERS, activeFilterCount, type OM2Filters } from '../urlFilters';
 import { MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../../components/MobileFilterKit';
 import { getOperatorForPhone } from '../../../utils/telecom';
+import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 const ORDER_STATUSES = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'];
 const PAY_STATUSES = ['Unpaid', 'Deposit', 'Paid', 'Get File', 'Cancel'];
@@ -109,7 +110,7 @@ const OrderCard: React.FC<{ order: Order; onOpen: () => void }> = ({ order, onOp
 
             {/* Row 4: pills, on their own line — never touching the name text */}
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                <MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{status}</MutedPill>
+                <MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{orderStatusLabel(status)}</MutedPill>
                 <MutedPill tone={PAY_STATUS_TONE[pay] || 'neutral'}>{pay === 'Get File' ? 'File' : pay}</MutedPill>
                 <TrackingIndicator order={order} />
             </div>
