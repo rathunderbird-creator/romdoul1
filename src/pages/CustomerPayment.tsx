@@ -24,6 +24,7 @@ import { pickCashBankAccount } from '../utils/cashBankAccounts';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../utils/ledgerStart';
 import type { Transaction, Customer } from '../types';
+import { fetchJournalLinesByEntry } from '../utils/journalLines';
 
 // The cash/bank accounts offered by the bulk Post Now popup, with enough of
 // the chart row for pickCashBankAccount to match a payment's Method against.
@@ -370,7 +371,7 @@ const CustomerPaymentPage: React.FC = () => {
         let cancelled = false;
         setLedger(prev => prev.state === 'ready' ? prev : { ...prev, state: 'loading' });
         type JeLine = { account_id: string; debit: number | string | null; account?: { account_type?: string | null; account_name?: string | null } | null };
-        type JeRow = { reference_id: string | null; status?: string | null; lines?: JeLine[] | null };
+        type JeRow = { id?: string; reference_id: string | null; status?: string | null; lines?: JeLine[] | null };
         const load = (cols: string) => fetchAll<JeRow>((from, to) => supabase
             .from('journal_entries')
             .select(cols)
@@ -379,7 +380,13 @@ const CustomerPaymentPage: React.FC = () => {
             .range(from, to) as unknown as PromiseLike<{ data: JeRow[] | null; error: unknown }>);
         (async () => {
             try {
-                const lineCols = 'lines:journal_entry_lines(account_id, debit, account:chart_of_accounts(account_type, account_name))';
+                // Lines and accounts read flat and joined here (an embedded
+                // read timed out on a large ledger — see utils/journalLines.ts).
+                const linesP = fetchJournalLinesByEntry<JeLine & { journal_entry_id: string }>('journal_entry_id, account_id, debit', 'CustomerPayment ledger lines');
+                const accountsP = Promise.resolve(supabase.from('chart_of_accounts').select('id, account_type, account_name')
+                    .then(({ data, error }) => { if (error) throw error; return (data || []) as { id: string; account_type: string | null; account_name: string | null }[]; }));
+                // Settled below; don't let a failed entries read leave these unhandled.
+                linesP.catch(() => undefined); accountsP.catch(() => undefined);
                 let rows: JeRow[];
                 let statusMissing = false;
                 try {
@@ -387,12 +394,17 @@ const CustomerPaymentPage: React.FC = () => {
                     // it a row repeated across a shifted page boundary would pass
                     // through twice (harmless for these Maps today, but the helper's
                     // contract asks every caller to include the unique column).
-                    rows = await load(`id, reference_id, status, ${lineCols}`);
+                    rows = await load('id, reference_id, status');
                 } catch (err) {
                     // Instances without migrations/add_entry_status.sql: every entry counts as Posted.
                     if (!/status/i.test((err as { message?: string })?.message || '')) throw err;
                     statusMissing = true;
-                    rows = await load(`id, reference_id, ${lineCols}`);
+                    rows = await load('id, reference_id');
+                }
+                const [linesByEntry, accountRows] = await Promise.all([linesP, accountsP]);
+                const accountById = new Map(accountRows.map(a => [a.id, a]));
+                for (const je of rows) {
+                    je.lines = (linesByEntry.get(String(je.id)) || []).map(l => ({ ...l, account: accountById.get(l.account_id) }));
                 }
                 const byTx = new Map<string, LedgerStatus>();
                 const debitAccountByTx = new Map<string, string>();

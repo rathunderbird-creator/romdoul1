@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import type { ChartOfAccount, JournalEntry, JournalEntryLine } from '../types';
 import { useToast } from '../context/ToastContext';
+import { fetchJournalLinesByEntry } from '../utils/journalLines';
 
 export const useAccounting = () => {
     const { showToast } = useToast();
@@ -76,23 +77,32 @@ export const useAccounting = () => {
     const fetchJournalEntries = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Paged (fetchAll): the ledger holds thousands of entries, far past
-            // PostgREST's ~1000-row cap. date ties constantly (it's a plain
-            // DATE), so the unique id breaks the tie for a stable page order.
-            // The embedded account is trimmed to the columns consumers actually
-            // read (plus ChartOfAccount's required is_active): every line
-            // carries its own account copy, so on a tens-of-thousands-line
-            // ledger the full-row embed multiplied the payload for nothing.
-            // Only base-schema columns here — selecting a migration-added
-            // column (e.g. sub_type) would fail the whole fetch on instances
-            // that haven't run that migration.
-            const data = await fetchAll<JournalEntry>((from, to) => supabase
-                .from('journal_entries')
-                .select('*, lines:journal_entry_lines(*, account:chart_of_accounts(id, account_code, account_name, account_type, is_active))')
-                .order('date', { ascending: false })
-                .order('id', { ascending: true })
-                .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries' });
-            setJournalEntries(data);
+            // Entries, lines and accounts are read flat and joined here — the
+            // embedded form (entries?select=*,lines(...)) timed out on a large
+            // ledger; see utils/journalLines.ts. Paged (fetchAll): thousands of
+            // entries, far past PostgREST's ~1000-row cap; date ties constantly
+            // (a plain DATE), so the unique id breaks the tie for a stable page
+            // order. The account attached to each line is trimmed to the
+            // columns consumers read (plus ChartOfAccount's required
+            // is_active), and only base-schema columns are selected — a
+            // migration-added column (e.g. sub_type) would fail the fetch on
+            // instances that haven't run that migration.
+            const [entries, linesByEntry, accountRows] = await Promise.all([
+                fetchAll<JournalEntry>((from, to) => supabase
+                    .from('journal_entries')
+                    .select('*')
+                    .order('date', { ascending: false })
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries' }),
+                fetchJournalLinesByEntry<JournalEntryLine>('*', 'useAccounting.fetchJournalEntries lines'),
+                Promise.resolve(supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, is_active')
+                    .then(({ data, error }) => { if (error) throw error; return (data || []) as ChartOfAccount[]; })),
+            ]);
+            const accountById = new Map(accountRows.map(a => [a.id, a]));
+            setJournalEntries(entries.map(e => ({
+                ...e,
+                lines: (linesByEntry.get(e.id) || []).map(l => ({ ...l, account: accountById.get(l.account_id) })),
+            })));
         } catch (error: any) {
             console.error('Failed to fetch journal entries:', error);
             showToast('Failed to fetch journal entries: ' + error.message, 'error');
