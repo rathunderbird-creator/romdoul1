@@ -28,6 +28,135 @@
 -- returned) order are refused, before anything is saved, with a message
 -- saying to run this file. Tracking and courier saves, and item edits on an
 -- order whose goods are still on hand, keep working without it.
+--
+-- FIFO costing. Goods leaving with an order take the oldest inventory
+-- layers for each line (wp_internal.fifo_take_line), and the line keeps
+-- their cost (sale_items.cogs_cost): that frozen cost is what settlement
+-- books as COGS, whenever it happens. Goods coming back return the line's
+-- own layers (fifo_give_back_line). An order whose COGS was booked before it
+-- shipped (settled first, booked at a peek of the layers) gets a Draft
+-- ORD-<id>-COGS-ADJ for the difference when it ships or is edited while
+-- shipped. The 'out' and 'Customer Return' movements carry the FIFO
+-- unit_cost next to the selling price.
+--
+-- RUN ORDER: add_fifo_costing.sql, then fifo_rebuild_pool.sql on this store,
+-- then the four packs (this one, add_order_payment_functions.sql,
+-- add_wholesale_procurement_functions.sql, add_stock_adjustment_posting.sql),
+-- then add_session_guards.sql. This file refuses to load before the first
+-- two (see the check below).
+
+-- FIFO costing must be in place: this file calls the line helpers of
+-- add_fifo_costing.sql, and taking layers only makes sense once the pool has
+-- been rebuilt (fifo_rebuild_pool.sql leaves its inventory_items_bak_<date>
+-- backup behind). A store with no layers at all needs no rebuild. For a
+-- store whose pool is known to match its stock, run
+--     SET fifo.pool_ready = 'on';
+-- in the same SQL-editor run, before this file.
+DO $$
+BEGIN
+    IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
+        RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
+    END IF;
+    IF EXISTS (SELECT 1 FROM inventory_items)
+       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+       AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
+        RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
+    END IF;
+END $$;
+
+CREATE SCHEMA IF NOT EXISTS wp_internal;
+GRANT USAGE ON SCHEMA wp_internal TO anon, authenticated;
+
+-- Books a Draft entry moving p_amount between Cost of Goods Sold (5000) and
+-- Inventory (1300) for a retail order, reference ORD-<id>-COGS-<p_suffix>:
+-- ADJ when the cost that actually shipped differs from what settlement
+-- booked, REV for booked cost of goods that came back. p_amount > 0 is
+-- Dr 5000 / Cr 1300, < 0 is Dr 1300 / Cr 5000. Numbered like the order's
+-- other retail entries. Returns false, booking nothing, when the amount
+-- rounds to 0 or the chart lacks either account.
+CREATE OR REPLACE FUNCTION wp_internal.os_post_cogs_move(p_order_id TEXT, p_suffix TEXT, p_amount NUMERIC, p_date DATE)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_amount NUMERIC := round(COALESCE(p_amount, 0), 2);
+    v_cogs UUID := wp_internal.wp_account('5000', 'Expense', 'cost of goods|cogs');
+    v_inventory UUID := wp_internal.wp_account('1300', 'Asset', 'inventor|stock');
+    v_name TEXT;
+    v_number TEXT;
+    v_entry UUID;
+BEGIN
+    IF v_amount = 0 OR v_cogs IS NULL OR v_inventory IS NULL THEN
+        RETURN false;
+    END IF;
+    SELECT NULLIF(customer_snapshot->>'name', '') INTO v_name FROM sales WHERE id = p_order_id;
+    v_number := wp_internal.wp_next_entry_number('RCP', COALESCE(p_date, CURRENT_DATE));
+    INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
+    VALUES (COALESCE(p_date, CURRENT_DATE),
+            'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || COALESCE(v_name, 'Customer')
+                || CASE WHEN p_suffix = 'REV' THEN ' · cost of goods returned' ELSE ' · cost of goods adjustment' END,
+            'ORD-' || p_order_id || '-COGS-' || p_suffix, 'Draft', v_number)
+    RETURNING id INTO v_entry;
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
+        (v_entry, v_cogs, GREATEST(v_amount, 0), GREATEST(-v_amount, 0),
+         CASE WHEN v_amount > 0 THEN 'Cost of goods sold' ELSE 'Cost of goods returned' END),
+        (v_entry, v_inventory, GREATEST(-v_amount, 0), GREATEST(v_amount, 0), 'Inventory at cost');
+    RETURN true;
+END;
+$$;
+
+-- Settle-before-ship: settlement books an order that has not shipped at a
+-- peek of the layers (sale_items.cogs_booked). Once its lines hold units at
+-- their actual cost (cogs_cost), the difference is booked as one Draft
+-- ORD-<id>-COGS-ADJ, and those lines' cogs_booked become their cogs_cost.
+-- Lines with nothing booked are left alone. Returns the amount booked.
+CREATE OR REPLACE FUNCTION wp_internal.os_true_up_booked_cogs(p_order_id TEXT, p_date DATE)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_diff NUMERIC;
+BEGIN
+    SELECT COALESCE(sum(cogs_cost - cogs_booked), 0) INTO v_diff FROM sale_items
+     WHERE sale_id = p_order_id AND cogs_cost IS NOT NULL AND cogs_booked IS NOT NULL;
+    IF round(v_diff, 2) <> 0 AND NOT wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_diff, p_date) THEN
+        RETURN 0;
+    END IF;
+    UPDATE sale_items SET cogs_booked = cogs_cost
+     WHERE sale_id = p_order_id AND cogs_cost IS NOT NULL AND cogs_booked IS NOT NULL;
+    RETURN round(v_diff, 2);
+END;
+$$;
+
+-- Puts p_total — the COGS already booked for an order whose lines were just
+-- replaced — on its new lines, by quantity, in cents (product lines first;
+-- the first of them, the largest, takes the remainder), so the order keeps
+-- what it has booked.
+CREATE OR REPLACE FUNCTION wp_internal.os_spread_booked(p_order_id TEXT, p_total NUMERIC)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_tq NUMERIC;
+    v_left NUMERIC := COALESCE(p_total, 0);
+    v_amt NUMERIC;
+    r RECORD;
+BEGIN
+    SELECT COALESCE(sum(GREATEST(COALESCE(quantity, 0), 0)), 0) INTO v_tq FROM sale_items WHERE sale_id = p_order_id;
+    FOR r IN
+        SELECT id, GREATEST(COALESCE(quantity, 0), 0) AS q,
+               row_number() OVER (ORDER BY (product_id IS NULL), quantity DESC NULLS LAST, created_at, id) AS rn
+          FROM sale_items WHERE sale_id = p_order_id
+         ORDER BY rn DESC
+    LOOP
+        v_amt := CASE WHEN r.rn = 1 THEN v_left
+                      WHEN v_tq > 0 THEN round(COALESCE(p_total, 0) * r.q / v_tq, 2)
+                      ELSE 0 END;
+        UPDATE sale_items SET cogs_booked = v_amt WHERE id = r.id;
+        v_left := v_left - v_amt;
+    END LOOP;
+END;
+$$;
 
 -- Statuses where the order's goods are counted out of stock: shipped,
 -- delivered, or on their way back (Returned keeps them out until Restock).
@@ -72,6 +201,8 @@ DECLARE
     v_stock JSONB := '{}'::jsonb;
     v_new_stock NUMERIC;
     v_rid UUID;
+    v_back NUMERIC;
+    v_value JSONB := '{}'::jsonb;
     r RECORD;
 BEGIN
     FOR r IN
@@ -92,9 +223,19 @@ BEGIN
      ORDER BY id
        FOR NO KEY UPDATE;
 
-    -- Shipping marked these orders' FIFO items sold; return them to the pool.
-    UPDATE inventory_items SET status = 'in_stock', sale_id = NULL
-     WHERE sale_id = ANY(v_ids) AND status = 'sold';
+    -- Each line's layers go back to the pool (units it held with no layer
+    -- get one); v_value collects what each product gained, for the
+    -- movement's unit cost. Booked COGS is reversed by
+    -- apply_restock_payment_side, after the order's Draft income entry is
+    -- gone.
+    FOR r IN
+        SELECT si.id, si.sale_id, si.product_id FROM sale_items si
+         WHERE si.sale_id = ANY(v_ids) AND si.product_id IS NOT NULL
+         ORDER BY si.sale_id, si.created_at, si.id
+    LOOP
+        v_back := wp_internal.fifo_give_back_line('retail', r.sale_id, r.id);
+        v_value := v_value || jsonb_build_object(r.product_id, COALESCE((v_value->>r.product_id)::NUMERIC, 0) + v_back);
+    END LOOP;
 
     FOR r IN
         WITH lines AS (
@@ -136,9 +277,10 @@ BEGIN
             'id', v_rid, 'product_id', r.product_id, 'quantity', r.qty, 'cost', 0,
             'date', v_now, 'added_by', v_added_by, 'note', 'Bulk restocked from ' || r.sources));
 
-        INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, source, shipping_co,
+        INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, unit_cost, source, shipping_co,
                                      note, movement_date, created_by, customer_name, customer_phone)
         VALUES (r.product_id, COALESCE(NULLIF(r.product_name, ''), r.product_id), 'in', r.qty::INTEGER, 0,
+                round(COALESCE((v_value->>r.product_id)::NUMERIC, 0) / NULLIF(r.qty, 0), 4),
                 'Customer Return', '', 'Bulk restocked from ' || r.sources, v_date, v_created_by,
                 COALESCE(r.names, ''), COALESCE(r.phones, ''));
     END LOOP;
@@ -156,11 +298,13 @@ $$;
 -- Moves one order to p_new_status, with the stock that goes with it:
 --   * goods leave stock (into Shipped, Delivered or Returned from a status
 --     where they are on hand): each item's quantity comes off products.stock
---     (never below 0), the oldest in-stock inventory items are marked sold to
---     this order, and a new 'Order Shipped' stock-out generation is logged;
+--     (never below 0), each line takes the oldest inventory layers and keeps
+--     their cost (an order settled before it ships gets a Draft COGS-ADJ for
+--     the difference), and a new 'Order Shipped' stock-out generation is
+--     logged at that cost;
 --   * goods come back (from Shipped/Delivered, or Returned to a pre-ship
---     status; not into Returned or ReStock): stock is put back, the order's
---     inventory items return to stock, and the newest stock-out generation
+--     status; not into Returned or ReStock): stock is put back, each line's
+--     layers return to the pool, and the newest stock-out generation
 --     (the shipment being reversed) is deleted;
 --   * Returned -> ReStock runs restock_returned_orders; ReStock from any
 --     other status is refused (only returned goods can be restocked);
@@ -195,6 +339,7 @@ DECLARE
     v_newest TIMESTAMPTZ;
     v_stock JSONB;
     v_res JSONB;
+    v_day DATE := COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE);
     r RECORD;
 BEGIN
     IF v_new IS NULL THEN
@@ -234,28 +379,28 @@ BEGIN
         -- The goods leave stock now.
         v_deducted := true;
         FOR r IN
-            SELECT product_id, COALESCE(quantity, 0) AS quantity
+            SELECT id, product_id, COALESCE(quantity, 0) AS quantity
               FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL
              ORDER BY created_at, id
         LOOP
             UPDATE products SET stock = GREATEST(0, COALESCE(stock, 0) - r.quantity) WHERE id = r.product_id;
-            UPDATE inventory_items SET status = 'sold', sale_id = p_order_id
-             WHERE id IN (SELECT id FROM inventory_items
-                           WHERE product_id = r.product_id AND status = 'in_stock'
-                           ORDER BY created_at, id
-                           LIMIT GREATEST(0, floor(r.quantity))::INTEGER);
+            -- The oldest layers go to this line; their cost is frozen on it.
+            PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id);
         END LOOP;
+        -- Settled before it shipped: book the actual cost's difference.
+        PERFORM wp_internal.os_true_up_booked_cogs(p_order_id, v_day);
     ELSIF (order_status_stock_consumed(v_old) OR (v_old = 'Returned' AND v_new <> 'ReStock'))
           AND NOT order_status_stock_consumed(v_new) AND v_new <> 'Returned' THEN
-        -- The shipment is reversed: the goods are back on hand.
+        -- The shipment is reversed: the goods are back on hand, each line's
+        -- own layers with them. Booked COGS stays booked (the order may
+        -- still be settled); shipping again books any difference.
         FOR r IN
-            SELECT product_id, COALESCE(quantity, 0) AS quantity
+            SELECT id, product_id, COALESCE(quantity, 0) AS quantity
               FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL
              ORDER BY created_at, id
         LOOP
             UPDATE products SET stock = COALESCE(stock, 0) + r.quantity WHERE id = r.product_id;
-            UPDATE inventory_items SET status = 'in_stock', sale_id = NULL
-             WHERE sale_id = p_order_id AND product_id = r.product_id;
+            PERFORM wp_internal.fifo_give_back_line('retail', p_order_id, r.id);
         END LOOP;
         -- Only the newest generation: a re-shipped order has one per shipment.
         SELECT max(created_at) INTO v_newest FROM stock_movements WHERE reference_id = p_order_id AND type = 'out';
@@ -288,9 +433,10 @@ BEGIN
         ELSE
             v_company := COALESCE(NULLIF(v_fields->>'shipping_company', ''), CASE WHEN s.shipping_status IS NOT NULL AND s.shipping_status <> '' THEN s.shipping_company END, '');
             v_info := concat_ws(' | ', NULLIF(v_name, ''), NULLIF(v_phone, ''));
-            INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, reason, reference_id, source,
+            INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, unit_cost, reason, reference_id, source,
                                          shipping_co, note, movement_date, created_by, customer_name, customer_phone)
             SELECT si.product_id, COALESCE(NULLIF(si.name, ''), 'Unknown'), 'out', si.quantity::INTEGER, COALESCE(si.price, 0),
+                   round(si.cogs_cost / NULLIF(si.quantity, 0), 4),
                    'Shipped', p_order_id, 'Order Shipped', v_company,
                    'Order #' || left(p_order_id, 8) || CASE WHEN v_info <> '' THEN ' — ' || v_info ELSE '' END,
                    COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE),
@@ -309,7 +455,9 @@ $$;
 
 -- Replaces an order's items. When the order's goods are counted out of stock
 -- right now (Shipped, Delivered, Returned), stock moves by the difference per
--- product (never below 0), inventory items follow, and the newest stock-out
+-- product (never below 0), the old lines give their layers back and the new
+-- lines take theirs (a settled order gets a Draft COGS-ADJ for any cost
+-- difference; COGS already booked moves to the new lines), and the newest stock-out
 -- generation (the shipment being edited) is changed to match, so a later
 -- un-ship, delete or restock reverses exactly what left. A failure keeps the
 -- old items: nothing is half-saved.
@@ -335,6 +483,9 @@ DECLARE
     v_new_stock NUMERIC;
     v_remaining NUMERIC;
     v_take NUMERIC;
+    v_holds BOOLEAN;
+    v_had_booked BOOLEAN;
+    v_booked NUMERIC;
     r RECORD;
     m RECORD;
 BEGIN
@@ -349,6 +500,25 @@ BEGIN
 
     SELECT COALESCE(jsonb_agg(jsonb_build_object('product_id', product_id, 'quantity', quantity, 'name', name)), '[]'::jsonb)
       INTO v_before FROM sale_items WHERE sale_id = p_order_id;
+    -- COGS already booked for the order (settled): carried onto the new lines.
+    SELECT bool_or(cogs_booked IS NOT NULL), COALESCE(sum(cogs_booked), 0) INTO v_had_booked, v_booked
+      FROM sale_items WHERE sale_id = p_order_id;
+    v_holds := order_status_holds_stock(v_status);
+
+    IF v_holds THEN
+        PERFORM 1 FROM products
+         WHERE id IN (SELECT NULLIF(b->>'product_id', '') FROM jsonb_array_elements(v_before) b
+                      UNION SELECT NULLIF(i->>'id', '') FROM jsonb_array_elements(p_items) i)
+         ORDER BY id
+           FOR NO KEY UPDATE;
+        -- The old lines give their layers back before they go (layers point
+        -- at their line, which has no foreign key); the new lines take theirs
+        -- below, so the units come back to the same layers where they can.
+        FOR r IN SELECT id FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL ORDER BY created_at, id
+        LOOP
+            PERFORM wp_internal.fifo_give_back_line('retail', p_order_id, r.id);
+        END LOOP;
+    END IF;
 
     DELETE FROM sale_items WHERE sale_id = p_order_id;
     INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity, image)
@@ -356,16 +526,20 @@ BEGIN
            (i->>'price')::NUMERIC, (i->>'quantity')::NUMERIC, i->>'image'
       FROM jsonb_array_elements(p_items) WITH ORDINALITY AS t(i, n)
      ORDER BY n;
+    IF COALESCE(v_had_booked, false) THEN
+        PERFORM wp_internal.os_spread_booked(p_order_id, v_booked);
+    END IF;
 
-    IF NOT order_status_holds_stock(v_status) THEN
+    IF NOT v_holds THEN
         RETURN jsonb_build_object('held', false, 'stock', '{}'::jsonb, 'missing', '[]'::jsonb);
     END IF;
 
-    PERFORM 1 FROM products
-     WHERE id IN (SELECT NULLIF(b->>'product_id', '') FROM jsonb_array_elements(v_before) b
-                  UNION SELECT NULLIF(i->>'id', '') FROM jsonb_array_elements(p_items) i)
-     ORDER BY id
-       FOR NO KEY UPDATE;
+    FOR r IN SELECT id FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL ORDER BY created_at, id
+    LOOP
+        PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id);
+    END LOOP;
+    -- A settled order: the edit's cost difference is booked.
+    PERFORM wp_internal.os_true_up_booked_cogs(p_order_id, COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE));
 
     FOR r IN
         WITH b AS (
@@ -397,15 +571,6 @@ BEGIN
         UPDATE products SET stock = GREATEST(0, COALESCE(stock, 0) - r.d) WHERE id = r.pid
         RETURNING stock INTO v_new_stock;
         v_stock := v_stock || jsonb_build_object(r.pid, v_new_stock);
-        IF r.d > 0 THEN
-            UPDATE inventory_items SET status = 'sold', sale_id = p_order_id
-             WHERE id IN (SELECT id FROM inventory_items WHERE product_id = r.pid AND status = 'in_stock'
-                           ORDER BY created_at, id LIMIT floor(r.d)::INTEGER);
-        ELSE
-            UPDATE inventory_items SET status = 'in_stock', sale_id = NULL
-             WHERE id IN (SELECT id FROM inventory_items WHERE sale_id = p_order_id AND product_id = r.pid
-                           ORDER BY created_at, id LIMIT floor(-r.d)::INTEGER);
-        END IF;
         v_applied := v_applied || jsonb_build_array(jsonb_build_object('pid', r.pid, 'd', r.d, 'name', r.line_name, 'price', r.price));
     END LOOP;
 
@@ -454,12 +619,20 @@ BEGIN
                         v_template.customer_name, v_template.customer_phone);
             END IF;
         END LOOP;
+        -- That shipment's records carry each product's FIFO unit cost now.
+        UPDATE stock_movements sm SET unit_cost = (
+                   SELECT round(sum(si.cogs_cost) / NULLIF(sum(si.quantity), 0), 4)
+                     FROM sale_items si WHERE si.sale_id = p_order_id AND si.product_id = sm.product_id)
+         WHERE sm.reference_id = p_order_id AND sm.type = 'out' AND sm.created_at = v_newest;
     END IF;
 
     RETURN jsonb_build_object('held', true, 'stock', v_stock, 'missing', to_jsonb(v_missing));
 END;
 $$;
 
+GRANT EXECUTE ON FUNCTION wp_internal.os_post_cogs_move(TEXT, TEXT, NUMERIC, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.os_true_up_booked_cogs(TEXT, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.os_spread_booked(TEXT, NUMERIC) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_holds_stock(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION order_status_stock_consumed(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION restock_returned_orders(TEXT[], JSONB) TO anon, authenticated;

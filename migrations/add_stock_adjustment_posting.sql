@@ -11,6 +11,28 @@
 --
 -- Until this is run, the Adjust Stock page still creates new drafts, but
 -- editing or posting one is refused with a message saying to run this file.
+--
+-- FIFO costing. A removal line takes the oldest inventory layers (they are
+-- written off for good) and its unit_cost becomes their average cost; an
+-- addition line becomes new layers at its unit cost (the last receipt cost
+-- when it has none), received on the adjustment date. The ledger entry is
+-- the value those layers moved, so Inventory follows the pool.
+-- RUN ORDER: add_fifo_costing.sql, fifo_rebuild_pool.sql, the four packs,
+-- add_session_guards.sql; this file refuses to load before the first two.
+
+-- FIFO costing must be in place (see add_order_status_function.sql for the
+-- same check and its SET fifo.pool_ready override).
+DO $$
+BEGIN
+    IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
+        RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
+    END IF;
+    IF EXISTS (SELECT 1 FROM inventory_items)
+       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+       AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
+        RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
+    END IF;
+END $$;
 
 -- Returns the first problem with an adjustment's lines, or NULL when fine.
 -- Quantities must be whole numbers other than zero (stock_movements.quantity
@@ -115,7 +137,9 @@ DECLARE
     v_short TEXT := '';
     r RECORD;
     v_ws_qty NUMERIC;
-    v_net NUMERIC;
+    v_net NUMERIC := 0;
+    v_cost NUMERIC;
+    v_unit NUMERIC;
     v_amount NUMERIC;
     v_corrective BOOLEAN;
     v_inventory UUID;
@@ -172,12 +196,27 @@ BEGIN
     END IF;
 
     FOR r IN
-        SELECT l.product_id, l.quantity, COALESCE(l.unit_cost, 0) AS unit_cost, p.name
+        SELECT l.id, l.product_id, l.quantity, COALESCE(l.unit_cost, 0) AS unit_cost, p.name
           FROM stock_adjustment_lines l
           JOIN products p ON p.id = l.product_id
          WHERE l.adjustment_id = p_id
          ORDER BY l.product_id
     LOOP
+        -- FIFO: a removal writes off the oldest layers and is costed at
+        -- them; an addition becomes layers at its cost. v_net is the value
+        -- moved, which the ledger entry below books.
+        IF r.quantity < 0 THEN
+            SELECT c.cost INTO v_cost
+              FROM wp_internal.fifo_consume(r.product_id, (-r.quantity)::INTEGER, 'adjustment', p_id::TEXT, r.id::TEXT) c;
+            v_unit := round(v_cost / -r.quantity, 4);
+            v_net := v_net - v_cost;
+        ELSE
+            v_unit := wp_internal.fifo_add_layers(r.product_id, r.quantity::INTEGER, r.unit_cost,
+                                                  adj.adjustment_date::TIMESTAMPTZ, 'ADJ-' || p_id);
+            v_net := v_net + r.quantity * v_unit;
+        END IF;
+        UPDATE stock_adjustment_lines SET unit_cost = v_unit WHERE id = r.id;
+
         UPDATE products SET stock = COALESCE(stock, 0) + r.quantity WHERE id = r.product_id;
 
         IF adj.warehouse_id IS NOT NULL AND adj.warehouse_id <> '' THEN
@@ -189,19 +228,17 @@ BEGIN
             END IF;
         END IF;
 
-        INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, source, reason,
+        INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, unit_cost, source, reason,
                                      reference_id, note, movement_date, created_by, warehouse_id)
         VALUES (r.product_id, COALESCE(r.name, ''), CASE WHEN r.quantity > 0 THEN 'in' ELSE 'out' END,
-                abs(r.quantity)::INTEGER, r.unit_cost, 'Stock Adjustment', adj.reason,
+                abs(r.quantity)::INTEGER, v_unit, v_unit, 'Stock Adjustment', adj.reason,
                 'ADJ-' || p_id, COALESCE(adj.notes, ''), adj.adjustment_date, p_created_by,
                 NULLIF(adj.warehouse_id, ''));
     END LOOP;
 
     UPDATE stock_adjustments SET status = 'Posted' WHERE id = p_id;
 
-    -- Ledger entry for the net value moved.
-    SELECT COALESCE(sum(quantity * COALESCE(unit_cost, 0)), 0) INTO v_net
-      FROM stock_adjustment_lines WHERE adjustment_id = p_id;
+    -- Ledger entry for the net value moved (the layers' cost, from the loop).
     v_amount := round(abs(v_net), 2);
     IF v_amount = 0 THEN
         RETURN jsonb_build_object('ledger', 'zero');

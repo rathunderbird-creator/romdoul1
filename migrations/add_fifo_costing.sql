@@ -1,18 +1,22 @@
--- FIFO costing, phase 1: the schema and the FIFO primitives. Run once in
--- each instance's Supabase SQL editor (Romdoul1 first; Romdoul2 / Romdoul3
--- only after their count and true-up). Safe to re-run.
+-- FIFO costing: the schema, the FIFO primitives and the line helpers the
+-- stock paths call. Run once in each instance's Supabase SQL editor
+-- (Romdoul1 first; Romdoul2 / Romdoul3 only after their count and
+-- true-up). Safe to re-run.
 --
--- RUN ORDER
---   1. the existing packs (add_wholesale_procurement_functions.sql,
+-- RUN ORDER (per store, in one quiet window)
+--   1. THIS file;
+--   2. fifo_rebuild_pool.sql (the one-time pool rebuild; see its RUN block);
+--   3. the four packs, which call the helpers below and refuse to load
+--      without this file and the rebuild: add_wholesale_procurement_functions.sql,
 --      add_order_status_function.sql, add_order_payment_functions.sql,
---      add_stock_adjustment_posting.sql) and add_session_guards.sql;
---   2. THIS file;
---   3. add_session_guards.sql AGAIN: the guarded public read RPCs
---      (fifo_peek, fifo_inventory_valuation, fifo_inventory_check,
---      order_cogs) live there. Until it is re-run on a store they answer
---      "run add_fifo_costing.sql" there (or do not exist yet).
---   This file creates nothing in public, so re-running it never needs the
---   guards' mover block.
+--      add_stock_adjustment_posting.sql;
+--   4. add_session_guards.sql: it moves the re-created pack functions back
+--      behind the guards and holds the guarded public read RPCs (fifo_peek,
+--      fifo_inventory_valuation, fifo_inventory_check, order_cogs). Until it
+--      is run on a store those answer "run add_fifo_costing.sql" there (or
+--      do not exist yet).
+--   This file creates nothing in public, so re-running it on its own never
+--   needs the guards' mover block.
 --
 -- WHAT THIS DOES
 --   inventory_items stays the per-unit layer table (one row per unit, with
@@ -23,11 +27,13 @@
 --   a unit_cost next to the selling price they already carry.
 --
 --   The wp_internal primitives below take and give back layers inside the
---   CALLER's transaction. In this phase NOTHING calls them: shipping,
---   wholesale, adjustments and settlement behave exactly as before. They are
---   wired in by later phases, after the pool is rebuilt per store
+--   CALLER's transaction. Retail shipping, wholesale orders, stock
+--   adjustments, Add Stock / PO receipts and retail settlement call them
+--   (through fifo_take_line / fifo_give_back_line for order lines). They are
+--   only meaningful once the pool is rebuilt per store
 --   (fifo_rebuild_pool.sql) — on a store whose pool is not rebuilt the
---   layers do not match products.stock and FIFO numbers are meaningless.
+--   layers do not match products.stock — which is why the packs refuse to
+--   load before the rebuild.
 --
 -- CONSTRAINTS THE PRIMITIVES RELY ON
 --   * The caller locks the products row (FOR NO KEY UPDATE) before
@@ -45,7 +51,12 @@
 --     cost / short_qty to cogs_cost / cogs_short_qty and subtracts
 --     fifo_return's. cogs_cost is NULL whenever the line holds no units
 --     (never consumed, or fully returned), so order_cogs falls back to a
---     peek for it.
+--     peek for it. fifo_take_line / fifo_give_back_line do this for a whole
+--     order line, and are what the packs call.
+--   * products.stock moves by the full line quantity, so every unit given
+--     back must land in the pool: fifo_give_back_line adds a layer for each
+--     whole unit that comes back with no row (a shortfall, or a line from
+--     before the FIFO wiring that holds fewer rows than its quantity).
 
 -- ---------------------------------------------------------------------------
 -- 1) Schema
@@ -58,7 +69,8 @@ ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ;
 UPDATE inventory_items SET received_at = COALESCE(created_at, now()) WHERE received_at IS NULL;
 ALTER TABLE inventory_items ALTER COLUMN received_at SET DEFAULT now();
 ALTER TABLE inventory_items ALTER COLUMN received_at SET NOT NULL;
--- 'PO-<id>', 'RST-<restock id>', 'ADJ-<id>', 'OPEN' or 'FIFO-REBUILD'.
+-- 'PO-<id>', 'RST-<restock id>', 'ADJ-<id>', 'OPEN', 'FIFO-REBUILD', or
+-- 'RET-<order id>' (units an order gave back that had no row).
 ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS receipt_ref TEXT;
 -- Who holds a 'sold' / 'written_off' row: retail = sales.id + sale_items.id,
 -- wholesale = wholesale_orders.id + wholesale_order_items.id, adjustment =
@@ -328,6 +340,172 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 2b) Order-line helpers (what the packs call)
+-- ---------------------------------------------------------------------------
+
+-- Takes an order line's whole quantity for it: floor(quantity) units from
+-- the oldest layers (fifo_consume), a fractional part as shortfall at the
+-- fallback cost, and adds the cost and the shortfall to the line's
+-- cogs_cost / cogs_short_qty. p_kind 'retail' (sale_items; p_consumer =
+-- sales.id) or 'wholesale' (wholesale_order_items; p_consumer =
+-- wholesale_orders.id). Returns the cost added (0 for a line with no
+-- product or no quantity). The caller has locked the product and moves
+-- products.stock itself.
+CREATE OR REPLACE FUNCTION wp_internal.fifo_take_line(p_kind TEXT, p_consumer TEXT, p_line TEXT)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_product TEXT;
+    v_qty NUMERIC;
+    v_whole INTEGER;
+    v_cost NUMERIC;
+    v_short NUMERIC;
+BEGIN
+    IF p_kind = 'retail' THEN
+        SELECT product_id, COALESCE(quantity, 0) INTO v_product, v_qty FROM sale_items WHERE id = p_line;
+    ELSIF p_kind = 'wholesale' THEN
+        SELECT product_id, COALESCE(quantity, 0) INTO v_product, v_qty FROM wholesale_order_items WHERE id = p_line::uuid;
+    ELSE
+        RAISE EXCEPTION 'fifo_take_line: unknown line kind %', COALESCE(p_kind, 'NULL');
+    END IF;
+    IF v_product IS NULL OR COALESCE(v_qty, 0) <= 0 THEN
+        RETURN 0;
+    END IF;
+
+    v_whole := floor(v_qty)::int;
+    SELECT c.cost, c.short_qty INTO v_cost, v_short
+      FROM wp_internal.fifo_consume(v_product, v_whole, p_kind, p_consumer, p_line) c;
+    IF v_qty > v_whole THEN
+        v_cost := v_cost + (v_qty - v_whole) * wp_internal.fifo_fallback_cost(v_product);
+        v_short := v_short + (v_qty - v_whole);
+    END IF;
+
+    IF p_kind = 'retail' THEN
+        UPDATE sale_items SET cogs_cost = COALESCE(cogs_cost, 0) + v_cost,
+                              cogs_short_qty = COALESCE(cogs_short_qty, 0) + v_short
+         WHERE id = p_line;
+    ELSE
+        UPDATE wholesale_order_items SET cogs_cost = COALESCE(cogs_cost, 0) + v_cost,
+                                         cogs_short_qty = COALESCE(cogs_short_qty, 0) + v_short
+         WHERE id = p_line::uuid;
+    END IF;
+    RETURN v_cost;
+END;
+$$;
+
+-- Gives back everything an order line holds. Its layers return to the pool
+-- (fifo_return; they keep their received_at), and each whole unit of the
+-- line that comes back with no row gets a new layer, because the caller
+-- puts products.stock back by the full quantity:
+--   * shortfall units, at the cost the line was charged for them (split
+--     into cents that add up to it);
+--   * on a line from before the FIFO wiring (cogs_cost NULL) that holds
+--     fewer rows than its quantity, the missing units at fifo_fallback_cost.
+-- Those layers are received just before the product's oldest in_stock
+-- layer, so the next stock-out takes them first (an order taken again in
+-- the same transaction, as an edit does, gets the same units back). A
+-- fractional unit gets no layer. The line ends holding nothing:
+-- cogs_cost NULL, cogs_short_qty 0; cogs_booked is the caller's. Returns
+-- the value the pool gained.
+CREATE OR REPLACE FUNCTION wp_internal.fifo_give_back_line(p_kind TEXT, p_consumer TEXT, p_line TEXT)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_product TEXT;
+    v_qty NUMERIC;
+    v_line_cost NUMERIC;
+    v_rows INTEGER;
+    v_rows_cost NUMERIC;
+    v_cost NUMERIC;
+    v_short NUMERIC;
+    v_short_cost NUMERIC;
+    v_whole_cost NUMERIC;
+    v_missing NUMERIC;
+    v_n INTEGER;
+    v_unit NUMERIC;
+    v_at TIMESTAMPTZ;
+    v_added NUMERIC := 0;
+BEGIN
+    IF p_kind = 'retail' THEN
+        SELECT product_id, COALESCE(quantity, 0), cogs_cost INTO v_product, v_qty, v_line_cost
+          FROM sale_items WHERE id = p_line;
+    ELSIF p_kind = 'wholesale' THEN
+        SELECT product_id, COALESCE(quantity, 0), cogs_cost INTO v_product, v_qty, v_line_cost
+          FROM wholesale_order_items WHERE id = p_line::uuid;
+    ELSE
+        RAISE EXCEPTION 'fifo_give_back_line: unknown line kind %', COALESCE(p_kind, 'NULL');
+    END IF;
+    IF v_product IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    SELECT count(*)::int, COALESCE(sum(COALESCE(cost_of_purchase, 0)), 0) INTO v_rows, v_rows_cost
+      FROM inventory_items
+     WHERE status = 'sold' AND consumer_kind = p_kind AND consumer_id = p_consumer AND consumer_line_id = p_line;
+    SELECT r.cost, r.short_qty INTO v_cost, v_short
+      FROM wp_internal.fifo_return(p_kind, p_consumer, p_line, NULL) r;
+    v_short := COALESCE(v_short, 0);
+    v_short_cost := GREATEST(COALESCE(v_cost, 0) - v_rows_cost, 0);
+    v_missing := CASE WHEN v_line_cost IS NULL THEN GREATEST(v_qty - v_rows - v_short, 0) ELSE 0 END;
+
+    IF floor(v_short) + floor(v_missing) >= 1 THEN
+        SELECT min(received_at) - interval '1 millisecond' INTO v_at
+          FROM inventory_items WHERE product_id = v_product AND status = 'in_stock';
+        v_at := LEAST(COALESCE(v_at, now()), now());
+    END IF;
+
+    v_n := floor(v_short)::int;
+    IF v_n > 0 THEN
+        v_whole_cost := round(v_short_cost * v_n / v_short, 2);
+        INSERT INTO inventory_items (product_id, cost_of_purchase, status, received_at, receipt_ref)
+        SELECT v_product, round(v_whole_cost * g / v_n, 2) - round(v_whole_cost * (g - 1) / v_n, 2),
+               'in_stock', v_at, 'RET-' || p_consumer
+          FROM generate_series(1, v_n) g;
+        v_added := v_added + v_whole_cost;
+    END IF;
+
+    v_n := floor(v_missing)::int;
+    IF v_n > 0 THEN
+        v_unit := wp_internal.fifo_add_layers(v_product, v_n, NULL, v_at, 'RET-' || p_consumer);
+        v_added := v_added + v_n * v_unit;
+    END IF;
+
+    IF p_kind = 'retail' THEN
+        UPDATE sale_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE id = p_line;
+    ELSE
+        UPDATE wholesale_order_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE id = p_line::uuid;
+    END IF;
+    RETURN v_rows_cost + v_added;
+END;
+$$;
+
+-- An order's retail COGS at FIFO, per line: the frozen cogs_cost where the
+-- line holds units, else a peek of the product's next layers — the order's
+-- lines of one product take consecutive layers in line order (created_at,
+-- id), so two lines never price the same layers. Each amount is rounded to
+-- cents; settlement books these and order_cogs adds them up.
+CREATE OR REPLACE FUNCTION wp_internal.order_cogs_lines(p_order_id TEXT)
+RETURNS TABLE (line_id TEXT, product_id TEXT, amount NUMERIC)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT si.id, si.product_id, round(si.cogs_cost, 2)
+      FROM sale_items si
+     WHERE si.sale_id = p_order_id AND si.product_id IS NOT NULL AND si.cogs_cost IS NOT NULL
+    UNION ALL
+    SELECT x.id, x.product_id,
+           round(wp_internal.fifo_peek_cost(x.product_id, x.upto)
+                 - wp_internal.fifo_peek_cost(x.product_id, x.upto - x.qty), 2)
+      FROM (SELECT si.id, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0) AS qty,
+                   sum(GREATEST(COALESCE(si.quantity, 0), 0))
+                       OVER (PARTITION BY si.product_id ORDER BY si.created_at, si.id) AS upto
+              FROM sale_items si
+             WHERE si.sale_id = p_order_id AND si.product_id IS NOT NULL AND si.cogs_cost IS NULL) x;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 3) Read implementations (the guarded public RPCs are in
 --    add_session_guards.sql)
 -- ---------------------------------------------------------------------------
@@ -380,25 +558,15 @@ AS $$
      ORDER BY p.name, p.id;
 $$;
 
--- An order's retail COGS at FIFO: each line's frozen cogs_cost where it has
--- one, else a peek of the product's next layers (lines of one product are
--- peeked together, so they do not price the same layers twice). Rounded to
--- 2 places.
+-- An order's retail COGS at FIFO: the sum of order_cogs_lines (each line's
+-- frozen cogs_cost where it has one, else a peek of the product's next
+-- layers), which is exactly what settling it now books.
 CREATE OR REPLACE FUNCTION wp_internal.order_cogs(p_order_id TEXT)
 RETURNS NUMERIC
 LANGUAGE sql
 STABLE
 AS $$
-    SELECT round(
-        COALESCE((SELECT sum(si.cogs_cost) FROM sale_items si
-                   WHERE si.sale_id = p_order_id AND si.cogs_cost IS NOT NULL), 0)
-      + COALESCE((SELECT sum(wp_internal.fifo_peek_cost(t.product_id, t.qty))
-                    FROM (SELECT si.product_id, sum(COALESCE(si.quantity, 0)) AS qty
-                            FROM sale_items si
-                           WHERE si.sale_id = p_order_id AND si.cogs_cost IS NULL
-                             AND si.product_id IS NOT NULL
-                           GROUP BY si.product_id) t), 0),
-        2);
+    SELECT round(COALESCE(sum(amount), 0), 2) FROM wp_internal.order_cogs_lines(p_order_id);
 $$;
 
 -- The store's FIFO health check, as JSONB:
@@ -505,6 +673,9 @@ GRANT EXECUTE ON FUNCTION wp_internal.fifo_return(TEXT, TEXT, TEXT, INTEGER) TO 
 GRANT EXECUTE ON FUNCTION wp_internal.fifo_peek_cost(TEXT, NUMERIC) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.fifo_peek(TEXT, NUMERIC) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.fifo_inventory_valuation() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.fifo_take_line(TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.fifo_give_back_line(TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.order_cogs_lines(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.order_cogs(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.fifo_inventory_check() TO anon, authenticated;
 

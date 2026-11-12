@@ -13,9 +13,11 @@
 --   * add_wholesale_procurement_functions.sql
 --   * add_stock_adjustment_posting.sql  (after create_stock_adjustments.sql)
 --   * add_config_functions.sql
---   * add_fifo_costing.sql (optional: the FIFO read RPCs of section 3b
---     answer "run add_fifo_costing.sql" until it is run; run it, then
---     re-run this file)
+--   * add_fifo_costing.sql and fifo_rebuild_pool.sql BEFORE the four stock
+--     packs above (they call the FIFO helpers and refuse to load without
+--     them): add_fifo_costing.sql, fifo_rebuild_pool.sql, the packs, then
+--     this file. The FIFO read RPCs of section 3b answer "run
+--     add_fifo_costing.sql" on a store that has not run it.
 -- If you ever RE-RUN one of those pack files, re-run THIS file IMMEDIATELY
 -- afterwards, in the same SQL-editor session: a pack re-run recreates its
 -- public functions unguarded BESIDE the guarded wrappers, and until this
