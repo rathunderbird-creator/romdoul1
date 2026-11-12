@@ -9,6 +9,7 @@ import { DateRangePicker } from '../../../components';
 import { D2, cardStyle, tabular } from '../../dashboard2/theme';
 import type { OM2Filters } from '../urlFilters';
 import type { Translate } from '../types';
+import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 interface CommandBarProps {
     filters: OM2Filters;
@@ -87,7 +88,7 @@ const FilterGroup: React.FC<{ label: string; options: string[]; selected: string
                 {options.map(opt => (
                     <label key={opt} className="om2-khmer" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: D2.ink, cursor: 'pointer', minWidth: 0 }}>
                         <input type="checkbox" checked={selected.includes(opt)} onChange={() => onToggle(opt)} style={{ flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={opt}>{opt}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={orderStatusLabel(opt)}>{orderStatusLabel(opt)}</span>
                     </label>
                 ))}
             </div>

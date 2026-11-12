@@ -3,7 +3,7 @@
 // order sits here its goods are counted OUT of stock but are not on the shelf,
 // so this page is where staff chase the carrier and, once the parcel is
 // physically back in the shop, restock it (ReStock puts the units back).
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Boxes, Clock, ExternalLink, Package, RefreshCw, Search, Undo2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -22,10 +22,16 @@ import type { Sale } from '../types';
 const DAY_MS = 24 * 60 * 60 * 1000;
 type AgeFilter = 'all' | '7' | '30';
 
-// Days since the order last changed — for a Returning order that is (at the
-// latest) when it was marked Returning; the order date when never edited.
-const daysWaiting = (o: Sale, now: number): number => {
-    const ref = Date.parse(o.lastEditedAt || o.date || '');
+// When the order became Returning: its latest "status → Returned" activity-log
+// entry. Without one (older orders, or a failed log write) fall back to the
+// last edit — any edit moves that, so it's labelled as such.
+type Since = { at: string; fromLog: boolean };
+const sinceOf = (o: Sale, returnedAt: Map<string, string>): Since => {
+    const logged = returnedAt.get(String(o.id));
+    return logged ? { at: logged, fromLog: true } : { at: o.lastEditedAt || o.date || '', fromLog: false };
+};
+const daysSince = (iso: string, now: number): number => {
+    const ref = Date.parse(iso);
     return Number.isFinite(ref) ? Math.max(0, Math.floor((now - ref) / DAY_MS)) : 0;
 };
 const ageColor = (d: number) => (d >= 30 ? '#DC2626' : d >= 7 ? '#D97706' : 'var(--color-text-secondary)');
@@ -70,8 +76,12 @@ const ReturningItems: React.FC = () => {
     const [restocking, setRestocking] = useState(false);
     // Fixed per load, so ages don't shift while the page is open.
     const [now, setNow] = useState(() => Date.now());
+    const [returnedAt, setReturnedAt] = useState<Map<string, string>>(new Map());
+    // Only the latest load may commit (a restock triggers a reload while one may run).
+    const loadSeq = useRef(0);
 
     const load = useCallback(async () => {
+        const seq = ++loadSeq.current;
         setLoading(true);
         setLoadError('');
         try {
@@ -79,14 +89,33 @@ const ReturningItems: React.FC = () => {
                 .select('*, items:sale_items(id, sale_id, product_id, name, price, quantity)')
                 .eq('shipping_status', 'Returned')
                 .order('id').range(from, to), 1000, { label: 'ReturningItems' });
-            setOrders(rows.map(mapSaleEntity));
-            setSelected(new Set());
+            const mapped = rows.map(mapSaleEntity);
+            // When each became Returning, from the activity log (best effort).
+            const since = new Map<string, string>();
+            const ids = mapped.map(s => String(s.id));
+            for (let i = 0; i < ids.length; i += 100) {
+                const { data, error } = await supabase.from('activity_logs')
+                    .select('metadata, created_at')
+                    .eq('action', 'order_status')
+                    .eq('metadata->>status', 'Returned')
+                    .in('metadata->>orderId', ids.slice(i, i + 100));
+                if (error) break;
+                for (const row of (data || []) as { metadata?: { orderId?: string }; created_at: string }[]) {
+                    const id = String(row.metadata?.orderId || '');
+                    if (id && (!since.has(id) || row.created_at > (since.get(id) as string))) since.set(id, row.created_at);
+                }
+            }
+            if (seq !== loadSeq.current) return;
+            setOrders(mapped);
+            setReturnedAt(since);
+            // Keep a selection across reloads where the order is still listed.
+            setSelected(prev => new Set([...prev].filter(id => ids.includes(id))));
             setNow(Date.now());
         } catch (e) {
             console.error('Failed to load returning orders:', e);
-            setLoadError(errorText(e, 'Could not load returning orders.'));
+            if (seq === loadSeq.current) setLoadError(errorText(e, 'Could not load returning orders.'));
         } finally {
-            setLoading(false);
+            if (seq === loadSeq.current) setLoading(false);
         }
     }, []);
     // Reload when orders change anywhere (e.g. restocked from Orders Management).
@@ -104,7 +133,7 @@ const ReturningItems: React.FC = () => {
         const qDigits = q.replace(/\D/g, '');
         return orders
             .filter(o => !carrier || (o.shipping?.company || '') === carrier)
-            .filter(o => age === 'all' || daysWaiting(o, now) >= Number(age))
+            .filter(o => age === 'all' || daysSince(sinceOf(o, returnedAt).at, now) >= Number(age))
             .filter(o => {
                 if (!q) return true;
                 const phone = String(o.customer?.phone || '').replace(/\D/g, '');
@@ -114,16 +143,16 @@ const ReturningItems: React.FC = () => {
                     || (o.shipping?.trackingNumber || '').toLowerCase().includes(q)
                     || o.items.some(i => (i.name || '').toLowerCase().includes(q));
             })
-            .sort((a, b) => daysWaiting(b, now) - daysWaiting(a, now));
-    }, [orders, search, carrier, age, now]);
+            .sort((a, b) => daysSince(sinceOf(b, returnedAt).at, now) - daysSince(sinceOf(a, returnedAt).at, now));
+    }, [orders, search, carrier, age, now, returnedAt]);
 
     const stats = useMemo(() => {
         const units = orders.reduce((s, o) => s + o.items.reduce((n, i) => n + (Number(i.quantity) || 0), 0), 0);
         const value = orders.reduce((s, o) => s + costOf(o), 0);
-        const oldest = orders.reduce((m, o) => Math.max(m, daysWaiting(o, now)), 0);
-        const over30 = orders.filter(o => daysWaiting(o, now) >= 30).length;
+        const oldest = orders.reduce((m, o) => Math.max(m, daysSince(sinceOf(o, returnedAt).at, now)), 0);
+        const over30 = orders.filter(o => daysSince(sinceOf(o, returnedAt).at, now) >= 30).length;
         return { parcels: orders.length, units, value, oldest, over30 };
-    }, [orders, costOf, now]);
+    }, [orders, costOf, now, returnedAt]);
 
     const toggle = (id: string) => setSelected(prev => {
         const next = new Set(prev);
@@ -143,7 +172,7 @@ const ReturningItems: React.FC = () => {
                 ? 'Nothing restocked: these orders are no longer Returning.'
                 : `Restocked ${n} order${n === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} skipped — no longer Returning)` : ''}.`, n === 0 ? 'info' : 'success');
             setConfirmIds(null);
-            await load();
+            // bulkRestockOrders bumps salesUpdatedAt, which reloads this list.
         } catch (e) {
             showToast(errorText(e, 'Restock failed.'), 'error');
         } finally {
@@ -205,7 +234,7 @@ const ReturningItems: React.FC = () => {
                     <RefreshCw size={14} />
                 </button>
                 <div style={{ flex: 1 }} />
-                {restockButton(Array.from(selected), `Received → ReStock (${selected.size})`)}
+                {!isMobile && restockButton(Array.from(selected), `Received → ReStock (${selected.size})`)}
             </div>
 
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
@@ -218,7 +247,7 @@ const ReturningItems: React.FC = () => {
             {isMobile ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {rows.map(o => {
-                        const d = daysWaiting(o, now);
+                        const d = daysSince(sinceOf(o, returnedAt).at, now);
                         return (
                             <div key={o.id} className="glass-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
@@ -254,7 +283,7 @@ const ReturningItems: React.FC = () => {
                         </thead>
                         <tbody>
                             {rows.map(o => {
-                                const d = daysWaiting(o, now);
+                                const d = daysSince(sinceOf(o, returnedAt).at, now);
                                 return (
                                     <tr key={o.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                                         {canRestock && <td style={{ padding: '8px 12px' }}><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggle(o.id)} /></td>}
@@ -262,7 +291,7 @@ const ReturningItems: React.FC = () => {
                                             <button onClick={() => navigate(`/orders/${o.id}`)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }}>{o.id}</button>
                                         </td>
                                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{shortDate(o.date)}</td>
-                                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: ageColor(d), fontWeight: 600 }} title={`Since ${shortDate(o.lastEditedAt || o.date)} (last change to the order)`}>{d} days</td>
+                                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: ageColor(d), fontWeight: 600 }} title={sinceOf(o, returnedAt).fromLog ? `Returning since ${shortDate(sinceOf(o, returnedAt).at)}` : `Since ${shortDate(sinceOf(o, returnedAt).at)} (last change to the order — no status log found)`}>{d} days</td>
                                         <td style={{ padding: '8px 12px' }}>{o.customer?.name || '-'}</td>
                                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{formatPhoneDisplay(o.customer?.phone) || '-'}</td>
                                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: getShippingCoColor(o.shipping?.company || ''), fontWeight: 600 }}>{o.shipping?.company || '-'}</td>

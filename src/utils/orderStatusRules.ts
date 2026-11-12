@@ -21,6 +21,22 @@ export interface StatusActor {
 // Mirrors the Orders.tsx row rule: 'Delivered' and 'Returned' only make sense
 // once the goods have shipped; the two may flip between each other (real
 // post-delivery returns, or correcting a mis-click) — stock-neutral.
+// What staff see for a stored order status. Only the wording changes: the
+// stored value stays 'Returned' (rules, filters, reports and the database all
+// key on it). 'Returned' reads as "Returning" because at that point the parcel
+// is still on its way back — it becomes stock again only at ReStock.
+const ORDER_STATUS_LABELS: Record<string, string> = { Returned: 'Returning' };
+export const orderStatusLabel = (status: string): string => ORDER_STATUS_LABELS[status] || status;
+
+// Stored statuses whose DISPLAYED label contains `text` but whose stored value
+// doesn't (e.g. "returning" -> ['Returned']), so a text filter on the stored
+// column can still find what staff typed from the screen.
+export const orderStatusesMatchingLabel = (text: string): string[] => {
+    const q = text.trim().toLowerCase();
+    if (!q) return [];
+    return Object.keys(ORDER_STATUS_LABELS).filter(s => !s.toLowerCase().includes(q) && ORDER_STATUS_LABELS[s].toLowerCase().includes(q));
+};
+
 export const POST_DISPATCH_STATUSES = ['Delivered', 'Returned'];
 export const canEnterPostDispatch = (current: string, target: string): boolean =>
     current === 'Shipped' ||
@@ -29,8 +45,8 @@ export const canEnterPostDispatch = (current: string, target: string): boolean =
 
 export const postDispatchMessage = (current: string, target: string): string =>
     POST_DISPATCH_STATUSES.includes(current)
-        ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
-        : `Mark the order Shipped before ${target} — set it back to Drafted and follow Confirmed → Shipped.`;
+        ? `This order is already ${orderStatusLabel(current)}. ${orderStatusLabel(current)} orders cannot be changed to ${orderStatusLabel(target)}.`
+        : `Mark the order Shipped before ${orderStatusLabel(target)} — set it back to Drafted and follow Confirmed → Shipped.`;
 
 // The per-current-status option locks of the Orders.tsx row badge for
 // non-admins (its disabledOptions ladder), as data. 'ReStock' is handled
@@ -79,7 +95,7 @@ export const statusChangeRefusal = (
     }
     if (actor.isAdmin) return null;
     if (NON_ADMIN_LOCKED_STATUSES.includes(current)) {
-        return `${current} orders cannot be changed. Ask an administrator.`;
+        return `${orderStatusLabel(current)} orders cannot be changed. Ask an administrator.`;
     }
     if (order.paymentStatus === 'Cancel') {
         return 'This order’s payment is cancelled — its status can only be changed by an administrator.';
@@ -88,7 +104,7 @@ export const statusChangeRefusal = (
         return postDispatchMessage(current, target);
     }
     if (nonAdminDisabledStatusOptions(current).includes(target)) {
-        return `${current} orders cannot be moved to ${target}. Ask an administrator.`;
+        return `${orderStatusLabel(current)} orders cannot be moved to ${orderStatusLabel(target)}. Ask an administrator.`;
     }
     return null;
 };
@@ -118,7 +134,7 @@ export const paymentChangeRefusal = (
     }
     if (payment === target) return null; // no-op rows are quietly fine
     if (['ReStock', 'Drafted', 'Returned', 'Cancelled'].includes(shipping)) {
-        return `The payment of ${shipping} orders can only be changed by an administrator.`;
+        return `The payment of ${orderStatusLabel(shipping)} orders can only be changed by an administrator.`;
     }
     if (target === 'Cancel') {
         return 'Only an administrator can cancel a payment.';
@@ -144,10 +160,3 @@ export const settleDateChangeRefusal = (
     }
     return null;
 };
-
-// What staff see for a stored order status. Only the wording changes: the
-// stored value stays 'Returned' (rules, filters, reports and the database all
-// key on it). 'Returned' reads as "Returning" because at that point the parcel
-// is still on its way back — it becomes stock again only at ReStock.
-const ORDER_STATUS_LABELS: Record<string, string> = { Returned: 'Returning' };
-export const orderStatusLabel = (status: string): string => ORDER_STATUS_LABELS[status] || status;

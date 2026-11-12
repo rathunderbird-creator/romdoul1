@@ -12,6 +12,7 @@ import { fetchAll } from '../utils/fetchAll';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
 import { buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
+import { orderStatusLabel } from '../utils/orderStatusRules';
 import type {
     Product,
     CartItem,
@@ -524,7 +525,7 @@ const canEnterPostDispatch = (currentStatus: string, targetStatus?: string) =>
     (targetStatus === 'Delivered' && currentStatus === 'Returned');
 
 const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: string) =>
-    `This order is "${currentStatus}" and cannot be marked ${targetStatus} directly.\n\n` +
+    `This order is "${orderStatusLabel(currentStatus)}" and cannot be marked ${orderStatusLabel(targetStatus)} directly.\n\n` +
     `Stock is counted out when an order is Shipped, so skipping that step would leave ` +
     `inventory unchanged — and deleting the order later would add stock back that was ` +
     `never taken.\n\n` +
@@ -534,11 +535,11 @@ const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: stri
 // confirm spells out that a forced jump is a status-only change, so any stock the
 // skipped Shipped step would have counted out stays untouched.
 const ADMIN_FORCE_STATUS_MESSAGE = (currentStatus: string, targetStatus: string) =>
-    `Admin override — this order is "${currentStatus}", which normally cannot be marked ` +
-    `${targetStatus} directly (stock is counted out at the Shipped step).\n\n` +
+    `Admin override — this order is "${orderStatusLabel(currentStatus)}", which normally cannot be marked ` +
+    `${orderStatusLabel(targetStatus)} directly (stock is counted out at the Shipped step).\n\n` +
     `Stock follows the new status: if the goods are still in stock, they are counted ` +
     `out now, as if the order had shipped.\n\n` +
-    `Change it to ${targetStatus} anyway?`;
+    `Change it to ${orderStatusLabel(targetStatus)} anyway?`;
 
 // Exported (not just the hook) so a dev-only preview harness can supply a
 // mock value directly via <StoreContext.Provider> without pulling in the
@@ -2645,7 +2646,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // status someone else set. Same message as the database's own check.
         if (status !== freshStatus && expectedStatus !== freshStatus) {
             setSalesUpdatedAt(Date.now());
-            return refuse(`This order is now "${freshStatus}": it was changed somewhere else, so your change was not saved. Refresh and check it before trying again.`);
+            return refuse(`This order is now "${orderStatusLabel(freshStatus)}": it was changed somewhere else, so your change was not saved. Refresh and check it before trying again.`);
         }
 
         // Already at the target status: no transition and no alert (bulk selections
@@ -2664,7 +2665,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // needs the Restock permission, and only a Returned order can be restocked.
         const restocking = status === 'ReStock' && freshStatus !== 'ReStock';
         if (restocking && freshStatus !== 'Returned') {
-            return refuse(`Only a Returned order can be restocked. This order is "${freshStatus}".`);
+            return refuse(`Only a Returning order can be restocked. This order is "${orderStatusLabel(freshStatus)}".`);
         }
         if (restocking && !hasPermission('restock_orders')) {
             return refuse('You do not have permission to restock orders.');

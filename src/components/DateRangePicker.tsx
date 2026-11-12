@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
@@ -227,17 +227,19 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
 
             // Check if it would go off-screen to the right
             const wouldOverflow = rect.left + estimatedWidth > viewW;
-            const left = wouldOverflow ? (rect.right - estimatedWidth) + window.scrollX / z : rect.left + window.scrollX / z;
+            // The desktop popup is position: fixed — viewport coordinates, no scroll offset.
+            const left = wouldOverflow ? rect.right - estimatedWidth : rect.left;
 
             setCoords({
-                top: rect.bottom + window.scrollY / z + 8,
+                top: rect.bottom + 8,
                 left: Math.max(8, left),
                 width: rect.width
             });
         }
     };
 
-    useEffect(() => {
+    // Layout effect: positioned before the first paint, so no flash at (0,0).
+    useLayoutEffect(() => {
         if (isOpen) {
             updatePosition();
             window.addEventListener('resize', updatePosition);

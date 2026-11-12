@@ -5,6 +5,7 @@ import { Truck, PackageCheck, Package, DollarSign, Settings } from 'lucide-react
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import type { Sale } from '../../types';
+import { orderStatusLabel } from '../../utils/orderStatusRules';
 
 
 const COLORS = ['#8B5CF6', '#EC4899', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#6B7280'];
@@ -263,7 +264,7 @@ const ShippingReport: React.FC = () => {
                                 <Bar dataKey="delivered" name="Delivered" stackId="a" fill="#10B981" barSize={32} />
                                 <Bar dataKey="shipped" name="Shipped" stackId="a" fill="#3B82F6" />
                                 <Bar dataKey="pending" name="Pending" stackId="a" fill="#F59E0B" />
-                                <Bar dataKey="returned" name="Returned" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="returned" name="Returning" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No shipping data available.</div>}
@@ -278,7 +279,7 @@ const ShippingReport: React.FC = () => {
                         <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>Status:</span>
                         <button onClick={() => setStatusFilter(new Set())} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.size === 0 ? 'var(--color-primary)' : 'transparent', color: statusFilter.size === 0 ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>All</button>
                         {STATUS_OPTIONS.map(s => (
-                            <button key={s} onClick={() => toggleStatus(s)} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.has(s) ? (s === 'Delivered' ? '#10B981' : s === 'Shipped' ? '#3B82F6' : s === 'Returned' || s === 'Cancelled' ? '#EF4444' : '#F59E0B') : 'transparent', color: statusFilter.has(s) ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>{s}</button>
+                            <button key={s} onClick={() => toggleStatus(s)} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.has(s) ? (s === 'Delivered' ? '#10B981' : s === 'Shipped' ? '#3B82F6' : s === 'Returned' || s === 'Cancelled' ? '#EF4444' : '#F59E0B') : 'transparent', color: statusFilter.has(s) ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>{orderStatusLabel(s)}</button>
                         ))}
                     </div>
                 </div>
@@ -293,7 +294,7 @@ const ShippingReport: React.FC = () => {
                                 <th style={{ textAlign: 'right' }}>Total Cost</th>
                                 <th style={{ textAlign: 'center' }}>Delivered</th>
                                 <th style={{ textAlign: 'center' }}>Shipped</th>
-                                <th style={{ textAlign: 'center' }}>Returned</th>
+                                <th style={{ textAlign: 'center' }}>Returning</th>
                             </tr>
                         </thead>
                         <tbody>

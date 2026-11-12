@@ -135,7 +135,7 @@ const ReturnsRestocks: React.FC = () => {
             setSelectedReturnedOrderIds(new Set());
             alert(restocked === requested
                 ? 'Successfully Added Product back to Stock'
-                : `Added ${restocked} of ${requested} orders back to stock. The others are no longer Returned (already restocked or changed by someone else).`);
+                : `Added ${restocked} of ${requested} orders back to stock. The others are no longer Returning (already restocked or changed by someone else).`);
             await fetchHistoricalOrders();
         } catch (error: any) {
              console.error("Bulk restock failed:", error);
@@ -174,7 +174,7 @@ const ReturnsRestocks: React.FC = () => {
                 {/* ReStock Table (Returned Orders) */}
                 <div className="glass-panel" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid #FCA5A5', minHeight: isMobile ? '400px' : 'auto' }}>
                     <h3 style={{ padding: '16px 20px', borderBottom: '1px solid #FCA5A5', margin: 0, fontSize: '15px', fontWeight: 600, color: '#DC2626', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '8px', position: 'sticky', top: 0, zIndex: 10 }}>
-                        <AlertTriangle size={16} /> Returned Orders
+                        <AlertTriangle size={16} /> Returning Orders
                         {selectedReturnedOrderIds.size > 0 && (
                             <button 
                                 onClick={handleBulkRestock}
@@ -276,7 +276,7 @@ const ReturnsRestocks: React.FC = () => {
                                                             // The same Restock flow as the bulk button: only a Returned order, stock and
                                                             // the return record, payment Cancel (PdFee kept) and income cleanup.
                                                             const restocked = await bulkRestockOrders([order.id]);
-                                                            alert(restocked > 0 ? 'Successfully Added Product back to Stock' : 'This order is no longer Returned (already restocked or changed by someone else), so nothing was added.');
+                                                            alert(restocked > 0 ? 'Successfully Added Product back to Stock' : 'This order is no longer Returning (already restocked or changed by someone else), so nothing was added.');
                                                             await fetchHistoricalOrders();
                                                         } catch (error: any) {
                                                             console.error("Restock failed:", error);

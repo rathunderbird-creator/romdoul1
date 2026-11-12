@@ -12,6 +12,7 @@ import { orderBalance, previewPayChange, isMissingTracking, orderStatusOf, paySt
 import type { OrderEdit, PillTone } from '../types';
 import { getOperatorForPhone } from '../../../utils/telecom';
 import { getShippingLogo } from '../../../utils/shipping';
+import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 type PayStatus = NonNullable<Order['paymentStatus']>;
 const PAYMENT_STATUS_OPTIONS: PayStatus[] = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File'];
@@ -598,7 +599,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                         onChange={e => setOrderStatus(e.target.value as ShipStatus)}
                         style={statusSelectStyle(ORDER_STATUS_TONE[orderStatus])}
                     >
-                        {ORDER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        {ORDER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{orderStatusLabel(s)}</option>)}
                     </select>
                     <div style={{ fontSize: 11, color: D2.muted, marginTop: 4 }}>
                         Some moves aren't allowed from every status (e.g. a Delivered or Returned order is locked) — an invalid change is rejected with a message when you save.

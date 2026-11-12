@@ -7,7 +7,7 @@ import { Search, X, Settings, Truck, Clock, Package, ChevronLeft, ChevronRight, 
 import type { Sale } from '../types';
 import { ReceiptModal, StatusBadge, DateRangePicker, Modal } from '../components';
 import { getShippingCoColor } from '../utils/orderUtils';
-import { statusChangeRefusal, nonAdminDisabledStatusOptions } from '../utils/orderStatusRules';
+import { statusChangeRefusal, nonAdminDisabledStatusOptions, orderStatusLabel } from '../utils/orderStatusRules';
 import { buildTrackingUrl } from '../utils/tracking';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
@@ -1191,7 +1191,7 @@ const DeliveryTracking: React.FC = () => {
                                                 }}
                                                 style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                             />
-                                            <span style={{ fontSize: "13px", padding: '2px 6px', borderRadius: '4px', background: colors.bg, color: colors.color }}>{s}</span>
+                                            <span style={{ fontSize: "13px", padding: '2px 6px', borderRadius: '4px', background: colors.bg, color: colors.color }}>{orderStatusLabel(s)}</span>
                                         </label>
                                     );
                                 })}
@@ -1611,7 +1611,7 @@ const DeliveryTracking: React.FC = () => {
                                             alignItems: 'center',
                                             gap: '2px'
                                         }}>
-                                            {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                            {orderStatusLabel(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
                                         </span>
                                     );
                                 });
@@ -1765,7 +1765,7 @@ const DeliveryTracking: React.FC = () => {
                                         <option value="Shipped">Shipped</option>
                                         <option value="Delivered">Delivered</option>
                                         <option value="Cancelled">Cancelled</option>
-                                        <option value="Returned">Returned</option>
+                                        <option value="Returned">Returning</option>
                                         <option value="ReStock">ReStock</option>
                                     </select>
                                 </div>

@@ -14,6 +14,7 @@ import { getOperatorForPhone } from '../../../utils/telecom';
 import { getPaymentLogo, getPaymentColor } from '../../../utils/payment';
 import { getShippingLogo } from '../../../utils/shipping';
 import { getShippingCoColor } from '../../../utils/orderUtils';
+import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 export interface OrdersTableProps {
     orders: Order[];
@@ -418,7 +419,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                                     </td>
                                                 );
                                             case 'status':
-                                                return <td key={key} style={colCellStyle(key)}><MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{status}</MutedPill></td>;
+                                                return <td key={key} style={colCellStyle(key)}><MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{orderStatusLabel(status)}</MutedPill></td>;
                                             case 'payStatus':
                                                 return (
                                                     <td key={key} style={colCellStyle(key)}>

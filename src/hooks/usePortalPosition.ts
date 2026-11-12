@@ -27,9 +27,12 @@ export function usePortalPosition(
             const z = bodyZoom();
             const r = anchor.getBoundingClientRect();
             // offsetHeight/Width are already in body (zoomed) CSS px.
-            // scrollHeight: the full height even while a previous maxHeight caps it.
-            const popupH = popupRef.current?.scrollHeight || 0;
-            const popupW = popupRef.current?.offsetWidth || r.width / z;
+            // Full height even while a previous maxHeight caps it (scrollHeight),
+            // plus borders (offsetHeight - clientHeight). The popup is given the
+            // anchor's width, so never clamp with less than that.
+            const el = popupRef.current;
+            const popupH = el ? el.scrollHeight + (el.offsetHeight - el.clientHeight) : 0;
+            const popupW = Math.max(el?.offsetWidth || 0, r.width / z);
             const viewH = window.innerHeight / z;
             const viewW = window.innerWidth / z;
             const scrollY = window.scrollY / z;
@@ -44,7 +47,7 @@ export function usePortalPosition(
             if (popupH <= roomBelow) top = below;
             else if (popupH <= roomAbove) top = above;
             else if (roomBelow >= roomAbove) { top = below; maxHeight = Math.max(80, roomBelow); }
-            else { maxHeight = Math.max(80, roomAbove); top = r.top / z - gap - maxHeight; }
+            else { maxHeight = Math.max(80, roomAbove); top = Math.max(4, r.top / z - gap - maxHeight); }
             setPos({ top: top + scrollY, left, width: r.width / z, ready: true, maxHeight });
         };
         update();

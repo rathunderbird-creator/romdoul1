@@ -10,6 +10,7 @@ import { ShoppingBag, AlertTriangle, TrendingUp, CreditCard, Package, User, Truc
 import StatsCard from './StatsCard';
 import type { OrderListFilters } from '../utils/orderListFilters';
 import type { Sale, Product } from '../types';
+import { orderStatusLabel } from '../utils/orderStatusRules';
 
 export interface ClassicDashboardSectionsProps {
     orders: Sale[];                    // every order in the selected range
@@ -467,7 +468,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     return (
                         <StatsCard
                             key={idx}
-                            title={stat.status}
+                            title={orderStatusLabel(stat.status)}
                             value={stat.count}
                             icon={Package}
                             color={color}

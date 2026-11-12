@@ -4,6 +4,7 @@ import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge from './PaymentStatusBadge';
 import { getOperatorForPhone } from '../utils/telecom';
+import { orderStatusLabel } from '../utils/orderStatusRules';
 import './MobileOrderCard.css';
 
 interface MobileOrderCardProps {
@@ -200,7 +201,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                     </div>
                     <div className="moc-tags-row">
                         <span className={`moc-tag shipping-${shippingStatus}`}>
-                            {order.shipping?.status || 'Drafted'}
+                            {orderStatusLabel(order.shipping?.status || 'Drafted')}
                         </span>
                         <span className={`moc-tag ${getPayBadgeClass()}`}>
                             {payStatus === 'Get File' ? 'File' : payStatus}
