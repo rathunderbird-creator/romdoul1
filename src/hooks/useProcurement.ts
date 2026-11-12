@@ -10,6 +10,7 @@ import { createRetryKeys } from '../utils/retryKey';
 import { outstandingReceipt, poReceiveMarker } from '../utils/receivePurchaseOrder';
 import { callDbFunction } from '../utils/dbFunctions';
 import { fetchAll } from '../utils/fetchAll';
+import { fetchLedgerStartDate, isBeforeLedgerStart, purchaseOrderLedgerDay } from '../utils/ledgerStart';
 
 const supplierPaymentGuard = createInFlightGuard();
 const supplierPaymentKeys = createRetryKeys();
@@ -79,6 +80,16 @@ export const postPurchaseReceiptEntry = async (
         }
 
         if (amount <= 0) return;
+        // A PO recorded before the opening stock count was received into that
+        // count; booking it now (dated today) would add its stock and payable a
+        // second time. Fail closed if the PO can't be read.
+        const start = await fetchLedgerStartDate();
+        if (start) {
+            const { data: poRow, error: poErr } = await supabase.from('purchase_orders')
+                .select('created_at, order_date').eq('id', poId).maybeSingle();
+            if (poErr || !poRow) { console.error('Could not read the PO for the ledger-start check:', poErr); return; }
+            if (isBeforeLedgerStart(purchaseOrderLedgerDay(poRow), start)) return;
+        }
         if (!inventoryAcc || !apAcc) {
             showToast('PO received, but no Inventory or Accounts Payable account exists in the Chart of Accounts — no ledger entry was posted.', 'info');
             return;
