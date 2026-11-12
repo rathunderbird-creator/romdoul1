@@ -15,14 +15,15 @@ let seq = 0;
 const row = (product_id, cost, day, status = 'in_stock', sale_id = null) =>
     ({ id: `00000000-0000-0000-0000-${String(++seq).padStart(12, '0')}`, product_id, cost_of_purchase: cost, status, sale_id, created_at: ts(day) });
 
-function run({ products, items, sales = [], saleItems = [], cogs = [], shipAt = {}, receipt = {}, B, basis }) {
+function run({ products, items, sales = [], saleItems = [], cogs = [], booked = {}, shipAt = {}, receipt = {}, B, basis, uStatuses, uFrom }) {
     return planStore({
         products, items,
         sales: new Map(sales.map((s) => [s.id, s])),
-        saleItems, cogsOrders: new Set(cogs),
+        saleItems, cogsOrders: new Set(cogs), cogsBooked: new Map(Object.entries(booked)),
         shipAt: new Map(Object.entries(shipAt)),
         receiptCost: new Map(Object.entries(receipt).map(([k, v]) => [k, { cost: v, source: 'restock (last receipt)' }])),
         B, basis: basis ? new Map(Object.entries(basis)) : undefined,
+        uStatuses: uStatuses ? new Set(uStatuses) : undefined, uFrom,
     });
 }
 const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === pid && re.test(r.action));
@@ -118,8 +119,8 @@ const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === 
     check('guard fails when basis x units differs from B by more than $1', !p.ledger.guard_pass);
     const ok = run({ products, items, B: 18, basis: { A: 9 } });
     const bad = run({ products, items, B: 18 });
-    check('basis 9.30 vs a ledger at 9: residual 0.60, D1 -0.60', near(bad.ledger.D1, -0.6) && near(bad.ledger.guard_diff_D1_minus_VminusB, -0.6));
-    check('basis override 9: D1 0 and residual 0', near(ok.ledger.D1, 0) && near(ok.ledger.guard_diff_D1_minus_VminusB, 0));
+    check('basis 9.30 vs a ledger at 9: residual 0.60, D1 -0.60', near(bad.ledger.D1, -0.6) && near(bad.ledger.guard_diff, -0.6));
+    check('basis override 9: D1 0 and residual 0', near(ok.ledger.D1, 0) && near(ok.ledger.guard_diff, 0));
 }
 
 // 7. Every plan ends with pool count = stock and assigned = U per line.
@@ -132,6 +133,55 @@ const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === 
     const assigned = p.rowPlan.filter((r) => r.consumer_line_id === 'lx').length;
     check('pool count after = stock (4)', inStock === 4);
     check('assigned units = U for the line (3)', assigned === 3);
+}
+
+// 8. COGS booked for an order whose goods are still on hand (SU): 1300 was
+//    credited for units that are inside S, so the guard expects B = basis x
+//    (S+U) - SU. Orders with no line or a 0 amount are left out.
+{
+    const items = [row('A', 5, 1), row('A', 5, 2), row('A', 5, 3)];
+    const sales = [
+        { id: 'rs', shipping_status: 'ReStock', payment_status: 'Paid', date: ts(1) },
+        { id: 'pn', shipping_status: 'Pending', payment_status: 'Unpaid', date: ts(1) },
+        { id: 'zero', shipping_status: 'Pending', payment_status: 'Paid', date: ts(1) },
+        { id: 'nolines', shipping_status: 'Pending', payment_status: 'Paid', date: ts(1) },
+        { id: 'shp', shipping_status: 'Shipped', payment_status: 'Paid', date: ts(1) },
+    ];
+    const saleItems = [
+        { id: 'l1', sale_id: 'rs', product_id: 'A', quantity: 1 },
+        { id: 'l2', sale_id: 'pn', product_id: null, quantity: 1 },
+        { id: 'l3', sale_id: 'zero', product_id: 'A', quantity: 1 },
+        { id: 'l4', sale_id: 'shp', product_id: 'A', quantity: 1 },
+    ];
+    const args = { products: [{ id: 'A', name: 'A', stock: 3, purchase_cost: 5 }], items, sales, saleItems,
+        cogs: ['rs', 'pn', 'zero', 'nolines', 'shp'], booked: { rs: 5, pn: 2.5, zero: 0.001, nolines: 4, shp: 5 } };
+    const p = run({ ...args, B: 15 - 7.5 });
+    check('SU = 5 + 2.5 (holding, ~0 and line-less orders left out)', near(p.ledger.settled_unshipped_booked, 7.5)
+        && JSON.stringify(p.settled_unshipped.map((o) => o.order_id)) === '["pn","rs"]');
+    check('SU: expected B = 15 - 7.5 and the guard passes', near(p.ledger.expected_B, 7.5) && near(p.ledger.guard_diff, 0) && p.ledger.guard_pass);
+    const without = run({ ...args, B: 15 });
+    check('SU: a ledger that never booked it fails the guard by SU', near(without.ledger.guard_diff, 7.5) && !without.ledger.guard_pass);
+}
+
+// 9. Orders left out of U are listed by id.
+{
+    const sales = [
+        { id: 'ret', shipping_status: 'Returned', payment_status: 'Unpaid', date: ts(25) },
+        { id: 'old', shipping_status: 'Delivered', payment_status: 'Unpaid', date: ts(5) },
+        { id: 'ok', shipping_status: 'Shipped', payment_status: 'Unpaid', date: ts(25) },
+    ];
+    const saleItems = [
+        { id: 'a', sale_id: 'ret', product_id: 'A', quantity: 1 },
+        { id: 'b', sale_id: 'old', product_id: 'A', quantity: 2 },
+        { id: 'c', sale_id: 'ok', product_id: 'A', quantity: 1 },
+        { id: 'd', sale_id: 'old', product_id: 'gone', quantity: 1 },
+    ];
+    const p = run({ products: [{ id: 'A', name: 'A', stock: 0, purchase_cost: 3 }], items: [], sales, saleItems, B: 3,
+        uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21T00:00:00+07:00' });
+    const X = p.excluded_from_u;
+    check('excluded: Returned by status, the old order before the cutoff, with ids',
+        JSON.stringify(X.by_status.order_ids) === '["ret"]' && JSON.stringify(X.before_u_from.order_ids) === '["old"]'
+        && X.before_u_from.qty === 2 && near(X.before_u_from.basis_value, 6) && p.totals.U === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

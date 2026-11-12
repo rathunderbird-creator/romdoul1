@@ -481,7 +481,8 @@ $$;
 -- lines take theirs (a settled order gets a Draft COGS-ADJ for any cost
 -- difference; COGS already booked moves to the new product lines, and an
 -- order settled before the FIFO wiring counts as booked at the layer value
--- its old lines gave back), and the newest stock-out
+-- its old lines gave back; an edit that leaves no product line reverses
+-- what was booked with a Draft COGS-REV), and the newest stock-out
 -- generation (the shipment being edited) is changed to match, so a later
 -- un-ship, delete or restock reverses exactly what left. A failure keeps the
 -- old items: nothing is half-saved.
@@ -562,6 +563,15 @@ BEGIN
      ORDER BY n;
     IF COALESCE(v_had_booked, false) THEN
         PERFORM wp_internal.os_spread_booked(p_order_id, v_booked);
+        -- No product line is left: the booked COGS has no goods behind it
+        -- (they are back in the pool, or will never ship), so it goes back
+        -- to Inventory as a Draft COGS-REV.
+        IF NOT EXISTS (SELECT 1 FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL)
+           AND (round(v_booked, 2) = 0
+                OR wp_internal.os_post_cogs_move(p_order_id, 'REV', -v_booked,
+                                                 COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE))) THEN
+            UPDATE sale_items SET cogs_booked = NULL WHERE sale_id = p_order_id;
+        END IF;
     END IF;
 
     IF NOT v_holds THEN

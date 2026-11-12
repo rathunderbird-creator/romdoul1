@@ -114,7 +114,10 @@ priced row, sold rows on Pending/ReStock orders and null sale_id written off,
 settled / COGS-booked rows kept as history, unsettled shipped lines taking
 the next-newest layers (oldest-shipped line first, fractional qty costed as
 shortfall), the D1 guard failing on a basis mismatch and passing with a
-`--basis` override, and pool count = stock afterwards. Needs nothing extra:
+`--basis` override, COGS booked for orders whose goods are still on hand
+(SU) taken off the expected 1300 (holding, ~0 and line-less orders left
+out), the orders left out of U listed by id, and pool count = stock
+afterwards. Needs nothing extra:
 
     node tests/fifo-rebuild-dryrun.test.mjs
 
@@ -130,17 +133,23 @@ re-costed, sold rows on Pending / ReStock orders, null sale_id and
 (ORD-…-COGS or TX- with a 5000 line) history kept and stamped to its line,
 unsettled shipped lines taking the next-newest layers oldest-shipped first
 (a fractional part as cogs_short_qty), Returned and pre-cutoff orders, an
-inactive product, a fractional stock, and open / cancelled wholesale
-orders backfilled at their booked COGS. Each case is asserted, and the SQL
+inactive product, a fractional stock, open / cancelled wholesale
+orders backfilled at their booked COGS, and orders whose COGS is booked
+while their goods are on hand (SU: recorded as cogs_booked, split like
+os_spread_booked; a net-0 order and a deleted one left out). Each case is asserted, and the SQL
 result is compared with the dry run (`buildInput` + `planStore` from
 `src/scripts/fifo-rebuild-dryrun.cjs`) on the same rows: totals, V / B /
-D1, every row, every filler and every line, with the default options and
+D1 / SU / guard, the SU orders, the orders left out of U, every row, every
+filler and every line, with the default options and
 with the Romdoul1 true-up options. Then pool count = stock, the Draft
 FIFO-REVAL entry (app numbering, direction by sign), `fifo_inventory_check`
 after the rebuild, the phase 1 primitives on the rebuilt pool, the D1 guard
 (raises with the numbers, $1.00 passes, $1.01 does not, nothing changed),
-the refusals (run once, phase 1 missing, bad basis / status, lines already
-costed) and the file run as shipped (BEGIN … COMMIT, defaults). Same PGlite
+the refusals (run once, phase 1 missing, bad basis / status / preset,
+lines already costed or booked) and the file as shipped: with no preset
+picked it refuses and changes nothing; with one picked it commits and its
+last statement returns the summary rows, also kept in
+public.fifo_rebuild_log. Same PGlite
 setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
@@ -172,9 +181,12 @@ pre-FIFO order restocked with no rows) assert that exact amount.
   back as RET- layers; a pre-FIFO settled order leaving Paid is adopted at
   its row cost (the check moves by purchase cost minus row cost); deleting
   a restocked order keeps the Posted receipt's COGS reversed (the Draft REV
-  is re-booked) while a deposit-covered one (Draft ORD-COGS + Draft REV)
-  nets to nothing; a no-product line added by an edit gets no booked COGS
-  and no ADJ; editing a pre-FIFO settled shipped order keeps the check
+  is re-booked, also after it was moved back to Shipped) while a
+  deposit-covered one (Draft ORD-COGS + Draft REV) nets to nothing; a no-product line added by an edit gets no booked COGS
+  and no ADJ; an edit that leaves only no-product lines on a shipped settled
+  order reverses its booked COGS with a Draft REV (leaving Paid then drops
+  the Draft receipt with it; a delete with a Posted receipt re-books it);
+  editing a pre-FIFO settled shipped order keeps the check
   (price-only: no ADJ; quantity: an ADJ for the extra unit); an un-shipped
   oversold line keeps its shortfall variance; the packs refuse to load
   without add_fifo_costing.sql or before the rebuild.

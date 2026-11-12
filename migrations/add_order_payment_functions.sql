@@ -184,9 +184,10 @@ $$;
 -- A Draft entry that carried p_amount of an order's COGS was deleted: the
 -- amount comes off the lines' cogs_booked (all of it, NULL, when it is what
 -- they hold; else split by what each holds, in cents). A deleted Draft
--- reversal (p_amount < 0, a COGS-REV) on an order that no longer holds its
--- goods and has nothing booked puts its amount back on the product lines
--- (os_spread_booked): that COGS is booked again until another entry takes
+-- reversal (p_amount < 0, a COGS-REV) on an order that has nothing booked
+-- puts its amount back on the product lines (os_spread_booked), whatever
+-- the order's shipping status (a restocked order can be moved back to
+-- Shipped before it is deleted): that COGS is booked again until another entry takes
 -- it off or op_reverse_booked_cogs reverses it again. Callers drop a
 -- reversal before the entries it reversed, so a Draft COGS plus its Draft
 -- REV still net to nothing. Otherwise an order whose booking predates the
@@ -214,7 +215,7 @@ BEGIN
     SELECT COALESCE(sum(cogs_booked), 0), count(*)::int INTO v_total, v_n
       FROM sale_items WHERE sale_id = p_order_id AND cogs_booked IS NOT NULL;
     IF v_n = 0 THEN
-        IF p_amount < 0 AND NOT order_status_holds_stock((SELECT shipping_status FROM sales WHERE id = p_order_id)) THEN
+        IF p_amount < 0 THEN
             PERFORM wp_internal.os_spread_booked(p_order_id, -p_amount);
         ELSIF order_status_holds_stock((SELECT shipping_status FROM sales WHERE id = p_order_id)) THEN
             UPDATE sale_items si SET
@@ -448,6 +449,13 @@ BEGIN
      WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id
      ORDER BY created_at DESC LIMIT 1;
     IF v_tx IS NOT NULL THEN
+        -- An order edited down to no product line carries a Draft COGS-REV
+        -- of what this receipt booked (edit_order_items): when the receipt
+        -- is a Draft too, the REV goes first so the two cancel out.
+        IF NOT EXISTS (SELECT 1 FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL)
+           AND EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'TX-' || v_tx AND status = 'Draft') THEN
+            PERFORM wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-REV']);
+        END IF;
         v_notice := wp_internal.op_remove_tx_entry(v_tx);
         IF v_notice IS NOT NULL THEN
             v_notices := v_notices || v_notice;

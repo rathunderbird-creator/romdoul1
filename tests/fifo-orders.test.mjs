@@ -341,6 +341,60 @@ check('edit adds a no-product line: product line keeps booked 5, the other gets 
     && (await entries('ORD-E1-COGS-ADJ')).length === 0, e1l);
 await checkBalanced('edited E1 with a no-product line', V);
 
+// Posted receipt, restocked (Draft REV), moved back to Shipped, then
+// deleted: the dropped REV is booked again whatever the shipping status.
+await order('R3', [['r3-a', 'F', 1]]);
+await ship('R3', 'Pending', 'Shipped');
+await settle('R3');
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'R3')`);
+await ship('R3', 'Shipped', 'Returned');
+await ship('R3', 'Returned', 'ReStock');
+await q(`SELECT public.apply_restock_payment_side(p_ids => ARRAY['R3'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
+await ship('R3', 'ReStock', 'Shipped');
+check('R3 re-shipped after the restock: holds its layer again, nothing booked on the line',
+    near((await line('r3-a')).cogs_cost, 5) && (await line('r3-a')).cogs_booked === null && (await entries('ORD-R3-COGS-REV')).length === 1);
+await checkBalanced('restocked then re-shipped R3', V);
+const delR3 = (await one(`SELECT public.delete_retail_orders(p_ids => ARRAY['R3'], p_fields => '{"today": "${DAY}"}'::jsonb) AS r`)).r;
+const revR3 = await entries('ORD-R3-COGS-REV');
+check('delete re-shipped R3: the Posted receipt\'s COGS is reversed by one Draft REV of 5, notice says so',
+    revR3.length === 1 && revR3[0].status === 'Draft' && near(revR3[0].cogs, -5) && JSON.stringify(delR3.notices).includes('ORD-R3-COGS-REV'),
+    { revR3, delR3 });
+await checkBalanced('deleted re-shipped R3', V);
+
+// A shipped settled order edited down to a no-product line: its goods go
+// back to the pool and the booked COGS is reversed by a Draft REV.
+const cogsOf = async o => num((await one(`SELECT COALESCE(sum(l.debit - l.credit), 0) AS c FROM journal_entries e
+    JOIN journal_entry_lines l ON l.journal_entry_id = e.id JOIN chart_of_accounts a ON a.id = l.account_id AND a.account_code = '5000'
+   WHERE e.reference_id LIKE 'ORD-' || $1 || '-COGS%'
+      OR e.reference_id IN (SELECT 'TX-' || t.id FROM transactions t WHERE t.order_id = $1)`, [o])).c);
+const serviceOnly = `'[{"id": "", "name": "Service", "price": 10, "quantity": 1}]'::jsonb`;
+await order('E2', [['e2-a', 'F', 1]]);
+await ship('E2', 'Pending', 'Shipped');
+await settle('E2');
+await q(`SELECT public.edit_order_items(p_order_id => 'E2', p_items => ${serviceOnly}, p_fields => '{"movement_date": "${DAY}"}'::jsonb)`);
+const e2rev = await entries('ORD-E2-COGS-REV');
+const e2l = (await q(`SELECT cogs_cost, cogs_booked FROM sale_items WHERE sale_id = 'E2'`)).rows;
+check('edit to no product line: Draft REV of the booked 5, 5000 nets to 0, nothing left booked',
+    e2rev.length === 1 && e2rev[0].status === 'Draft' && near(e2rev[0].cogs, -5) && near(await cogsOf('E2'), 0)
+    && e2l.length === 1 && e2l[0].cogs_cost === null && e2l[0].cogs_booked === null, { e2rev, e2l });
+await checkBalanced('E2 edited to a no-product line', V);
+await pay('E2', 'Paid', { payment_status: 'Unpaid' });
+check('then leaving Paid: the Draft receipt and its REV both go', (await entries('ORD-E2-COGS%')).length === 0 && await txCogs('E2') === 0);
+await checkBalanced('E2 unpaid', V);
+
+// The same with a Posted receipt, then deleted: the REV is booked again.
+await order('E3', [['e3-a', 'F', 1]]);
+await ship('E3', 'Pending', 'Shipped');
+await settle('E3');
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'E3')`);
+await q(`SELECT public.edit_order_items(p_order_id => 'E3', p_items => ${serviceOnly}, p_fields => '{}'::jsonb)`);
+check('E3 (Posted receipt) edited to no product line: 5000 nets to 0', near(await cogsOf('E3'), 0) && (await entries('ORD-E3-COGS-REV')).length === 1);
+await checkBalanced('E3 edited to a no-product line', V);
+await q(`SELECT public.delete_retail_orders(p_ids => ARRAY['E3'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
+const e3rev = await entries('ORD-E3-COGS-REV');
+check('E3 deleted: one Draft REV of 5 against the Posted receipt', e3rev.length === 1 && e3rev[0].status === 'Draft' && near(e3rev[0].cogs, -5), e3rev);
+await checkBalanced('E3 deleted', V);
+
 // A pre-FIFO settled shipped order (its row held, COGS booked at
 // purchase_cost 3 in a Posted receipt, cogs_booked NULL). On a trued store
 // it counts 0: the hand-made history below starts at V + 2 (5 opened, 3

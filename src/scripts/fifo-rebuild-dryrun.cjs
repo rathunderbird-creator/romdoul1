@@ -30,24 +30,45 @@
  * Ledger:
  *   V  = sum in_stock layer cost + sum cogs_cost of the U lines
  *   B  = 1300 balance over every entry (Posted + Draft)
+ *   SU = COGS booked for orders whose goods are still on hand (a COGS entry,
+ *        status not Shipped / Delivered / Returned): the net 1300 credit of
+ *        their COGS entries. Their units are inside S, but 1300 was already
+ *        credited for them (design section 3: 1300 = pool + shipped-unsettled
+ *        - booked settled-unshipped). Orders with no line, or whose amount
+ *        rounds to 0, are left out.
  *   D1 = sum over the same S+U units of (layer cost - basis cost), where the
  *        basis cost is products.purchase_cost unless --basis overrides it
- *   Guard: |D1 - (V - B)| <= 1, i.e. sum basis x (S+U) must equal B. When it
- *   fails, the rebuild must not book D1.
+ *   Guard: |D1 - (V - SU - B)| <= 1, i.e. basis x (S+U) - SU must equal B.
+ *   When it fails, the rebuild must not book D1. The rebuild records SU on
+ *   those orders' lines as cogs_booked, so the FIFO check counts it.
  *
  * Usage:
- *   node src/scripts/fifo-rebuild-dryrun.cjs [--store=Romdoul1|Romdoul2|Romdoul3] [--out=<dir>]
- *        [--basis=<product name or id>=<cost>[,...]]
- *   --store  defaults to Romdoul1; --out defaults to ./fifo-dryrun.
- *   --basis  sets the basis cost the ledger carries for a product when it
- *            differs from today's purchase_cost (for example a cost changed
- *            after the true-up). It changes D1 and the guard only.
+ *   node src/scripts/fifo-rebuild-dryrun.cjs --store=Romdoul1|Romdoul2|Romdoul3 --out=<dir>
+ *        --preset=romdoul1_trueup_2026_11_12|default
+ *   or, instead of --preset, the options one by one:
+ *        [--basis=<product name or id>=<cost>[,...]] [--u-statuses=Shipped,Delivered[,Returned]] [--u-from=YYYY-MM-DD]
+ *   --preset  the same named option sets as migrations/fifo_rebuild_pool.sql:
+ *             romdoul1_trueup_2026_11_12 = --basis=NR-3026=9
+ *               --u-statuses=Shipped,Delivered --u-from=2026-10-21;
+ *             default = no basis override, U = Shipped, Delivered, Returned,
+ *               no cutoff.
+ *   --store   defaults to Romdoul1.
+ *   --out     is required: the CSVs hold live store data, so nothing is
+ *             written into the working tree by default.
+ *   --basis   sets the basis cost the ledger carries for a product when it
+ *             differs from today's purchase_cost (for example a cost changed
+ *             after the true-up). It changes D1 and the guard only.
  */
 const fs = require('fs');
 const path = require('path');
 
 const SETTLED = new Set(['Paid', 'Settled', 'Paid/Settled']);
 const HOLDS_STOCK = new Set(['Shipped', 'Delivered', 'Returned']);
+// Kept in step with the presets of migrations/fifo_rebuild_pool.sql.
+const PRESETS = {
+    romdoul1_trueup_2026_11_12: { basis: ['NR-3026=9'], uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21' },
+    default: { basis: [], uStatuses: null, uFrom: null },
+};
 const PAGE = 1000;
 
 const num = (v) => {
@@ -88,6 +109,7 @@ function newestFirst(a, b) {
  *   sales      Map id -> {shipping_status, payment_status, date}
  *   saleItems  [{id, sale_id, product_id, quantity}]
  *   cogsOrders Set of order ids that have a COGS entry
+ *   cogsBooked Map order id -> net 1300 credit of its COGS entries
  *   shipAt     Map order id -> ship timestamp (falls back to sales.date)
  *   receiptCost Map product id -> {cost, source} (last receipt cost > 0)
  *   B          1300 balance (number)
@@ -115,6 +137,19 @@ function planStore(input) {
     const isUnsettledHolding = (sid) => holds(sid) && !isSettled(sid) && !cogsOrders.has(sid);
     const isHistory = (sid) => holds(sid) && (isSettled(sid) || cogsOrders.has(sid));
 
+    // Booked, goods still on hand (SU).
+    const cogsBooked = input.cogsBooked || new Map();
+    const ordersWithLines = new Set(saleItems.map((li) => li.sale_id));
+    const suOrders = [];
+    for (const [sid, sale] of sales) {
+        if (holds(sid) || !cogsOrders.has(sid) || !ordersWithLines.has(sid)) continue;
+        const amt = r2(num(cogsBooked.get(sid)));
+        if (amt === 0) continue;
+        suOrders.push({ order_id: sid, shipping_status: sale.shipping_status || '', payment_status: sale.payment_status || '', booked: amt });
+    }
+    suOrders.sort((a, b) => (a.order_id < b.order_id ? -1 : a.order_id > b.order_id ? 1 : 0));
+    const SU = r2(suOrders.reduce((t, o) => t + o.booked, 0));
+
     const uLinesByProduct = new Map();
     const diag = { settledNoCogsOrders: new Set(), cogsNotSettledOrders: new Set(), fractionalLines: 0 };
     const excluded = { by_status: { orders: new Set(), qty: 0, basis_value: 0 }, before_u_from: { orders: new Set(), qty: 0, basis_value: 0 } };
@@ -132,7 +167,10 @@ function planStore(input) {
         const atBasis = q * (basisOf.get(li.product_id) || 0);
         const ex = !uStatuses.has(s.shipping_status) ? excluded.by_status
             : uFromKey !== null && tsKey(s.date) < uFromKey ? excluded.before_u_from : null;
-        if (ex) { ex.orders.add(li.sale_id); ex.qty += q; ex.basis_value += atBasis; continue; }
+        if (ex) {
+            if (!basisOf.has(li.product_id)) continue;
+            ex.orders.add(li.sale_id); ex.qty += q; ex.basis_value += atBasis; continue;
+        }
         if (s.shipping_status === 'Returned') explain.returned_u += atBasis;
         else if (ledgerStartKey !== null && tsKey(s.date) < ledgerStartKey) explain.pre_ledger_start_u += atBasis;
         const poolUnits = Math.floor(q);
@@ -290,7 +328,7 @@ function planStore(input) {
     const D1 = r2(sum('value_fifo') - sum('value_at_basis'));
     const basisTotal = r2(sum('value_at_basis'));
     const VminusB = r2(V - B);
-    const guardDiff = r2(D1 - VminusB);
+    const guardDiff = r2(D1 - (V - SU - B));
     return {
         totals: {
             products_planned: productRows.length,
@@ -309,30 +347,32 @@ function planStore(input) {
         },
         ledger: {
             V_in_stock: r2(sum('value_in_stock')), V_unsettled: r2(sum('value_u')), V,
-            B, V_minus_B: VminusB, basis_value_S_plus_U: basisTotal, D1,
-            guard_diff_D1_minus_VminusB: guardDiff,
+            B, V_minus_B: VminusB, settled_unshipped_booked: SU,
+            basis_value_S_plus_U: basisTotal, expected_B: r2(basisTotal - SU), D1,
+            guard_diff: guardDiff,
             guard_pass: Math.abs(guardDiff) <= 1,
         },
-        // basis(S+U) - B split into the parts the dry run can name. A Returned
+        settled_unshipped: suOrders,
+        // basis(S+U) - SU - B split into the parts the dry run can name. A Returned
         // line is counted once, under u_on_returned_orders, even when it also
         // predates the ledger start.
         residual: (() => {
-            const total = r2(basisTotal - B);
+            const total = r2(basisTotal - SU - B);
             const inactive = r2(inactiveS.reduce((t, x) => t + x.basis_value, 0));
             const returned = r2(explain.returned_u);
             const preLedger = r2(explain.pre_ledger_start_u);
             return {
-                basis_minus_B: total,
+                expected_B_minus_B: total,
                 inactive_products_stock: inactive, inactive_products: inactiveS,
                 u_on_returned_orders: returned,
                 u_on_orders_before_ledger_start: preLedger,
                 unexplained: r2(total - inactive - returned - preLedger),
             };
         })(),
-        excluded_from_u: {
-            by_status: { orders: excluded.by_status.orders.size, qty: r4(excluded.by_status.qty), basis_value: r2(excluded.by_status.basis_value) },
-            before_u_from: { orders: excluded.before_u_from.orders.size, qty: r4(excluded.before_u_from.qty), basis_value: r2(excluded.before_u_from.basis_value) },
-        },
+        excluded_from_u: Object.fromEntries(Object.entries(excluded).map(([k, x]) => [k, {
+            orders: x.orders.size, qty: r4(x.qty), basis_value: r2(x.basis_value),
+            order_ids: [...x.orders].sort(),
+        }])),
         diagnostics: {
             settled_holding_orders_without_cogs_entry: diag.settledNoCogsOrders.size,
             unsettled_holding_orders_with_cogs_entry: diag.cogsNotSettledOrders.size,
@@ -387,9 +427,9 @@ async function fetchIn(sb, table, cols, column, values, extra) {
 const localMidnight = (ymd) => (ymd ? `${String(ymd).slice(0, 10)}T00:00:00+07:00` : null);
 
 // What the ledger says about the store: the 1300 / 5000 accounts, the 1300
-// balance B (every entry status) and the orders with a COGS entry (an entry
+// balance B (every entry status), the orders with a COGS entry (an entry
 // with a 5000 line referenced ORD-<order>-COGS, or TX-<tx> of a transaction
-// linked to the order).
+// linked to the order) and what those entries took out of 1300 per order.
 function ledgerFacts(raw) {
     const invAcc = raw.accounts.filter((a) => a.account_code === '1300').map((a) => a.id);
     const cogsAcc = raw.accounts.filter((a) => a.account_code === '5000').map((a) => a.id);
@@ -398,23 +438,34 @@ function ledgerFacts(raw) {
     const txOrder = new Map(raw.txs.filter((t) => t.order_id !== null && t.order_id !== undefined).map((t) => [t.id, t.order_id]));
     const opening = raw.entries.filter((e) => e.reference_id === 'OPENING-INV').map((e) => e.date).sort()[0] || null;
 
+    const orderOfRef = (ref) => {
+        let m = ref.match(/^ORD-(.+)-COGS$/);
+        if (m) return m[1];
+        m = ref.match(/^TX-(.+)$/);
+        return m && txOrder.has(m[1]) ? txOrder.get(m[1]) : null;
+    };
     let B = 0, Bposted = 0, Bdraft = 0;
     const cogsOrders = new Set();
+    const invOutByEntry = new Map();
+    const cogsEntries = new Set();
     for (const l of raw.lines) {
         const e = entryById.get(l.journal_entry_id);
         if (l.account_id === invAcc[0]) {
             const amt = num(l.debit) - num(l.credit);
             B += amt;
             if (e && (e.status || 'Posted') === 'Draft') Bdraft += amt; else Bposted += amt;
+            invOutByEntry.set(l.journal_entry_id, (invOutByEntry.get(l.journal_entry_id) || 0) - amt);
         } else if (l.account_id === cogsAcc[0] && e && e.reference_id) {
-            const ref = e.reference_id;
-            let m = ref.match(/^ORD-(.+)-COGS$/);
-            if (m) cogsOrders.add(m[1]);
-            m = ref.match(/^TX-(.+)$/);
-            if (m && txOrder.has(m[1])) cogsOrders.add(txOrder.get(m[1]));
+            const order = orderOfRef(e.reference_id);
+            if (order !== null) { cogsOrders.add(order); cogsEntries.add(e.id); }
         }
     }
-    return { invAcc: invAcc[0], cogsAcc: cogsAcc[0], B, Bposted, Bdraft, cogsOrders, opening };
+    const cogsBooked = new Map();
+    for (const id of cogsEntries) {
+        const order = orderOfRef(entryById.get(id).reference_id);
+        cogsBooked.set(order, (cogsBooked.get(order) || 0) + (invOutByEntry.get(id) || 0));
+    }
+    return { invAcc: invAcc[0], cogsAcc: cogsAcc[0], B, Bposted, Bdraft, cogsOrders, cogsBooked, opening };
 }
 
 // Orders that hold stock, are not settled and have no COGS entry: the ones
@@ -438,7 +489,7 @@ function buildInput(raw, basisArgs, opts = {}) {
     const { products, items, saleItems } = raw;
     const sales = new Map(raw.sales.map((s) => [s.id, s]));
     const facts = ledgerFacts(raw);
-    const { cogsOrders } = facts;
+    const { cogsOrders, cogsBooked } = facts;
 
     // Ship time of every unsettled holding order: its newest 'out' movement.
     const uOrders = new Set(unsettledHoldingOrders(raw, cogsOrders));
@@ -479,7 +530,7 @@ function buildInput(raw, basisArgs, opts = {}) {
 
     return {
         input: {
-            products, items, sales, saleItems, cogsOrders, shipAt, receiptCost, B: r2(facts.B), basis,
+            products, items, sales, saleItems, cogsOrders, cogsBooked, shipAt, receiptCost, B: r2(facts.B), basis,
             uStatuses: opts.uStatuses, uFrom: localMidnight(opts.uFrom), ledgerStart: localMidnight(facts.opening),
         },
         meta: { B_posted: r2(facts.Bposted), B_draft: r2(facts.Bdraft), cogs_booked_orders: cogsOrders.size, basis_overrides: basisNotes, ledger_start: facts.opening },
@@ -534,12 +585,21 @@ async function main() {
         return a ? a.slice(name.length + 3) : dflt;
     };
     const storeName = arg('store', 'Romdoul1');
-    const outDir = path.resolve(arg('out', 'fifo-dryrun'));
-    const basisArgs = (arg('basis', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const uStatusArg = arg('u-statuses', '');
+    const outArg = arg('out', '');
+    if (!outArg) throw new Error('--out=<dir> is required (outside the repository: the files hold live store data)');
+    const outDir = path.resolve(outArg);
+    const presetName = arg('preset', '');
+    let preset = null;
+    if (presetName) {
+        if (!Object.prototype.hasOwnProperty.call(PRESETS, presetName)) throw new Error(`unknown --preset "${presetName}" (use ${Object.keys(PRESETS).join(' or ')})`);
+        if (['basis', 'u-statuses', 'u-from'].some((k) => arg(k, null) !== null)) throw new Error('--preset cannot be combined with --basis, --u-statuses or --u-from');
+        preset = PRESETS[presetName];
+    }
+    const basisArgs = preset ? preset.basis : (arg('basis', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const uStatusArg = preset ? (preset.uStatuses || []).join(',') : arg('u-statuses', '');
     const uStatuses = uStatusArg ? new Set(uStatusArg.split(',').map((s) => s.trim()).filter(Boolean)) : HOLDS_STOCK;
     for (const st of uStatuses) if (!HOLDS_STOCK.has(st)) throw new Error(`--u-statuses: "${st}" does not hold stock (use ${[...HOLDS_STOCK].join(', ')})`);
-    const uFrom = arg('u-from', '') || null;
+    const uFrom = preset ? preset.uFrom : (arg('u-from', '') || null);
     if (uFrom && !/^\d{4}-\d{2}-\d{2}$/.test(uFrom)) throw new Error('--u-from must be YYYY-MM-DD');
 
     const { createClient } = require('@supabase/supabase-js');
@@ -559,8 +619,9 @@ async function main() {
     const summary = {
         store: storeName, generated_at: new Date().toISOString(), read_only: true,
         totals: plan.totals, ledger: { ...plan.ledger, B_posted: meta.B_posted, B_draft: meta.B_draft },
-        options: { u_statuses: [...uStatuses], u_from: uFrom, ledger_start: meta.ledger_start },
+        options: { preset: presetName || null, u_statuses: [...uStatuses], u_from: uFrom, ledger_start: meta.ledger_start },
         basis_overrides: meta.basis_overrides,
+        settled_unshipped: plan.settled_unshipped,
         residual: plan.residual, excluded_from_u: plan.excluded_from_u,
         diagnostics: { ...plan.diagnostics, cogs_booked_orders: meta.cogs_booked_orders },
         anomalies: plan.anomalies,
@@ -574,12 +635,12 @@ async function main() {
     console.log(`S ${T.S} units | U ${T.U} units on ${T.u_lines} lines / ${T.u_orders} orders (+${T.u_frac_qty} fractional)`);
     console.log(`kept in_stock ${T.kept_in_stock}, assigned ${T.assigned_rows}, fillers ${T.filler_in_stock} in_stock + ${T.filler_assigned} assigned, re-costed ${T.recosted_zero_rows}`);
     console.log(`history kept ${T.history_sold}, written off ${T.written_off} (surplus ${T.wo_surplus_in_stock}, null sale ${T.wo_sold_null_sale}, missing sale ${T.wo_sold_missing_sale}, non-holding orders ${T.wo_sold_not_holding}, unsettled unassigned ${T.wo_sold_unsettled_unassigned}, returned ${T.wo_returned})`);
-    console.log(`V ${L.V} (in_stock ${L.V_in_stock} + unsettled ${L.V_unsettled}) | B ${L.B} (posted ${meta.B_posted}, draft ${meta.B_draft})`);
-    console.log(`basis value of S+U ${L.basis_value_S_plus_U} | D1 ${L.D1} | V-B ${L.V_minus_B} | D1-(V-B) ${L.guard_diff_D1_minus_VminusB} -> guard ${L.guard_pass ? 'PASS' : 'FAIL (do not book D1)'}`);
+    console.log(`V ${L.V} (in_stock ${L.V_in_stock} + unsettled ${L.V_unsettled}) | B ${L.B} (posted ${meta.B_posted}, draft ${meta.B_draft}) | SU ${L.settled_unshipped_booked} on ${plan.settled_unshipped.length} orders`);
+    console.log(`basis value of S+U ${L.basis_value_S_plus_U} | D1 ${L.D1} | V-B ${L.V_minus_B} | D1-(V-SU-B) ${L.guard_diff} -> guard ${L.guard_pass ? 'PASS' : 'FAIL (do not book D1)'}`);
     const R = plan.residual;
-    console.log(`basis - B ${R.basis_minus_B} = inactive stock ${R.inactive_products_stock} + U on Returned ${R.u_on_returned_orders} + U before ledger start ${R.u_on_orders_before_ledger_start} + unexplained ${R.unexplained}`);
+    console.log(`basis - SU - B ${R.expected_B_minus_B} = inactive stock ${R.inactive_products_stock} + U on Returned ${R.u_on_returned_orders} + U before ledger start ${R.u_on_orders_before_ledger_start} + unexplained ${R.unexplained}`);
     const X = plan.excluded_from_u;
-    if (X.by_status.orders || X.before_u_from.orders) console.log(`left out of U: ${X.by_status.orders} orders by status (${X.by_status.basis_value}), ${X.before_u_from.orders} orders before ${uFrom} (${X.before_u_from.basis_value})`);
+    if (X.by_status.orders || X.before_u_from.orders) console.log(`left out of U: ${X.by_status.orders} orders by status (${X.by_status.basis_value}: ${X.by_status.order_ids.join(', ')}), ${X.before_u_from.orders} orders before ${uFrom} (${X.before_u_from.basis_value}: ${X.before_u_from.order_ids.join(', ')})`);
     console.log(`written to ${outDir}`);
 }
 
@@ -587,4 +648,4 @@ if (require.main === module) {
     main().catch((e) => { console.error(e.message || e); process.exit(1); });
 }
 
-module.exports = { planStore, buildInput, ledgerFacts, unsettledHoldingOrders, tsKey };
+module.exports = { planStore, buildInput, ledgerFacts, unsettledHoldingOrders, tsKey, PRESETS };

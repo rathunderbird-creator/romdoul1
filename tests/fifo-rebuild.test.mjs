@@ -6,12 +6,15 @@
 // ReStock orders, null sale_id, returned rows, settled and COGS-booked
 // history, unsettled shipped lines, a fractional line, Returned and pre-cutoff
 // orders, an inactive product, a fractional stock, open / cancelled wholesale
-// orders). Each case is checked against the SQL result, and the SQL result
+// orders, COGS booked for orders whose goods are still on hand). Each case is
+// checked against the SQL result, and the SQL result
 // is compared with src/scripts/fifo-rebuild-dryrun.cjs (buildInput +
 // planStore) on the same rows — totals, ledger numbers, every row, every
 // filler and every line — with the default options and with the Romdoul1
 // true-up options. Then the D1 guard, the refusals (run once, phase 1
-// missing, bad options) and the file run as shipped (BEGIN ... COMMIT).
+// missing, bad options) and the file run as shipped (no preset picked: it
+// refuses; a preset picked: it runs and its last statement lists the
+// summary).
 // See tests/README.md for how to run it.
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -37,8 +40,12 @@ const rebuildFile = strip(mig('fifo_rebuild_pool.sql'));
 // The function definition alone (no BEGIN, no RUN call), so a test can call
 // it with its own options.
 const rebuildFn = rebuildFile.slice(0, rebuildFile.indexOf('-- >>> RUN')).replace(/^BEGIN;\s*$/m, '');
-check('the file has one RUN block and a COMMIT', rebuildFile.includes('-- >>> RUN') && rebuildFile.includes('-- <<< RUN')
-    && /COMMIT;\s*$/.test(rebuildFile));
+check('the file has one PRESET block, one RUN block, a COMMIT and then the summary SELECT',
+    rebuildFile.split('-- >>> PRESET').length === 2 && rebuildFile.split('-- >>> RUN').length === 2 && rebuildFile.includes('-- <<< RUN')
+    && /COMMIT;\s*-- The summary[\s\S]*ORDER BY x\.n;\s*$/.test(rebuildFile));
+check('the file ships with no preset picked', /set_config\('fifo_rebuild\.preset', 'CHOOSE_A_PRESET', true\)/.test(rebuildFile));
+check('the temp tables are dropped as pg_temp.*', /DROP TABLE IF EXISTS pg_temp\._fr_basis, pg_temp\._fr_p,/.test(rebuildFile)
+    && !/DROP TABLE IF EXISTS _fr/.test(rebuildFile));
 
 async function makeDb() {
     const db = new PGlite();
@@ -94,7 +101,11 @@ async function seed(db) {
         ('U1', 1, 'Shipped', 'Unpaid', '${day(25)}'),
         ('U2', 1, 'Returned', 'Unpaid', '${day(25)}'),
         ('U3', 1, 'Delivered', 'Unpaid', '${day(15)}'),
-        ('U4', 1, 'Shipped', 'COD', '${day(26)}')`);
+        ('U4', 1, 'Shipped', 'COD', '${day(26)}'),
+        ('Q1', 1, 'ReStock', 'Paid', '${day(23)}'),
+        ('Q2', 1, 'Pending', 'Unpaid', '${day(23)}'),
+        ('Q3', 1, 'Confirmed', 'Paid', '${day(23)}'),
+        ('Q4', 1, 'Pending', 'Paid', '${day(23)}')`);
     await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
         ('l-h1', 'H1', 'pD', 'x', 1, 1),
         ('l-h2', 'H2', 'pE', 'x', 1, 1),
@@ -106,7 +117,13 @@ async function seed(db) {
         ('l-u1', 'U1', 'pF', 'x', 1, 2),
         ('l-u2', 'U2', 'pF', 'x', 1, 1.5),
         ('l-u3', 'U3', 'pF', 'x', 1, 1),
-        ('l-u4', 'U4', 'pC', 'x', 1, 1)`);
+        ('l-u4', 'U4', 'pC', 'x', 1, 1),
+        ('l-q1a', 'Q1', 'pA', 'x', 1, 2),
+        ('l-q1e', 'Q1', 'pE', 'x', 1, 1),
+        ('l-q1s', 'Q1', NULL, 'wrap', 1, 2),
+        ('l-q2s', 'Q2', NULL, 'service', 1, 1),
+        ('l-q3', 'Q3', 'pA', 'x', 1, 1),
+        ('l-q4', 'Q4', 'pA', 'x', 1, 1)`);
     await q(`INSERT INTO stock_movements (product_id, product_name, type, quantity, reference_id, created_at) VALUES
         ('pF', 'x', 'out', 2, 'U1', '${day(27, '10:00:01')}'),
         ('pF', 'x', 'out', 2, 'U1', '${day(26, '10:00:01')}'),
@@ -182,6 +199,17 @@ async function seed(db) {
     await entry(`TX-${tx2}`, 'Draft', [[A.cash, 3, 0], [A.eq, 0, 3]]);
     await entry('ORD-U4-COGS-ADJ', 'Draft', [[A.cogs, 1, 0], [A.inv, 0, 1]]);
     await entry(`WSO-${W(1)}-COGS`, 'Posted', [[A.cogs, 9, 0], [A.inv, 0, 9]]);
+    // Booked with the goods on hand (SU): Q1 restocked after a Posted
+    // ORD-Q1-COGS of 6; Q2 not shipped, its receipt took 3.5 (no product
+    // line); Q4's two entries net to 0 (left out); Q3 has no COGS entry; an
+    // entry of a deleted order is ignored.
+    await entry('ORD-Q1-COGS', 'Posted', [[A.cogs, 6, 0], [A.inv, 0, 6]]);
+    const tx3 = (await q(`INSERT INTO transactions (type, amount, order_id) VALUES ('Income', 9, 'Q2') RETURNING id`)).rows[0].id;
+    await entry(`TX-${tx3}`, 'Draft', [[A.cash, 9, 0], [A.cogs, 3.5, 0], [A.inv, 0, 3.5], [A.eq, 0, 9]]);
+    const tx4 = (await q(`INSERT INTO transactions (type, amount, order_id) VALUES ('Income', 4, 'Q4') RETURNING id`)).rows[0].id;
+    await entry(`TX-${tx4}`, 'Posted', [[A.cogs, 2, 0], [A.inv, 0, 2]]);
+    await entry('ORD-Q4-COGS', 'Draft', [[A.inv, 2, 0], [A.cogs, 0, 2]]);
+    await entry('ORD-GONE-COGS', 'Posted', [[A.cogs, 4, 0], [A.inv, 0, 4]]);
     await entry(`WSO-${W(4)}-COGS`, 'Draft', [[A.cogs, 8, 0], [A.inv, 0, 8]]);
     return A;
 }
@@ -234,9 +262,21 @@ async function compare(db, tag, plan, res) {
     }
     check(`${tag}: SQL wo_sold_not_holding = dry run`, num(R.wo_sold_not_holding) === T.wo_sold_not_holding + T.wo_sold_missing_sale);
     check(`${tag}: SQL u_frac_qty = dry run`, near(R.u_frac_qty, T.u_frac_qty));
-    for (const k of ['V_in_stock', 'V_unsettled', 'V', 'B', 'V_minus_B', 'basis_value_S_plus_U', 'D1', 'guard_diff_D1_minus_VminusB']) {
+    for (const k of ['V_in_stock', 'V_unsettled', 'V', 'B', 'V_minus_B', 'settled_unshipped_booked', 'basis_value_S_plus_U',
+                     'expected_B', 'D1', 'guard_diff']) {
         check(`${tag}: SQL ${k} = dry run (${plan.ledger[k]})`, near(res.ledger[k], plan.ledger[k], 0.001), { sql: res.ledger[k], js: plan.ledger[k] });
     }
+    const su = l => l.map(o => [o.order_id, o.shipping_status, o.payment_status, num(o.booked)]);
+    check(`${tag}: SQL SU orders = dry run`, JSON.stringify(su(res.settled_unshipped)) === JSON.stringify(su(plan.settled_unshipped)),
+        { sql: res.settled_unshipped, js: plan.settled_unshipped });
+    for (const why of ['by_status', 'before_u_from']) {
+        const a = res.excluded_from_u[why], b = plan.excluded_from_u[why];
+        check(`${tag}: SQL excluded_from_u.${why} = dry run`, num(a.orders) === b.orders && near(a.qty, b.qty) && near(a.basis_value, b.basis_value, 0.001)
+            && JSON.stringify(a.order_ids) === JSON.stringify(b.order_ids), { sql: a, js: b });
+    }
+    const booked = (await db.query(`SELECT sale_id, sum(cogs_booked) AS b FROM sale_items WHERE cogs_booked IS NOT NULL GROUP BY sale_id ORDER BY sale_id`)).rows;
+    check(`${tag}: cogs_booked is recorded on the SU orders only, at their booked amount`,
+        JSON.stringify(booked.map(r => [r.sale_id, num(r.b)])) === JSON.stringify(plan.settled_unshipped.map(o => [o.order_id, o.booked])), booked);
     const db_rows = new Map((await db.query(`SELECT id::text AS id, product_id, status, cost_of_purchase, sale_id, consumer_kind, consumer_id, consumer_line_id, receipt_ref
         FROM inventory_items`)).rows.map(r => [r.id, r]));
     const bad = [];
@@ -285,9 +325,9 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const A = await seed(db);
     const before = await jsPlan(db, {});
     // B so that the guard passes with 0.40 to spare.
-    await bookOpening(db, A, Math.round((before.ledger.basis_value_S_plus_U - before.ledger.B + 0.4) * 100) / 100);
+    await bookOpening(db, A, Math.round((before.ledger.expected_B - before.ledger.B + 0.4) * 100) / 100);
     const plan = await jsPlan(db, {});
-    check('defaults: the dry run passes the guard on the seeded store', plan.ledger.guard_pass && near(plan.ledger.guard_diff_D1_minus_VminusB, 0.4, 1e-6), plan.ledger);
+    check('defaults: the dry run passes the guard on the seeded store', plan.ledger.guard_pass && near(plan.ledger.guard_diff, 0.4, 1e-6), plan.ledger);
     const rowsBefore = num((await db.query(`SELECT count(*) AS n FROM inventory_items`)).rows[0].n);
     const res = await runSql(db, {});
     await compare(db, 'defaults', plan, res);
@@ -348,6 +388,16 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     check('U: assigned rows carry sale_id and consumed_at = ship time',
         u1.sale_id === 'U1' && num((await one(`SELECT consumed_at = '${day(27, '10:00:01')}'::timestamptz AS ok FROM inventory_items WHERE id = $1`, [L(602)])).ok ? 1 : 0) === 1);
     check('inactive product is rebuilt like any other (Test Product kept)', (await st(L(801))).status === 'in_stock');
+    // SU.
+    check('SU = Q1 (6) + Q2 (3.5); Q3 (nothing booked), Q4 (nets to 0) and a deleted order left out',
+        near(res.ledger.settled_unshipped_booked, 9.5) && JSON.stringify(res.settled_unshipped.map(o => o.order_id)) === '["Q1","Q2"]', res.settled_unshipped);
+    check('the guard counts SU: expected B = basis value - SU', near(res.ledger.expected_B, res.ledger.basis_value_S_plus_U - 9.5, 1e-6));
+    const qb = new Map((await q(`SELECT id, cogs_booked, cogs_cost FROM sale_items WHERE sale_id IN ('Q1', 'Q2', 'Q3', 'Q4')`)).map(r => [r.id, r]));
+    check('SU Q1: 6 split by quantity over its product lines (pA 2 -> 4, pE 1 -> 2), the no-product line none, no cogs_cost',
+        num(qb.get('l-q1a').cogs_booked) === 4 && num(qb.get('l-q1e').cogs_booked) === 2 && qb.get('l-q1s').cogs_booked === null
+        && [...qb.values()].every(r => r.cogs_cost === null), [...qb.values()]);
+    check('SU Q2 (no product line): all 3.5 on its first line', num(qb.get('l-q2s').cogs_booked) === 3.5);
+    check('Q3 and Q4 get no cogs_booked', qb.get('l-q3').cogs_booked === null && qb.get('l-q4').cogs_booked === null);
     // Wholesale backfill.
     const wl = new Map((await q(`SELECT id::text AS id, cogs_cost, cogs_short_qty FROM wholesale_order_items`)).map(r => [r.id, r]));
     check('wholesale W1: Posted COGS 9 allocated by purchase_cost x qty (6 : 10) = 3.375 / 5.625, all short',
@@ -376,6 +426,7 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     check('after the rebuild fifo_inventory_check variance = B - basis value (the 0.40 the guard allowed)',
         near(chk.variance, 0.4, 1e-6) && near(chk.retail_out_unbooked, res.ledger.V_unsettled, 1e-6), chk);
     check('fifo_inventory_check: only the fractional-stock product mismatches', chk.product_mismatches === 1 && chk.products[0].product_id === 'pQ', chk.products);
+    check('fifo_inventory_check counts SU as booked, not out', near(chk.retail_booked_not_out, 9.5, 1e-6), chk);
     // Run once.
     const again = await errOf(() => runSql(db, {}));
     check('a second run the same day is refused (backup exists)', /already exists/.test(again), again);
@@ -404,14 +455,17 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const A = await seed(db);
     const opts = { basisArgs: ['NR-3026=9'], uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21' };
     const before = await jsPlan(db, opts);
-    await bookOpening(db, A, Math.round((before.ledger.basis_value_S_plus_U - before.ledger.B) * 100) / 100);
+    await bookOpening(db, A, Math.round((before.ledger.expected_B - before.ledger.B) * 100) / 100);
     const plan = await jsPlan(db, opts);
-    check('true-up options: the dry run guard residual is 0', near(plan.ledger.guard_diff_D1_minus_VminusB, 0, 1e-6), plan.ledger);
+    check('true-up options: the dry run guard residual is 0', near(plan.ledger.guard_diff, 0, 1e-6), plan.ledger);
     const res = await runSql(db, opts);
     await compare(db, 'true-up options', plan, res);
     const lu = new Map((await db.query(`SELECT id, cogs_cost FROM sale_items WHERE id LIKE 'l-u%'`)).rows.map(r => [r.id, r]));
     check('true-up options: Returned U2 and pre-cutoff U3 are left out of U', lu.get('l-u2').cogs_cost === null && lu.get('l-u3').cogs_cost === null);
     check('true-up options: U = U1 (2) + U4 (1)', num(res.totals.U) === 3);
+    check('true-up options: the summary lists the orders left out of U (U2 by status, U3 before the cutoff)',
+        JSON.stringify(res.excluded_from_u.by_status.order_ids) === '["U2"]' && JSON.stringify(res.excluded_from_u.before_u_from.order_ids) === '["U3"]'
+        && num(res.excluded_from_u.by_status.qty) === 1.5, res.excluded_from_u);
     const pn = plan.productRows.find(r => r.product_id === 'pN');
     check('true-up options: NR-3026 layers at 9.30 against a 9.00 basis add 0.60 to D1', near(pn.d1, 0.6, 1e-6));
     check('true-up options: with U smaller, the next-older pF row L602 is written off and U1 keeps L603 + L604', (await db.query(`SELECT status FROM inventory_items WHERE id = $1`, [L(602)])).rows[0].status === 'written_off'
@@ -427,14 +481,14 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const db = await makeDb();
     const A = await seed(db);
     const before = await jsPlan(db, {});
-    await bookOpening(db, A, Math.round((before.ledger.basis_value_S_plus_U - before.ledger.B + 5) * 100) / 100);
+    await bookOpening(db, A, Math.round((before.ledger.expected_B - before.ledger.B + 5) * 100) / 100);
     const plan = await jsPlan(db, {});
     check('guard: the dry run fails it (B 5 over the basis value)', !plan.ledger.guard_pass);
     const snap = async () => JSON.stringify((await db.query(`SELECT id, status, cost_of_purchase, sale_id, consumer_kind FROM inventory_items ORDER BY id`)).rows);
     const s0 = await snap();
     const e = await errOf(() => runSql(db, {}));
-    check('guard: the SQL raises with D1, V - B, V and B', /FIFO rebuild stopped, nothing was changed: D1 = -?[\d.]+ but V - B = -?[\d.]+ \(V [\d.]+, B [\d.]+/.test(e)
-        && e.includes(`D1 = ${plan.ledger.D1.toFixed(2)}`) && e.includes(`V ${plan.ledger.V.toFixed(2)}`), e);
+    check('guard: the SQL raises with D1, V - SU - B, V, SU and B', /FIFO rebuild stopped, nothing was changed: D1 = -?[\d.]+ but V - SU - B = -?[\d.]+ \(V [\d.]+, SU [\d.]+, B -?[\d.]+/.test(e)
+        && e.includes(`D1 = ${plan.ledger.D1.toFixed(2)}`) && e.includes(`V ${plan.ledger.V.toFixed(2)}`) && e.includes('SU 9.50'), e);
     check('guard: nothing changed (rows, no backup, no entry, no line cost)', await snap() === s0
         && (await db.query(`SELECT to_regclass('inventory_items_bak_20261113') AS t`)).rows[0].t === null
         && (await db.query(`SELECT count(*) AS n FROM journal_entries WHERE reference_id LIKE 'FIFO-REVAL-%'`)).rows[0].n == 0
@@ -451,6 +505,13 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     await db.query(`UPDATE sale_items SET cogs_cost = 1 WHERE id = 'l-h1'`);
     const ec = await errOf(() => runSql(db, {}));
     check('a line that already has a cogs_cost is refused (phase 3 live)', /already carry a FIFO cost/.test(ec), ec);
+    await db.query(`UPDATE sale_items SET cogs_cost = NULL, cogs_booked = 1 WHERE id = 'l-h1'`);
+    const ecb = await errOf(() => runSql(db, {}));
+    check('a line that already has a cogs_booked is refused', /already carry a FIFO cost/.test(ecb), ecb);
+    await db.query(`UPDATE sale_items SET cogs_booked = NULL WHERE id = 'l-h1'`);
+    await db.exec(rebuildFn);
+    const ep2 = await errOf(() => db.query(`SELECT pg_temp.fifo_rebuild_run('romdoul1')`));
+    check('an unknown preset is refused and names the two presets', /pick a preset first.*"romdoul1".*romdoul1_trueup_2026_11_12.*default/.test(ep2), ep2);
     check('still nothing changed after every refusal', await snap() === s0);
 }
 
@@ -476,8 +537,29 @@ for (const [offset, ok] of [[1, true], [-1.01, false]]) {
                 eq: (await db.query(`SELECT id FROM chart_of_accounts WHERE account_code = '3000'`)).rows[0].id };
     await bookOpening(db, A, 10);
     const ymd = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
-    const e = await errOf(() => db.exec(rebuildFile));
-    check('the file as shipped (BEGIN, defaults, COMMIT) runs', e === '', e);
+    const e0 = await errOf(() => db.exec(rebuildFile));
+    check('the file as shipped (no preset picked) refuses', /pick a preset first.*"CHOOSE_A_PRESET"/.test(e0), e0);
+    await db.exec('ROLLBACK');
+    check('...and changed nothing (no entry, no backup, no log table, 3 in stock)',
+        (await db.query(`SELECT count(*) AS n FROM journal_entries WHERE reference_id LIKE 'FIFO-REVAL-%'`)).rows[0].n == 0
+        && (await db.query(`SELECT to_regclass($1) AS t`, [`inventory_items_bak_${ymd}`])).rows[0].t === null
+        && (await db.query(`SELECT to_regclass('public.fifo_rebuild_log') AS t`)).rows[0].t === null
+        && (await db.query(`SELECT count(*) AS n FROM inventory_items WHERE status = 'in_stock'`)).rows[0].n == 3);
+    const picked = rebuildFile.replace("set_config('fifo_rebuild.preset', 'CHOOSE_A_PRESET', true)", "set_config('fifo_rebuild.preset', 'default', true)");
+    let results = null;
+    const e = await errOf(async () => { results = await db.exec(picked); });
+    check('the file with the default preset picked runs', e === '', e);
+    const last = results ? results[results.length - 1].rows : [];
+    const item = name => (last.find(r => r.item === name) || {}).value;
+    check('its LAST statement returns the summary rows: preset, entry, D1, V, B, SU, guard diff, excluded, wholesale, anomalies',
+        item('preset') === 'default' && num(item('D1')) === -2 && num(item('V')) === 8 && num(item('B')) === 10
+        && num(item('SU (booked, goods on hand)')) === 0 && num(item('guard diff D1 - (V - SU - B)')) === 0
+        && item('FIFO-REVAL entry') && item('FIFO-REVAL entry').reference_id === `FIFO-REVAL-${ymd}`
+        && /^JE-\d+-MAN-\d{8}-\d{3}$/.test(item('FIFO-REVAL entry').entry_number)
+        && item('excluded from U') && item('excluded from U').by_status && item('wholesale backfill') !== undefined && Array.isArray(item('anomalies')),
+        last);
+    check('the summary is kept in public.fifo_rebuild_log',
+        (await db.query(`SELECT count(*) AS n FROM public.fifo_rebuild_log WHERE preset = 'default'`)).rows[0].n == 1);
     const je = (await db.query(`SELECT a.account_code AS code, l.debit, l.credit, e.status FROM journal_entries e
         JOIN journal_entry_lines l ON l.journal_entry_id = e.id JOIN chart_of_accounts a ON a.id = l.account_id
        WHERE e.reference_id = $1 ORDER BY a.account_code`, [`FIFO-REVAL-${ymd}`])).rows;
@@ -488,11 +570,12 @@ for (const [offset, ok] of [[1, true], [-1.01, false]]) {
     check('as shipped: the pg_temp function leaves nothing in public or wp_internal',
         (await db.query(`SELECT count(*) AS n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE p.proname = 'fifo_rebuild_pool' AND n.nspname IN ('public', 'wp_internal')`)).rows[0].n == 0);
-    const e2 = await errOf(() => db.exec(rebuildFile));
+    const e2 = await errOf(() => db.exec(picked));
     check('as shipped: a second run is refused', /already exists/.test(e2), e2);
     await db.exec('ROLLBACK');
-    check('as shipped: the refused run changed nothing (one entry, 2 in stock)',
+    check('as shipped: the refused run changed nothing (one entry, one log row, 2 in stock)',
         (await db.query(`SELECT count(*) AS n FROM journal_entries WHERE reference_id LIKE 'FIFO-REVAL-%'`)).rows[0].n == 1
+        && (await db.query(`SELECT count(*) AS n FROM public.fifo_rebuild_log`)).rows[0].n == 1
         && (await db.query(`SELECT count(*) AS n FROM inventory_items WHERE status = 'in_stock'`)).rows[0].n == 2);
 }
 
