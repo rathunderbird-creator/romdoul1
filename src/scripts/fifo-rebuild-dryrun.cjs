@@ -639,6 +639,11 @@ async function main() {
     console.log(`basis value of S+U ${L.basis_value_S_plus_U} | D1 ${L.D1} | V-B ${L.V_minus_B} | D1-(V-SU-B) ${L.guard_diff} -> guard ${L.guard_pass ? 'PASS' : 'FAIL (do not book D1)'}`);
     const R = plan.residual;
     console.log(`basis - SU - B ${R.expected_B_minus_B} = inactive stock ${R.inactive_products_stock} + U on Returned ${R.u_on_returned_orders} + U before ledger start ${R.u_on_orders_before_ledger_start} + unexplained ${R.unexplained}`);
+    if (R.inactive_products && R.inactive_products.length) {
+        console.log(`inactive products holding stock: ${R.inactive_products.map(p => `${p.name} (stock ${p.stock}, ${p.basis_value} at basis cost)`).join('; ')}`);
+        console.log('  If one is not real stock (Romdoul1: Test Product), set its stock to 0 with NO ledger entry before fifo_rebuild_pool.sql:');
+        console.log("  UPDATE products SET stock = 0 WHERE name = '<name>' AND is_active = false;  (not Adjust Stock / the Inventory page: they book Dr 5000 / Cr 1300)");
+    }
     const X = plan.excluded_from_u;
     if (X.by_status.orders || X.before_u_from.orders) console.log(`left out of U: ${X.by_status.orders} orders by status (${X.by_status.basis_value}: ${X.by_status.order_ids.join(', ')}), ${X.before_u_from.orders} orders before ${uFrom} (${X.before_u_from.basis_value}: ${X.before_u_from.order_ids.join(', ')})`);
     console.log(`written to ${outDir}`);

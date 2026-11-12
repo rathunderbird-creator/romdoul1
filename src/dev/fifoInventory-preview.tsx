@@ -56,7 +56,7 @@ const check = {
         { product_id: 'p3', name: 'Charger AI 65W', stock: 25, pool_qty: 0 },
         { product_id: 'p2', name: 'Switch NR-6012', stock: 12, pool_qty: 10 },
     ],
-    shortfall: { retail_lines: 1, retail_qty: 2, wholesale_lines: 1, wholesale_qty: 5 },
+    shortfall: { retail_lines: 1, retail_qty: 2, wholesale_lines: 1, wholesale_qty: 5, wholesale_backfill_lines: 2, wholesale_backfill_qty: 12, wholesale_backfill_cost: 48.5 },
 };
 
 const movements = [

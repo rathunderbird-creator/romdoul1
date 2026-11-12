@@ -15,7 +15,8 @@
 //     short): an edit gives the units back as layers at the booked cost and
 //     takes them again (no adjustment), a cancel reverses at that cost;
 //   * Add Stock and a PO receipt lay layers at the receipt cost, set
-//     purchase_cost, and name the receipt (RST- / PO-).
+//     purchase_cost, and name the receipt (RST- / PO-); PO layers add up to
+//     the line value to the cent, and the GRN books exactly that.
 // See tests/README.md for how to run it.
 import { makeDb, harness } from './fifo-test-db.mjs';
 
@@ -156,5 +157,32 @@ const o4 = (await one(`SELECT public.create_wholesale_order(p_order => $1::jsonb
     p_created_by => 'tester', p_today => '${DAY}') AS id`, [JSON.stringify({ customer_name: 'Shop', status: 'Open' }), items(5, 'V')])).id;
 check('an order across receipts: the four 8.50 layers, then one at 10.00 (44)', near((await lineOf(o4)).cogs_cost, 44));
 await checkBalanced('order across receipts');
+
+// PO unit prices that do not divide into cents: the layers add up to the
+// line value, and the GRN entry books exactly that.
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('P8', 'Pin', 1, 0, 0.1), ('P9', 'Clip', 2, 0, 1)`);
+const receivePo = async (total, lines) => {
+    const id = (await one(`INSERT INTO purchase_orders (supplier_id, status, total_amount) VALUES ($1, 'Ordered', $2) RETURNING id`, [sup, total])).id;
+    for (const [pid, qty, price] of lines) {
+        await q(`INSERT INTO purchase_order_items (purchase_order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)`, [id, pid, qty, price]);
+    }
+    const r = (await one(`SELECT public.receive_purchase_order(p_po_id => $1::uuid, p_today => '${DAY}') AS r`, [id])).r;
+    const layers = await one(`SELECT count(*) AS n, COALESCE(sum(cost_of_purchase), 0) AS v FROM inventory_items WHERE receipt_ref = $1`, [`PO-${id}`]);
+    const grn = await entries(`PO-${id}`);
+    return { r, layers, grn };
+};
+const p8 = await receivePo(125, [['P8', 1000, 0.125]]);
+check('PO 1000 x 0.125: 1000 layers worth 125.00, GRN Dr 1300 125.00',
+    num(p8.layers.n) === 1000 && near(p8.layers.v, 125) && p8.grn.length === 1 && near(-p8.grn[0].inv_out, 125), p8);
+await checkBalanced('PO at 0.125');
+const p9 = await receivePo(4, [['P9', 2, 1], ['P9', 1, 2]]);
+check('PO 2 x 1 + 1 x 2 of one product: 3 layers worth 4.00, GRN 4.00',
+    num(p9.layers.n) === 3 && near(p9.layers.v, 4) && near(-p9.grn[0].inv_out, 4), p9);
+await checkBalanced('PO with two prices');
+const pn = await receivePo(50, [['P9', 2, 5], [null, 4, 10]]);
+check('PO with a line whose product is gone: GRN at the stocked value (10.00), a notice names the 50.00 total',
+    near(pn.layers.v, 10) && near(-pn.grn[0].inv_out, 10)
+    && /total is \$50\.00 but its lines with a product in stock come to \$10\.00/.test(JSON.stringify(pn.r.notices)), pn);
+await checkBalanced('PO with a product-less line');
 
 done();

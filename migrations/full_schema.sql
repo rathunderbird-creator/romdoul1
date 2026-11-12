@@ -1103,6 +1103,7 @@ ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERIC DEFAULT 0
 ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_booked NUMERIC;
 ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_cost NUMERIC;
 ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERIC DEFAULT 0;
+ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_backfill BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS unit_cost NUMERIC;
 
 -- Make PostgREST pick everything up immediately.

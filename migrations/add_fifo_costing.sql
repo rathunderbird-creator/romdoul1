@@ -4,6 +4,17 @@
 -- true-up). Safe to re-run.
 --
 -- RUN ORDER (per store, in one quiet window)
+--   0. The app: the FIFO build of the client goes live FIRST (or in the
+--      same quiet window, before step 3), and every open tab and installed
+--      app (PWA) is force-reloaded, so no old build is still running once
+--      the packs load. An old build writes products.stock straight on an
+--      inline stock edit (no layers: the pool drifts from stock) and books
+--      settlement COGS at purchase_cost without recording cogs_booked (the
+--      FIFO check shows it as a variance). The FIFO build on a store without
+--      this SQL only refuses (inline stock edits: use Adjust Stock) or falls
+--      back to the old costs, so it is safe to release it first. Romdoul1
+--      also zeroes Test Product before step 2 (see fifo_rebuild_pool.sql,
+--      "BEFORE YOU RUN IT").
 --   1. THIS file;
 --   2. fifo_rebuild_pool.sql (the one-time pool rebuild; see its RUN block);
 --   3. the four packs, which call the helpers below and refuse to load
@@ -14,7 +25,11 @@
 --      behind the guards and holds the guarded public read RPCs (fifo_peek,
 --      fifo_inventory_valuation, fifo_inventory_check, order_cogs). Until it
 --      is run on a store those answer "run add_fifo_costing.sql" there (or
---      do not exist yet).
+--      do not exist yet). They also answer "FIFO costing is not set up" (as
+--      a missing function, so the app keeps its purchase_cost path) on a
+--      store whose FIFO packs are not loaded, which the packs allow only
+--      after the rebuild: Romdoul2 / Romdoul3 with this file and the guards
+--      but no rebuild keep their old costs.
 --   This file creates nothing in public, so re-running it on its own never
 --   needs the guards' mover block.
 --
@@ -129,6 +144,10 @@ ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERIC DEFAULT 0
 ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS cogs_booked NUMERIC;
 ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_cost NUMERIC;
 ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERIC DEFAULT 0;
+-- true on a wholesale line the rebuild (fifo_rebuild_pool.sql step 6) gave
+-- its booked WSO COGS as shortfall units: not a real shortfall. Cleared
+-- when the line gives its units back.
+ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_backfill BOOLEAN NOT NULL DEFAULT false;
 -- FIFO unit cost of the movement. unit_price keeps what it carries today
 -- (the selling price on retail and wholesale outs).
 ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS unit_cost NUMERIC;
@@ -481,7 +500,7 @@ BEGIN
     IF p_kind = 'retail' THEN
         UPDATE sale_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE id = p_line;
     ELSE
-        UPDATE wholesale_order_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE id = p_line::uuid;
+        UPDATE wholesale_order_items SET cogs_cost = NULL, cogs_short_qty = 0, cogs_backfill = false WHERE id = p_line::uuid;
     END IF;
     RETURN v_rows_cost + v_added;
 END;
@@ -590,8 +609,11 @@ $$;
 --   variance                     ledger_1300 - expected_1300
 --   product_mismatches / products  products whose in_stock layer count is
 --                                not products.stock
---   short_lines / short_qty      retail and wholesale lines holding a
---                                shortfall
+--   shortfall                    retail and wholesale lines holding a
+--                                shortfall; wholesale_backfill_* are the
+--                                rebuild's pre-FIFO wholesale lines (held at
+--                                their booked WSO COGS, cogs_backfill), kept
+--                                apart from real shortfall
 -- Wholesale COGS posts from the same frozen cost at stock-out, and stock
 -- adjustments at the cost they take, so neither adds a term. Lines from
 -- before the FIFO wiring (cogs_cost and cogs_booked both NULL) add nothing.
@@ -648,8 +670,11 @@ BEGIN
     SELECT jsonb_build_object(
         'retail_lines', (SELECT count(*) FROM sale_items WHERE COALESCE(cogs_short_qty, 0) > 0),
         'retail_qty', (SELECT COALESCE(sum(cogs_short_qty), 0) FROM sale_items WHERE COALESCE(cogs_short_qty, 0) > 0),
-        'wholesale_lines', (SELECT count(*) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0),
-        'wholesale_qty', (SELECT COALESCE(sum(cogs_short_qty), 0) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0))
+        'wholesale_lines', (SELECT count(*) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0 AND NOT cogs_backfill),
+        'wholesale_qty', (SELECT COALESCE(sum(cogs_short_qty), 0) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0 AND NOT cogs_backfill),
+        'wholesale_backfill_lines', (SELECT count(*) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0 AND cogs_backfill),
+        'wholesale_backfill_qty', (SELECT COALESCE(sum(cogs_short_qty), 0) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0 AND cogs_backfill),
+        'wholesale_backfill_cost', (SELECT round(COALESCE(sum(cogs_cost), 0), 2) FROM wholesale_order_items WHERE COALESCE(cogs_short_qty, 0) > 0 AND cogs_backfill))
       INTO v_short;
 
     RETURN jsonb_build_object(

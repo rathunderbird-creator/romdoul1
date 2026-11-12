@@ -51,14 +51,19 @@ CREATE SCHEMA IF NOT EXISTS wp_internal;
 GRANT USAGE ON SCHEMA wp_internal TO anon, authenticated;
 
 -- FIFO costing must be in place (see add_order_status_function.sql for the
--- same check and its SET fifo.pool_ready override).
+-- same check and its SET fifo.pool_ready override, which must NEVER be used
+-- on Romdoul2 or Romdoul3).
 DO $$
+DECLARE
+    v_rebuilt BOOLEAN := false;
 BEGIN
     IF to_regprocedure('wp_internal.fifo_give_back_line(text,text,text)') IS NULL THEN
         RAISE EXCEPTION 'Run migrations/add_fifo_costing.sql first, then migrations/fifo_rebuild_pool.sql, then this file.';
     END IF;
-    IF EXISTS (SELECT 1 FROM inventory_items)
-       AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'inventory\_items\_bak\_%')
+    IF to_regclass('public.fifo_rebuild_log') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.fifo_rebuild_log)' INTO v_rebuilt;
+    END IF;
+    IF NOT v_rebuilt AND EXISTS (SELECT 1 FROM inventory_items)
        AND COALESCE(current_setting('fifo.pool_ready', true), '') <> 'on' THEN
         RAISE EXCEPTION 'Rebuild the FIFO pool first: run migrations/fifo_rebuild_pool.sql on this store, then this file.';
     END IF;
@@ -299,9 +304,11 @@ $$;
 -- Receives a purchase order: adds whatever of each product has not arrived
 -- yet (counted from the restocks carrying 'Received from PO-xxxxxxxx', so a
 -- part-received order only gets the rest), marks it Received and books its
--- purchase (Draft, Dr Inventory / Cr Accounts Payable at the PO total,
--- reference 'PO-<id>'; a Draft entry already there follows the total, a
--- Posted one is left alone with a notice). An already received order is
+-- purchase (Draft, Dr Inventory / Cr Accounts Payable at the value of the
+-- PO's lines that have a product, which is what the new layers carry, with
+-- a notice when the PO total differs; reference 'PO-<id>'; a Draft entry
+-- already there follows that value, a Posted one is left alone with a
+-- notice). Each product's layers carry its line value to the cent. An already received order is
 -- refused, and so is a cancelled one — unless p_reopen_cancelled: the PO
 -- form saving a cancelled order as Received receives it, as before.
 --
@@ -329,6 +336,9 @@ DECLARE
     v_inventory_desc TEXT;
     v_ap_desc TEXT;
     v_rid UUID;
+    v_units INTEGER;
+    v_layer_value NUMERIC;
+    v_stocked NUMERIC := 0;
 BEGIN
     SELECT * INTO po FROM purchase_orders WHERE id = p_po_id FOR UPDATE;
     IF NOT FOUND THEN
@@ -358,25 +368,43 @@ BEGIN
              WHERE note LIKE '%' || v_marker || '%' AND product_id IN (SELECT product_id FROM ordered)
              GROUP BY product_id
         )
-        SELECT o.product_id, GREATEST(0, o.qty - COALESCE(a.qty, 0)) AS missing, round(o.value / o.qty, 2) AS unit_cost
+        SELECT o.product_id, GREATEST(0, o.qty - COALESCE(a.qty, 0)) AS missing, o.qty, o.value,
+               round(o.value / o.qty, 4) AS unit_cost
           FROM ordered o LEFT JOIN arrived a ON a.product_id = o.product_id
          ORDER BY o.product_id
     LOOP
+        v_stocked := v_stocked + round(r.value, 2);
         IF r.missing > 0 THEN
             v_rid := gen_random_uuid();
-            v_new := wp_internal.wp_add_stock(r.product_id, ceil(r.missing)::INTEGER, r.unit_cost, v_marker, COALESCE(v_supplier, ''),
+            v_units := ceil(r.missing)::INTEGER;
+            v_new := wp_internal.wp_add_stock(r.product_id, v_units, r.unit_cost, v_marker, COALESCE(v_supplier, ''),
                                   p_added_by, p_created_by, p_today, v_rid);
-            -- The layers name the purchase order they came from.
-            UPDATE inventory_items SET receipt_ref = 'PO-' || p_po_id
-             WHERE product_id = r.product_id AND receipt_ref = 'RST-' || v_rid;
+            -- The layers name the purchase order they came from, and carry
+            -- its line value to the cent (value / qty spread over the units,
+            -- so they add up to what the entry below books for them).
+            v_layer_value := round(r.value * v_units / r.qty, 2);
+            UPDATE inventory_items i
+               SET receipt_ref = 'PO-' || p_po_id,
+                   cost_of_purchase = round(v_layer_value * x.g / v_units, 2) - round(v_layer_value * (x.g - 1) / v_units, 2)
+              FROM (SELECT id, row_number() OVER (ORDER BY id) AS g FROM inventory_items
+                     WHERE product_id = r.product_id AND receipt_ref = 'RST-' || v_rid) x
+             WHERE i.id = x.id;
             v_stock := v_stock || jsonb_build_object(r.product_id, v_new);
         END IF;
     END LOOP;
 
     UPDATE purchase_orders SET status = 'Received' WHERE id = p_po_id;
 
-    -- The purchase in the books (port of postPurchaseReceiptEntry).
-    v_amount := round(COALESCE(po.total_amount, 0), 2);
+    -- The purchase in the books (port of postPurchaseReceiptEntry), at the
+    -- value of the PO's stocked lines: what the layers carry. A PO total
+    -- that differs (a line whose product is gone, other charges) is named
+    -- in a notice for a manual entry.
+    v_amount := round(v_stocked, 2);
+    IF round(COALESCE(po.total_amount, 0), 2) <> v_amount THEN
+        v_notices := v_notices || format('This PO''s total is $%s but its lines with a product in stock come to $%s: the inventory entry was booked at $%s. Record the difference manually.',
+                                         to_char(round(COALESCE(po.total_amount, 0), 2), 'FM999999999990.00'),
+                                         to_char(v_amount, 'FM999999999990.00'), to_char(v_amount, 'FM999999999990.00'));
+    END IF;
     v_inventory := wp_internal.wp_account('1300', 'Asset', 'inventor|stock');
     v_ap := wp_internal.wp_account('2000', 'Liability', 'payable');
     SELECT id, COALESCE(status, 'Posted') INTO v_entry_id, v_entry_status

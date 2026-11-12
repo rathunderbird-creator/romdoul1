@@ -741,6 +741,12 @@ GRANT EXECUTE ON FUNCTION public.set_product_stock(TEXT, NUMERIC, TEXT, TEXT, TE
 -- on a store without add_fifo_costing.sql: there the RPCs answer with the
 -- file to run. plpgsql (not sql) so creating them never needs the
 -- implementations to exist.
+-- They also answer "not set up" until the FIFO packs are loaded
+-- (wp_internal.os_order_cogs_net, from add_order_status_function.sql, which
+-- loads only on a rebuilt store): a store with add_fifo_costing.sql but no
+-- rebuild keeps its old costs instead of reading a pool that does not match
+-- its stock. The error carries SQLSTATE 42883 (undefined function), so the
+-- app takes it as a missing function and falls back.
 
 CREATE OR REPLACE FUNCTION public.fifo_peek(
     p_product_id TEXT, p_qty NUMERIC, p_session JSONB DEFAULT NULL)
@@ -751,8 +757,10 @@ SET search_path = public, sg_internal, pg_temp
 AS $$
 BEGIN
     PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory', 'view_inventory_stock'], 'see stock costs');
-    IF to_regprocedure('wp_internal.fifo_peek(text,numeric)') IS NULL THEN
-        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    IF to_regprocedure('wp_internal.fifo_peek(text,numeric)') IS NULL
+       OR to_regprocedure('wp_internal.os_order_cogs_net(text)') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql, fifo_rebuild_pool.sql and the four packs.'
+            USING ERRCODE = '42883';
     END IF;
     RETURN wp_internal.fifo_peek(p_product_id, p_qty);
 END;
@@ -767,8 +775,10 @@ SET search_path = public, sg_internal, pg_temp
 AS $$
 BEGIN
     PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory', 'view_inventory_stock', 'view_reports', 'manage_accounting'], 'see the inventory valuation');
-    IF to_regprocedure('wp_internal.fifo_inventory_valuation()') IS NULL THEN
-        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    IF to_regprocedure('wp_internal.fifo_inventory_valuation()') IS NULL
+       OR to_regprocedure('wp_internal.os_order_cogs_net(text)') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql, fifo_rebuild_pool.sql and the four packs.'
+            USING ERRCODE = '42883';
     END IF;
     RETURN QUERY SELECT * FROM wp_internal.fifo_inventory_valuation();
 END;
@@ -782,8 +792,10 @@ SET search_path = public, sg_internal, pg_temp
 AS $$
 BEGIN
     PERFORM sg_internal.sg_check(p_session, ARRAY['manage_inventory', 'view_inventory_stock', 'manage_accounting'], 'see the FIFO check');
-    IF to_regprocedure('wp_internal.fifo_inventory_check()') IS NULL THEN
-        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    IF to_regprocedure('wp_internal.fifo_inventory_check()') IS NULL
+       OR to_regprocedure('wp_internal.os_order_cogs_net(text)') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql, fifo_rebuild_pool.sql and the four packs.'
+            USING ERRCODE = '42883';
     END IF;
     RETURN wp_internal.fifo_inventory_check();
 END;
@@ -797,8 +809,10 @@ SET search_path = public, sg_internal, pg_temp
 AS $$
 BEGIN
     PERFORM sg_internal.sg_check(p_session, ARRAY['manage_orders', 'create_orders', 'view_orders', 'manage_accounting'], 'see an order''s cost of goods');
-    IF to_regprocedure('wp_internal.order_cogs(text)') IS NULL THEN
-        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql.';
+    IF to_regprocedure('wp_internal.order_cogs(text)') IS NULL
+       OR to_regprocedure('wp_internal.os_order_cogs_net(text)') IS NULL THEN
+        RAISE EXCEPTION 'FIFO costing is not set up on this store yet — run migrations/add_fifo_costing.sql, fifo_rebuild_pool.sql and the four packs.'
+            USING ERRCODE = '42883';
     END IF;
     RETURN wp_internal.order_cogs(p_order_id);
 END;

@@ -23,12 +23,17 @@
 //   * an order edited to no product line and back gets its booked COGS
 //     back; leaving Paid with a Posted COGS-REV offsets it with a Draft ADJ;
 //   * a shortfall line, and a pre-FIFO line restocked with no rows, give
-//     units back as new layers so the pool keeps up with stock.
+//     units back as new layers so the pool keeps up with stock;
+//   * settling again after a reversal books the COGS again; leaving Paid
+//     takes the order's COGS off (Draft entries deleted, Posted ones
+//     reversed by a Draft REV); a Paid order with no product line edited
+//     to products gets their COGS booked as an ADJ;
+//   * the packs load only once the rebuild is recorded in fifo_rebuild_log.
 // See tests/README.md for how to run it.
 import { makeDb, harness } from './fifo-test-db.mjs';
 
 const db = await makeDb();
-const { q, one, num, near, check, errOf, seedLayers, checkBalanced, entries, done } = harness(db);
+const { q, one, num, near, check, errOf, seedLayers, checkBalanced, fifoCheck, entries, done } = harness(db);
 const DAY = '2026-11-13';
 
 await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES
@@ -323,8 +328,8 @@ await ship('R2', 'Pending', 'Shipped');
 await ship('R2', 'Shipped', 'Returned');
 await ship('R2', 'Returned', 'ReStock');
 await q(`SELECT public.apply_restock_payment_side(p_ids => ARRAY['R2'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
-check('deposit-covered restocked: Draft ORD-COGS and Draft REV', (await entries('ORD-R2-COGS')).length === 1
-    && (await entries('ORD-R2-COGS-REV')).length === 1);
+check('deposit-covered restocked: the Draft ORD-COGS goes with leaving Paid, no REV', (await entries('ORD-R2-COGS')).length === 0
+    && (await entries('ORD-R2-COGS-REV')).length === 0 && (await line('r2-a')).cogs_booked === null);
 await checkBalanced('restocked R2 (deposit-covered)', V);
 await q(`SELECT public.delete_retail_orders(p_ids => ARRAY['R2'], p_fields => '{"today": "${DAY}"}'::jsonb)`);
 check('delete deposit-covered restocked R2: no COGS entry left', (await entries('ORD-R2-COGS%')).length === 0);
@@ -580,6 +585,159 @@ await delOf('PO');
 check('PO (Posted receipt, Posted REV, unpaid) deleted: no ADJ', (await entries('ORD-PO-COGS-ADJ')).length === 0);
 await checkBalanced('PO deleted', V9);
 
+// ---------------------------------------------------------------------------
+// 10. Settling again after a reversal, leaving Paid, edits that add products
+// ---------------------------------------------------------------------------
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('K', 'Light', 20, 0, 4)`);
+await seedLayers('K', 12, 5, '2026-01-05T00:00:00Z');
+const V10 = num((await fifoCheck()).variance);
+const kTwo = `'[{"id": "K", "name": "Light", "price": 15, "quantity": 2}]'::jsonb`;
+const kOne = `'[{"id": "K", "name": "Light", "price": 30, "quantity": 1}]'::jsonb`;
+const bookedK = async o => (await q(`SELECT cogs_cost, cogs_booked FROM sale_items WHERE sale_id = $1 AND product_id IS NOT NULL`, [o])).rows;
+const depositPaid = async (o, total) => {
+    await pay(o, 'Unpaid', { payment_status: 'Deposit', deposit_amount: total, post_to_ledger: true });
+    return pay(o, 'Deposit', { payment_status: 'Paid', settle_date: DAY, post_to_ledger: true });
+};
+
+// Deposit-covered, shipped, Paid (ORD-COGS 10), restocked, shipped again
+// and Paid again: the COGS is booked again (Draft and Posted ORD-COGS).
+for (const posted of [false, true]) {
+    const o = posted ? 'NX2' : 'NX1';
+    await order(o, [[`${o}-a`, 'K', 2]], 'Pending', 30);
+    await pay(o, 'Unpaid', { payment_status: 'Deposit', deposit_amount: 30, post_to_ledger: true });
+    await ship(o, 'Pending', 'Shipped');
+    await pay(o, 'Deposit', { payment_status: 'Paid', settle_date: DAY, post_to_ledger: true });
+    if (posted) await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id = 'ORD-' || $1 || '-COGS'`, [o]);
+    await ship(o, 'Shipped', 'Returned');
+    await ship(o, 'Returned', 'ReStock');
+    await q(`SELECT public.apply_restock_payment_side(p_ids => ARRAY[$1], p_fields => '{"today": "${DAY}"}'::jsonb)`, [o]);
+    check(`${o} (${posted ? 'Posted' : 'Draft'} ORD-COGS) restocked: 5000 nets 0`, near(await cogsOf(o), 0));
+    await checkBalanced(`${o} restocked`, V10);
+    await ship(o, 'ReStock', 'Shipped');
+    await pay(o, 'Cancel', { payment_status: 'Paid', settle_date: DAY, post_to_ledger: true });
+    let xl = await bookedK(o);
+    check(`${o} shipped and Paid again: COGS 10 booked again, line booked 10`,
+        near(await cogsOf(o), 10) && near(xl[0].cogs_cost, 10) && near(xl[0].cogs_booked, 10), { xl, e: await entries(`ORD-${o}-COGS%`) });
+    await checkBalanced(`${o} Paid again`, V10);
+    // A no-change edit keeps what is booked and books nothing.
+    await editTo(o, kTwo);
+    xl = await bookedK(o);
+    check(`${o} no-change edit: booked stays 10, no ADJ, 5000 nets 10`,
+        near(xl[0].cogs_booked, 10) && (await entries(`ORD-${o}-COGS-ADJ`)).length === 0 && near(await cogsOf(o), 10), xl);
+    await checkBalanced(`${o} edited`, V10);
+}
+
+// Deposit-covered Paid, goods on hand, back to Deposit: the Draft ORD-COGS
+// goes (Posted: a Draft REV), nothing stays booked.
+for (const posted of [false, true]) {
+    const o = posted ? 'ND2' : 'ND1';
+    await order(o, [[`${o}-a`, 'K', 1]], 'Pending', 30);
+    await depositPaid(o, 30);
+    if (posted) await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id = 'ORD-' || $1 || '-COGS'`, [o]);
+    const back = await pay(o, 'Paid', { payment_status: 'Deposit', deposit_amount: 30 });
+    const dl = await bookedK(o);
+    check(`${o} deposit-covered (${posted ? 'Posted' : 'Draft'} ORD-COGS) back to Deposit: 5000 nets 0, nothing booked`
+        + (posted ? ', a Draft REV with a notice' : ', the ORD-COGS deleted'),
+        near(await cogsOf(o), 0) && dl[0].cogs_booked === null
+        && (posted ? (await entries(`ORD-${o}-COGS-REV`)).length === 1 && JSON.stringify(back.notices).includes(`ORD-${o}-COGS-REV`)
+                   : (await entries(`ORD-${o}-COGS%`)).length === 0), { dl, back, e: await entries(`ORD-${o}-COGS%`) });
+    await checkBalanced(`${o} back to Deposit`, V10);
+    await pay(o, 'Deposit', { payment_status: 'Paid', settle_date: DAY, post_to_ledger: true });
+    check(`${o} Paid again: COGS 5 booked once`, near(await cogsOf(o), 5) && near((await bookedK(o))[0].cogs_booked, 5));
+    await checkBalanced(`${o} Paid again`, V10);
+}
+
+// Shipped, Paid, receipt Posted, leaving Paid: its COGS is reversed by a
+// Draft REV (cash and revenue are the user's); settling again books it once.
+const all5000 = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.credit), 0) AS v FROM journal_entry_lines l
+    JOIN chart_of_accounts a ON a.id = l.account_id AND a.account_code = '5000'`)).v);
+const s1start = await all5000();
+await order('NS1', [['ns1-a', 'K', 1]]);
+await ship('NS1', 'Pending', 'Shipped');
+await settle('NS1');
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'NS1')`);
+const s1un = await pay('NS1', 'Paid', { payment_status: 'Unpaid' });
+const s1l = await bookedK('NS1');
+const s1rev = await entries('ORD-NS1-COGS-REV');
+check('NS1 leaving Paid with a Posted receipt: Draft REV of 5, nothing booked, notice says reverse only cash and revenue',
+    s1rev.length === 1 && s1rev[0].status === 'Draft' && near(s1rev[0].cogs, -5) && s1l[0].cogs_booked === null
+    && /reverse only its cash and revenue/.test(JSON.stringify(s1un.notices)), { s1rev, s1un });
+await checkBalanced('NS1 unpaid', V10);
+await settle('NS1');
+check('NS1 settled again: 5000 up by 5 in all (one shipped unit), booked 5',
+    near(await all5000() - s1start, 5) && near((await bookedK('NS1'))[0].cogs_booked, 5), { d: await all5000() - s1start, l: await bookedK('NS1') });
+await checkBalanced('NS1 settled again', V10);
+
+// Posted receipt, leave Paid, edit to a service line and back, Paid again,
+// leave Paid: no ADJ is invented for the Posted receipt out of view.
+await order('NZ1', [['nz1-a', 'K', 1]], 'Pending', 30);
+const paid30 = { payment_status: 'Paid', amount_received: 30, settle_date: DAY, post_to_ledger: true };
+await pay('NZ1', 'Unpaid', paid30);
+await q(`UPDATE journal_entries SET status = 'Posted' WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'NZ1')`);
+await pay('NZ1', 'Paid', { payment_status: 'Unpaid' });
+await editTo('NZ1', serviceOnly);
+await editTo('NZ1', kOne);
+await pay('NZ1', 'Unpaid', paid30);
+const z1un = await pay('NZ1', 'Paid', { payment_status: 'Unpaid' });
+const z1all = num((await one(`SELECT COALESCE(sum(l.debit - l.credit), 0) AS v FROM journal_entries e
+    JOIN journal_entry_lines l ON l.journal_entry_id = e.id JOIN chart_of_accounts a ON a.id = l.account_id AND a.account_code = '5000'
+   WHERE e.reference_id LIKE 'ORD-NZ1-COGS%' OR e.description LIKE '%Cust NZ1%'`)).v);
+check('NZ1 unpaid, unshipped after a Posted receipt and an edit round trip: no ADJ, 5000 nets 0, no POSTED-REV notice',
+    (await entries('ORD-NZ1-COGS-ADJ')).length === 0 && near(z1all, 0)
+    && !/COGS-REV\) is POSTED/.test(JSON.stringify(z1un.notices)), { z1all, z1un, e: await entries('ORD-NZ1-COGS%') });
+await checkBalanced('NZ1 unpaid', V10);
+
+// Paid with only a service line (nothing to book), then edited to products
+// and shipped: their COGS is booked as an ADJ (receipt, and deposit-covered).
+for (const dep of [false, true]) {
+    const o = dep ? 'NY2' : 'NY1';
+    await order(o, [], 'Pending', 30);
+    await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ($1, $2, NULL, 'placeholder', 30, 1)`, [`${o}-s`, o]);
+    if (dep) await depositPaid(o, 30); else await pay(o, 'Unpaid', paid30);
+    check(`${o} Paid with a service line only: nothing booked`, near(await cogsOf(o), 0));
+    await editTo(o, kTwo);
+    let yl = await bookedK(o);
+    check(`${o} edited to 2 x K while Paid: a Draft ADJ of 10 (peek), booked 10`,
+        near(await cogsOf(o), 10) && (await entries(`ORD-${o}-COGS-ADJ`)).length === 1 && near(yl[0].cogs_booked, 10), { yl, e: await entries(`ORD-${o}-COGS%`) });
+    await checkBalanced(`${o} edited`, V10);
+    await ship(o, 'Pending', 'Shipped');
+    yl = await bookedK(o);
+    check(`${o} shipped: cost 10 booked 10, 5000 nets 10`, near(yl[0].cogs_cost, 10) && near(yl[0].cogs_booked, 10) && near(await cogsOf(o), 10), yl);
+    await checkBalanced(`${o} shipped`, V10);
+    await pay(o, 'Paid', { payment_status: dep ? 'Deposit' : 'Unpaid', ...(dep ? { deposit_amount: 30 } : {}) });
+    check(`${o} leaving Paid: the ADJ goes, nothing booked`, near(await cogsOf(o), 0) && (await bookedK(o))[0].cogs_booked === null);
+    await checkBalanced(`${o} unpaid`, V10);
+}
+// The same while shipped: the service line is replaced by products that ship
+// with the edit.
+await order('NY3', [], 'Pending', 30);
+await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('NY3-s', 'NY3', NULL, 'placeholder', 30, 1)`);
+await pay('NY3', 'Unpaid', paid30);
+await ship('NY3', 'Pending', 'Shipped');
+await editTo('NY3', kTwo);
+const y3 = await bookedK('NY3');
+check('NY3 (Paid, Shipped) edited from a service line to 2 x K: booked at its cost 10, 5000 nets 10',
+    near(y3[0].cogs_cost, 10) && near(y3[0].cogs_booked, 10) && near(await cogsOf('NY3'), 10), y3);
+await checkBalanced('NY3 edited', V10);
+// An Unpaid order gets nothing booked by an edit.
+await order('NY4', [], 'Pending', 30);
+await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('NY4-s', 'NY4', NULL, 'placeholder', 30, 1)`);
+await editTo('NY4', kTwo);
+check('NY4 (Unpaid) edited to products: nothing booked', near(await cogsOf('NY4'), 0) && (await bookedK('NY4'))[0].cogs_booked === null);
+
+// Deposit-covered Paid, edited to a service line (REV), back to Deposit,
+// edited back, shipped, then edited while unpaid: nothing invented.
+await order('NF1', [['nf1-a', 'K', 1]], 'Pending', 30);
+await depositPaid('NF1', 30);
+await editTo('NF1', serviceOnly);
+await pay('NF1', 'Paid', { payment_status: 'Deposit', deposit_amount: 30 });
+await editTo('NF1', kOne);
+await ship('NF1', 'Pending', 'Shipped');
+await editTo('NF1', kOne);
+check('NF1 (deposit-covered, edited away and back, unpaid, shipped) edited again: no ADJ, 5000 nets 0',
+    (await entries('ORD-NF1-COGS-ADJ')).length === 0 && near(await cogsOf('NF1'), 0), await entries('ORD-NF1-COGS%'));
+await checkBalanced('NF1 edited', V10);
+
 // The packs refuse to load before add_fifo_costing.sql and the rebuild.
 check('nothing left without a consumer link while sold',
     num((await one(`SELECT count(*) AS n FROM inventory_items WHERE status = 'sold' AND consumer_kind IS NULL`)).n) === 0);
@@ -595,6 +753,19 @@ check('a pack refuses to load on a store with layers but no rebuild', /Rebuild t
 await q(`CREATE TABLE inventory_items_bak_20261113 AS SELECT * FROM inventory_items`);
 eLoad = '';
 try { await db.exec(strip(mig('add_order_payment_functions.sql'))); } catch (e) { eLoad = String(e.message); }
-check('... and loads once the rebuild backup exists', eLoad === '', eLoad);
+check('... a table named like the rebuild backup is not enough', /Rebuild the FIFO pool first/.test(eLoad), eLoad);
+await q(`CREATE TABLE public.fifo_rebuild_log (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         run_date DATE NOT NULL, preset TEXT NOT NULL, summary JSONB NOT NULL)`);
+eLoad = '';
+try { await db.exec(strip(mig('add_order_payment_functions.sql'))); } catch (e) { eLoad = String(e.message); }
+check('... nor an empty fifo_rebuild_log', /Rebuild the FIFO pool first/.test(eLoad), eLoad);
+await q(`INSERT INTO public.fifo_rebuild_log (run_date, preset, summary) VALUES ('2026-11-13', 'default', '{}')`);
+await q(`DROP TABLE inventory_items_bak_20261113`);
+eLoad = '';
+try {
+    for (const f of ['add_wholesale_procurement_functions.sql', 'add_order_status_function.sql',
+                     'add_order_payment_functions.sql', 'add_stock_adjustment_posting.sql']) await db.exec(strip(mig(f)));
+} catch (e) { eLoad = String(e.message); }
+check('... and the four load once the rebuild is recorded, with the backup dropped', eLoad === '', eLoad);
 
 done();
