@@ -57,6 +57,12 @@
 --     back must land in the pool: fifo_give_back_line adds a layer for each
 --     whole unit that comes back with no row (a shortfall, or a line from
 --     before the FIFO wiring that holds fewer rows than its quantity).
+--     Inventory (1300) never received those units, so a shortfall is a
+--     FIFO-check variance (its fallback cost) from the moment it ships, and
+--     the variance STAYS after the line gives it back (un-ship, edit,
+--     delete, restock): the pool keeps the RET- layers to match stock. It
+--     clears only through a stock correction (count / adjustment) that
+--     writes those layers off, or a manual 1300 entry.
 
 -- ---------------------------------------------------------------------------
 -- 1) Schema

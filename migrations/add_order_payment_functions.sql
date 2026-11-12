@@ -183,11 +183,20 @@ $$;
 
 -- A Draft entry that carried p_amount of an order's COGS was deleted: the
 -- amount comes off the lines' cogs_booked (all of it, NULL, when it is what
--- they hold; else split by what each holds, in cents). An order whose
--- booking predates the FIFO wiring (no line has cogs_booked) is adopted
--- instead: while it holds its goods, each line takes the cost of the layers
--- it holds plus its missing units at the fallback cost, as a shipped,
--- unsettled FIFO order would.
+-- they hold; else split by what each holds, in cents). A deleted Draft
+-- reversal (p_amount < 0, a COGS-REV) on an order that no longer holds its
+-- goods and has nothing booked puts its amount back on the product lines
+-- (os_spread_booked): that COGS is booked again until another entry takes
+-- it off or op_reverse_booked_cogs reverses it again. Callers drop a
+-- reversal before the entries it reversed, so a Draft COGS plus its Draft
+-- REV still net to nothing. Otherwise an order whose booking predates the
+-- FIFO wiring (no line has cogs_booked) is adopted: while it holds its
+-- goods, each line takes the cost of the layers it holds plus its missing
+-- units at the fallback cost, as a shipped, unsettled FIFO order would.
+-- Adoption does not re-base the history: deleting the old receipt gives
+-- 1300 back its purchase-cost COGS X while the line adds its layer cost C
+-- to the FIFO check's expected value, so the check moves by X - C, and
+-- settling again at C keeps that difference.
 CREATE OR REPLACE FUNCTION wp_internal.op_unbook_cogs(p_order_id TEXT, p_amount NUMERIC)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -205,7 +214,9 @@ BEGIN
     SELECT COALESCE(sum(cogs_booked), 0), count(*)::int INTO v_total, v_n
       FROM sale_items WHERE sale_id = p_order_id AND cogs_booked IS NOT NULL;
     IF v_n = 0 THEN
-        IF order_status_holds_stock((SELECT shipping_status FROM sales WHERE id = p_order_id)) THEN
+        IF p_amount < 0 AND NOT order_status_holds_stock((SELECT shipping_status FROM sales WHERE id = p_order_id)) THEN
+            PERFORM wp_internal.os_spread_booked(p_order_id, -p_amount);
+        ELSIF order_status_holds_stock((SELECT shipping_status FROM sales WHERE id = p_order_id)) THEN
             UPDATE sale_items si SET
                 cogs_cost = h.cost + GREATEST(COALESCE(si.quantity, 0) - h.n, 0) * wp_internal.fifo_fallback_cost(si.product_id),
                 cogs_short_qty = GREATEST(COALESCE(si.quantity, 0) - h.n, 0)
@@ -243,8 +254,9 @@ END;
 $$;
 
 -- Deletes an order's Draft COGS-side entries with these references, taking
--- what each carried off cogs_booked. Returns whether a non-Draft (Posted)
--- one is left.
+-- what each carried off cogs_booked (entries that put goods back into
+-- Inventory first, so a reversal is undone before what it reversed).
+-- Returns whether a non-Draft (Posted) one is left.
 CREATE OR REPLACE FUNCTION wp_internal.op_drop_draft_cogs_entries(p_order_id TEXT, p_refs TEXT[])
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -255,7 +267,8 @@ DECLARE
     v_posted BOOLEAN := false;
 BEGIN
     FOR r IN SELECT id, COALESCE(status, 'Posted') AS status FROM journal_entries
-              WHERE reference_id = ANY(p_refs) ORDER BY created_at, id FOR UPDATE
+              WHERE reference_id = ANY(p_refs)
+              ORDER BY wp_internal.op_entry_inventory_credit(id) < 0 DESC, created_at, id FOR UPDATE
     LOOP
         IF r.status <> 'Draft' THEN
             v_posted := true;
@@ -1051,6 +1064,10 @@ BEGIN
                                    = COALESCE(NULLIF(s2.customer_snapshot->>'name', ''), 'Customer')) AS has_sibling
                FROM sales s2 WHERE s2.id = ANY(v_ids)
     LOOP
+        -- A Draft reversal goes first: its amount is booked again
+        -- (op_unbook_cogs), so the entries below take off what they carried
+        -- and op_reverse_booked_cogs reverses whatever a POSTED entry keeps.
+        v_posted := wp_internal.op_drop_draft_cogs_entries(r.id, ARRAY['ORD-' || r.id || '-COGS-REV']);
         FOR t IN SELECT id FROM transactions
                   WHERE type = 'Income'
                     AND (order_id = r.id
@@ -1075,7 +1092,7 @@ BEGIN
         -- reversals): same rule as the TX- entries — a Draft one goes with
         -- the order.
         v_posted := wp_internal.op_drop_draft_cogs_entries(r.id, ARRAY[
-            'ORD-' || r.id || '-COGS', 'ORD-' || r.id || '-COGS-ADJ', 'ORD-' || r.id || '-COGS-REV']);
+            'ORD-' || r.id || '-COGS', 'ORD-' || r.id || '-COGS-ADJ', 'ORD-' || r.id || '-COGS-REV']) OR v_posted;
         -- COGS still booked after that sits in POSTED entries; the goods are
         -- back (or never left), so it is reversed by a Draft COGS-REV.
         v_rev := wp_internal.op_reverse_booked_cogs(r.id, v_today);
