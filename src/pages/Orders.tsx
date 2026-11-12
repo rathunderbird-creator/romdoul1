@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal, orderStatusLabel } from '../utils/orderStatusRules';
+import { bodyZoom } from '../utils/bodyZoom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
@@ -66,8 +67,8 @@ const localDayBound = (dateStr: string, edge: 'start' | 'end'): Date => {
 // Restock only acts on orders that are Returned right now; say what was skipped.
 const restockResultMessage = (restocked: number, requested: number) => {
     const skipped = requested - restocked;
-    if (restocked === 0) return `Nothing restocked: only Returned orders can be restocked (${requested} selected).`;
-    return `Restocked ${restocked} order${restocked === 1 ? '' : 's'}` + (skipped > 0 ? `. ${skipped} skipped because they are not Returned.` : '');
+    if (restocked === 0) return `Nothing restocked: only Returning orders can be restocked (${requested} selected).`;
+    return `Restocked ${restocked} order${restocked === 1 ? '' : 's'}` + (skipped > 0 ? `. ${skipped} skipped because they are not Returning.` : '');
 };
 
 const getStatusBorderColor = (s: string) => {
@@ -583,7 +584,7 @@ const DrawerChipGroup: React.FC<{ title: string; options: string[]; selected: st
                         onClick={() => onToggle(opt)}
                         style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
                     >
-                        {opt}
+                        {orderStatusLabel(opt)}
                     </button>
                 );
             })}
@@ -611,10 +612,12 @@ const ColumnFilterPopover: React.FC<{
     useEffect(() => {
         const update = () => {
             if (!anchor) return;
+            // Screen px -> the zoomed body's px (see utils/bodyZoom.ts).
+            const z = bodyZoom();
             const r = anchor.getBoundingClientRect();
             setPos({
-                top: r.bottom + 6,
-                left: Math.max(8, Math.min(r.left, window.innerWidth - WIDTH - 8))
+                top: r.bottom / z + 6,
+                left: Math.max(8, Math.min(r.left / z, window.innerWidth / z - WIDTH - 8))
             });
         };
         update();
@@ -3045,7 +3048,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px' }}>{status}</span>
+                                                        <span style={{ fontSize: '13px' }}>{orderStatusLabel(status)}</span>
                                                     </label>
                                                 ))}
                                             </div>
@@ -4530,7 +4533,7 @@ const Orders: React.FC = () => {
                                                 alignItems: 'center',
                                                 gap: '2px'
                                             }}>
-                                                {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                {orderStatusLabel(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
                                             </span>
                                         );
                                     });

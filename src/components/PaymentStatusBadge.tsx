@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import { usePortalPosition } from '../hooks/usePortalPosition';
 
 interface PaymentStatusBadgeProps {
     status: string;
@@ -13,7 +14,9 @@ interface PaymentStatusBadgeProps {
 const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+    const popupRef = useRef<HTMLDivElement>(null);
+    // In the zoomed body's coordinates, flipped above when there's no room below.
+    const position = usePortalPosition(dropdownRef, popupRef, isOpen && !readOnly);
 
     const getStatusStyle = (s: string) => {
         switch (s) {
@@ -53,42 +56,13 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
 
     const options = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel'];
 
-    // Update position when opening
-    useEffect(() => {
-        if (isOpen && dropdownRef.current) {
-            const updatePosition = () => {
-                const rect = dropdownRef.current?.getBoundingClientRect();
-                if (rect) {
-                    setPosition({
-                        top: rect.bottom + window.scrollY + 4,
-                        left: rect.left + window.scrollX,
-                        width: rect.width
-                    });
-                }
-            };
-
-            updatePosition();
-            window.addEventListener('scroll', updatePosition, true);
-            window.addEventListener('resize', updatePosition);
-
-            return () => {
-                window.removeEventListener('scroll', updatePosition, true);
-                window.removeEventListener('resize', updatePosition);
-            };
-        }
-    }, [isOpen]);
-
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                // Check portal
-                const portalElement = document.getElementById(`payment-dropdown-${status}-${position.top}`);
-                if (portalElement && portalElement.contains(event.target as Node)) {
-                    return;
-                }
-                setIsOpen(false);
-            }
+            const target = event.target as Node;
+            // The menu is portalled into <body>, so check it separately.
+            if (dropdownRef.current?.contains(target) || popupRef.current?.contains(target)) return;
+            setIsOpen(false);
         };
 
         if (isOpen) {
@@ -97,7 +71,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen, status, position.top]);
+    }, [isOpen]);
 
     const handleToggle = () => {
         if (!readOnly && onChange) {
@@ -121,18 +95,21 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
 
             {isOpen && !readOnly && createPortal(
                 <div
-                    id={`payment-dropdown-${status}-${position.top}`}
+                    ref={popupRef}
                     style={{
                         position: 'absolute',
                         top: position.top,
                         left: position.left,
                         width: position.width,
+                        visibility: position.ready ? 'visible' : 'hidden',
+                        maxHeight: position.maxHeight,
+                        overflowY: position.maxHeight ? 'auto' : 'hidden',
                         backgroundColor: 'var(--color-surface)',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
                         border: '1px solid #E5E7EB',
                         zIndex: 9999,
-                        overflow: 'hidden'
+                        overflowX: 'hidden'
                     }}
                 >
                     {options.map((opt) => {

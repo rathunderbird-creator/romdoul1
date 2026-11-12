@@ -144,3 +144,10 @@ export const settleDateChangeRefusal = (
     }
     return null;
 };
+
+// What staff see for a stored order status. Only the wording changes: the
+// stored value stays 'Returned' (rules, filters, reports and the database all
+// key on it). 'Returned' reads as "Returning" because at that point the parcel
+// is still on its way back — it becomes stock again only at ReStock.
+const ORDER_STATUS_LABELS: Record<string, string> = { Returned: 'Returning' };
+export const orderStatusLabel = (status: string): string => ORDER_STATUS_LABELS[status] || status;

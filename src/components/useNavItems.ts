@@ -2,7 +2,7 @@
 // source both sidebar layouts (classic black rail and the modern light one)
 // render from, so a new page only ever has to be added here.
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt, Clock, ClipboardEdit } from 'lucide-react';
+import { LayoutDashboard, Package, Truck, Wallet, MapPin, PieChart, ShoppingCart, Calculator, List, CircleDollarSign, Trash2, PackageSearch, ArrowRightLeft, TrendingUp, TrendingDown, BarChart3, Banknote, FileText, Building2, FileCheck, Network, BookOpen, CreditCard, AlertTriangle, PackageCheck, Tags, Warehouse, Calendar, CheckSquare, HandCoins, Store, History, Users, Megaphone, Target, Scale, ArrowDownUp, FlaskConical, User, ShieldCheck, Lock, BookText, SlidersHorizontal, Receipt, Clock, ClipboardEdit, Undo2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -40,6 +40,7 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.allOrders'), path: '/orders', icon: List },
                 // Orders Management 2 is hidden from the menu; /orders-management-2 stays reachable by URL.
                 { label: t('nav.shippingDelivery'), path: '/orders/shipping', icon: Truck },
+                { label: t('nav.returningItems'), path: '/orders/returning', icon: Undo2 },
                 // Payment Tracking is hidden from the menu; /payment-tracking stays
                 // reachable by URL and its Record Receipt ledger-posting flow is unchanged.
                 { label: t('nav.customerPayment'), path: '/customer-payment', icon: Receipt },
