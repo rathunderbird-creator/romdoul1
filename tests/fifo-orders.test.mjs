@@ -72,6 +72,33 @@ const txCogs = async order => {
 };
 
 // ---------------------------------------------------------------------------
+// 0. The payment row's Method is the method picked, not the "Deposited into"
+//    account's name (that showed one bank as "Bank" and "Bank Account (ABA)").
+{
+    const bank = await one(`SELECT id, account_name FROM chart_of_accounts
+        WHERE account_code = '1000'`);
+    const methodOf = async (id, cat) => (await one(`SELECT pay_by FROM transactions WHERE order_id = $1 AND category = $2
+        ORDER BY created_at DESC LIMIT 1`, [id, cat])).pay_by;
+    await order('M1', [['M1-a', 'C', 0]], 'Pending', 10);
+    await pay('M1', 'Unpaid', { payment_status: 'Paid', amount_received: 10, settle_date: DAY, post_to_ledger: true,
+        payment_method: 'Bank', deposit_account_id: bank.id, deposit_account_name: bank.account_name });
+    check('settle: Method stays "Bank" with a picked account', (await methodOf('M1', 'លក់រាយ')) === 'Bank', await methodOf('M1', 'លក់រាយ'));
+    const debit = await one(`SELECT l.account_id FROM transactions t JOIN journal_entries e ON e.reference_id = 'TX-' || t.id
+        JOIN journal_entry_lines l ON l.journal_entry_id = e.id AND l.debit > 0
+       WHERE t.order_id = 'M1' AND t.category = 'លក់រាយ' ORDER BY l.debit DESC LIMIT 1`);
+    check('settle: the entry still debits the picked account', debit && debit.account_id === bank.id, debit && debit.account_id);
+    await order('M2', [['M2-a', 'C', 0]], 'Pending', 10);
+    await pay('M2', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 4, deposit_method: 'Cash', post_to_ledger: true,
+        deposit_account_id: bank.id, deposit_account_name: bank.account_name });
+    check('deposit: Method stays "Cash"', (await methodOf('M2', 'កក់ប្រាក់')) === 'Cash', await methodOf('M2', 'កក់ប្រាក់'));
+    await order('M3', [['M3-a', 'C', 0]], 'Pending', 10);
+    await pay('M3', 'Unpaid', { payment_status: 'Paid', amount_received: 10, settle_date: DAY, post_to_ledger: true,
+        deposit_account_id: bank.id, deposit_account_name: bank.account_name });
+    check('settle with no Method: falls back to the account name', (await methodOf('M3', 'លក់រាយ')) === bank.account_name, await methodOf('M3', 'លក់រាយ'));
+    await checkBalanced('method rows');
+}
+
+// ---------------------------------------------------------------------------
 // 1. Ship, settle, unship, re-ship
 // ---------------------------------------------------------------------------
 await order('O1', [[SI('o1-a'), 'A', 2], [SI('o1-b'), 'B', 1]]);
