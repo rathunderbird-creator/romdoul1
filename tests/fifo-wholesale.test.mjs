@@ -16,12 +16,16 @@
 //     takes them again (no adjustment), a cancel reverses at that cost;
 //   * Add Stock and a PO receipt lay layers at the receipt cost, set
 //     purchase_cost, and name the receipt (RST- / PO-); PO layers add up to
-//     the line value to the cent, and the GRN books exactly that.
+//     the line value to the cent, and the GRN books exactly that;
+//   * on the live types (int4 stock, numeric wholesale quantity) a
+//     fractional quantity is refused on create and edit, and a fractional
+//     line from before that rule gives back whole units only, so pool =
+//     stock still holds.
 // See tests/README.md for how to run it.
 import { makeDb, harness } from './fifo-test-db.mjs';
 
 const db = await makeDb();
-const { q, one, num, near, check, seedLayers, bookOpening, checkBalanced, entries, done } = harness(db);
+const { q, one, num, near, check, errOf, seedLayers, bookOpening, fifoCheck, checkBalanced, entries, done } = harness(db);
 const DAY = '2026-11-13';
 
 await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('W', 'Speaker', 20, 0, 4), ('V', 'Mic', 30, 0, 9)`);
@@ -184,5 +188,75 @@ check('PO with a line whose product is gone: GRN at the stocked value (10.00), a
     near(pn.layers.v, 10) && near(-pn.grn[0].inv_out, 10)
     && /total is \$50\.00 but its lines with a product in stock come to \$10\.00/.test(JSON.stringify(pn.r.notices)), pn);
 await checkBalanced('PO with a product-less line');
+
+// ---------------------------------------------------------------------------
+// 5. Fractional quantities on the live INTEGER stock columns
+// ---------------------------------------------------------------------------
+// wholesale_order_items.quantity is NUMERIC on live, but products.stock,
+// warehouse_stock.quantity and stock_movements.quantity are int4: a
+// fractional line would be rounded there while FIFO costs the fraction.
+const types = (await q(`SELECT table_name || '.' || column_name AS c, udt_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_name = 'quantity' AND table_name IN ('wholesale_order_items', 'warehouse_stock', 'stock_movements')
+    UNION ALL SELECT 'products.stock', udt_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'stock'`)).rows;
+const typeOf = c => (types.find(t => t.c === c) || {}).udt_name;
+check('the test runs on the live types: wholesale quantity numeric, stock / warehouse / movement quantities int4',
+    typeOf('wholesale_order_items.quantity') === 'numeric' && typeOf('products.stock') === 'int4'
+    && typeOf('warehouse_stock.quantity') === 'int4' && typeOf('stock_movements.quantity') === 'int4', types);
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('F', 'Fan', 20, 0, 5)`);
+await seedLayers('F', 10, 5, '2026-04-01T00:00:00Z');
+const wh = (await one(`INSERT INTO warehouses (name) VALUES ('Main') RETURNING id`)).id;
+await q(`INSERT INTO warehouse_stock (warehouse_id, product_id, quantity) VALUES ($1, 'F', 10)`, [wh]);
+const fState = async () => ({
+    stock: num((await one(`SELECT stock FROM products WHERE id = 'F'`)).stock),
+    pool: await pool('F'),
+    ws: num((await one(`SELECT quantity FROM warehouse_stock WHERE product_id = 'F'`)).quantity),
+    moves: num((await one(`SELECT count(*) AS n FROM stock_movements WHERE product_id = 'F'`)).n),
+    orders: num((await one(`SELECT count(*) AS n FROM wholesale_order_items WHERE product_id = 'F'`)).n),
+});
+const f0 = await fState();
+const createErr = qty => errOf(`SELECT public.create_wholesale_order(p_order => $1::jsonb, p_items => $2::jsonb,
+    p_created_by => 'tester', p_today => '${DAY}')`, [JSON.stringify({ customer_name: 'Shop', status: 'Open', warehouse_id: wh }), items(qty, 'F')]);
+for (const qty of [2.6, 0.5, '1.25']) {
+    const e = await createErr(qty);
+    check(`create with quantity ${qty}: refused, "Quantities must be whole numbers."`, /Quantities must be whole numbers/.test(e), e);
+}
+check('the refused creates changed nothing (stock, pool, warehouse row, movements, lines)',
+    JSON.stringify(await fState()) === JSON.stringify(f0), { before: f0, after: await fState() });
+await checkBalanced('fractional creates refused');
+const ow = (await one(`SELECT public.create_wholesale_order(p_order => $1::jsonb, p_items => $2::jsonb,
+    p_created_by => 'tester', p_today => '${DAY}') AS id`, [JSON.stringify({ customer_name: 'Shop', status: 'Open', warehouse_id: wh }), items(2, 'F')])).id;
+const f1 = await fState();
+check('a whole 2 from the warehouse: stock 8, pool 8, warehouse 8, one movement of 2',
+    f1.stock === 8 && f1.pool === 8 && f1.ws === 8
+    && num((await one(`SELECT quantity FROM stock_movements WHERE reference_id = $1`, [ow])).quantity) === 2, f1);
+await checkBalanced('whole wholesale order from a warehouse');
+const editErr = await errOf(`SELECT public.update_wholesale_order(p_id => $1::uuid, p_updates => $2::jsonb, p_items => $3::jsonb,
+    p_edited_by => 'tester', p_today => '${DAY}')`, [ow, JSON.stringify({ customer_name: 'Shop', status: 'Open', warehouse_id: wh }), items(2.5, 'F')]);
+check('edit to 2.5: refused, and the order keeps its 2 units', /Quantities must be whole numbers/.test(editErr)
+    && JSON.stringify(await fState()) === JSON.stringify(f1), { editErr, f: await fState() });
+await checkBalanced('fractional edit refused');
+await q(`SELECT public.set_wholesale_order_status(p_id => $1::uuid, p_status => 'Cancelled')`, [ow]);
+const f2 = await fState();
+check('cancel the whole order: stock, pool and warehouse back to 10', f2.stock === 10 && f2.pool === 10 && f2.ws === 10, f2);
+await checkBalanced('whole wholesale order cancelled');
+
+// A fractional line from before the rule (the rebuild backfilled it as
+// shortfall at its booked cost): giving it back moves whole units only, so
+// stock and the pool both gain 2, not stock 3 (int4 rounding of 2.5).
+await bookOpening(10);
+const of = (await one(`INSERT INTO wholesale_orders (customer_name, status, total_amount, warehouse_id) VALUES ('Old shop', 'Open', 50, $1) RETURNING id`, [wh])).id;
+await q(`INSERT INTO wholesale_order_items (wholesale_order_id, product_id, product_name, quantity, unit_price, cogs_cost, cogs_short_qty, cogs_backfill)
+         VALUES ($1, 'F', 'Fan', 2.5, 20, 10, 2.5, true)`, [of]);
+const fje = (await one(`INSERT INTO journal_entries (date, description, reference_id, status) VALUES ('2026-11-01', 'old COGS', $1, 'Posted') RETURNING id`, [`WSO-${of}-COGS`])).id;
+await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+         SELECT $1, id, CASE WHEN account_code = '5000' THEN 10 ELSE 0 END, CASE WHEN account_code = '1300' THEN 10 ELSE 0 END
+           FROM chart_of_accounts WHERE account_code IN ('5000', '1300')`, [fje]);
+const fc0 = await checkBalanced('pre-rule fractional order in place');
+await q(`SELECT public.set_wholesale_order_status(p_id => $1::uuid, p_status => 'Cancelled')`, [of]);
+const f3 = await fState();
+check('cancel a pre-rule 2.5 line: stock 12, pool 12, warehouse 12 (whole units back)', f3.stock === 12 && f3.pool === 12 && f3.ws === 12, f3);
+const fc1 = await fifoCheck();
+check('cancel a pre-rule 2.5 line: pool = stock, and the only variance is the 0.5 unit cost (2.00: 1300 gets the booked 10 back, the pool 8)',
+    fc1.product_mismatches === 0 && near(num(fc1.variance) - num(fc0.variance), 2, 0.006), { fc0, fc1 });
 
 done();
