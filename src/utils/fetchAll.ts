@@ -24,6 +24,13 @@ export interface FetchAllOptions {
     idKey?: string | null;
     /** Hard ceiling on fetched rows — a guard against runaway loops. */
     maxRows?: number;
+    /**
+     * Pages requested at once (default 1, one after another). With more, the
+     * pages of a wave go out together and the loop stops at the first short
+     * page, so a big table loads in about one round trip per wave instead of
+     * one per page. A page past the end comes back empty and costs little.
+     */
+    concurrency?: number;
 }
 
 export async function fetchAll<T = any>(
@@ -35,10 +42,8 @@ export async function fetchAll<T = any>(
     const idKey = opts.idKey === undefined ? 'id' : opts.idKey;
     const rows: T[] = [];
     const seen = idKey ? new Set<unknown>() : null;
-    for (let from = 0; ; from += chunk) {
-        const { data, error } = await buildQuery(from, from + chunk - 1);
-        if (error) throw error;
-        const page = data ?? [];
+    const wave = Math.max(1, Math.floor(opts.concurrency ?? 1));
+    const take = (page: T[]) => {
         for (const row of page) {
             if (seen && row && typeof row === 'object') {
                 const id = (row as Record<string, unknown>)[idKey as string];
@@ -49,10 +54,23 @@ export async function fetchAll<T = any>(
             }
             rows.push(row);
         }
-        if (page.length < chunk) return rows;
-        if (from + chunk >= maxRows) {
-            console.warn(`fetchAll${opts.label ? ` (${opts.label})` : ''}: stopped at the ${maxRows}-row ceiling — results may be incomplete`);
-            return rows;
+    };
+    for (let from = 0; ; from += chunk * wave) {
+        const starts: number[] = [];
+        for (let k = 0; k < wave && from + k * chunk < maxRows; k++) starts.push(from + k * chunk);
+        const results = await Promise.all(starts.map(s => buildQuery(s, s + chunk - 1)));
+        // Pages are taken in order, and nothing after the first short page is
+        // used, so the result is the same as reading them one by one.
+        for (let k = 0; k < results.length; k++) {
+            const { data, error } = results[k];
+            if (error) throw error;
+            const page = data ?? [];
+            take(page);
+            if (page.length < chunk) return rows;
+            if (starts[k] + chunk >= maxRows) {
+                console.warn(`fetchAll${opts.label ? ` (${opts.label})` : ''}: stopped at the ${maxRows}-row ceiling — results may be incomplete`);
+                return rows;
+            }
         }
     }
 }

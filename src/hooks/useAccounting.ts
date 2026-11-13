@@ -95,7 +95,7 @@ export const useAccounting = () => {
                     .select('*')
                     .order('date', { ascending: false })
                     .order('id', { ascending: true })
-                    .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries' }),
+                    .range(from, to), 1000, { label: 'useAccounting.fetchJournalEntries', concurrency: 4 }),
                 accountsP,
                 // Lines tied on written time and side list by account code.
                 accountsP.then(accs => {
